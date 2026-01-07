@@ -1,0 +1,542 @@
+{% extends "base.html" %}
+
+{% block title %}{{ report.company_name }} Report - Lead Machine{% endblock %}
+
+{% block head %}
+<style>
+    .report-container {
+        max-width: 1000px;
+        margin: 0 auto;
+        padding: 2rem;
+    }
+
+    .report-header {
+        text-align: center;
+        margin-bottom: 3rem;
+        padding-bottom: 2rem;
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    .report-title {
+        font-size: 2.5rem;
+        color: var(--text-primary);
+        margin-bottom: 0.5rem;
+    }
+
+    .report-org {
+        font-size: 1.25rem;
+        color: var(--accent-color);
+        margin-bottom: 1rem;
+    }
+
+    .report-meta {
+        display: flex;
+        justify-content: center;
+        gap: 2rem;
+        color: var(--text-secondary);
+        font-size: 0.875rem;
+    }
+
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 1rem;
+        margin-bottom: 2rem;
+    }
+
+    .stat-card {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 1.5rem;
+        text-align: center;
+    }
+
+    .stat-value {
+        font-size: 2rem;
+        font-weight: 700;
+        color: var(--accent-color);
+    }
+
+    .stat-label {
+        font-size: 0.875rem;
+        color: var(--text-secondary);
+        margin-top: 0.25rem;
+    }
+
+    .section {
+        margin-bottom: 2.5rem;
+    }
+
+    .section-title {
+        font-size: 1.5rem;
+        color: var(--text-primary);
+        margin-bottom: 1rem;
+        padding-bottom: 0.5rem;
+        border-bottom: 2px solid var(--accent-color);
+    }
+
+    .executive-summary {
+        background: linear-gradient(135deg, var(--accent-color) 0%, var(--accent-secondary) 100%);
+        color: white;
+        padding: 2rem;
+        border-radius: 12px;
+        font-size: 1.125rem;
+        line-height: 1.6;
+        margin-bottom: 2rem;
+    }
+
+    .maturity-badge {
+        display: inline-block;
+        padding: 0.25rem 0.75rem;
+        border-radius: 20px;
+        font-size: 0.875rem;
+        font-weight: 600;
+        text-transform: uppercase;
+    }
+
+    .maturity-emerging { background: #fef3c7; color: #92400e; }
+    .maturity-developing { background: #dbeafe; color: #1e40af; }
+    .maturity-mature { background: #d1fae5; color: #065f46; }
+    .maturity-advanced { background: #ede9fe; color: #5b21b6; }
+
+    .opportunity-score {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        margin: 1rem 0;
+    }
+
+    .score-bar {
+        flex: 1;
+        height: 12px;
+        background: var(--bg-tertiary);
+        border-radius: 6px;
+        overflow: hidden;
+    }
+
+    .score-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #ef4444, #f59e0b, #22c55e);
+        border-radius: 6px;
+    }
+
+    .score-value {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: var(--accent-color);
+    }
+
+    .findings-list {
+        list-style: none;
+        padding: 0;
+    }
+
+    .finding-item {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 1rem;
+        margin-bottom: 0.75rem;
+    }
+
+    .finding-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 0.5rem;
+    }
+
+    .finding-text {
+        font-weight: 500;
+        color: var(--text-primary);
+    }
+
+    .finding-significance {
+        font-size: 0.75rem;
+        padding: 0.125rem 0.5rem;
+        border-radius: 4px;
+    }
+
+    .significance-high { background: #fee2e2; color: #dc2626; }
+    .significance-medium { background: #fef3c7; color: #d97706; }
+    .significance-low { background: #e0e7ff; color: #4f46e5; }
+
+    .finding-evidence {
+        font-size: 0.875rem;
+        color: var(--text-secondary);
+    }
+
+    .narrative-box {
+        background: var(--bg-secondary);
+        border-left: 4px solid var(--accent-color);
+        padding: 1.5rem;
+        border-radius: 0 8px 8px 0;
+        line-height: 1.8;
+        white-space: pre-line;
+    }
+
+    .timeline-list {
+        list-style: none;
+        padding: 0;
+    }
+
+    .timeline-item {
+        display: flex;
+        gap: 1rem;
+        margin-bottom: 1rem;
+        padding-left: 1rem;
+        border-left: 2px solid var(--accent-color);
+    }
+
+    .timeline-period {
+        font-weight: 600;
+        color: var(--accent-color);
+        min-width: 120px;
+    }
+
+    .timeline-content {
+        flex: 1;
+    }
+
+    .timeline-activity {
+        color: var(--text-primary);
+        margin-bottom: 0.25rem;
+    }
+
+    .timeline-implication {
+        font-size: 0.875rem;
+        color: var(--text-secondary);
+        font-style: italic;
+    }
+
+    .contacts-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        gap: 1rem;
+    }
+
+    .contact-card {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 1rem;
+        text-align: center;
+    }
+
+    .contact-role {
+        font-weight: 500;
+        color: var(--text-primary);
+    }
+
+    .conversation-list {
+        list-style: decimal;
+        padding-left: 1.5rem;
+    }
+
+    .conversation-item {
+        background: var(--bg-secondary);
+        border-radius: 8px;
+        padding: 1rem;
+        margin-bottom: 0.75rem;
+        line-height: 1.6;
+    }
+
+    .risk-list, .next-steps-list {
+        list-style: none;
+        padding: 0;
+    }
+
+    .risk-item, .next-step-item {
+        padding: 0.75rem 1rem;
+        margin-bottom: 0.5rem;
+        border-radius: 6px;
+        display: flex;
+        align-items: flex-start;
+        gap: 0.75rem;
+    }
+
+    .risk-item {
+        background: #fef2f2;
+        color: #991b1b;
+    }
+
+    .next-step-item {
+        background: #f0fdf4;
+        color: #166534;
+    }
+
+    .signals-section {
+        margin-top: 2rem;
+    }
+
+    .signal-card {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 1rem;
+        margin-bottom: 0.75rem;
+    }
+
+    .signal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 0.5rem;
+    }
+
+    .signal-type {
+        font-size: 0.75rem;
+        padding: 0.125rem 0.5rem;
+        border-radius: 4px;
+        background: var(--accent-color);
+        color: white;
+    }
+
+    .signal-repo {
+        font-size: 0.875rem;
+        color: var(--text-secondary);
+    }
+
+    .signal-content {
+        font-size: 0.875rem;
+        color: var(--text-primary);
+    }
+
+    .signal-link {
+        font-size: 0.75rem;
+        color: var(--accent-color);
+        text-decoration: none;
+    }
+
+    .signal-link:hover {
+        text-decoration: underline;
+    }
+
+    .print-button {
+        position: fixed;
+        bottom: 2rem;
+        right: 2rem;
+        background: var(--accent-color);
+        color: white;
+        border: none;
+        padding: 1rem;
+        border-radius: 50%;
+        cursor: pointer;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+
+    @media print {
+        .navbar, .footer, .print-button { display: none; }
+        .report-container { padding: 0; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="report-container">
+    <header class="report-header">
+        <h1 class="report-title">{{ report.company_name }}</h1>
+        <div class="report-org">
+            <a href="{{ report.scan_data.org_url }}" target="_blank">@{{ report.github_org }}</a>
+        </div>
+        <div class="report-meta">
+            <span>Scanned: {{ report.created_at }}</span>
+            <span>Duration: {{ "%.1f"|format(report.scan_duration_seconds) }}s</span>
+        </div>
+    </header>
+
+    <!-- Stats Grid -->
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-value">{{ report.signals_found }}</div>
+            <div class="stat-label">I18n Signals</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ report.repos_scanned }}</div>
+            <div class="stat-label">Repos Scanned</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ report.commits_analyzed }}</div>
+            <div class="stat-label">Commits Analyzed</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ report.prs_analyzed }}</div>
+            <div class="stat-label">PRs Analyzed</div>
+        </div>
+    </div>
+
+    <!-- Executive Summary -->
+    {% if report.ai_analysis.executive_summary %}
+    <div class="executive-summary">
+        {{ report.ai_analysis.executive_summary }}
+    </div>
+    {% endif %}
+
+    <!-- Maturity & Opportunity -->
+    <div class="section">
+        <h2 class="section-title">Assessment</h2>
+
+        {% set maturity = report.ai_analysis.localization_maturity or 'unknown' %}
+        <p>
+            <strong>Localization Maturity:</strong>
+            <span class="maturity-badge maturity-{{ maturity }}">{{ maturity }}</span>
+        </p>
+
+        {% set score = report.ai_analysis.opportunity_score or 5 %}
+        <div class="opportunity-score">
+            <strong>Opportunity Score:</strong>
+            <div class="score-bar">
+                <div class="score-fill" style="width: {{ score * 10 }}%"></div>
+            </div>
+            <span class="score-value">{{ score }}/10</span>
+        </div>
+    </div>
+
+    <!-- Key Findings -->
+    {% if report.ai_analysis.key_findings %}
+    <div class="section">
+        <h2 class="section-title">Key Findings</h2>
+        <ul class="findings-list">
+            {% for finding in report.ai_analysis.key_findings %}
+            <li class="finding-item">
+                <div class="finding-header">
+                    <span class="finding-text">{{ finding.finding }}</span>
+                    <span class="finding-significance significance-{{ finding.significance }}">
+                        {{ finding.significance }}
+                    </span>
+                </div>
+                <div class="finding-evidence">{{ finding.evidence }}</div>
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    <!-- Sales Narrative -->
+    {% if report.ai_analysis.sales_narrative %}
+    <div class="section">
+        <h2 class="section-title">Sales Narrative</h2>
+        <div class="narrative-box">{{ report.ai_analysis.sales_narrative }}</div>
+    </div>
+    {% endif %}
+
+    <!-- Recommended Approach -->
+    {% if report.ai_analysis.recommended_approach %}
+    <div class="section">
+        <h2 class="section-title">Recommended Approach</h2>
+        <div class="narrative-box">{{ report.ai_analysis.recommended_approach }}</div>
+    </div>
+    {% endif %}
+
+    <!-- Timeline Insights -->
+    {% if report.ai_analysis.timeline_insights %}
+    <div class="section">
+        <h2 class="section-title">Timeline Insights</h2>
+        <ul class="timeline-list">
+            {% for insight in report.ai_analysis.timeline_insights %}
+            <li class="timeline-item">
+                <span class="timeline-period">{{ insight.period }}</span>
+                <div class="timeline-content">
+                    <div class="timeline-activity">{{ insight.activity }}</div>
+                    <div class="timeline-implication">{{ insight.implication }}</div>
+                </div>
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    <!-- Key Contacts -->
+    {% if report.ai_analysis.key_contacts_to_find %}
+    <div class="section">
+        <h2 class="section-title">Key Contacts to Find</h2>
+        <div class="contacts-grid">
+            {% for contact in report.ai_analysis.key_contacts_to_find %}
+            <div class="contact-card">
+                <div class="contact-role">{{ contact }}</div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Conversation Starters -->
+    {% if report.ai_analysis.conversation_starters %}
+    <div class="section">
+        <h2 class="section-title">Conversation Starters</h2>
+        <ol class="conversation-list">
+            {% for starter in report.ai_analysis.conversation_starters %}
+            <li class="conversation-item">{{ starter }}</li>
+            {% endfor %}
+        </ol>
+    </div>
+    {% endif %}
+
+    <!-- Risk Factors -->
+    {% if report.ai_analysis.risk_factors %}
+    <div class="section">
+        <h2 class="section-title">Risk Factors</h2>
+        <ul class="risk-list">
+            {% for risk in report.ai_analysis.risk_factors %}
+            <li class="risk-item">
+                <span>&#x26A0;</span>
+                <span>{{ risk }}</span>
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    <!-- Next Steps -->
+    {% if report.ai_analysis.next_steps %}
+    <div class="section">
+        <h2 class="section-title">Next Steps</h2>
+        <ul class="next-steps-list">
+            {% for step in report.ai_analysis.next_steps %}
+            <li class="next-step-item">
+                <span>&#x2713;</span>
+                <span>{{ step }}</span>
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    <!-- Detected Signals -->
+    {% if report.scan_data.signals %}
+    <div class="section signals-section">
+        <h2 class="section-title">Detected Signals ({{ report.scan_data.signals|length }})</h2>
+        {% for signal in report.scan_data.signals[:20] %}
+        <div class="signal-card">
+            <div class="signal-header">
+                <span class="signal-type">{{ signal.type }}</span>
+                <span class="signal-repo">{{ signal.repo }}</span>
+            </div>
+            <div class="signal-content">
+                {% if signal.type == 'commit_message' %}
+                    {{ signal.message[:150] }}{% if signal.message|length > 150 %}...{% endif %}
+                {% elif signal.type == 'pull_request' %}
+                    PR #{{ signal.number }}: {{ signal.title }}
+                {% elif signal.type == 'file_change' %}
+                    {{ signal.file }} ({{ signal.status }})
+                {% elif signal.type == 'hreflang' %}
+                    hreflang detected in {{ signal.file }}
+                {% endif %}
+            </div>
+            {% if signal.url %}
+            <a href="{{ signal.url }}" target="_blank" class="signal-link">View on GitHub</a>
+            {% endif %}
+        </div>
+        {% endfor %}
+        {% if report.scan_data.signals|length > 20 %}
+        <p class="text-muted">Showing 20 of {{ report.scan_data.signals|length }} signals</p>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+
+<button class="print-button" onclick="window.print()" title="Print Report">
+    &#x1F5A8;
+</button>
+{% endblock %}
