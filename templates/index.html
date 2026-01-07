@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+
+{% block title %}Lead Machine - Deep Research Engine{% endblock %}
+
+{% block content %}
+<div class="hero">
+    <div class="hero-content">
+        <h1 class="hero-title">Lead Machine</h1>
+        <p class="hero-subtitle">Deep-Dive Research Engine for GitHub Organizations</p>
+
+        <form action="{{ url_for('search') }}" method="GET" class="search-form">
+            <div class="search-container">
+                <input
+                    type="text"
+                    name="q"
+                    class="search-input"
+                    placeholder="Enter company name (e.g., Airbnb, Stripe, Shopify)"
+                    autocomplete="off"
+                    autofocus
+                    required
+                >
+                <button type="submit" class="search-button">
+                    Scan
+                </button>
+            </div>
+        </form>
+
+        <div class="feature-list">
+            <div class="feature">
+                <span class="feature-icon">&#x1F50E;</span>
+                <span>Discover GitHub Organizations</span>
+            </div>
+            <div class="feature">
+                <span class="feature-icon">&#x1F4CA;</span>
+                <span>Analyze 100+ Commits & PRs</span>
+            </div>
+            <div class="feature">
+                <span class="feature-icon">&#x1F310;</span>
+                <span>Detect i18n Signals</span>
+            </div>
+            <div class="feature">
+                <span class="feature-icon">&#x1F916;</span>
+                <span>AI-Powered Analysis</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if recent_reports %}
+<section class="recent-section">
+    <h2 class="section-title">Recent Scans</h2>
+    <div class="reports-grid">
+        {% for report in recent_reports %}
+        <a href="{{ url_for('view_report', report_id=report.id) }}" class="report-card">
+            <div class="report-company">{{ report.company_name }}</div>
+            <div class="report-org">@{{ report.github_org }}</div>
+            <div class="report-stats">
+                <span class="stat">
+                    <span class="stat-value">{{ report.signals_found }}</span>
+                    <span class="stat-label">signals</span>
+                </span>
+                <span class="stat">
+                    <span class="stat-value">{{ report.repos_scanned }}</span>
+                    <span class="stat-label">repos</span>
+                </span>
+            </div>
+            <div class="report-date">{{ report.created_at }}</div>
+        </a>
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
+{% endblock %}

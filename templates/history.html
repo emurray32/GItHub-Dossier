@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block title %}Scan History - Lead Machine{% endblock %}
+
+{% block content %}
+<div class="container">
+    <header class="page-header">
+        <h1>Scan History</h1>
+        <p class="subtitle">Previous deep-dive scans</p>
+    </header>
+
+    {% if reports %}
+    <div class="history-table-container">
+        <table class="history-table">
+            <thead>
+                <tr>
+                    <th>Company</th>
+                    <th>GitHub Org</th>
+                    <th>Signals</th>
+                    <th>Repos</th>
+                    <th>Commits</th>
+                    <th>PRs</th>
+                    <th>Duration</th>
+                    <th>Date</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for report in reports %}
+                <tr>
+                    <td class="company-cell">{{ report.company_name }}</td>
+                    <td class="org-cell">@{{ report.github_org }}</td>
+                    <td class="number-cell">{{ report.signals_found }}</td>
+                    <td class="number-cell">{{ report.repos_scanned }}</td>
+                    <td class="number-cell">{{ report.commits_analyzed }}</td>
+                    <td class="number-cell">{{ report.prs_analyzed }}</td>
+                    <td class="duration-cell">{{ "%.1f"|format(report.scan_duration_seconds) }}s</td>
+                    <td class="date-cell">{{ report.created_at }}</td>
+                    <td class="actions-cell">
+                        <a href="{{ url_for('view_report', report_id=report.id) }}" class="btn-view">View</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <p>No scans yet. Start by searching for a company!</p>
+        <a href="{{ url_for('index') }}" class="btn-primary">Start Scanning</a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
