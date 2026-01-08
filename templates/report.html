@@ -86,6 +86,54 @@
         margin-bottom: 2rem;
     }
 
+    .reachout-summary {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        padding: 1.5rem;
+        margin-bottom: 2rem;
+    }
+
+    .reachout-title {
+        font-size: 1.25rem;
+        margin: 0 0 0.75rem 0;
+        color: var(--text-primary);
+    }
+
+    .reachout-subtitle {
+        font-size: 0.875rem;
+        color: var(--text-secondary);
+        margin-bottom: 1rem;
+    }
+
+    .reachout-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+    }
+
+    .reachout-item {
+        display: flex;
+        gap: 0.75rem;
+        padding: 0.75rem 0;
+        border-top: 1px solid var(--border-color);
+    }
+
+    .reachout-item:first-child {
+        border-top: none;
+        padding-top: 0;
+    }
+
+    .reachout-label {
+        font-weight: 600;
+        color: var(--accent-color);
+        min-width: 140px;
+    }
+
+    .reachout-text {
+        color: var(--text-primary);
+    }
+
     .maturity-badge {
         display: inline-block;
         padding: 0.25rem 0.75rem;
@@ -483,6 +531,55 @@
         {{ report.ai_analysis.executive_summary }}
     </div>
     {% endif %}
+
+    <!-- Why Reach Out -->
+    {% set scan_data = report.scan_data or {} %}
+    <div class="reachout-summary">
+        <h2 class="reachout-title">Why Reach Out</h2>
+        <div class="reachout-subtitle">Clear, plain-language reasons to start a conversation.</div>
+        <ul class="reachout-list">
+            {% if report.ai_analysis.pain_point_analysis %}
+            <li class="reachout-item">
+                <span class="reachout-label">Pain signals</span>
+                <span class="reachout-text">{{ report.ai_analysis.pain_point_analysis }}</span>
+            </li>
+            {% endif %}
+            {% if scan_data.frustration_signals %}
+            <li class="reachout-item">
+                <span class="reachout-label">Frustration</span>
+                <span class="reachout-text">{{ scan_data.frustration_signals|length }} frustration signals found in recent commits.</span>
+            </li>
+            {% endif %}
+            {% if scan_data.competitor_detection and scan_data.competitor_detection.is_using_competitor %}
+            <li class="reachout-item">
+                <span class="reachout-label">Competitive swap</span>
+                <span class="reachout-text">Signals show they use another localization platform today (possible switch opportunity).</span>
+            </li>
+            {% endif %}
+            {% if scan_data.locale_inventory and scan_data.locale_inventory.language_count %}
+            <li class="reachout-item">
+                <span class="reachout-label">Active expansion</span>
+                <span class="reachout-text">Localization files detected across {{ scan_data.locale_inventory.language_count }} language(s).</span>
+            </li>
+            {% endif %}
+            {% if scan_data.is_greenfield %}
+            <li class="reachout-item">
+                <span class="reachout-label">Greenfield gap</span>
+                <span class="reachout-text">Mature repo footprint with no localization tooling in place.</span>
+            </li>
+            {% endif %}
+            {% if report.ai_analysis.key_findings %}
+            <li class="reachout-item">
+                <span class="reachout-label">Key evidence</span>
+                <span class="reachout-text">
+                    {% for finding in report.ai_analysis.key_findings[:3] %}
+                    {{ finding.finding }}{% if not loop.last %}; {% endif %}
+                    {% endfor %}
+                </span>
+            </li>
+            {% endif %}
+        </ul>
+    </div>
 
     <!-- Maturity & Opportunity -->
     <div class="section">
