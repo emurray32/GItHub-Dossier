@@ -233,6 +233,14 @@ Generate a JSON response with these EXACT fields for sales outreach:
     "key_findings": [
         {{"finding": "description", "significance": "high|medium|low", "sales_angle": "how to use this in conversation"}}
     ],
+    "outreach_suggestions": [
+        {{
+            "why_account": "Why this account is worth outreach based on evidence",
+            "why_now": "Why this moment is timely (recency, triggers)",
+            "who_to_reach": "Specific contributor or role to target",
+            "message_hook": "Suggested opener, hook, or pain point to lead with"
+        }}
+    ],
     "recommended_approach": "Strategic recommendation for this specific opportunity",
     "conversation_starters": ["Specific openers based on their data"],
     "risk_factors": ["What could prevent closing this deal"],
@@ -243,7 +251,8 @@ CRITICAL RULES:
 1. Be SPECIFIC - reference actual numbers and signals from the data
 2. In 'top_prospects', only include human contributors provided in the data. Rank by 'relevancy' (pain felt or influence).
 3. 'semantic_analysis' should interpret the commit messages to find patterns (e.g. 'Fixing translation' looks like a hotfix).
-4. Respond with ONLY the JSON, no additional text."""
+4. Provide exactly 10 items in "outreach_suggestions".
+5. Respond with ONLY the JSON, no additional text."""
 
     return prompt
 
@@ -281,6 +290,7 @@ def _parse_gemini_response(response_text: str, scan_data: dict) -> dict:
                 'body': 'I noticed your team has been working on internationalization. Would love to discuss how we can help streamline your localization workflow.'
             },
             'key_findings': [],
+            'outreach_suggestions': [],
             'recommended_approach': 'Manual review of findings recommended',
             'conversation_starters': [],
             'risk_factors': ['AI analysis could not be fully parsed'],
@@ -522,12 +532,136 @@ def _generate_fallback_analysis(scan_data: dict) -> dict:
             'body': email_body
         },
         'key_findings': key_findings,
+        'outreach_suggestions': _build_outreach_suggestions(scan_data, opportunity_type),
         'recommended_approach': _get_recommended_approach(opportunity_type, competitor.get('is_using_competitor', False), is_greenfield),
         'conversation_starters': conversation_starters[:3],
         'risk_factors': risk_factors,
         'next_steps': _get_next_steps(opportunity_type, competitor.get('is_using_competitor', False)),
         '_source': 'fallback'
     }
+
+
+def _build_outreach_suggestions(scan_data: dict, opportunity_type: str) -> list:
+    """Build a list of outreach suggestions for BDRs."""
+    company = scan_data.get('company_name', 'this account')
+    signals = scan_data.get('signals', [])
+    repo_count = len(scan_data.get('repos_scanned', []))
+    tech_stack = scan_data.get('tech_stack', {})
+    competitor = scan_data.get('competitor_detection', {})
+    frustration = scan_data.get('frustration_signals', [])
+    dev_metric = scan_data.get('developer_translator_metric', {})
+    bottleneck = scan_data.get('reviewer_bottleneck', {})
+    locale_inventory = scan_data.get('locale_inventory', {})
+    market_insights = scan_data.get('market_insights', {})
+    compliance_assets = scan_data.get('compliance_assets', {})
+    contributors = scan_data.get('contributors', {})
+
+    signals_count = len(signals)
+    frustration_count = len(frustration)
+    framework = tech_stack.get('primary_framework', 'their stack')
+    i18n_libs = ", ".join(tech_stack.get('i18n_libraries', [])) or "their current i18n setup"
+    language_count = locale_inventory.get('language_count') or len(locale_inventory.get('locales_detected', [])) or "multiple"
+    primary_market = market_insights.get('primary_market', 'new markets')
+    compliance_total = len(compliance_assets.get('detected_files', []))
+    compliance_localized = compliance_assets.get('localized_count', 0)
+
+    top_contributors = _get_top_contributors(contributors, limit=2)
+    contributor_targets = ", ".join([f"@{login}" for login in top_contributors]) if top_contributors else "Localization lead / Engineering manager"
+
+    suggestions = []
+
+    suggestions.append({
+        "why_account": f"{signals_count or 'Multiple'} localization signals across {repo_count or 'several'} repos show active i18n investment.",
+        "why_now": "Recent scan detected ongoing localization-related changes, indicating active priorities.",
+        "who_to_reach": contributor_targets,
+        "message_hook": "Noticed active i18n changes across multiple repos—curious how you're managing translation updates at scale."
+    })
+
+    suggestions.append({
+        "why_account": f"{frustration_count or 'Several'} commit messages flag translation friction or rework.",
+        "why_now": "Recent frustration signals suggest the team is feeling the pain today.",
+        "who_to_reach": contributor_targets,
+        "message_hook": "Saw commits that suggest translation sync issues—how painful is that in your current workflow?"
+    })
+
+    human_percentage = dev_metric.get('human_percentage') or "a large share"
+    suggestions.append({
+        "why_account": f"Developers are doing translation edits ({human_percentage} by humans).",
+        "why_now": "Manual localization effort compounds as more languages are added.",
+        "who_to_reach": "Frontend/platform engineering lead",
+        "message_hook": "How much engineer time goes to translation file updates vs feature work today?"
+    })
+
+    bottleneck_user = bottleneck.get('bottleneck_user', 'a single reviewer')
+    suggestions.append({
+        "why_account": "Review bottlenecks slow localization throughput and release cadence.",
+        "why_now": "Current review concentration hints at a single point of failure.",
+        "who_to_reach": f"@{bottleneck_user}" if bottleneck.get('is_bottleneck') else "Engineering manager / release owner",
+        "message_hook": "Looks like i18n reviews may be centralized—want to reduce that bottleneck and speed ship cycles?"
+    })
+
+    competitor_name = "current TMS"
+    if competitor.get('is_using_competitor'):
+        competitor_name = competitor.get('tms_in_dependencies', ['current TMS'])[0]
+    suggestions.append({
+        "why_account": f"Existing localization tooling ({competitor_name}) creates an opening to improve developer UX.",
+        "why_now": "Migration is easiest while active localization work is already in motion.",
+        "who_to_reach": "Localization platform owner / tooling lead",
+        "message_hook": f"Teams often see merge-conflict pain with {competitor_name}—is that showing up for you?"
+    })
+
+    suggestions.append({
+        "why_account": f"Locale footprint suggests {language_count} languages in flight.",
+        "why_now": f"Expansion into {primary_market} raises complexity and QA risk.",
+        "who_to_reach": "Product leader for international growth",
+        "message_hook": f"How are you ensuring translation quality as you expand into {primary_market}?"
+    })
+
+    suggestions.append({
+        "why_account": f"{compliance_total or 'Some'} compliance assets detected, but only {compliance_localized} localized.",
+        "why_now": "Regulatory exposure grows with each new market.",
+        "who_to_reach": "Legal ops / localization program owner",
+        "message_hook": "Do you have a process to keep legal/privacy pages localized as new locales ship?"
+    })
+
+    suggestions.append({
+        "why_account": f"Stack includes {framework} + {i18n_libs}, making integration straightforward.",
+        "why_now": "SDK-based integrations are fastest during active development cycles.",
+        "who_to_reach": "Developer productivity / platform engineering",
+        "message_hook": f"We integrate directly with {framework} and {i18n_libs}—open to a 15-min walkthrough?"
+    })
+
+    suggestions.append({
+        "why_account": f"{company} has a multi-repo footprint, which multiplies localization coordination cost.",
+        "why_now": "Centralizing localization now avoids long-term process drift.",
+        "who_to_reach": "Director of engineering / program manager",
+        "message_hook": "How do you coordinate localization across multiple repos without slowing releases?"
+    })
+
+    suggestions.append({
+        "why_account": f"{company}'s opportunity type reads as {opportunity_type.replace('_', ' ')}.",
+        "why_now": "Priority alignment is highest when the need is already visible in the codebase.",
+        "who_to_reach": "VP Engineering / Globalization lead",
+        "message_hook": "We see clear signals of localization investment—open to comparing your current workflow to a modernized approach?"
+    })
+
+    return suggestions[:10]
+
+
+def _get_top_contributors(contributors: dict, limit: int = 2) -> list:
+    """Return top contributor logins ranked by i18n impact."""
+    if not contributors:
+        return []
+
+    def score(data: dict) -> int:
+        return data.get('i18n_commits', 0) + data.get('frustration_count', 0)
+
+    sorted_contributors = sorted(
+        contributors.items(),
+        key=lambda item: score(item[1]),
+        reverse=True
+    )
+    return [login for login, _ in sorted_contributors[:limit]]
 
 
 def _get_recommended_approach(opportunity_type: str, has_competitor: bool, is_greenfield: bool) -> str:
