@@ -193,7 +193,7 @@ def _parse_gemini_response(response_text: str, scan_data: dict) -> dict:
     except json.JSONDecodeError:
         # Fallback if JSON parsing fails
         return {
-            'pain_point_analysis': response_text[:500] if response_text else 'Analysis unavailable',
+            'pain_point_analysis': response_text[:500] if response_text else 'Analysis unavailable due to rate limit or error.',
             'tech_stack_hook': 'Further investigation needed',
             'opportunity_score': 5,
             'opportunity_type': 'unknown',
@@ -201,6 +201,17 @@ def _parse_gemini_response(response_text: str, scan_data: dict) -> dict:
                 'subject': f"Localization opportunities at {scan_data.get('company_name', 'your company')}",
                 'body': 'I noticed your team has been working on internationalization. Would love to discuss how we can help streamline your localization workflow.'
             },
+            'semantic_analysis': {
+                'severity': 'minor',
+                'primary_pain_category': 'unknown',
+                'description': 'AI analysis failed to parse. Please review raw signals.'
+            },
+            'compliance_risk': {
+                'level': 'low',
+                'description': 'AI compliance analysis unavailable.'
+            },
+            'forensic_evidence': 'No external forensics available.',
+            'top_prospects': [],
             'key_findings': [],
             'outreach_suggestions': [],
             'recommended_approach': 'Manual review of findings recommended',
@@ -209,7 +220,6 @@ def _parse_gemini_response(response_text: str, scan_data: dict) -> dict:
             'next_steps': ['Manual review of scan data recommended'],
             '_source': 'gemini_fallback',
             '_model': Config.GEMINI_MODEL,
-            '_raw_response': response_text
         }
 
 
