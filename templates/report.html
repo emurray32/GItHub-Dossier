@@ -211,6 +211,53 @@
         color: white;
     }
 
+    .risk-badge {
+        display: inline-block;
+        padding: 0.25rem 0.5rem;
+        border-radius: 4px;
+        font-size: 0.7rem;
+        font-weight: 700;
+        margin-left: 0.5rem;
+    }
+
+    .risk-high {
+        background: #fee2e2;
+        color: #dc2626;
+        border: 1px solid #fca5a5;
+    }
+
+    .risk-low {
+        background: #f0fdf4;
+        color: #166534;
+        border: 1px solid #bbf7d0;
+    }
+
+    .forensic-card {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-left: 4px solid var(--accent-secondary);
+        border-radius: 0 8px 8px 0;
+        padding: 1.5rem;
+        margin-top: 1rem;
+    }
+
+    .compliance-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+        gap: 1rem;
+        margin-top: 1rem;
+    }
+
+    .compliance-card {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        padding: 1rem;
+        border-radius: 8px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
     .prospect-card {
         background: var(--bg-secondary);
         border: 1px solid var(--border-color);
@@ -520,6 +567,21 @@
             </p>
         </div>
         {% endif %}
+
+        {% if report.ai_analysis.compliance_risk %}
+        <div style="margin-top: 1rem; padding: 1rem; background: var(--bg-tertiary); border-radius: 8px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                <h3 style="margin: 0; font-size: 1rem;">Compliance Risk</h3>
+                <span
+                    class="severity-badge severity-{{ 'critical' if report.ai_analysis.compliance_risk.level == 'high' else 'minor' }}">
+                    {{ report.ai_analysis.compliance_risk.level }}
+                </span>
+            </div>
+            <p style="font-size: 0.875rem; margin: 0;">
+                {{ report.ai_analysis.compliance_risk.description }}
+            </p>
+        </div>
+        {% endif %}
     </div>
 
     <!-- Key Findings -->
@@ -547,6 +609,42 @@
     <div class="section">
         <h2 class="section-title">Sales Narrative</h2>
         <div class="narrative-box">{{ report.ai_analysis.sales_narrative }}</div>
+    </div>
+    {% endif %}
+
+    <!-- Forensic Evidence -->
+    {% if report.ai_analysis.forensic_evidence %}
+    <div class="section">
+        <h2 class="section-title">Forensic Evidence</h2>
+        <div class="forensic-card">
+            <div style="font-size: 1.125rem; font-weight: 600; margin-bottom: 0.5rem;">External Intelligence</div>
+            <p style="margin: 0; line-height: 1.6;">{{ report.ai_analysis.forensic_evidence }}</p>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Risk Intelligence: Compliance -->
+    {% if report.scan_data.compliance_assets.detected_files %}
+    <div class="section">
+        <h2 class="section-title">Compliance Asset Intelligence</h2>
+        <p class="text-secondary">Detected legal and privacy assets across repositories.</p>
+        <div class="compliance-grid">
+            {% for asset in report.scan_data.compliance_assets.detected_files %}
+            <div class="compliance-card">
+                <div>
+                    <div style="font-weight: 600;">{{ asset.file }}</div>
+                    <div style="font-size: 0.75rem; color: var(--text-muted);">{{ asset.repo }}</div>
+                </div>
+                <div>
+                    {% if asset.is_localized %}
+                    <span class="risk-badge risk-low">LOCALIZED</span>
+                    {% else %}
+                    <span class="risk-badge risk-high">GLOBAL ONLY</span>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
     </div>
     {% endif %}
 

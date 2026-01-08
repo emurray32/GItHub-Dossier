@@ -165,3 +165,23 @@ class Config:
     # Reviewer bottleneck threshold (percentage)
     REVIEWER_BOTTLENECK_THRESHOLD = 0.80  # 80%
 
+    # ============================================================
+    # COMPLIANCE & FORENSIC EXTERNAL SEARCH CONFIG
+    # ============================================================
+    
+    # Compliance and Privacy patterns (Global vs Localized)
+    COMPLIANCE_FILE_PATTERNS = [
+        'PRIVACY', 'PRIVACY-POLICY', 'GDPR', 'LGPD', 'PIPL', 'CCPA',
+        'TERMS-OF-SERVICE', 'TOS', 'LEGAL', 'COMPLIANCE', 'TRUST', 'SECURITY'
+    ]
+
+    # External Forensic Search (Stack Overflow queries)
+    # {company} will be replaced during scan
+    SO_SEARCH_QUERIES = [
+        '"{company}" localization issue site:stackoverflow.com',
+        '"{company}" i18n error site:stackoverflow.com',
+        '"{company}" translation sync site:stackoverflow.com',
+        '"{company}" react-intl error site:stackoverflow.com',
+        '"{company}" i18next site:stackoverflow.com'
+    ]
+
