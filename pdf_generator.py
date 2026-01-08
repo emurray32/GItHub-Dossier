@@ -189,6 +189,36 @@ def generate_report_pdf(report, output_path):
             pdf.ln(2)
         pdf.ln(5)
 
+    # 5b. Outreach Suggestions
+    if ai.get('outreach_suggestions'):
+        pdf.set_font('helvetica', 'B', 14)
+        pdf.set_text_color(26, 35, 126)
+        pdf.cell(0, 10, ' Outreach Suggestions', ln=True)
+        pdf.ln(2)
+        for index, suggestion in enumerate(ai['outreach_suggestions'][:10], start=1):
+            pdf.set_font('helvetica', 'B', 11)
+            pdf.set_text_color(0, 0, 0)
+            pdf.cell(0, 6, f"{index}. Why this account", ln=True)
+            pdf.set_font('helvetica', '', 10)
+            pdf.multi_cell(0, 5, suggestion.get('why_account', ''))
+
+            pdf.set_font('helvetica', 'B', 10)
+            pdf.cell(0, 5, "Why now", ln=True)
+            pdf.set_font('helvetica', '', 10)
+            pdf.multi_cell(0, 5, suggestion.get('why_now', ''))
+
+            pdf.set_font('helvetica', 'B', 10)
+            pdf.cell(0, 5, "Who to reach", ln=True)
+            pdf.set_font('helvetica', '', 10)
+            pdf.multi_cell(0, 5, suggestion.get('who_to_reach', ''))
+
+            pdf.set_font('helvetica', 'B', 10)
+            pdf.cell(0, 5, "Message hook", ln=True)
+            pdf.set_font('helvetica', '', 10)
+            pdf.multi_cell(0, 5, suggestion.get('message_hook', ''))
+            pdf.ln(2)
+        pdf.ln(5)
+
     # 6. Email Draft (New Page if needed)
     if ai.get('email_draft'):
         pdf.add_page()
