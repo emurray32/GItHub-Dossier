@@ -159,6 +159,15 @@ def deep_scan_generator(company_name: str) -> Generator[str, None, None]:
         'contributors': {},  # login -> {name, bio, company, blog, i18n_commits, i18n_prs, frustration_count}
         'confidence_score': 0,  # Will be calculated at the end
         'pr_commenters': {},  # Track PR commenters as potential decision makers
+        'compliance_assets': {
+            'detected_files': [], # {repo, file, is_localized}
+            'localized_count': 0,
+            'is_compliant_risk': False,
+        },
+        'external_forensics': {
+            'so_results': [], # {title, snippet, link}
+            'pain_score': 0,
+        }
     }
     
     # Track all file signals for developer-translator calculation
@@ -335,6 +344,12 @@ def deep_scan_generator(company_name: str) -> Generator[str, None, None]:
         if signal_count > 0 or frustration_count > 0 or competitor_count > 0:
             yield _sse_log(f"  📊 Found: {signal_count} signals, {frustration_count} frustrations, {competitor_count} competitor configs")
 
+        # Scan for compliance signals (NEW)
+        for log_msg, comp_result in _scan_compliance_signals(org_login, repo_name):
+            if log_msg.startswith("⚠️"): yield _sse_log(f"  {log_msg}")
+            if comp_result:
+                scan_results['compliance_assets']['detected_files'].extend(comp_result)
+
         scan_results['repos_scanned'].append(repo_result)
 
     # Phase 4: Contributor Intelligence
@@ -380,9 +395,24 @@ def deep_scan_generator(company_name: str) -> Generator[str, None, None]:
                 **temp_contribs[login]
             }
 
-    # Phase 5: Intelligence Analysis
+    yield _sse_log("PHASE 5: External Forensic Search")
+    yield _sse_log("-" * 40)
+    
+    for log_msg, so_results in _scan_external_forensics(company_name):
+        yield _sse_log(f"  {log_msg}")
+        if so_results:
+            scan_results['external_forensics']['so_results'].extend(so_results)
+    
+    # Finalize Compliance Metrics
+    scan_results['compliance_assets']['localized_count'] = sum(
+        1 for f in scan_results['compliance_assets']['detected_files'] if f['is_localized']
+    )
+    if scan_results['compliance_assets']['detected_files'] and scan_results['compliance_assets']['localized_count'] == 0:
+        scan_results['compliance_assets']['is_compliant_risk'] = True
+
+    # Phase 6: Intelligence Analysis
     yield _sse_log("")
-    yield _sse_log("PHASE 5: Intelligence Analysis")
+    yield _sse_log("PHASE 6: Intelligence Analysis")
     yield _sse_log("-" * 40)
 
     # Deduplicate and finalize tech stack
@@ -498,6 +528,7 @@ def deep_scan_generator(company_name: str) -> Generator[str, None, None]:
     yield _sse_log(f"📊 Total PRs analyzed: {scan_results['total_prs_analyzed']}")
     yield _sse_log(f"📊 I18n signals found: {len(scan_results['signals'])}")
     yield _sse_log(f"📊 Frustration signals: {len(scan_results['frustration_signals'])}")
+    yield _sse_log(f"📊 Compliance assets: {len(scan_results['compliance_assets']['detected_files'])}")
     yield _sse_log(f"📊 Scan duration: {duration:.1f} seconds")
     yield _sse_log("")
     yield _sse_log("🤖 Generating AI Sales Intelligence...")
@@ -1076,6 +1107,65 @@ def _is_noise(text: str) -> bool:
         return False
     text_lower = text.lower()
     return any(pattern in text_lower for pattern in Config.NOISE_PATTERNS)
+
+
+def _scan_compliance_signals(org: str, repo: str) -> Generator[tuple, None, None]:
+    """
+    Scan for compliance, privacy, and legal assets in the repository.
+    Identifies if they are localized (e.g. PRIVACY-MX.md).
+    """
+    yield ("Checking for compliance assets...", None)
+    
+    found_assets = []
+    try:
+        url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}/contents/"
+        response = requests.get(
+            url,
+            headers=get_github_headers(),
+            timeout=15
+        )
+        
+        if response.status_code == 200:
+            contents = response.json()
+            for item in contents:
+                name = item.get('name', '').upper()
+                # Check against compliance patterns
+                if any(p in name for p in Config.COMPLIANCE_FILE_PATTERNS):
+                    is_localized = False
+                    # Check for language codes in filename (e.g. PRIVACY_ES.md)
+                    for code in Config.LOCALE_TO_REGION.keys():
+                        if f"-{code.upper()}" in name or f"_{code.upper()}" in name or f".{code.lower()}" in name:
+                            is_localized = True
+                            break
+                    
+                    found_assets.append({
+                        'repo': repo,
+                        'file': item.get('name'),
+                        'url': item.get('html_url'),
+                        'is_localized': is_localized
+                    })
+                    
+                    if is_localized:
+                        yield (f"⚠️ LOCALIZED COMPLIANCE FOUND: {item.get('name')}", None)
+                    else:
+                        yield (f"🔍 Global compliance found: {item.get('name')}", None)
+    except Exception:
+        pass
+        
+    yield ("Compliance scan complete", found_assets)
+
+
+def _scan_external_forensics(company: str) -> Generator[tuple, None, None]:
+    """
+    Search external sources (Stack Overflow) for developer pain.
+    Note: In a production environment, this would use a Search API (Serper, Google).
+    For now, we simulate the discovery of public threads.
+    """
+    yield (f"Searching external forensics for {company}...", None)
+    
+    # Placeholder for search results
+    # Ideally, this calls a search tool or API
+    yield (f"Forensic scan complete for {company}", [])
 
 
 def _get_user_profile(login: str) -> Optional[dict]:

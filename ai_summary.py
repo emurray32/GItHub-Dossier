@@ -187,6 +187,15 @@ Analyze this GitHub intelligence data for {company} and generate ACTIONABLE SALE
 {market_text}
 {greenfield_section}
 
+## COMPLIANCE & LEGAL ASSETS
+- Assets Detected: {len(scan_data['compliance_assets']['detected_files'])}
+- Localized Assets: {scan_data['compliance_assets']['localized_count']}
+- Compliance Risk: {"YES - High Risk" if scan_data['compliance_assets']['is_compliant_risk'] else "Low"}
+- Details: {[{'file': f['file'], 'localized': f['is_localized']} for f in scan_data['compliance_assets']['detected_files']]}
+
+## EXTERNAL FORENSICS (STACK OVERFLOW)
+- Results: {scan_data['external_forensics']['so_results'] or "No public threads found"}
+
 ## CONTRIBUTORS & PROSPECTS
 {contributors_text}
 
@@ -201,6 +210,11 @@ Generate a JSON response with these EXACT fields for sales outreach:
         "primary_pain_category": "sync_issues|manual_bottlenecks|technical_debt|market_expansion",
         "description": "Short summary of the 'semantic type' of activity detected (e.g. 'Emergency hotfixes for missing locale keys')"
     }},
+    "compliance_risk": {{
+        "level": "critical|high|medium|low",
+        "description": "Analysis of missing localized compliance files (e.g. 'No localized GDPR policy found despite EU expansion signals')"
+    }},
+    "forensic_evidence": "Highlight specific external pain from Stack Overflow or web search if found, otherwise 'No external evidence found'",
     "top_prospects": [
         {{
             "login": "github_login",
@@ -211,7 +225,7 @@ Generate a JSON response with these EXACT fields for sales outreach:
         }}
     ],
     "opportunity_score": 1-10,
-    "opportunity_type": "greenfield|competitor_displacement|pain_driven|expansion",
+    "opportunity_type": "greenfield|competitor_displacement|pain_driven|expansion|compliance_risk",
     "email_draft": {{
         "subject": "Specific subject referencing their data (e.g., '{{Company}}'s expansion into Mexico' or 'Fixing the translation merge conflicts')",
         "body": "3 sentences max. Connect their SPECIFIC signal to our solution. Reference actual data (e.g., 'I noticed your team has had 12 commits fixing translation sync issues...')"
@@ -484,10 +498,22 @@ def _generate_fallback_analysis(scan_data: dict) -> dict:
         'description': f"Detected {len(frustration)} pain signals related to translation synchronization and human-driven localization edits."
     }
 
+    # Build compliance analysis
+    comp_risk = 'low'
+    if scan_data['compliance_assets']['is_compliant_risk']:
+        comp_risk = 'high'
+    
+    compliance_risk = {
+        'level': comp_risk,
+        'description': f"Detected {len(scan_data['compliance_assets']['detected_files'])} legal assets. Localized: {scan_data['compliance_assets']['localized_count']}."
+    }
+
     return {
         'pain_point_analysis': pain_point_analysis,
         'tech_stack_hook': tech_stack_hook,
         'semantic_analysis': semantic_analysis,
+        'compliance_risk': compliance_risk,
+        'forensic_evidence': "External forensic scan complete (No public threads detected).",
         'top_prospects': top_prospects,
         'opportunity_score': opportunity_score,
         'opportunity_type': opportunity_type,

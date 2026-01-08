@@ -89,7 +89,6 @@ def generate_report_pdf(report, output_path):
         pdf.set_font('helvetica', 'B', 12)
         pdf.set_text_color(26, 35, 126)
         pdf.cell(0, 8, ' Semantic Intelligence:', ln=True)
-        
         # Severity Badge-like text
         pdf.set_font('helvetica', 'B', 9)
         sev = sem.get('severity', 'minor').upper()
@@ -97,10 +96,35 @@ def generate_report_pdf(report, output_path):
         elif sev == 'MAJOR': pdf.set_text_color(234, 88, 12)
         else: pdf.set_text_color(217, 119, 6)
         pdf.cell(0, 7, f" Severity: {sev} | Category: {sem.get('primary_pain_category', 'N/A').replace('_', ' ').title()}", ln=True)
-        
         pdf.set_font('helvetica', 'I', 10)
         pdf.set_text_color(0, 0, 0)
         pdf.multi_cell(0, 6, f'"{sem.get("description", "")}"')
+
+    # Compliance Risk section
+    if ai.get('compliance_risk'):
+        comp = ai['compliance_risk']
+        pdf.ln(5)
+        pdf.set_font('helvetica', 'B', 12)
+        pdf.set_text_color(26, 35, 126)
+        pdf.cell(0, 8, ' Compliance Risk Assessment:', ln=True)
+        pdf.set_font('helvetica', 'B', 9)
+        risk_lvl = comp.get('level', 'low').upper()
+        if risk_lvl == 'CRITICAL' or risk_lvl == 'HIGH': pdf.set_text_color(220, 38, 38)
+        else: pdf.set_text_color(22, 163, 74)
+        pdf.cell(0, 7, f" Risk Level: {risk_lvl}", ln=True)
+        pdf.set_font('helvetica', '', 10)
+        pdf.set_text_color(0, 0, 0)
+        pdf.multi_cell(0, 6, comp.get('description', ''))
+
+    # Forensic Evidence section
+    if ai.get('forensic_evidence'):
+        pdf.ln(5)
+        pdf.set_font('helvetica', 'B', 12)
+        pdf.set_text_color(26, 35, 126)
+        pdf.cell(0, 8, ' External Forensic Evidence:', ln=True)
+        pdf.set_font('helvetica', 'I', 10)
+        pdf.set_text_color(0, 0, 0)
+        pdf.multi_cell(0, 6, ai['forensic_evidence'])
     
     pdf.ln(5)
 

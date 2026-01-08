@@ -86,6 +86,54 @@
         margin-bottom: 2rem;
     }
 
+    .reachout-summary {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        padding: 1.5rem;
+        margin-bottom: 2rem;
+    }
+
+    .reachout-title {
+        font-size: 1.25rem;
+        margin: 0 0 0.75rem 0;
+        color: var(--text-primary);
+    }
+
+    .reachout-subtitle {
+        font-size: 0.875rem;
+        color: var(--text-secondary);
+        margin-bottom: 1rem;
+    }
+
+    .reachout-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+    }
+
+    .reachout-item {
+        display: flex;
+        gap: 0.75rem;
+        padding: 0.75rem 0;
+        border-top: 1px solid var(--border-color);
+    }
+
+    .reachout-item:first-child {
+        border-top: none;
+        padding-top: 0;
+    }
+
+    .reachout-label {
+        font-weight: 600;
+        color: var(--accent-color);
+        min-width: 140px;
+    }
+
+    .reachout-text {
+        color: var(--text-primary);
+    }
+
     .maturity-badge {
         display: inline-block;
         padding: 0.25rem 0.75rem;
@@ -209,6 +257,53 @@
     .severity-minor {
         background: #d97706;
         color: white;
+    }
+
+    .risk-badge {
+        display: inline-block;
+        padding: 0.25rem 0.5rem;
+        border-radius: 4px;
+        font-size: 0.7rem;
+        font-weight: 700;
+        margin-left: 0.5rem;
+    }
+
+    .risk-high {
+        background: #fee2e2;
+        color: #dc2626;
+        border: 1px solid #fca5a5;
+    }
+
+    .risk-low {
+        background: #f0fdf4;
+        color: #166534;
+        border: 1px solid #bbf7d0;
+    }
+
+    .forensic-card {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-left: 4px solid var(--accent-secondary);
+        border-radius: 0 8px 8px 0;
+        padding: 1.5rem;
+        margin-top: 1rem;
+    }
+
+    .compliance-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+        gap: 1rem;
+        margin-top: 1rem;
+    }
+
+    .compliance-card {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        padding: 1rem;
+        border-radius: 8px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
     }
 
     .prospect-card {
@@ -615,6 +710,55 @@
     </div>
     {% endif %}
 
+    <!-- Why Reach Out -->
+    {% set scan_data = report.scan_data or {} %}
+    <div class="reachout-summary">
+        <h2 class="reachout-title">Why Reach Out</h2>
+        <div class="reachout-subtitle">Clear, plain-language reasons to start a conversation.</div>
+        <ul class="reachout-list">
+            {% if report.ai_analysis.pain_point_analysis %}
+            <li class="reachout-item">
+                <span class="reachout-label">Pain signals</span>
+                <span class="reachout-text">{{ report.ai_analysis.pain_point_analysis }}</span>
+            </li>
+            {% endif %}
+            {% if scan_data.frustration_signals %}
+            <li class="reachout-item">
+                <span class="reachout-label">Frustration</span>
+                <span class="reachout-text">{{ scan_data.frustration_signals|length }} frustration signals found in recent commits.</span>
+            </li>
+            {% endif %}
+            {% if scan_data.competitor_detection and scan_data.competitor_detection.is_using_competitor %}
+            <li class="reachout-item">
+                <span class="reachout-label">Competitive swap</span>
+                <span class="reachout-text">Signals show they use another localization platform today (possible switch opportunity).</span>
+            </li>
+            {% endif %}
+            {% if scan_data.locale_inventory and scan_data.locale_inventory.language_count %}
+            <li class="reachout-item">
+                <span class="reachout-label">Active expansion</span>
+                <span class="reachout-text">Localization files detected across {{ scan_data.locale_inventory.language_count }} language(s).</span>
+            </li>
+            {% endif %}
+            {% if scan_data.is_greenfield %}
+            <li class="reachout-item">
+                <span class="reachout-label">Greenfield gap</span>
+                <span class="reachout-text">Mature repo footprint with no localization tooling in place.</span>
+            </li>
+            {% endif %}
+            {% if report.ai_analysis.key_findings %}
+            <li class="reachout-item">
+                <span class="reachout-label">Key evidence</span>
+                <span class="reachout-text">
+                    {% for finding in report.ai_analysis.key_findings[:3] %}
+                    {{ finding.finding }}{% if not loop.last %}; {% endif %}
+                    {% endfor %}
+                </span>
+            </li>
+            {% endif %}
+        </ul>
+    </div>
+
     <!-- Maturity & Opportunity -->
     <div class="section">
         <h2 class="section-title">Assessment</h2>
@@ -648,6 +792,21 @@
             </p>
             <p style="font-size: 0.875rem; margin: 0; font-style: italic;">
                 "{{ report.ai_analysis.semantic_analysis.description }}"
+            </p>
+        </div>
+        {% endif %}
+
+        {% if report.ai_analysis.compliance_risk %}
+        <div style="margin-top: 1rem; padding: 1rem; background: var(--bg-tertiary); border-radius: 8px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                <h3 style="margin: 0; font-size: 1rem;">Compliance Risk</h3>
+                <span
+                    class="severity-badge severity-{{ 'critical' if report.ai_analysis.compliance_risk.level == 'high' else 'minor' }}">
+                    {{ report.ai_analysis.compliance_risk.level }}
+                </span>
+            </div>
+            <p style="font-size: 0.875rem; margin: 0;">
+                {{ report.ai_analysis.compliance_risk.description }}
             </p>
         </div>
         {% endif %}
@@ -729,6 +888,42 @@
     <div class="section">
         <h2 class="section-title">Sales Narrative</h2>
         <div class="narrative-box">{{ report.ai_analysis.sales_narrative }}</div>
+    </div>
+    {% endif %}
+
+    <!-- Forensic Evidence -->
+    {% if report.ai_analysis.forensic_evidence %}
+    <div class="section">
+        <h2 class="section-title">Forensic Evidence</h2>
+        <div class="forensic-card">
+            <div style="font-size: 1.125rem; font-weight: 600; margin-bottom: 0.5rem;">External Intelligence</div>
+            <p style="margin: 0; line-height: 1.6;">{{ report.ai_analysis.forensic_evidence }}</p>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Risk Intelligence: Compliance -->
+    {% if report.scan_data.compliance_assets.detected_files %}
+    <div class="section">
+        <h2 class="section-title">Compliance Asset Intelligence</h2>
+        <p class="text-secondary">Detected legal and privacy assets across repositories.</p>
+        <div class="compliance-grid">
+            {% for asset in report.scan_data.compliance_assets.detected_files %}
+            <div class="compliance-card">
+                <div>
+                    <div style="font-weight: 600;">{{ asset.file }}</div>
+                    <div style="font-size: 0.75rem; color: var(--text-muted);">{{ asset.repo }}</div>
+                </div>
+                <div>
+                    {% if asset.is_localized %}
+                    <span class="risk-badge risk-low">LOCALIZED</span>
+                    {% else %}
+                    <span class="risk-badge risk-high">GLOBAL ONLY</span>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
     </div>
     {% endif %}
 
