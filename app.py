@@ -161,6 +161,9 @@ def view_report(report_id: int):
 def search():
     """Search for a company - redirects to scan page."""
     company = request.args.get('q', '').strip()
+    # Sanitize input: remove dangerous characters, keep alphanumeric, dots, dashes, underscores
+    company = "".join(c for c in company if c.isalnum() or c in ".-_").strip()
+    
     if not company:
         return redirect(url_for('index'))
     return redirect(url_for('scan_page', company=company))
@@ -198,7 +201,9 @@ def page_not_found(e):
 @app.errorhandler(500)
 def internal_error(e):
     """Handle 500 errors."""
-    return render_template('error.html', message='Internal server error'), 500
+    # Extract the original exception message if available
+    error_msg = str(e.original_exception) if hasattr(e, 'original_exception') else str(e)
+    return render_template('error.html', message=f'Internal server error: {error_msg}'), 500
 
 
 if __name__ == '__main__':

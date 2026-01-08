@@ -573,9 +573,17 @@
         font-weight: 700;
     }
 
-    .confidence-high { color: #22c55e; }
-    .confidence-medium { color: #f59e0b; }
-    .confidence-low { color: #ef4444; }
+    .confidence-high {
+        color: #22c55e;
+    }
+
+    .confidence-medium {
+        color: #f59e0b;
+    }
+
+    .confidence-low {
+        color: #ef4444;
+    }
 
     .confidence-bar {
         height: 8px;
@@ -591,9 +599,17 @@
         transition: width 0.5s ease;
     }
 
-    .confidence-fill.high { background: linear-gradient(90deg, #22c55e, #10b981); }
-    .confidence-fill.medium { background: linear-gradient(90deg, #f59e0b, #eab308); }
-    .confidence-fill.low { background: linear-gradient(90deg, #ef4444, #f97316); }
+    .confidence-fill.high {
+        background: linear-gradient(90deg, #22c55e, #10b981);
+    }
+
+    .confidence-fill.medium {
+        background: linear-gradient(90deg, #f59e0b, #eab308);
+    }
+
+    .confidence-fill.low {
+        background: linear-gradient(90deg, #ef4444, #f97316);
+    }
 
     .confidence-label {
         font-size: 0.875rem;
@@ -760,19 +776,22 @@
             {% if scan_data.frustration_signals %}
             <li class="reachout-item">
                 <span class="reachout-label">Frustration</span>
-                <span class="reachout-text">{{ scan_data.frustration_signals|length }} frustration signals found in recent commits.</span>
+                <span class="reachout-text">{{ scan_data.frustration_signals|length }} frustration signals found in
+                    recent commits.</span>
             </li>
             {% endif %}
             {% if scan_data.competitor_detection and scan_data.competitor_detection.is_using_competitor %}
             <li class="reachout-item">
                 <span class="reachout-label">Competitive swap</span>
-                <span class="reachout-text">Signals show they use another localization platform today (possible switch opportunity).</span>
+                <span class="reachout-text">Signals show they use another localization platform today (possible switch
+                    opportunity).</span>
             </li>
             {% endif %}
             {% if scan_data.locale_inventory and scan_data.locale_inventory.language_count %}
             <li class="reachout-item">
                 <span class="reachout-label">Active expansion</span>
-                <span class="reachout-text">Localization files detected across {{ scan_data.locale_inventory.language_count }} language(s).</span>
+                <span class="reachout-text">Localization files detected across {{
+                    scan_data.locale_inventory.language_count }} language(s).</span>
             </li>
             {% endif %}
             {% if scan_data.is_greenfield %}
@@ -797,6 +816,15 @@
     <!-- Maturity & Opportunity -->
     <div class="section">
         <h2 class="section-title">Assessment</h2>
+
+        {% set opp_type = report.ai_analysis.opportunity_type or 'unknown' %}
+        <p>
+            <strong>Opportunity Type:</strong>
+            <span
+                class="maturity-badge maturity-{{ 'mature' if opp_type in ['greenfield', 'pain_driven', 'competitor_displacement'] else 'developing' }}">
+                {{ opp_type|replace('_', ' ')|title }}
+            </span>
+        </p>
 
         {% set maturity = report.ai_analysis.localization_maturity or 'unknown' %}
         <p>
@@ -854,14 +882,17 @@
         <div class="confidence-header">
             <div>
                 <h3 style="margin: 0 0 0.25rem 0;">Lead Confidence Score</h3>
-                <span class="confidence-label">Calculated from {{ report.signals_found }} signals across {{ report.repos_scanned }} repositories</span>
+                <span class="confidence-label">Calculated from {{ report.signals_found }} signals across {{
+                    report.repos_scanned }} repositories</span>
             </div>
-            <span class="confidence-value {% if confidence >= 70 %}confidence-high{% elif confidence >= 40 %}confidence-medium{% else %}confidence-low{% endif %}">
+            <span
+                class="confidence-value {% if confidence >= 70 %}confidence-high{% elif confidence >= 40 %}confidence-medium{% else %}confidence-low{% endif %}">
                 {{ confidence }}/100
             </span>
         </div>
         <div class="confidence-bar">
-            <div class="confidence-fill {% if confidence >= 70 %}high{% elif confidence >= 40 %}medium{% else %}low{% endif %}" style="width: {{ confidence }}%"></div>
+            <div class="confidence-fill {% if confidence >= 70 %}high{% elif confidence >= 40 %}medium{% else %}low{% endif %}"
+                style="width: {{ confidence }}%"></div>
         </div>
         <div class="confidence-label">
             {% if confidence >= 70 %}
