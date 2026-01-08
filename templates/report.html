@@ -422,6 +422,137 @@
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
     }
 
+    /* Confidence Score */
+    .confidence-score-section {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        padding: 1.5rem;
+        margin-bottom: 2rem;
+    }
+
+    .confidence-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1rem;
+    }
+
+    .confidence-value {
+        font-size: 2.5rem;
+        font-weight: 700;
+    }
+
+    .confidence-high { color: #22c55e; }
+    .confidence-medium { color: #f59e0b; }
+    .confidence-low { color: #ef4444; }
+
+    .confidence-bar {
+        height: 8px;
+        background: var(--bg-tertiary);
+        border-radius: 4px;
+        overflow: hidden;
+        margin-bottom: 0.5rem;
+    }
+
+    .confidence-fill {
+        height: 100%;
+        border-radius: 4px;
+        transition: width 0.5s ease;
+    }
+
+    .confidence-fill.high { background: linear-gradient(90deg, #22c55e, #10b981); }
+    .confidence-fill.medium { background: linear-gradient(90deg, #f59e0b, #eab308); }
+    .confidence-fill.low { background: linear-gradient(90deg, #ef4444, #f97316); }
+
+    .confidence-label {
+        font-size: 0.875rem;
+        color: var(--text-secondary);
+    }
+
+    /* Email Draft Section */
+    .email-draft-section {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        overflow: hidden;
+        margin-bottom: 2rem;
+    }
+
+    .email-draft-header {
+        background: linear-gradient(135deg, var(--accent-color) 0%, var(--accent-secondary) 100%);
+        color: white;
+        padding: 1rem 1.5rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .email-draft-header h3 {
+        margin: 0;
+        font-size: 1.125rem;
+    }
+
+    .copy-email-btn {
+        background: white;
+        color: var(--accent-color);
+        border: none;
+        padding: 0.5rem 1rem;
+        border-radius: 6px;
+        font-weight: 600;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        transition: all 0.2s;
+    }
+
+    .copy-email-btn:hover {
+        transform: scale(1.05);
+    }
+
+    .copy-email-btn.copied {
+        background: #22c55e;
+        color: white;
+    }
+
+    .email-draft-content {
+        padding: 1.5rem;
+    }
+
+    .email-subject {
+        font-weight: 600;
+        margin-bottom: 1rem;
+        padding: 0.75rem 1rem;
+        background: var(--bg-tertiary);
+        border-radius: 6px;
+        border-left: 3px solid var(--accent-color);
+    }
+
+    .email-subject-label {
+        font-size: 0.75rem;
+        color: var(--text-secondary);
+        text-transform: uppercase;
+        display: block;
+        margin-bottom: 0.25rem;
+    }
+
+    .email-body {
+        line-height: 1.8;
+        padding: 1rem;
+        background: var(--bg-tertiary);
+        border-radius: 6px;
+        white-space: pre-line;
+    }
+
+    .email-body-label {
+        font-size: 0.75rem;
+        color: var(--text-secondary);
+        text-transform: uppercase;
+        display: block;
+        margin-bottom: 0.5rem;
+    }
+
     @media print {
 
         .navbar,
@@ -521,6 +652,57 @@
         </div>
         {% endif %}
     </div>
+
+    <!-- Confidence Score -->
+    {% set confidence = report.scan_data.confidence_score or 0 %}
+    {% if confidence > 0 %}
+    <div class="confidence-score-section">
+        <div class="confidence-header">
+            <div>
+                <h3 style="margin: 0 0 0.25rem 0;">Lead Confidence Score</h3>
+                <span class="confidence-label">Calculated from {{ report.signals_found }} signals across {{ report.repos_scanned }} repositories</span>
+            </div>
+            <span class="confidence-value {% if confidence >= 70 %}confidence-high{% elif confidence >= 40 %}confidence-medium{% else %}confidence-low{% endif %}">
+                {{ confidence }}/100
+            </span>
+        </div>
+        <div class="confidence-bar">
+            <div class="confidence-fill {% if confidence >= 70 %}high{% elif confidence >= 40 %}medium{% else %}low{% endif %}" style="width: {{ confidence }}%"></div>
+        </div>
+        <div class="confidence-label">
+            {% if confidence >= 70 %}
+            High probability lead - Strong localization signals detected
+            {% elif confidence >= 40 %}
+            Medium probability lead - Some localization activity detected
+            {% else %}
+            Low probability lead - Limited signals, may require more research
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Email Draft (One-Click Cold Email Generator) -->
+    {% if report.ai_analysis.email_draft %}
+    <div class="email-draft-section">
+        <div class="email-draft-header">
+            <h3>Ready-to-Send Cold Email</h3>
+            <button class="copy-email-btn" onclick="copyEmailDraft(this)" id="copyEmailBtn">
+                <span>📋</span>
+                <span class="btn-text">Copy Email</span>
+            </button>
+        </div>
+        <div class="email-draft-content">
+            <div class="email-subject">
+                <span class="email-subject-label">Subject Line</span>
+                <span id="emailSubject">{{ report.ai_analysis.email_draft.subject }}</span>
+            </div>
+            <div>
+                <span class="email-body-label">Email Body</span>
+                <div class="email-body" id="emailBody">{{ report.ai_analysis.email_draft.body }}</div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
 
     <!-- Key Findings -->
     {% if report.ai_analysis.key_findings %}
@@ -689,4 +871,30 @@
 <button class="print-button" onclick="window.print()" title="Print Report">
     &#x1F5A8;
 </button>
+
+<script>
+function copyEmailDraft(button) {
+    const subject = document.getElementById('emailSubject').textContent;
+    const body = document.getElementById('emailBody').textContent;
+
+    const emailText = `Subject: ${subject}\n\n${body}`;
+
+    navigator.clipboard.writeText(emailText).then(() => {
+        // Update button state
+        button.classList.add('copied');
+        button.querySelector('.btn-text').textContent = 'Copied!';
+        button.querySelector('span:first-child').textContent = '✓';
+
+        // Reset after 2 seconds
+        setTimeout(() => {
+            button.classList.remove('copied');
+            button.querySelector('.btn-text').textContent = 'Copy Email';
+            button.querySelector('span:first-child').textContent = '📋';
+        }, 2000);
+    }).catch(err => {
+        console.error('Failed to copy:', err);
+        alert('Failed to copy email. Please select and copy manually.');
+    });
+}
+</script>
 {% endblock %}
