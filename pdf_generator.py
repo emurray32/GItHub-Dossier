@@ -189,6 +189,51 @@ def generate_report_pdf(report, output_path):
             pdf.ln(2)
         pdf.ln(5)
 
+    # 5b. Outreach Suggestions
+    if ai.get('outreach_suggestions'):
+        pdf.set_font('helvetica', 'B', 14)
+        pdf.set_text_color(26, 35, 126)
+        pdf.cell(0, 10, ' Outreach Suggestions', ln=True)
+        pdf.ln(2)
+        for index, suggestion in enumerate(ai['outreach_suggestions'][:10], start=1):
+            pdf.set_font('helvetica', 'B', 11)
+            pdf.set_text_color(0, 0, 0)
+            pdf.cell(0, 6, f"{index}. Why this account", ln=True)
+            pdf.set_font('helvetica', '', 10)
+            pdf.multi_cell(0, 5, suggestion.get('why_account', ''))
+
+            pdf.set_font('helvetica', 'B', 10)
+            pdf.cell(0, 5, "Why now", ln=True)
+            pdf.set_font('helvetica', '', 10)
+            pdf.multi_cell(0, 5, suggestion.get('why_now', ''))
+
+            pdf.set_font('helvetica', 'B', 10)
+            pdf.cell(0, 5, "Who to reach", ln=True)
+            pdf.set_font('helvetica', '', 10)
+            pdf.multi_cell(0, 5, suggestion.get('who_to_reach', ''))
+            if suggestion.get('who_evidence'):
+                pdf.set_font('helvetica', 'I', 9)
+                pdf.set_text_color(100, 100, 100)
+                pdf.multi_cell(0, 4, suggestion.get('who_evidence', ''))
+                pdf.set_text_color(0, 0, 0)
+
+            pdf.set_font('helvetica', 'B', 10)
+            pdf.cell(0, 5, "Message hook", ln=True)
+            pdf.set_font('helvetica', '', 10)
+            pdf.multi_cell(0, 5, suggestion.get('message_hook', ''))
+
+            message_hooks = suggestion.get('message_hooks', {})
+            if message_hooks:
+                pdf.set_font('helvetica', 'B', 10)
+                pdf.cell(0, 5, "Persona hooks", ln=True)
+                pdf.set_font('helvetica', '', 9)
+                for label, hook in message_hooks.items():
+                    if hook:
+                        pretty_label = label.capitalize()
+                        pdf.multi_cell(0, 4, f"{pretty_label}: {hook}")
+            pdf.ln(2)
+        pdf.ln(5)
+
     # 6. Email Draft (New Page if needed)
     if ai.get('email_draft'):
         pdf.add_page()

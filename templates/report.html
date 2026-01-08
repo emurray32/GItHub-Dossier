@@ -431,6 +431,56 @@
         line-height: 1.6;
     }
 
+    .suggestions-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 1rem;
+    }
+
+    .suggestion-card {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        padding: 1rem 1.25rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+    }
+
+    .suggestion-row {
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+    }
+
+    .suggestion-label {
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--text-muted);
+        font-weight: 600;
+    }
+
+    .suggestion-text {
+        color: var(--text-primary);
+        line-height: 1.5;
+    }
+
+    .suggestion-meta {
+        font-size: 0.8rem;
+        color: var(--text-secondary);
+    }
+
+    .suggestion-hooks {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        display: grid;
+        gap: 0.35rem;
+        color: var(--text-primary);
+        font-size: 0.9rem;
+    }
+
     .risk-list,
     .next-steps-list {
         list-style: none;
@@ -932,6 +982,55 @@
     <div class="section">
         <h2 class="section-title">Recommended Approach</h2>
         <div class="narrative-box">{{ report.ai_analysis.recommended_approach }}</div>
+    </div>
+    {% endif %}
+
+    <!-- Outreach Suggestions -->
+    {% if report.ai_analysis.outreach_suggestions %}
+    <div class="section">
+        <h2 class="section-title">Outreach Suggestions</h2>
+        <p class="text-secondary">10 tactical angles for who to reach, why now, and what to say.</p>
+        <div class="suggestions-grid">
+            {% for suggestion in report.ai_analysis.outreach_suggestions %}
+            <div class="suggestion-card">
+                <div class="suggestion-row">
+                    <span class="suggestion-label">Why this account</span>
+                    <span class="suggestion-text">{{ suggestion.why_account }}</span>
+                </div>
+                <div class="suggestion-row">
+                    <span class="suggestion-label">Why now</span>
+                    <span class="suggestion-text">{{ suggestion.why_now }}</span>
+                </div>
+                <div class="suggestion-row">
+                    <span class="suggestion-label">Who to reach</span>
+                    <span class="suggestion-text">{{ suggestion.who_to_reach }}</span>
+                    {% if suggestion.who_evidence %}
+                    <span class="suggestion-meta">{{ suggestion.who_evidence }}</span>
+                    {% endif %}
+                </div>
+                <div class="suggestion-row">
+                    <span class="suggestion-label">Message hook</span>
+                    <span class="suggestion-text">{{ suggestion.message_hook }}</span>
+                </div>
+                {% if suggestion.message_hooks %}
+                <div class="suggestion-row">
+                    <span class="suggestion-label">Persona hooks</span>
+                    <ul class="suggestion-hooks">
+                        {% if suggestion.message_hooks.engineering %}
+                        <li><strong>Engineering:</strong> {{ suggestion.message_hooks.engineering }}</li>
+                        {% endif %}
+                        {% if suggestion.message_hooks.product %}
+                        <li><strong>Product:</strong> {{ suggestion.message_hooks.product }}</li>
+                        {% endif %}
+                        {% if suggestion.message_hooks.localization %}
+                        <li><strong>Localization:</strong> {{ suggestion.message_hooks.localization }}</li>
+                        {% endif %}
+                    </ul>
+                </div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
     </div>
     {% endif %}
 
