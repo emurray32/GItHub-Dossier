@@ -49,10 +49,19 @@ class Config:
         'rtl', 'ltr', 'hreflang', 'intl'
     ]
 
-    # Noise filters
+    # Keywords that indicate high-value technical pain (The "Why")
+    PAIN_KEYWORDS = [
+        'refactor', 'migrate', 'rewrite', 'broken', 'fix', 
+        'sync', 'missing', 'crash', 'fail', 'manual', 'script',
+        'deprecated', 'legacy', 'debt', 'slow', 'timeout'
+    ]
+
+    # Noise filters to ignore low-value activity
     NOISE_PATTERNS = [
         'language version', 'kotlin version', 'java version',
-        'bump version', 'update version', 'gradle version'
+        'bump version', 'update version', 'gradle version',
+        'typo', 'grammar', 'spelling', 'readme', 'logo', 'icon',
+        'formatting', 'prettier', 'lint', 'minor', 'style'
     ]
 
     # ============================================================
