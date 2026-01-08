@@ -5,12 +5,14 @@ A Flask application for analyzing GitHub organizations for localization signals.
 """
 import json
 import time
+import os
 from datetime import datetime
-from flask import Flask, render_template, Response, request, jsonify, redirect, url_for, stream_with_context
+from flask import Flask, render_template, Response, request, jsonify, redirect, url_for, stream_with_context, send_file
 from config import Config
 from database import save_report, get_report, get_recent_reports, search_reports
 from monitors.scanner import deep_scan_generator
 from ai_summary import generate_analysis
+from pdf_generator import generate_report_pdf
 
 
 app = Flask(__name__)
@@ -118,6 +120,32 @@ def stream_scan(company: str):
             'Access-Control-Allow-Origin': '*'
         }
     )
+
+
+@app.route('/report/<int:report_id>/pdf')
+def download_pdf(report_id: int):
+    """Generate and download a PDF report."""
+    report = get_report(report_id)
+    if not report:
+        return render_template('error.html', message='Report not found'), 404
+        
+    # Create temp directory for PDFs if it doesn't exist
+    pdf_dir = os.path.join(app.root_path, 'static', 'pdfs')
+    os.makedirs(pdf_dir, exist_ok=True)
+    
+    filename = f"LeadMachine_Report_{report['github_org']}_{report_id}.pdf"
+    filepath = os.path.join(pdf_dir, filename)
+    
+    try:
+        generate_report_pdf(report, filepath)
+        return send_file(
+            filepath,
+            as_attachment=True,
+            download_name=filename,
+            mimetype='application/pdf'
+        )
+    except Exception as e:
+        return render_template('error.html', message=f'PDF Generation Failed: {str(e)}'), 500
 
 
 @app.route('/report/<int:report_id>')

@@ -84,7 +84,7 @@ def discover_organization(company_name: str) -> Generator[str, None, Optional[di
 
 
 def _try_direct_lookup(company_name: str) -> Optional[dict]:
-    """Try to find org by direct name lookup."""
+    """Try to find org by direct name lookup, preferring those with repositories."""
     # Normalize company name for URL
     normalized = company_name.lower().replace(' ', '').replace('-', '').replace('_', '')
 
@@ -92,24 +92,39 @@ def _try_direct_lookup(company_name: str) -> Optional[dict]:
     variations = [
         company_name,
         normalized,
+        f"{normalized}labs",
+        f"{normalized}engineering",
         company_name.lower().replace(' ', '-'),
         company_name.lower().replace(' ', '_'),
     ]
 
+    matches = []
     for variant in variations:
         try:
             url = f"{Config.GITHUB_API_BASE}/orgs/{variant}"
             response = requests.get(
                 url,
                 headers=get_github_headers(),
-                timeout=10
+                timeout=5
             )
             if response.status_code == 200:
-                return response.json()
+                org_data = response.json()
+                if org_data.get('public_repos', 0) > 0:
+                    # Found a good one, can stop early for high repo count
+                    if org_data.get('public_repos', 0) > 10:
+                        return org_data
+                    matches.append(org_data)
+                else:
+                    # Keep as fallback but keep looking
+                    matches.append(org_data)
         except requests.RequestException:
             continue
 
-    return None
+    if not matches:
+        return None
+        
+    # Pick the one with the most repos
+    return max(matches, key=lambda x: x.get('public_repos', 0))
 
 
 def _get_org_details(org_login: str) -> Optional[dict]:
@@ -129,25 +144,39 @@ def _get_org_details(org_login: str) -> Optional[dict]:
 
 
 def _find_best_match(company_name: str, items: list) -> Optional[dict]:
-    """Find the best matching organization from search results."""
+    """Find the best matching organization from search results, considering repo count."""
     if not items:
         return None
 
     company_lower = company_name.lower()
+    matches_with_details = []
 
-    # Exact match first
-    for item in items:
-        if item['login'].lower() == company_lower:
-            return item
+    # Fetch details for the first few items to see repo counts
+    for item in items[:5]:
+        details = _get_org_details(item['login'])
+        if details:
+            matches_with_details.append(details)
+        else:
+            matches_with_details.append(item)
 
-    # Contains match
-    for item in items:
-        login_lower = item['login'].lower()
+    # 1. Exact match with repos
+    for org in matches_with_details:
+        if org['login'].lower() == company_lower and org.get('public_repos', 0) > 0:
+            return org
+
+    # 2. Match containing name with most repos
+    best_org = None
+    max_repos = -1
+    
+    for org in matches_with_details:
+        login_lower = org['login'].lower()
         if company_lower in login_lower or login_lower in company_lower:
-            return item
+            repos = org.get('public_repos', 0)
+            if repos > max_repos:
+                max_repos = repos
+                best_org = org
 
-    # Return first result as fallback
-    return items[0]
+    return best_org or matches_with_details[0]
 
 
 def get_organization_repos(org_login: str) -> Generator[str, None, list]:

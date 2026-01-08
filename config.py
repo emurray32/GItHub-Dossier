@@ -54,3 +54,114 @@ class Config:
         'language version', 'kotlin version', 'java version',
         'bump version', 'update version', 'gradle version'
     ]
+
+    # ============================================================
+    # HIGH-INTENT SALES INTELLIGENCE CONFIGURATION
+    # ============================================================
+
+    # Dependency files to scan (top 5 repos only for speed)
+    DEPENDENCY_FILES = [
+        'package.json', 'Gemfile', 'requirements.txt', 'go.mod',
+        'mix.exs', 'composer.json', 'pom.xml', 'build.gradle'
+    ]
+
+    # i18n libraries with framework mapping (for tech_stack_hook)
+    I18N_LIBRARIES = {
+        'react-intl': 'React',
+        'i18next': 'JS/React',
+        'react-i18next': 'React',
+        'vue-i18n': 'Vue',
+        'ngx-translate': 'Angular',
+        'formatjs': 'JS/React',
+        'lingui': 'React',
+        '@lingui/core': 'React',
+        'django-modeltranslation': 'Django',
+        'django-parler': 'Django',
+        'laravel-localization': 'Laravel',
+        'go-i18n': 'Go',
+        'ruby-i18n': 'Ruby',
+        'i18n-js': 'Ruby/Rails',
+        'next-intl': 'Next.js',
+        'next-i18next': 'Next.js',
+        'typesafe-i18n': 'TypeScript',
+        'fluent': 'Mozilla Fluent',
+        'messageformat': 'JS',
+        'polyglot': 'JS',
+        'ttag': 'JS',
+        'gettext': 'Python/C',
+    }
+
+    # Competitor config files (HIGH INTENT - they're already using a TMS!)
+    COMPETITOR_CONFIGS = [
+        'lokalise.yaml', 'lokalise.yml', '.lokalise.yml',
+        'crowdin.yml', 'crowdin.yaml', '.crowdin.yml',
+        'smartling-config.json', '.smartling.json',
+        '.transifexrc', 'transifex.yml', '.tx/config',
+        'phraseapp.yml', '.phraseapp.yml', 'phrase.yml',
+        'locize.json', '.locize',
+        'applanga.yml', 'applanga.json',
+    ]
+
+    # TMS competitors (for detection in dependencies)
+    TMS_COMPETITORS = [
+        'transifex', 'smartling', 'phrase', 'lokalise', 'crowdin',
+        'weblate', 'pontoon', 'locize', 'memsource', 'memoq',
+        'applanga', 'poeditor', 'oneskyapp', 'loco', 'tolgee'
+    ]
+
+    # Frustration keywords regex (for mining pain points from commits)
+    # Pattern: (action word) + up to 20 chars + (localization term)
+    FRUSTRATION_REGEX = r'(fix|broken|missing|sync|conflict|manual|update|revert|hotfix|urgent).{0,20}(translation|locale|string|key|i18n|l10n|locali[sz]ation)'
+
+    # Bot accounts to exclude from developer-as-translator metric
+    BOT_ACCOUNTS = [
+        'dependabot', 'dependabot[bot]', 'github-actions', 'github-actions[bot]',
+        'renovate', 'renovate[bot]', 'semantic-release-bot', 'greenkeeper',
+        'snyk-bot', 'codecov', 'codecov[bot]', 'vercel[bot]', 'netlify[bot]',
+        'crowdin-bot', 'lokalise-bot', 'transifex-bot', 'phrase-bot',
+        'weblate', 'l10n-bot', 'translation-bot', 'bot'
+    ]
+
+    # Common locale directory paths for inventory scan
+    LOCALE_PATHS = [
+        'locales', 'locale', 'i18n', 'translations', 'lang',
+        'languages', 'l10n', 'src/locales', 'public/locales',
+        'assets/locales', 'resources/lang', 'src/i18n', 'app/locales',
+        'lib/locales', 'config/locales', 'static/locales'
+    ]
+
+    # I18n signal patterns (file paths)
+    I18N_FILE_PATTERNS = [
+        'locales/', 'locale/', 'i18n/', 'translations/', 'lang/',
+        'languages/', 'l10n/', '.lproj/', 'strings/', 'messages/'
+    ]
+
+    # Locale code to region mapping for geo-spatial inference
+    LOCALE_TO_REGION = {
+        # LATAM
+        'mx': 'Mexico (LATAM)', 'br': 'Brazil (LATAM)', 'ar': 'Argentina (LATAM)',
+        'co': 'Colombia (LATAM)', 'cl': 'Chile (LATAM)', 'pe': 'Peru (LATAM)',
+        # DACH
+        'de': 'Germany (DACH)', 'at': 'Austria (DACH)', 'ch': 'Switzerland (DACH)',
+        # Europe
+        'fr': 'France', 'es': 'Spain', 'pt': 'Portugal', 'it': 'Italy',
+        'nl': 'Netherlands', 'pl': 'Poland', 'se': 'Sweden', 'no': 'Norway',
+        'dk': 'Denmark', 'fi': 'Finland',
+        # APAC
+        'jp': 'Japan (APAC)', 'kr': 'Korea (APAC)', 'cn': 'China (APAC)',
+        'tw': 'Taiwan (APAC)', 'hk': 'Hong Kong (APAC)', 'sg': 'Singapore (APAC)',
+        'in': 'India (APAC)', 'id': 'Indonesia (APAC)', 'th': 'Thailand (APAC)',
+        'vn': 'Vietnam (APAC)', 'au': 'Australia (APAC)', 'nz': 'New Zealand (APAC)',
+        # MENA
+        'sa': 'Saudi Arabia (MENA)', 'ae': 'UAE (MENA)', 'eg': 'Egypt (MENA)',
+        'il': 'Israel (MENA)', 'tr': 'Turkey (MENA)',
+        # Other
+        'ru': 'Russia', 'ua': 'Ukraine', 'za': 'South Africa', 'ng': 'Nigeria', 'ke': 'Kenya',
+    }
+
+    # Greenfield detection threshold
+    GREENFIELD_STAR_THRESHOLD = 1000
+
+    # Reviewer bottleneck threshold (percentage)
+    REVIEWER_BOTTLENECK_THRESHOLD = 0.80  # 80%
+

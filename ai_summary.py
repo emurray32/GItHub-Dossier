@@ -1,7 +1,10 @@
 """
-AI Summary Module using Google Gemini.
+AI Summary Module for High-Intent Sales Intelligence.
 
-Generates strategic localization analysis from scan data.
+Generates actionable sales assets including:
+- Pain Point Analysis
+- Tech Stack Hooks
+- Ready-to-send Email Drafts
 """
 import json
 from typing import Generator
@@ -16,7 +19,7 @@ except ImportError:
 
 def generate_analysis(scan_data: dict) -> Generator[str, None, dict]:
     """
-    Generate AI-powered strategic analysis of scan data.
+    Generate AI-powered sales intelligence from scan data.
 
     Args:
         scan_data: The complete scan results dictionary.
@@ -25,9 +28,9 @@ def generate_analysis(scan_data: dict) -> Generator[str, None, dict]:
         SSE-formatted progress messages.
 
     Returns:
-        Analysis result dictionary.
+        Analysis result dictionary with sales assets.
     """
-    yield _sse_log("Initializing AI analysis engine...")
+    yield _sse_log("Initializing AI Sales Intelligence Engine...")
 
     if not GENAI_AVAILABLE:
         yield _sse_log("Warning: google-genai not installed, using fallback analysis")
@@ -41,10 +44,10 @@ def generate_analysis(scan_data: dict) -> Generator[str, None, dict]:
         yield _sse_data('ANALYSIS_COMPLETE', analysis)
         return analysis
 
-    yield _sse_log("Preparing data for Gemini analysis...")
+    yield _sse_log("Preparing high-intent data for Gemini...")
 
     # Build prompt
-    prompt = _build_analysis_prompt(scan_data)
+    prompt = _build_sales_intelligence_prompt(scan_data)
 
     yield _sse_log("Sending to Gemini 2.5 Flash...")
 
@@ -60,7 +63,7 @@ def generate_analysis(scan_data: dict) -> Generator[str, None, dict]:
 
         analysis = _parse_gemini_response(response.text, scan_data)
 
-        yield _sse_log("AI analysis complete")
+        yield _sse_log("✅ AI Sales Intelligence Complete")
         yield _sse_data('ANALYSIS_COMPLETE', analysis)
 
         return analysis
@@ -73,75 +76,160 @@ def generate_analysis(scan_data: dict) -> Generator[str, None, dict]:
         return analysis
 
 
-def _build_analysis_prompt(scan_data: dict) -> str:
-    """Build the analysis prompt for Gemini."""
+def _build_sales_intelligence_prompt(scan_data: dict) -> str:
+    """Build the sales intelligence prompt for Gemini."""
     company = scan_data.get('company_name', 'Unknown')
     org_name = scan_data.get('org_name', scan_data.get('org_login', ''))
+    
+    # Extract high-intent data
+    tech_stack = scan_data.get('tech_stack', {})
+    competitor = scan_data.get('competitor_detection', {})
+    frustration = scan_data.get('frustration_signals', [])
+    dev_metric = scan_data.get('developer_translator_metric', {})
+    bottleneck = scan_data.get('reviewer_bottleneck', {})
+    locale_inventory = scan_data.get('locale_inventory', {})
+    market_insights = scan_data.get('market_insights', {})
+    is_greenfield = scan_data.get('is_greenfield', False)
+    total_stars = scan_data.get('total_stars', 0)
     signals = scan_data.get('signals', [])
-    repos_scanned = scan_data.get('repos_scanned', [])
 
-    # Format signals for prompt
-    signals_text = ""
-    if signals:
-        for i, signal in enumerate(signals[:30], 1):  # Limit to top 30
-            signal_type = signal.get('type', 'unknown')
-            repo = signal.get('repo', 'unknown')
+    # Format tech stack
+    tech_stack_text = "None detected"
+    if tech_stack.get('i18n_libraries'):
+        libs = tech_stack['i18n_libraries']
+        framework = tech_stack.get('primary_framework', 'Unknown')
+        tech_stack_text = f"Libraries: {', '.join(libs)} | Framework: {framework}"
 
-            if signal_type == 'commit_message':
-                signals_text += f"{i}. [Commit] {repo}: {signal.get('message', '')[:100]}\n"
-            elif signal_type == 'pull_request':
-                signals_text += f"{i}. [PR #{signal.get('number')}] {repo}: {signal.get('title', '')}\n"
-            elif signal_type == 'file_change':
-                signals_text += f"{i}. [File] {repo}: {signal.get('file', '')} ({signal.get('status', '')})\n"
-            elif signal_type == 'hreflang':
-                signals_text += f"{i}. [hreflang] {repo}: {signal.get('file', '')}\n"
-    else:
-        signals_text = "No explicit i18n signals detected in recent activity.\n"
+    # Format competitor detection
+    competitor_text = "No competitor TMS detected"
+    if competitor.get('is_using_competitor'):
+        configs = [c['file'] for c in competitor.get('config_files_found', [])]
+        deps = competitor.get('tms_in_dependencies', [])
+        competitor_text = f"USING COMPETITOR: Configs={configs}, Deps={deps}"
 
-    # Format repos
-    repos_text = ""
-    for repo in repos_scanned[:10]:
-        repos_text += f"- {repo.get('name')}: {repo.get('commits_analyzed', 0)} commits, {repo.get('prs_analyzed', 0)} PRs analyzed\n"
+    # Format frustration signals
+    frustration_text = "No frustration signals"
+    if frustration:
+        pain_samples = [f"- \"{f['message'][:80]}...\" ({f['pain_indicator']})" for f in frustration[:5]]
+        frustration_text = f"{len(frustration)} frustration signals detected:\n" + "\n".join(pain_samples)
 
-    prompt = f"""You are a Senior Localization Strategist and Sales Intelligence Analyst.
-Analyze the following deep-dive GitHub data for {company} ({org_name}) and generate a comprehensive strategic sales narrative.
+    # Format developer-translator metric
+    dev_metric_text = "No data"
+    if dev_metric.get('total', 0) > 0:
+        ratio = dev_metric.get('human_percentage', '0%')
+        is_pain = "⚡ HIGH PAIN" if dev_metric.get('is_high_pain') else "Normal"
+        dev_metric_text = f"{ratio} of translation edits by humans ({dev_metric['human_edits']}/{dev_metric['total']}) - {is_pain}"
 
-## Scan Summary
-- Organization: {org_name}
-- Total Repositories Scanned: {len(repos_scanned)}
-- Total Commits Analyzed: {scan_data.get('total_commits_analyzed', 0)}
-- Total PRs Analyzed: {scan_data.get('total_prs_analyzed', 0)}
-- I18n Signals Detected: {len(signals)}
+    # Format bottleneck
+    bottleneck_text = "No bottleneck detected"
+    if bottleneck.get('is_bottleneck'):
+        bottleneck_text = f"🚨 BOTTLENECK: @{bottleneck['bottleneck_user']} reviews {bottleneck['top_reviewer_ratio']*100:.0f}% of i18n PRs"
 
-## Repositories Analyzed
-{repos_text}
+    # Format locale inventory
+    inventory_text = "No locale files detected"
+    if locale_inventory.get('locales_detected'):
+        locales = locale_inventory['locales_detected'][:10]
+        inventory_text = f"{len(locales)} languages: {', '.join(locales)}"
 
-## I18n/Localization Signals Detected
-{signals_text}
+    # Format market insights
+    market_text = "No market data"
+    if market_insights.get('primary_market'):
+        market_text = f"Primary: {market_insights['primary_market']} | {market_insights.get('narrative', '')}"
 
-## Your Task
-Generate a detailed strategic analysis in the following JSON format:
+    # Greenfield section
+    greenfield_section = ""
+    if is_greenfield:
+        greenfield_section = f"""
+## 🎯 GREENFIELD OPPORTUNITY
+- Total Stars: {total_stars}+
+- NO i18n libraries detected
+- NO locale files found
+- NO competitor TMS detected
+- This is a mature codebase with high velocity but NO localization infrastructure
+- They are incurring technical debt that will compound as they scale internationally
+"""
+
+    # Format contributors
+    contributors_text = "No human contributors detected"
+    if scan_data.get('contributors'):
+        contributors_text = "Top i18n Contributors:\n"
+        for login, data in scan_data['contributors'].items():
+            contributors_text += f"- @{login} ({data.get('name') or 'No name'}): bio=\"{data.get('bio') or 'No bio'}\", company=\"{data.get('company') or 'N/A'}\", i18n_commits={data['i18n_commits']}, frustration_count={data['frustration_count']}\n"
+
+    prompt = f"""You are a Senior Sales Intelligence Analyst specializing in localization/i18n solutions.
+Analyze this GitHub intelligence data for {company} and generate ACTIONABLE SALES ASSETS.
+
+## COMPANY INTELLIGENCE
+- Company: {company} ({org_name})
+- Total Stars: {total_stars}
+- Repos Scanned: {len(scan_data.get('repos_scanned', []))}
+- Total Signals: {len(signals)}
+
+## TECH STACK
+{tech_stack_text}
+
+## COMPETITOR DETECTION
+{competitor_text}
+
+## FRUSTRATION SIGNALS (PAIN POINTS)
+{frustration_text}
+
+## DEVELOPER-AS-TRANSLATOR METRIC
+{dev_metric_text}
+
+## REVIEWER BOTTLENECK
+{bottleneck_text}
+
+## LOCALE INVENTORY
+{inventory_text}
+
+## MARKET EXPANSION
+{market_text}
+{greenfield_section}
+
+## CONTRIBUTORS & PROSPECTS
+{contributors_text}
+
+## YOUR TASK
+Generate a JSON response with these EXACT fields for sales outreach:
 
 {{
-    "executive_summary": "A 2-3 sentence high-level overview for sales outreach",
-    "localization_maturity": "emerging|developing|mature|advanced",
+    "pain_point_analysis": "Specific pain points detected (e.g., 'Engineers are manually editing JSON files - 15 commits show merge conflicts')",
+    "tech_stack_hook": "Specific SDK/integration pitch (e.g., 'Since you use Next.js with i18next, our Next.js SDK integrates directly with your existing setup')",
+    "semantic_analysis": {{
+        "severity": "critical|major|minor",
+        "primary_pain_category": "sync_issues|manual_bottlenecks|technical_debt|market_expansion",
+        "description": "Short summary of the 'semantic type' of activity detected (e.g. 'Emergency hotfixes for missing locale keys')"
+    }},
+    "top_prospects": [
+        {{
+            "login": "github_login",
+            "name": "full_name",
+            "role_inference": "e.g. Senior Frontend Engineer / Platform Lead",
+            "outreach_strategy": "Why target this person? (e.g. 'Made 12 high-frustration commits to i18n files, likely feeling the pain directly')",
+            "icebreaker": "Specific line about their actual activity"
+        }}
+    ],
     "opportunity_score": 1-10,
+    "opportunity_type": "greenfield|competitor_displacement|pain_driven|expansion",
+    "email_draft": {{
+        "subject": "Specific subject referencing their data (e.g., '{{Company}}'s expansion into Mexico' or 'Fixing the translation merge conflicts')",
+        "body": "3 sentences max. Connect their SPECIFIC signal to our solution. Reference actual data (e.g., 'I noticed your team has had 12 commits fixing translation sync issues...')"
+    }},
     "key_findings": [
-        {{"finding": "description", "significance": "high|medium|low", "evidence": "what was detected"}}
+        {{"finding": "description", "significance": "high|medium|low", "sales_angle": "how to use this in conversation"}}
     ],
-    "sales_narrative": "A compelling 2-3 paragraph narrative for sales outreach that references specific findings",
-    "recommended_approach": "Strategic recommendations for approaching this company",
-    "timeline_insights": [
-        {{"period": "timeframe", "activity": "what was happening", "implication": "what this means"}}
-    ],
-    "key_contacts_to_find": ["Role/title to target for outreach"],
-    "conversation_starters": ["Specific talking points based on detected activity"],
-    "risk_factors": ["Any concerns or challenges to be aware of"],
-    "next_steps": ["Recommended actions"]
+    "recommended_approach": "Strategic recommendation for this specific opportunity",
+    "conversation_starters": ["Specific openers based on their data"],
+    "risk_factors": ["What could prevent closing this deal"],
+    "next_steps": ["Actionable items"]
 }}
 
-Be specific and reference actual signals detected. If no signals were found, provide analysis based on the repository structure and activity patterns.
-Respond with ONLY the JSON, no additional text."""
+CRITICAL RULES:
+1. Be SPECIFIC - reference actual numbers and signals from the data
+2. In 'top_prospects', only include human contributors provided in the data. Rank by 'relevancy' (pain felt or influence).
+3. 'semantic_analysis' should interpret the commit messages to find patterns (e.g. 'Fixing translation' looks like a hotfix).
+4. Respond with ONLY the JSON, no additional text."""
 
     return prompt
 
@@ -149,7 +237,7 @@ Respond with ONLY the JSON, no additional text."""
 def _parse_gemini_response(response_text: str, scan_data: dict) -> dict:
     """Parse Gemini response into structured analysis."""
     try:
-        # Clean up response text (remove markdown code blocks if present)
+        # Clean up response text
         text = response_text.strip()
         if text.startswith('```json'):
             text = text[7:]
@@ -168,19 +256,21 @@ def _parse_gemini_response(response_text: str, scan_data: dict) -> dict:
         return analysis
 
     except json.JSONDecodeError:
-        # If JSON parsing fails, create structured response from text
+        # Fallback if JSON parsing fails
         return {
-            'executive_summary': response_text[:500] if response_text else 'Analysis unavailable',
-            'localization_maturity': 'unknown',
+            'pain_point_analysis': response_text[:500] if response_text else 'Analysis unavailable',
+            'tech_stack_hook': 'Further investigation needed',
             'opportunity_score': 5,
+            'opportunity_type': 'unknown',
+            'email_draft': {
+                'subject': f"Localization opportunities at {scan_data.get('company_name', 'your company')}",
+                'body': 'I noticed your team has been working on internationalization. Would love to discuss how we can help streamline your localization workflow.'
+            },
             'key_findings': [],
-            'sales_narrative': response_text,
-            'recommended_approach': 'Further investigation recommended',
-            'timeline_insights': [],
-            'key_contacts_to_find': ['Engineering Lead', 'VP of Product'],
+            'recommended_approach': 'Manual review of findings recommended',
             'conversation_starters': [],
             'risk_factors': ['AI analysis could not be fully parsed'],
-            'next_steps': ['Manual review of findings recommended'],
+            'next_steps': ['Manual review of scan data recommended'],
             '_source': 'gemini_fallback',
             '_model': Config.GEMINI_MODEL,
             '_raw_response': response_text
@@ -188,189 +278,274 @@ def _parse_gemini_response(response_text: str, scan_data: dict) -> dict:
 
 
 def _generate_fallback_analysis(scan_data: dict) -> dict:
-    """Generate rule-based analysis when AI is unavailable."""
-    signals = scan_data.get('signals', [])
+    """Generate rule-based sales intelligence when AI is unavailable."""
     company = scan_data.get('company_name', 'Unknown')
     org_name = scan_data.get('org_name', '')
+    
+    # Extract data
+    tech_stack = scan_data.get('tech_stack', {})
+    competitor = scan_data.get('competitor_detection', {})
+    frustration = scan_data.get('frustration_signals', [])
+    dev_metric = scan_data.get('developer_translator_metric', {})
+    bottleneck = scan_data.get('reviewer_bottleneck', {})
+    locale_inventory = scan_data.get('locale_inventory', {})
+    market_insights = scan_data.get('market_insights', {})
+    is_greenfield = scan_data.get('is_greenfield', False)
+    total_stars = scan_data.get('total_stars', 0)
+    signals = scan_data.get('signals', [])
 
-    # Categorize signals
-    commit_signals = [s for s in signals if s.get('type') == 'commit_message']
-    pr_signals = [s for s in signals if s.get('type') == 'pull_request']
-    file_signals = [s for s in signals if s.get('type') == 'file_change']
-    hreflang_signals = [s for s in signals if s.get('type') == 'hreflang']
-
-    # Determine maturity level
-    total_signals = len(signals)
-    if total_signals == 0:
-        maturity = 'emerging'
-        opportunity_score = 3
-    elif total_signals < 5:
-        maturity = 'developing'
-        opportunity_score = 6
-    elif total_signals < 15:
-        maturity = 'mature'
+    # Determine opportunity type and score
+    if is_greenfield:
+        opportunity_type = 'greenfield'
+        opportunity_score = 8
+    elif competitor.get('is_using_competitor'):
+        opportunity_type = 'competitor_displacement'
+        opportunity_score = 7
+    elif frustration or dev_metric.get('is_high_pain'):
+        opportunity_type = 'pain_driven'
+        opportunity_score = 8
+    elif market_insights.get('primary_market'):
+        opportunity_type = 'expansion'
         opportunity_score = 7
     else:
-        maturity = 'advanced'
-        opportunity_score = 5  # May already have solutions in place
+        opportunity_type = 'emerging'
+        opportunity_score = 5
+
+    # Build pain point analysis
+    pain_points = []
+    if frustration:
+        pain_types = {}
+        for f in frustration:
+            pt = f.get('pain_indicator', 'unknown')
+            pain_types[pt] = pain_types.get(pt, 0) + 1
+        top_pain = max(pain_types.items(), key=lambda x: x[1]) if pain_types else ('unknown', 0)
+        pain_points.append(f"{len(frustration)} frustration signals detected (most common: {top_pain[0]} - {top_pain[1]} occurrences)")
+    
+    if dev_metric.get('is_high_pain'):
+        pain_points.append(f"Engineers are doing translation work: {dev_metric.get('human_percentage', '0%')} of edits by humans")
+    
+    if bottleneck.get('is_bottleneck'):
+        pain_points.append(f"Reviewer bottleneck: @{bottleneck['bottleneck_user']} reviews {bottleneck['top_reviewer_ratio']*100:.0f}% of i18n PRs")
+
+    if competitor.get('is_using_competitor'):
+        configs = [c['file'] for c in competitor.get('config_files_found', [])]
+        pain_points.append(f"Currently using competitor TMS: {configs or competitor.get('tms_in_dependencies', [])}")
+
+    pain_point_analysis = "; ".join(pain_points) if pain_points else "No specific pain points detected - general localization need"
+
+    # Build tech stack hook
+    framework = tech_stack.get('primary_framework')
+    libs = tech_stack.get('i18n_libraries', [])
+    
+    if framework == 'Next.js':
+        tech_stack_hook = f"Since you're using Next.js with {libs[0] if libs else 'i18n'}, our Next.js SDK provides seamless integration with zero config changes."
+    elif framework == 'React':
+        tech_stack_hook = f"Your React app using {libs[0] if libs else 'react-intl'} can benefit from our React SDK - drop-in replacement with automated sync."
+    elif framework:
+        tech_stack_hook = f"We have native {framework} support that integrates directly with your {libs[0] if libs else 'existing i18n setup'}."
+    else:
+        tech_stack_hook = "Our platform supports all major frameworks and can integrate with your existing workflow."
+
+    # Build email draft
+    primary_market = market_insights.get('primary_market')
+    
+    if is_greenfield:
+        email_subject = f"Future-proofing {company}'s international growth"
+        email_body = (
+            f"Hi, I've been analyzing {company}'s codebase and noticed you have a mature platform with {total_stars}+ stars "
+            f"but no localization infrastructure in place. Many companies at your scale are preparing for international expansion. "
+            f"I'd love to share how we can help you build localization into your architecture before it becomes a costly retrofit."
+        )
+    elif competitor.get('is_using_competitor'):
+        tms_name = competitor.get('tms_in_dependencies', ['your current TMS'])[0] if competitor.get('tms_in_dependencies') else 'your current TMS'
+        email_subject = f"Improving {company}'s localization workflow"
+        email_body = (
+            f"Hi, I noticed your team is using {tms_name} for localization. Many teams in similar situations have found our "
+            f"developer-first approach reduces sync issues and merge conflicts. Would you be open to a quick comparison? "
+            f"I can show you specifically how we'd integrate with your {'Next.js' if framework == 'Next.js' else 'existing'} setup."
+        )
+    elif primary_market:
+        email_subject = f"{company}'s expansion into {primary_market}"
+        email_body = (
+            f"Hi, I noticed {company} has been expanding into {primary_market} based on your recent locale file additions. "
+            f"Managing {locale_inventory.get('language_count', 'multiple')} languages can get complex quickly. "
+            f"Would love to show you how we automate the translation sync process for growing teams."
+        )
+    elif frustration:
+        email_subject = f"Fixing the translation workflow at {company}"
+        email_body = (
+            f"Hi, I've been looking at {company}'s GitHub activity and noticed some commits mentioning translation sync issues. "
+            f"This is a common pain point - developers spending time on manual JSON edits instead of building features. "
+            f"I'd love to show you how we automate this entirely."
+        )
+    else:
+        email_subject = f"Localization opportunities at {company}"
+        email_body = (
+            f"Hi, I've been researching {company}'s technical stack and noticed you're building with {framework or 'modern frameworks'}. "
+            f"Many teams at your stage start thinking about internationalization. Would you be open to a quick chat about your roadmap? "
+            f"I'd love to share some best practices for scaling localization."
+        )
 
     # Build key findings
     key_findings = []
-
-    if file_signals:
+    
+    if tech_stack.get('i18n_libraries'):
         key_findings.append({
-            'finding': f'Active i18n file management detected in {len(set(s.get("repo") for s in file_signals))} repositories',
+            'finding': f"Using {', '.join(tech_stack['i18n_libraries'])}",
             'significance': 'high',
-            'evidence': f'{len(file_signals)} file changes in localization directories'
+            'sales_angle': 'Reference their specific library when discussing integration'
         })
-
-    if pr_signals:
+    
+    if frustration:
         key_findings.append({
-            'finding': 'Localization-related pull requests in active development',
+            'finding': f"{len(frustration)} frustration signals in commits",
             'significance': 'high',
-            'evidence': f'{len(pr_signals)} PRs with i18n keywords detected'
+            'sales_angle': 'Lead with pain relief - "I noticed your team has been dealing with translation sync issues..."'
         })
-
-    if hreflang_signals:
+    
+    if dev_metric.get('is_high_pain'):
         key_findings.append({
-            'finding': 'hreflang implementation activity detected',
-            'significance': 'medium',
-            'evidence': f'Found in {len(hreflang_signals)} files'
+            'finding': f"{dev_metric['human_percentage']} of translation edits by engineers",
+            'significance': 'high',
+            'sales_angle': 'Highlight developer time savings - "Your engineers are spending time on translation work instead of features"'
         })
 
-    if commit_signals:
+    if competitor.get('is_using_competitor'):
         key_findings.append({
-            'finding': 'Regular commits mentioning localization/i18n',
-            'significance': 'medium',
-            'evidence': f'{len(commit_signals)} commits with i18n references'
+            'finding': 'Already using competitor TMS',
+            'significance': 'high',
+            'sales_angle': 'Position on pain points with current solution - ask about their experience'
         })
 
-    if not key_findings:
+    if market_insights.get('primary_market'):
         key_findings.append({
-            'finding': 'No explicit localization signals detected in recent activity',
-            'significance': 'low',
-            'evidence': 'Scanned commits and PRs showed no i18n patterns'
+            'finding': f"Expanding into {market_insights['primary_market']}",
+            'significance': 'high',
+            'sales_angle': 'Reference their expansion - shows they have budget and priority'
         })
 
-    # Build narrative
-    if total_signals > 0:
-        narrative = f"""Based on our deep analysis of {company}'s GitHub activity, we've identified {total_signals}
-localization-related signals across their codebase. This indicates {"active investment" if total_signals > 10 else "growing interest"}
-in internationalization.
+    # Conversation starters
+    conversation_starters = []
+    
+    if competitor.get('is_using_competitor'):
+        tms = competitor.get('tms_in_dependencies', ['your current TMS'])[0] if competitor.get('tms_in_dependencies') else 'your current TMS'
+        conversation_starters.append(f"How has your experience been with {tms}? Any pain points I should know about?")
+    
+    if frustration:
+        conversation_starters.append("I noticed some commits mentioning translation sync issues - is that something your team is actively trying to solve?")
+    
+    if dev_metric.get('is_high_pain'):
+        conversation_starters.append("Are your engineers spending a lot of time on translation file management? That's a common issue we help solve.")
+    
+    if primary_market:
+        conversation_starters.append(f"How's the expansion into {primary_market} going? Any localization challenges we can help with?")
+    
+    if not conversation_starters:
+        conversation_starters = [
+            f"What's {company}'s roadmap for international expansion?",
+            "Is localization on your team's priority list for this year?"
+        ]
 
-The activity spans {len(scan_data.get('repos_scanned', []))} repositories, with particular focus on
-{', '.join(set(s.get('repo') for s in signals[:5]))}. This suggests a {"coordinated localization effort" if total_signals > 5 else "nascent but promising localization initiative"}.
+    # Risk factors
+    risk_factors = []
+    
+    if competitor.get('is_using_competitor'):
+        risk_factors.append("Already invested in competitor - may have switching costs or contracts")
+    
+    if not signals and not frustration:
+        risk_factors.append("Low localization activity - may not be a current priority")
+    
+    if is_greenfield:
+        risk_factors.append("No existing localization = no existing budget allocation")
+    
+    if not risk_factors:
+        risk_factors.append("Standard competitive landscape considerations apply")
 
-Given their current trajectory, {company} would benefit from {"streamlined localization workflows" if maturity == 'developing' else "enterprise-grade localization infrastructure"}
-to scale their international presence efficiently."""
-    else:
-        narrative = f"""Our analysis of {company}'s GitHub presence ({org_name}) did not reveal explicit
-localization activity in the last 90 days. However, this presents a potential greenfield opportunity.
+    # Build top prospects from contributors
+    top_prospects = []
+    if scan_data.get('contributors'):
+        for login, data in list(scan_data['contributors'].items())[:3]:
+            top_prospects.append({
+                'login': login,
+                'name': data.get('name') or login,
+                'role_inference': 'Technical Contributor' if not data.get('company') else f"Engineer at {data.get('company')}",
+                'outreach_strategy': f"Directly involved in {data['i18n_commits']} localization commits. Likely building the i18n infrastructure.",
+                'icebreaker': f"I noticed your recent work on localization files in the {scan_data['org_login']} repositories."
+            })
 
-With {scan_data.get('org_public_repos', 'multiple')} public repositories and active development,
-{company} may be approaching a stage where internationalization becomes strategically important.
-
-This could be an ideal time to introduce localization best practices before technical debt accumulates."""
+    # Build semantic analysis
+    severity = 'minor'
+    if frustration: severity = 'major'
+    if dev_metric.get('is_high_pain'): severity = 'critical'
+    
+    semantic_analysis = {
+        'severity': severity,
+        'primary_pain_category': 'technical_debt' if is_greenfield else 'sync_issues',
+        'description': f"Detected {len(frustration)} pain signals related to translation synchronization and human-driven localization edits."
+    }
 
     return {
-        'executive_summary': f"{company} shows {maturity} localization maturity with {total_signals} detected signals. "
-                           f"{'Strong opportunity for localization partnership.' if opportunity_score >= 6 else 'Potential early-stage opportunity.'}",
-        'localization_maturity': maturity,
+        'pain_point_analysis': pain_point_analysis,
+        'tech_stack_hook': tech_stack_hook,
+        'semantic_analysis': semantic_analysis,
+        'top_prospects': top_prospects,
         'opportunity_score': opportunity_score,
+        'opportunity_type': opportunity_type,
+        'email_draft': {
+            'subject': email_subject,
+            'body': email_body
+        },
         'key_findings': key_findings,
-        'sales_narrative': narrative,
-        'recommended_approach': _get_recommended_approach(maturity),
-        'timeline_insights': _extract_timeline_insights(signals),
-        'key_contacts_to_find': [
-            'VP of Engineering',
-            'Director of Product',
-            'Internationalization Lead',
-            'Technical Program Manager'
-        ],
-        'conversation_starters': _get_conversation_starters(signals, company),
-        'risk_factors': _get_risk_factors(maturity, total_signals),
-        'next_steps': [
-            'Review detected signals for conversation specifics',
-            'Research company news for expansion announcements',
-            'Identify LinkedIn contacts in engineering leadership',
-            'Prepare tailored demo based on their tech stack'
-        ],
+        'recommended_approach': _get_recommended_approach(opportunity_type, competitor.get('is_using_competitor', False), is_greenfield),
+        'conversation_starters': conversation_starters[:3],
+        'risk_factors': risk_factors,
+        'next_steps': _get_next_steps(opportunity_type, competitor.get('is_using_competitor', False)),
         '_source': 'fallback'
     }
 
 
-def _get_recommended_approach(maturity: str) -> str:
-    """Get recommended sales approach based on maturity."""
+def _get_recommended_approach(opportunity_type: str, has_competitor: bool, is_greenfield: bool) -> str:
+    """Get strategic recommendation based on opportunity type."""
+    if is_greenfield:
+        return "GREENFIELD APPROACH: Position as strategic architecture partner. Lead with 'future-proofing' narrative - the cost of retrofitting localization later vs building it right. Offer a free 'localization readiness assessment'."
+    
+    if has_competitor:
+        return "COMPETITIVE DISPLACEMENT: Research their current TMS pain points thoroughly. Position on developer experience and reduced friction. Offer a side-by-side comparison or migration assessment. Focus on what's broken, not features."
+    
     approaches = {
-        'emerging': "Position as a strategic partner for building localization foundations. Focus on future-proofing their codebase for international growth.",
-        'developing': "Highlight efficiency gains and automation opportunities. They're likely experiencing growing pains that your solution can address.",
-        'mature': "Emphasize advanced features, integrations, and enterprise-grade capabilities. Focus on optimization and scale.",
-        'advanced': "Look for pain points in their current setup. Position as a premium alternative with better support/features."
+        'pain_driven': "PAIN RELIEF: Lead with their specific pain points. Show exactly how you solve merge conflicts, manual edits, sync issues. Demo should focus on developer workflow, not marketing features.",
+        'expansion': "GROWTH ENABLEMENT: They're already investing in localization - help them scale. Focus on efficiency gains and reduced time-to-market for new languages.",
+        'emerging': "EDUCATION FIRST: They may not know they have a problem yet. Lead with industry trends and case studies from similar companies.",
     }
-    return approaches.get(maturity, approaches['developing'])
+    return approaches.get(opportunity_type, approaches['emerging'])
 
 
-def _extract_timeline_insights(signals: list) -> list:
-    """Extract timeline insights from signals."""
-    insights = []
-
-    # Group signals by date (rough)
-    dated_signals = [s for s in signals if s.get('date') or s.get('created_at')]
-
-    if dated_signals:
-        insights.append({
-            'period': 'Last 90 days',
-            'activity': f'{len(dated_signals)} localization-related activities detected',
-            'implication': 'Active ongoing work in i18n space'
-        })
-
-    return insights
-
-
-def _get_conversation_starters(signals: list, company: str) -> list:
-    """Generate conversation starters based on signals."""
-    starters = []
-
-    pr_signals = [s for s in signals if s.get('type') == 'pull_request']
-    if pr_signals:
-        starters.append(
-            f"I noticed your team has been working on localization - PR #{pr_signals[0].get('number', 'N/A')} "
-            f"caught my attention. How's that initiative progressing?"
-        )
-
-    file_signals = [s for s in signals if s.get('type') == 'file_change']
-    if file_signals:
-        starters.append(
-            f"Your team's recent work in the locales directory suggests international expansion. "
-            f"What markets are you targeting?"
-        )
-
-    if not starters:
-        starters = [
-            f"I've been researching {company}'s technical architecture. Are you considering international markets?",
-            "Many companies at your stage start thinking about localization. Is that on your roadmap?"
-        ]
-
-    return starters
-
-
-def _get_risk_factors(maturity: str, signal_count: int) -> list:
-    """Identify risk factors for the opportunity."""
-    risks = []
-
-    if maturity == 'advanced':
-        risks.append('May already have established localization vendor relationships')
-
-    if signal_count > 20:
-        risks.append('Heavy existing investment may mean switching costs are high')
-
-    if signal_count == 0:
-        risks.append('No visible i18n activity - may not be a current priority')
-
-    if not risks:
-        risks.append('Standard competitive landscape considerations apply')
-
-    return risks
+def _get_next_steps(opportunity_type: str, has_competitor: bool) -> list:
+    """Get actionable next steps based on opportunity type."""
+    steps = ['Review scan data and email draft', 'Find decision maker on LinkedIn']
+    
+    if has_competitor:
+        steps.extend([
+            'Research common pain points with their current TMS',
+            'Prepare competitive positioning deck'
+        ])
+    elif opportunity_type == 'greenfield':
+        steps.extend([
+            'Prepare localization readiness assessment offer',
+            'Find VP Eng or Technical Lead to target'
+        ])
+    elif opportunity_type == 'pain_driven':
+        steps.extend([
+            'Prepare demo focused on workflow automation',
+            'Screenshot their frustration commits for personalization'
+        ])
+    else:
+        steps.extend([
+            'Research recent company news (expansion, funding)',
+            'Prepare general platform demo'
+        ])
+    
+    return steps
 
 
 def _sse_log(message: str) -> str:

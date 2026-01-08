@@ -95,10 +95,25 @@
         text-transform: uppercase;
     }
 
-    .maturity-emerging { background: #fef3c7; color: #92400e; }
-    .maturity-developing { background: #dbeafe; color: #1e40af; }
-    .maturity-mature { background: #d1fae5; color: #065f46; }
-    .maturity-advanced { background: #ede9fe; color: #5b21b6; }
+    .maturity-emerging {
+        background: #fef3c7;
+        color: #92400e;
+    }
+
+    .maturity-developing {
+        background: #dbeafe;
+        color: #1e40af;
+    }
+
+    .maturity-mature {
+        background: #d1fae5;
+        color: #065f46;
+    }
+
+    .maturity-advanced {
+        background: #ede9fe;
+        color: #5b21b6;
+    }
 
     .opportunity-score {
         display: flex;
@@ -158,9 +173,88 @@
         border-radius: 4px;
     }
 
-    .significance-high { background: #fee2e2; color: #dc2626; }
-    .significance-medium { background: #fef3c7; color: #d97706; }
-    .significance-low { background: #e0e7ff; color: #4f46e5; }
+    .significance-high {
+        background: #fee2e2;
+        color: #dc2626;
+    }
+
+    .significance-medium {
+        background: #fef3c7;
+        color: #d97706;
+    }
+
+    .significance-low {
+        background: #e0e7ff;
+        color: #4f46e5;
+    }
+
+    .severity-badge {
+        padding: 0.25rem 0.75rem;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        font-weight: 700;
+        text-transform: uppercase;
+    }
+
+    .severity-critical {
+        background: #dc2626;
+        color: white;
+    }
+
+    .severity-major {
+        background: #ea580c;
+        color: white;
+    }
+
+    .severity-minor {
+        background: #d97706;
+        color: white;
+    }
+
+    .prospect-card {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        padding: 1.5rem;
+        margin-bottom: 1rem;
+        display: grid;
+        grid-template-columns: 80px 1fr;
+        gap: 1.5rem;
+    }
+
+    .prospect-avatar {
+        width: 80px;
+        height: 80px;
+        border-radius: 50%;
+        border: 2px solid var(--accent-color);
+    }
+
+    .prospect-info h3 {
+        margin: 0 0 0.25rem 0;
+        color: var(--text-primary);
+    }
+
+    .prospect-role {
+        font-size: 0.875rem;
+        color: var(--accent-color);
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+    }
+
+    .prospect-bio {
+        font-size: 0.875rem;
+        color: var(--text-secondary);
+        margin-bottom: 1rem;
+        font-style: italic;
+    }
+
+    .strategy-box {
+        background: #3b82f61a;
+        border-left: 3px solid var(--accent-color);
+        padding: 0.75rem 1rem;
+        border-radius: 0 4px 4px 0;
+        font-size: 0.875rem;
+    }
 
     .finding-evidence {
         font-size: 0.875rem;
@@ -242,12 +336,14 @@
         line-height: 1.6;
     }
 
-    .risk-list, .next-steps-list {
+    .risk-list,
+    .next-steps-list {
         list-style: none;
         padding: 0;
     }
 
-    .risk-item, .next-step-item {
+    .risk-item,
+    .next-step-item {
         padding: 0.75rem 1rem;
         margin-bottom: 0.5rem;
         border-radius: 6px;
@@ -323,12 +419,20 @@
         padding: 1rem;
         border-radius: 50%;
         cursor: pointer;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
     }
 
     @media print {
-        .navbar, .footer, .print-button { display: none; }
-        .report-container { padding: 0; }
+
+        .navbar,
+        .footer,
+        .print-button {
+            display: none;
+        }
+
+        .report-container {
+            padding: 0;
+        }
     }
 </style>
 {% endblock %}
@@ -343,6 +447,13 @@
         <div class="report-meta">
             <span>Scanned: {{ report.created_at }}</span>
             <span>Duration: {{ "%.1f"|format(report.scan_duration_seconds) }}s</span>
+        </div>
+        <div style="margin-top: 1.5rem; display: flex; justify-content: center; gap: 1rem;">
+            <a href="{{ url_for('index') }}" class="btn secondary">Analyze New Company</a>
+            <a href="{{ url_for('download_pdf', report_id=report.id) }}" class="btn primary"
+                style="background: var(--accent-color); color: white; padding: 0.5rem 1.5rem; border-radius: 8px; text-decoration: none; font-weight: 500;">
+                Download PDF Report
+            </a>
         </div>
     </header>
 
@@ -391,6 +502,24 @@
             </div>
             <span class="score-value">{{ score }}/10</span>
         </div>
+
+        {% if report.ai_analysis.semantic_analysis %}
+        <div style="margin-top: 1.5rem; padding: 1rem; background: var(--bg-tertiary); border-radius: 8px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                <h3 style="margin: 0; font-size: 1rem;">Semantic Intelligence</h3>
+                <span class="severity-badge severity-{{ report.ai_analysis.semantic_analysis.severity }}">
+                    {{ report.ai_analysis.semantic_analysis.severity }}
+                </span>
+            </div>
+            <p style="font-size: 0.875rem; margin-bottom: 0.25rem;">
+                <strong>Category:</strong> {{ report.ai_analysis.semantic_analysis.primary_pain_category.replace('_', '
+                ').title() }}
+            </p>
+            <p style="font-size: 0.875rem; margin: 0; font-style: italic;">
+                "{{ report.ai_analysis.semantic_analysis.description }}"
+            </p>
+        </div>
+        {% endif %}
     </div>
 
     <!-- Key Findings -->
@@ -448,18 +577,39 @@
     {% endif %}
 
     <!-- Key Contacts -->
-    {% if report.ai_analysis.key_contacts_to_find %}
+    {% if report.ai_analysis.top_prospects %}
     <div class="section">
-        <h2 class="section-title">Key Contacts to Find</h2>
-        <div class="contacts-grid">
-            {% for contact in report.ai_analysis.key_contacts_to_find %}
-            <div class="contact-card">
-                <div class="contact-role">{{ contact }}</div>
+        <h2 class="section-title">Top Outreach Prospects</h2>
+        <div class="prospects-list">
+            {% for prospect in report.ai_analysis.top_prospects %}
+            <div class="prospect-card">
+                {% set details = report.scan_data.contributors.get(prospect.login, {}) %}
+                <img src="{{ details.avatar_url or 'https://github.com/identicons/' ~ prospect.login ~ '.png' }}"
+                    class="prospect-avatar">
+                <div class="prospect-info">
+                    <div style="display: flex; justify-content: space-between;">
+                        <h3>{{ prospect.name }} (@{{ prospect.login }})</h3>
+                        <a href="https://github.com/{{ prospect.login }}" target="_blank" class="signal-link">GitHub
+                            Profile</a>
+                    </div>
+                    <div class="prospect-role">{{ prospect.role_inference }}</div>
+                    {% if details.bio %}
+                    <div class="prospect-bio">"{{ details.bio }}"</div>
+                    {% endif %}
+                    <div class="strategy-box">
+                        <strong>Strategy:</strong> {{ prospect.outreach_strategy }}
+                        <br>
+                        <strong style="color: var(--accent-color);">Icebreaker:</strong> {{ prospect.icebreaker }}
+                    </div>
+                </div>
             </div>
             {% endfor %}
         </div>
     </div>
     {% endif %}
+
+    <!-- Key Contacts Needed -->
+    {% if report.ai_analysis.key_contacts_to_find %}
 
     <!-- Conversation Starters -->
     {% if report.ai_analysis.conversation_starters %}
@@ -515,13 +665,13 @@
             </div>
             <div class="signal-content">
                 {% if signal.type == 'commit_message' %}
-                    {{ signal.message[:150] }}{% if signal.message|length > 150 %}...{% endif %}
+                {{ signal.message[:150] }}{% if signal.message|length > 150 %}...{% endif %}
                 {% elif signal.type == 'pull_request' %}
-                    PR #{{ signal.number }}: {{ signal.title }}
+                PR #{{ signal.number }}: {{ signal.title }}
                 {% elif signal.type == 'file_change' %}
-                    {{ signal.file }} ({{ signal.status }})
+                {{ signal.file }} ({{ signal.status }})
                 {% elif signal.type == 'hreflang' %}
-                    hreflang detected in {{ signal.file }}
+                hreflang detected in {{ signal.file }}
                 {% endif %}
             </div>
             {% if signal.url %}
