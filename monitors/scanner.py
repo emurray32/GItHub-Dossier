@@ -117,7 +117,7 @@ def deep_scan_generator(company_name: str) -> Generator[str, None, None]:
         'total_commits_analyzed': 0,
         'total_prs_analyzed': 0,
         'scan_timestamp': datetime.now().isoformat(),
-        
+
         # High-Intent Intelligence Fields
         'tech_stack': {
             'i18n_libraries': [],
@@ -148,10 +148,17 @@ def deep_scan_generator(company_name: str) -> Generator[str, None, None]:
             'file_count': 0,
             'language_count': 0,
         },
+        'seo_i18n_config': {
+            'configs_found': [],
+            'locales_from_seo': [],
+            'has_marketing_intent': False,
+        },
         'market_insights': {},
         'is_greenfield': False,
         'total_stars': sum(r.get('stargazers_count', 0) for r in repos_to_scan),
         'contributors': {},  # login -> {name, bio, company, blog, i18n_commits, i18n_prs, frustration_count}
+        'confidence_score': 0,  # Will be calculated at the end
+        'pr_commenters': {},  # Track PR commenters as potential decision makers
         'compliance_assets': {
             'detected_files': [], # {repo, file, is_localized}
             'localized_count': 0,
@@ -197,6 +204,13 @@ def deep_scan_generator(company_name: str) -> Generator[str, None, None]:
                     'file': config_result
                 })
                 repo_result['competitor_configs'].append(config_result)
+                # Stream SIGNAL_FOUND for competitor detection (HIGH VALUE)
+                yield _sse_signal({
+                    'type': 'competitor_config',
+                    'repo': repo_name,
+                    'file': config_result,
+                    'significance': 'high'
+                })
 
         # Scan commits with frustration detection
         for log_msg, commits_count, commit_signals, frustration_signals in _scan_commits_with_frustration(org_login, repo_name):
@@ -210,20 +224,57 @@ def deep_scan_generator(company_name: str) -> Generator[str, None, None]:
                 for sig in commit_signals:
                     if sig.get('type') == 'file_change':
                         all_file_signals.append(sig)
+                        # Stream SIGNAL_FOUND for new file changes
+                        if sig.get('status') == 'added':
+                            yield _sse_signal({
+                                'type': 'new_locale_file',
+                                'repo': repo_name,
+                                'file': sig.get('file'),
+                                'author': sig.get('author_login'),
+                                'significance': 'high'
+                            })
             if frustration_signals:
                 scan_results['frustration_signals'].extend(frustration_signals)
                 repo_result['frustration_count'] = len(frustration_signals)
+                # Stream SIGNAL_FOUND for frustration signals (HIGH VALUE PAIN POINTS)
+                for fs in frustration_signals[:3]:  # First 3 only to avoid spam
+                    yield _sse_signal({
+                        'type': 'frustration',
+                        'repo': repo_name,
+                        'pain_indicator': fs.get('pain_indicator'),
+                        'message': fs.get('message', '')[:80],
+                        'author': fs.get('author_login'),
+                        'significance': 'high'
+                    })
 
-        # Scan PRs with reviewer tracking
-        for log_msg, prs_count, pr_signals, reviewers in _scan_pull_requests_with_reviewers(org_login, repo_name):
+        # Scan PRs with reviewer and commenter tracking
+        for log_msg, prs_count, pr_signals, reviewers, commenters in _scan_pull_requests_with_reviewers(org_login, repo_name):
             yield _sse_log(f"  {log_msg}")
             if prs_count is not None:
                 repo_result['prs_analyzed'] = prs_count
                 scan_results['total_prs_analyzed'] += prs_count
             if pr_signals:
                 repo_result['signals'].extend(pr_signals)
+                # Stream SIGNAL_FOUND for i18n PRs
+                for pr_sig in pr_signals[:2]:  # First 2 only
+                    yield _sse_signal({
+                        'type': 'i18n_pr',
+                        'repo': repo_name,
+                        'pr_number': pr_sig.get('number'),
+                        'title': pr_sig.get('title', '')[:60],
+                        'author': pr_sig.get('author'),
+                        'significance': 'medium'
+                    })
             if reviewers:
                 all_pr_reviewers.update(reviewers)
+            if commenters:
+                # Merge commenters into scan results (prioritize those who comment most)
+                for login, data in commenters.items():
+                    if login not in scan_results['pr_commenters']:
+                        scan_results['pr_commenters'][login] = data
+                    else:
+                        scan_results['pr_commenters'][login]['comment_count'] += data['comment_count']
+                        scan_results['pr_commenters'][login]['prs_commented_on'].extend(data['prs_commented_on'])
 
         # Scan dependencies (only first 5 repos for speed)
         if idx <= 5:
@@ -244,10 +295,39 @@ def deep_scan_generator(company_name: str) -> Generator[str, None, None]:
                 if inventory_result.get('locales'):
                     scan_results['locale_inventory']['locales_detected'].extend(inventory_result['locales'])
                     scan_results['locale_inventory']['file_count'] += len(inventory_result['locales'])
+                    # Stream SIGNAL_FOUND for locale discovery
+                    yield _sse_signal({
+                        'type': 'locale_inventory',
+                        'repo': repo_name,
+                        'count': len(inventory_result['locales']),
+                        'locales': inventory_result['locales'][:5]  # First 5 for preview
+                    })
                 if inventory_result.get('path'):
                     scan_results['locale_inventory']['paths_found'].append({
                         'repo': repo_name,
                         'path': inventory_result['path']
+                    })
+
+        # Scan SEO i18n config (next.config.js, sitemap.xml)
+        if idx <= 5:  # Only first 5 repos for speed
+            for log_msg, seo_result in _scan_seo_i18n_config(org_login, repo_name):
+                yield _sse_log(f"  {log_msg}")
+                if seo_result:
+                    scan_results['seo_i18n_config']['configs_found'].append({
+                        'repo': repo_name,
+                        'source': seo_result['source'],
+                        'framework': seo_result.get('framework'),
+                        'locales': seo_result.get('locales', [])
+                    })
+                    scan_results['seo_i18n_config']['locales_from_seo'].extend(seo_result.get('locales', []))
+                    scan_results['seo_i18n_config']['has_marketing_intent'] = True
+                    # Stream SIGNAL_FOUND for SEO config (HIGH VALUE)
+                    yield _sse_signal({
+                        'type': 'seo_i18n_config',
+                        'repo': repo_name,
+                        'source': seo_result['source'],
+                        'framework': seo_result.get('framework'),
+                        'locales': seo_result.get('locales', [])
                     })
 
         # Add repo signals to main list
@@ -412,11 +492,28 @@ def deep_scan_generator(company_name: str) -> Generator[str, None, None]:
     has_competitor = scan_results['competitor_detection']['is_using_competitor']
     total_stars = scan_results['total_stars']
 
-    if (total_signals == 0 and not has_i18n_libs and not has_locale_files and 
+    if (total_signals == 0 and not has_i18n_libs and not has_locale_files and
         not has_competitor and total_stars >= Config.GREENFIELD_STAR_THRESHOLD):
         scan_results['is_greenfield'] = True
         yield _sse_log(f"🎯 GREENFIELD OPPORTUNITY: {total_stars}+ stars, NO localization infrastructure!")
         yield _sse_log("   Mature codebase with NO localization layer. Risk of technical debt.")
+        # Stream greenfield signal
+        yield _sse_signal({
+            'type': 'greenfield_opportunity',
+            'total_stars': total_stars,
+            'significance': 'high'
+        })
+
+    # SEO i18n config summary
+    if scan_results['seo_i18n_config']['has_marketing_intent']:
+        seo_locales = list(set(scan_results['seo_i18n_config']['locales_from_seo']))
+        scan_results['seo_i18n_config']['locales_from_seo'] = seo_locales
+        yield _sse_log(f"🎯 SEO I18n CONFIG DETECTED: Marketing intent confirmed!")
+        yield _sse_log(f"   Locales from SEO configs: {', '.join(seo_locales[:10])}")
+
+    # Calculate confidence score
+    scan_results['confidence_score'] = calculate_confidence_score(scan_results)
+    yield _sse_log(f"📊 Confidence Score: {scan_results['confidence_score']}/100")
 
     # Phase 5: Summary
     yield _sse_log("")
@@ -592,6 +689,10 @@ def _analyze_commit_files_with_author(org: str, repo: str, sha: str, author: str
             filename = file.get('filename', '')
             status = file.get('status', '')
 
+            # SMART FILTERING: Skip noise files
+            if _is_noise_file(filename):
+                continue
+
             # Check if file is in i18n-related path
             if _is_i18n_file(filename):
                 signals.append({
@@ -625,14 +726,44 @@ def _analyze_commit_files_with_author(org: str, repo: str, sha: str, author: str
     return signals
 
 
+def _is_noise_file(filename: str) -> bool:
+    """
+    Check if a file should be ignored (noise filtering).
+
+    Filters out documentation, images, lock files, and test files
+    that often contain false positive i18n keywords.
+    """
+    if not filename:
+        return True
+
+    filename_lower = filename.lower()
+    basename = filename.split('/')[-1]
+
+    # Check against noise filenames
+    if basename in Config.NOISE_FILENAMES:
+        return True
+
+    # Check against noise extensions
+    for ext in Config.NOISE_FILE_EXTENSIONS:
+        if filename_lower.endswith(ext):
+            return True
+
+    return False
+
+
 def _scan_pull_requests_with_reviewers(org: str, repo: str) -> Generator[tuple, None, None]:
     """
-    Scan pull requests for i18n signals AND track reviewers for bottleneck detection.
+    Scan pull requests for i18n signals AND track reviewers/commenters for bottleneck detection.
+
+    Enhanced to prioritize:
+    - Reviewers (likely managers/leads who approve work)
+    - Commenters (engaged stakeholders with opinions)
+    - Authors (the implementers, may be junior devs)
 
     Yields:
-        Tuples of (log_message, prs_count, signals_list, reviewers_counter)
+        Tuples of (log_message, prs_count, signals_list, reviewers_counter, commenters_dict)
     """
-    yield ("Analyzing pull requests...", None, None, None)
+    yield ("Analyzing pull requests...", None, None, None, None)
 
     cutoff_date = datetime.now() - timedelta(days=Config.PR_LOOKBACK_DAYS)
     cutoff_str = cutoff_date.strftime('%Y-%m-%dT%H:%M:%SZ')
@@ -640,6 +771,7 @@ def _scan_pull_requests_with_reviewers(org: str, repo: str) -> Generator[tuple, 
     prs_analyzed = 0
     signals = []
     reviewers = Counter()
+    commenters = {}  # login -> {comment_count, prs_commented_on, sample_comments}
 
     try:
         url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}/pulls"
@@ -674,8 +806,11 @@ def _scan_pull_requests_with_reviewers(org: str, repo: str) -> Generator[tuple, 
 
             # Check for i18n signals
             is_i18n_pr = _has_i18n_keywords(title) or _has_i18n_keywords(body)
-            
+
             if is_i18n_pr:
+                # Track who merged the PR (often a lead/manager)
+                merged_by = pr.get('merged_by', {}).get('login') if pr.get('merged') else None
+
                 signals.append({
                     'type': 'pull_request',
                     'number': pr_number,
@@ -684,6 +819,7 @@ def _scan_pull_requests_with_reviewers(org: str, repo: str) -> Generator[tuple, 
                     'url': pr.get('html_url'),
                     'created_at': created_at,
                     'author': pr.get('user', {}).get('login'),
+                    'merged_by': merged_by,
                     'labels': [l.get('name') for l in pr.get('labels', [])]
                 })
 
@@ -704,13 +840,46 @@ def _scan_pull_requests_with_reviewers(org: str, repo: str) -> Generator[tuple, 
                 except requests.RequestException:
                     pass
 
+                # Fetch commenters for i18n PRs (potential decision makers)
+                try:
+                    comments_url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}/issues/{pr_number}/comments"
+                    comments_response = requests.get(
+                        comments_url,
+                        headers=get_github_headers(),
+                        params={'per_page': 50},
+                        timeout=10
+                    )
+                    if comments_response.status_code == 200:
+                        comments = comments_response.json()
+                        for comment in comments:
+                            commenter = comment.get('user', {}).get('login')
+                            if commenter and not is_bot_account(commenter):
+                                if commenter not in commenters:
+                                    commenters[commenter] = {
+                                        'comment_count': 0,
+                                        'prs_commented_on': set(),
+                                        'sample_comments': []
+                                    }
+                                commenters[commenter]['comment_count'] += 1
+                                commenters[commenter]['prs_commented_on'].add(pr_number)
+                                if len(commenters[commenter]['sample_comments']) < 2:
+                                    commenters[commenter]['sample_comments'].append(
+                                        comment.get('body', '')[:100]
+                                    )
+                except requests.RequestException:
+                    pass
+
             prs_analyzed += 1
 
     except requests.RequestException as e:
-        yield (f"Error fetching PRs: {str(e)}", prs_analyzed, signals, reviewers)
+        yield (f"Error fetching PRs: {str(e)}", prs_analyzed, signals, reviewers, commenters)
         return
 
-    yield (f"Analyzed {prs_analyzed} PRs", prs_analyzed, signals, reviewers)
+    # Convert sets to lists for JSON serialization
+    for login in commenters:
+        commenters[login]['prs_commented_on'] = list(commenters[login]['prs_commented_on'])
+
+    yield (f"Analyzed {prs_analyzed} PRs ({len(commenters)} commenters)", prs_analyzed, signals, reviewers, commenters)
 
 
 def _scan_dependencies(org: str, repo: str) -> Generator[tuple, None, None]:
@@ -808,6 +977,114 @@ def _scan_locale_inventory(org: str, repo: str) -> Generator[tuple, None, None]:
             continue
 
     yield ("Locale inventory complete", None)
+
+
+def _scan_seo_i18n_config(org: str, repo: str) -> Generator[tuple, None, None]:
+    """
+    Scan for SEO/marketing i18n configuration files.
+
+    Detects next.config.js, nuxt.config.js, sitemap.xml for international SEO strategy.
+    This is the STRONGEST signal of marketing intent vs just engineering cleanup.
+
+    Yields:
+        Tuples of (log_message, result_dict)
+    """
+    yield ("Scanning for SEO i18n configs...", None)
+
+    for config_file in Config.SEO_CONFIG_FILES:
+        try:
+            url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}/contents/{config_file}"
+            response = requests.get(
+                url,
+                headers=get_github_headers(),
+                timeout=15
+            )
+
+            if response.status_code != 200:
+                continue
+
+            file_data = response.json()
+            content_b64 = file_data.get('content', '')
+
+            if content_b64:
+                try:
+                    content = base64.b64decode(content_b64).decode('utf-8')
+                    result = _parse_seo_i18n_config(content, config_file)
+
+                    if result:
+                        yield (f"SEO i18n detected in {config_file}: {result.get('locales', [])}", result)
+
+                except Exception:
+                    pass
+
+        except requests.RequestException:
+            continue
+
+    yield ("SEO config scan complete", None)
+
+
+def _parse_seo_i18n_config(content: str, filename: str) -> Optional[dict]:
+    """
+    Parse SEO config file for i18n settings.
+
+    Handles:
+    - next.config.js: i18n: { locales: ['en', 'fr', 'es'] }
+    - nuxt.config.js: i18n module with locales
+    - sitemap.xml: hreflang alternate links
+    """
+    result = None
+
+    if 'next.config' in filename:
+        # Look for i18n config block
+        i18n_match = re.search(r'i18n\s*:\s*\{([^}]+)\}', content, re.DOTALL)
+        if i18n_match:
+            i18n_block = i18n_match.group(1)
+            # Extract locales array
+            locales_match = re.search(r'locales\s*:\s*\[([^\]]+)\]', i18n_block)
+            if locales_match:
+                locales_str = locales_match.group(1)
+                # Parse locale strings
+                locales = re.findall(r'["\']([a-zA-Z-]+)["\']', locales_str)
+                if locales:
+                    result = {
+                        'type': 'seo_i18n_config',
+                        'source': filename,
+                        'locales': locales,
+                        'framework': 'Next.js',
+                        'is_marketing_intent': True
+                    }
+
+    elif 'nuxt.config' in filename:
+        # Look for i18n module
+        if 'i18n' in content.lower():
+            locales_match = re.search(r'locales\s*:\s*\[([^\]]+)\]', content)
+            if locales_match:
+                locales_str = locales_match.group(1)
+                locales = re.findall(r'["\']([a-zA-Z-]+)["\']', locales_str)
+                if locales:
+                    result = {
+                        'type': 'seo_i18n_config',
+                        'source': filename,
+                        'locales': locales,
+                        'framework': 'Nuxt',
+                        'is_marketing_intent': True
+                    }
+
+    elif 'sitemap.xml' in filename:
+        # Look for hreflang in sitemap
+        if 'hreflang' in content.lower():
+            # Extract all hreflang values
+            hreflang_matches = re.findall(r'hreflang=["\']([^"\']+)["\']', content, re.IGNORECASE)
+            if hreflang_matches:
+                result = {
+                    'type': 'seo_i18n_config',
+                    'source': filename,
+                    'locales': list(set(hreflang_matches)),
+                    'framework': 'SEO/Sitemap',
+                    'is_marketing_intent': True
+                }
+
+    return result
 
 
 def _is_i18n_file(filename: str) -> bool:
@@ -920,3 +1197,79 @@ def _sse_error(message: str) -> str:
 def _sse_data(event_type: str, data: dict) -> str:
     """Format a data payload for SSE."""
     return f"data: {event_type}:{json.dumps(data)}\n\n"
+
+
+def _sse_signal(signal: dict) -> str:
+    """
+    Format a SIGNAL_FOUND event for real-time streaming.
+
+    This provides immediate gratification to the user by showing
+    findings as they happen, not just at the end.
+    """
+    return f"data: SIGNAL_FOUND:{json.dumps(signal)}\n\n"
+
+
+def calculate_confidence_score(scan_results: dict) -> int:
+    """
+    Calculate a confidence score for the lead based on detected signals.
+
+    Returns a score from 0-100 representing the probability of
+    this being a high-value localization opportunity.
+    """
+    score = 0
+    weights = Config.CONFIDENCE_WEIGHTS
+
+    # +10 pts for each locales/ folder found
+    locale_paths = len(scan_results.get('locale_inventory', {}).get('paths_found', []))
+    score += min(locale_paths * weights['locale_folder'], 30)
+
+    # +20 pts for i18n PR in last 30 days
+    recent_prs = [s for s in scan_results.get('signals', [])
+                  if s.get('type') == 'pull_request']
+    if recent_prs:
+        score += weights['i18n_pr_recent']
+
+    # +50 pts for new language added (detected via file additions)
+    new_files = [s for s in scan_results.get('signals', [])
+                 if s.get('type') == 'file_change' and s.get('status') == 'added']
+    if new_files:
+        score += weights['new_language_added']
+
+    # +40 pts for competitor config file
+    if scan_results.get('competitor_detection', {}).get('config_files_found'):
+        score += weights['competitor_config']
+
+    # +30 pts for TMS in dependencies
+    if scan_results.get('competitor_detection', {}).get('tms_in_dependencies'):
+        score += weights['tms_in_deps']
+
+    # +15 pts per frustration signal (max 3 = 45 pts)
+    frustration_count = min(len(scan_results.get('frustration_signals', [])), 3)
+    score += frustration_count * weights['frustration_signal']
+
+    # +25 pts if >70% human translation edits
+    if scan_results.get('developer_translator_metric', {}).get('is_high_pain'):
+        score += weights['human_translator_pain']
+
+    # +10 pts per i18n library detected (max 30 pts)
+    i18n_libs = len(scan_results.get('tech_stack', {}).get('i18n_libraries', []))
+    score += min(i18n_libs * weights['i18n_library'], 30)
+
+    # +35 pts for greenfield opportunity
+    if scan_results.get('is_greenfield'):
+        score += weights['greenfield_opportunity']
+
+    # +20 pts for detected market expansion
+    if scan_results.get('market_insights', {}).get('primary_market'):
+        score += weights['market_expansion']
+
+    # +20 pts for reviewer bottleneck
+    if scan_results.get('reviewer_bottleneck', {}).get('is_bottleneck'):
+        score += weights['reviewer_bottleneck']
+
+    # +30 pts for SEO i18n config (highest marketing intent signal)
+    if scan_results.get('seo_i18n_config', {}).get('has_marketing_intent'):
+        score += weights['seo_i18n_config']
+
+    # Cap at 100
+    return min(score, 100)

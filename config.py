@@ -166,9 +166,57 @@ class Config:
     REVIEWER_BOTTLENECK_THRESHOLD = 0.80  # 80%
 
     # ============================================================
+    # SMART FILTERING - NOISE FILE EXTENSIONS
+    # ============================================================
+    # File extensions to IGNORE when scanning for localization signals
+    # These generate false positives (e.g., README mentioning "translation")
+    NOISE_FILE_EXTENSIONS = [
+        '.md', '.txt', '.svg', '.png', '.jpg', '.jpeg', '.gif', '.ico',
+        '.lock', '.sum', '.resolved', '.log', '.map', '.min.js', '.min.css',
+        '.d.ts', '.test.js', '.test.ts', '.spec.js', '.spec.ts',
+        '.snap', '.fixture', '.mock'
+    ]
+
+    # Noise filenames to completely ignore
+    NOISE_FILENAMES = [
+        'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml', 'Gemfile.lock',
+        'poetry.lock', 'composer.lock', 'Cargo.lock', 'go.sum',
+        'README.md', 'CHANGELOG.md', 'LICENSE', 'LICENSE.md', 'CONTRIBUTING.md'
+    ]
+
+    # ============================================================
+    # SEO & MARKETING INTENT DETECTION
+    # ============================================================
+    # Files that indicate marketing/SEO international strategy
+    SEO_CONFIG_FILES = [
+        'next.config.js', 'next.config.mjs', 'next.config.ts',
+        'nuxt.config.js', 'nuxt.config.ts',
+        'sitemap.xml', 'robots.txt',
+        'vercel.json', 'netlify.toml'
+    ]
+
+    # ============================================================
+    # CONFIDENCE SCORE WEIGHTS
+    # ============================================================
+    CONFIDENCE_WEIGHTS = {
+        'locale_folder': 10,           # +10 pts for locales/ folder
+        'i18n_pr_recent': 20,          # +20 pts for i18n PR in last 30 days
+        'new_language_added': 50,      # +50 pts for new language added
+        'competitor_config': 40,       # +40 pts for competitor TMS config
+        'tms_in_deps': 30,             # +30 pts for TMS in dependencies
+        'frustration_signal': 15,      # +15 pts per frustration signal (max 3)
+        'human_translator_pain': 25,   # +25 pts if >70% human translation edits
+        'i18n_library': 10,            # +10 pts per i18n library detected
+        'greenfield_opportunity': 35,  # +35 pts for greenfield (mature + no i18n)
+        'market_expansion': 20,        # +20 pts for detected market expansion
+        'reviewer_bottleneck': 20,     # +20 pts for reviewer bottleneck
+        'seo_i18n_config': 30,         # +30 pts for SEO i18n config (next.config)
+    }
+
+    # ============================================================
     # COMPLIANCE & FORENSIC EXTERNAL SEARCH CONFIG
     # ============================================================
-    
+
     # Compliance and Privacy patterns (Global vs Localized)
     COMPLIANCE_FILE_PATTERNS = [
         'PRIVACY', 'PRIVACY-POLICY', 'GDPR', 'LGPD', 'PIPL', 'CCPA',
@@ -184,4 +232,3 @@ class Config:
         '"{company}" react-intl error site:stackoverflow.com',
         '"{company}" i18next site:stackoverflow.com'
     ]
-

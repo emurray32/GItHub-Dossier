@@ -14,6 +14,8 @@ class StreamHandler {
         this.actionButtons = document.getElementById('actionButtons');
         this.viewReportBtn = document.getElementById('viewReportBtn');
         this.reportPreview = document.getElementById('reportPreview');
+        this.liveFindings = document.getElementById('liveFindings');
+        this.findingsList = document.getElementById('findingsList');
 
         this.scanData = null;
         this.analysisData = null;
@@ -21,6 +23,7 @@ class StreamHandler {
         this.lineCount = 0;
         this.phases = ['Discovery', 'Repository Discovery', 'Deep Repository Scan', 'Scan Complete'];
         this.currentPhase = 0;
+        this.signalsFound = [];
     }
 
     start() {
@@ -62,6 +65,10 @@ class StreamHandler {
                 this.handleErrorMessage(content);
                 break;
 
+            case 'SIGNAL_FOUND':
+                this.handleSignalFound(content);
+                break;
+
             case 'SCAN_COMPLETE':
                 this.handleScanComplete(content);
                 break;
@@ -73,6 +80,84 @@ class StreamHandler {
             case 'COMPLETE':
                 this.handleComplete(content);
                 break;
+        }
+    }
+
+    handleSignalFound(jsonStr) {
+        try {
+            const signal = JSON.parse(jsonStr);
+            this.signalsFound.push(signal);
+
+            // Show live findings panel if hidden
+            if (this.liveFindings && this.liveFindings.classList.contains('hidden')) {
+                this.liveFindings.classList.remove('hidden');
+            }
+
+            // Add to live findings list
+            if (this.findingsList) {
+                // Clear empty state message on first signal
+                const emptyMsg = this.findingsList.querySelector('.findings-empty');
+                if (emptyMsg) {
+                    emptyMsg.remove();
+                }
+
+                const item = document.createElement('div');
+                item.className = `finding-item finding-${signal.significance || 'medium'}`;
+
+                // Format based on signal type
+                let icon = '📌';
+                let description = '';
+
+                switch (signal.type) {
+                    case 'competitor_config':
+                        icon = '⚠️';
+                        description = `Competitor TMS: ${signal.file}`;
+                        break;
+                    case 'frustration':
+                        icon = '😤';
+                        description = `Pain Point: "${signal.message}..."`;
+                        break;
+                    case 'new_locale_file':
+                        icon = '🌍';
+                        description = `New locale: ${signal.file}`;
+                        break;
+                    case 'locale_inventory':
+                        icon = '📁';
+                        description = `${signal.count} locales in ${signal.repo}`;
+                        break;
+                    case 'seo_i18n_config':
+                        icon = '🎯';
+                        description = `SEO i18n: ${signal.source} (${signal.locales?.length || 0} locales)`;
+                        break;
+                    case 'greenfield_opportunity':
+                        icon = '💎';
+                        description = `Greenfield! ${signal.total_stars}+ stars, no i18n`;
+                        break;
+                    case 'i18n_pr':
+                        icon = '📝';
+                        description = `PR #${signal.pr_number}: ${signal.title}`;
+                        break;
+                    default:
+                        description = `${signal.type}: ${signal.repo || ''}`;
+                }
+
+                item.innerHTML = `
+                    <span class="finding-icon">${icon}</span>
+                    <span class="finding-text">${this.escapeHtml(description)}</span>
+                    ${signal.repo ? `<span class="finding-repo">${this.escapeHtml(signal.repo)}</span>` : ''}
+                `;
+
+                this.findingsList.appendChild(item);
+
+                // Auto-scroll to latest finding
+                this.findingsList.scrollTop = this.findingsList.scrollHeight;
+            }
+
+            // Update status with signal count
+            this.updateStatus(`Found ${this.signalsFound.length} signals...`, 'active');
+
+        } catch (e) {
+            console.error('Error parsing signal:', e);
         }
     }
 
