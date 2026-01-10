@@ -969,12 +969,13 @@
     {% endif %}
 
     <!-- Risk Intelligence: Compliance -->
-    {% if report.scan_data.compliance_assets.detected_files %}
+    {% set compliance_assets = report.scan_data.get('compliance_assets', {}) %}
+    {% if compliance_assets.get('detected_files') %}
     <div class="section">
         <h2 class="section-title">Compliance Asset Intelligence</h2>
         <p class="text-secondary">Detected legal and privacy assets across repositories.</p>
         <div class="compliance-grid">
-            {% for asset in report.scan_data.compliance_assets.detected_files %}
+            {% for asset in compliance_assets.get('detected_files', []) %}
             <div class="compliance-card">
                 <div>
                     <div style="font-weight: 600;">{{ asset.file }}</div>

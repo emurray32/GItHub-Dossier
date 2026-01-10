@@ -159,6 +159,8 @@ def _row_to_dict(row: sqlite3.Row) -> dict:
     # Parse JSON fields
     if result.get('scan_data'):
         result['scan_data'] = json.loads(result['scan_data'])
+        if isinstance(result['scan_data'], dict):
+            result['scan_data'].setdefault('compliance_assets', {'detected_files': []})
     if result.get('ai_analysis'):
         result['ai_analysis'] = json.loads(result['ai_analysis'])
 
