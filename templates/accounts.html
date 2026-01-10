@@ -116,10 +116,124 @@
         color: var(--accent-color);
     }
 
-    .company-org {
-        font-size: 0.8rem;
+    /* GitHub org cell */
+    .github-org-cell {
+        font-size: 0.875rem;
+    }
+
+    .github-org-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        color: var(--text-secondary);
+        text-decoration: none;
+        padding: 0.25rem 0.5rem;
+        border-radius: 4px;
+        transition: all var(--transition-fast);
+        background: rgba(255, 255, 255, 0.05);
+    }
+
+    .github-org-link:hover {
+        color: var(--accent-color);
+        background: rgba(99, 102, 241, 0.15);
+    }
+
+    .github-org-link svg {
+        width: 14px;
+        height: 14px;
+        opacity: 0.7;
+    }
+
+    .github-org-link:hover svg {
+        opacity: 1;
+    }
+
+    .github-org-edit {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+        margin-left: 0.5rem;
+        padding: 0.2rem 0.4rem;
+        background: transparent;
+        border: 1px solid var(--border-color);
+        border-radius: 4px;
         color: var(--text-muted);
-        font-weight: 400;
+        font-size: 0.75rem;
+        cursor: pointer;
+        transition: all var(--transition-fast);
+    }
+
+    .github-org-edit:hover {
+        background: var(--bg-tertiary);
+        color: var(--text-primary);
+        border-color: var(--text-muted);
+    }
+
+    .github-org-input-container {
+        display: none;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .github-org-input-container.active {
+        display: inline-flex;
+    }
+
+    .github-org-input {
+        padding: 0.3rem 0.5rem;
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: 4px;
+        color: var(--text-primary);
+        font-size: 0.8rem;
+        width: 120px;
+    }
+
+    .github-org-input:focus {
+        outline: none;
+        border-color: var(--accent-color);
+    }
+
+    .btn-save-org {
+        padding: 0.25rem 0.5rem;
+        background: var(--accent-color);
+        border: none;
+        border-radius: 4px;
+        color: white;
+        font-size: 0.75rem;
+        cursor: pointer;
+    }
+
+    .btn-save-org:hover {
+        background: var(--accent-hover);
+    }
+
+    .btn-cancel-org {
+        padding: 0.25rem 0.5rem;
+        background: transparent;
+        border: 1px solid var(--border-color);
+        border-radius: 4px;
+        color: var(--text-muted);
+        font-size: 0.75rem;
+        cursor: pointer;
+    }
+
+    .btn-cancel-org:hover {
+        background: var(--bg-tertiary);
+    }
+
+    .org-display {
+        display: inline-flex;
+        align-items: center;
+    }
+
+    .org-display.hidden {
+        display: none;
+    }
+
+    .org-not-found {
+        color: #f87171;
+        font-style: italic;
     }
 
     /* Tier badge */
@@ -490,6 +604,7 @@
             <thead>
                 <tr>
                     <th>Company</th>
+                    <th>GitHub Org</th>
                     <th>Tier</th>
                     <th>Freshness</th>
                     <th>Evidence</th>
@@ -498,7 +613,7 @@
             </thead>
             <tbody>
                 {% for account in accounts %}
-                <tr class="tier-row-{{ account.current_tier }}">
+                <tr class="tier-row-{{ account.current_tier }}" data-company="{{ account.company_name }}">
                     <td class="company-cell">
                         {% if account.latest_report_id %}
                         <a href="{{ url_for('view_report', report_id=account.latest_report_id) }}">
@@ -507,9 +622,31 @@
                         {% else %}
                         {{ account.company_name }}
                         {% endif %}
-                        {% if account.github_org %}
-                        <div class="company-org">@{{ account.github_org }}</div>
-                        {% endif %}
+                    </td>
+                    <td class="github-org-cell" data-company="{{ account.company_name|e }}" data-org="{{ account.github_org|default('', true)|e }}">
+                        <span class="org-display">
+                            {% if account.github_org %}
+                            <a href="https://github.com/{{ account.github_org }}" target="_blank" rel="noopener" class="github-org-link" title="View on GitHub">
+                                <svg viewBox="0 0 16 16" fill="currentColor">
+                                    <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+                                </svg>
+                                @{{ account.github_org }}
+                            </a>
+                            <button type="button" class="github-org-edit" onclick="showOrgEdit(this)" title="Edit GitHub org">
+                                Edit
+                            </button>
+                            {% else %}
+                            <span class="org-not-found">Not found</span>
+                            <button type="button" class="github-org-edit" onclick="showOrgEdit(this)" title="Set GitHub org">
+                                Set
+                            </button>
+                            {% endif %}
+                        </span>
+                        <span class="github-org-input-container">
+                            <input type="text" class="github-org-input" placeholder="org-name" value="{{ account.github_org or '' }}">
+                            <button type="button" class="btn-save-org" onclick="saveOrgEdit(this)">Save</button>
+                            <button type="button" class="btn-cancel-org" onclick="cancelOrgEdit(this)">Cancel</button>
+                        </span>
                     </td>
                     <td>
                         <span class="tier-badge tier-badge-{{ account.current_tier }}">
@@ -571,6 +708,71 @@
 </div>
 
 <script>
+function showOrgEdit(buttonEl) {
+    const cell = buttonEl.closest('.github-org-cell');
+    const orgDisplay = cell.querySelector('.org-display');
+    const inputContainer = cell.querySelector('.github-org-input-container');
+    const input = cell.querySelector('.github-org-input');
+    const currentOrg = cell.dataset.org || '';
+    
+    orgDisplay.classList.add('hidden');
+    inputContainer.classList.add('active');
+    input.value = currentOrg;
+    input.focus();
+}
+
+function cancelOrgEdit(buttonEl) {
+    const cell = buttonEl.closest('.github-org-cell');
+    const orgDisplay = cell.querySelector('.org-display');
+    const inputContainer = cell.querySelector('.github-org-input-container');
+    
+    inputContainer.classList.remove('active');
+    orgDisplay.classList.remove('hidden');
+}
+
+async function saveOrgEdit(buttonEl) {
+    const cell = buttonEl.closest('.github-org-cell');
+    const companyName = cell.dataset.company;
+    const input = cell.querySelector('.github-org-input');
+    const newOrg = input.value.trim();
+    
+    if (!newOrg) {
+        alert('Please enter a GitHub organization name');
+        return;
+    }
+    
+    buttonEl.disabled = true;
+    buttonEl.textContent = 'Saving...';
+    
+    try {
+        const response = await fetch('/api/update-org', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                company_name: companyName,
+                github_org: newOrg
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (!response.ok || data.status !== 'success') {
+            throw new Error(data.message || 'Failed to update org');
+        }
+        
+        // Reload page to show updated org
+        location.reload();
+        
+    } catch (error) {
+        console.error('Update org error:', error);
+        alert('Failed to update GitHub org: ' + error.message);
+        buttonEl.disabled = false;
+        buttonEl.textContent = 'Save';
+    }
+}
+
 async function triggerRescan(buttonEl, companyName) {
     // Disable button and show scanning state
     buttonEl.disabled = true;

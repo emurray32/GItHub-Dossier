@@ -446,6 +446,53 @@ def api_track():
         return jsonify({'error': f'Failed to track organization: {str(e)}'}), 500
 
 
+@app.route('/api/update-org', methods=['POST'])
+def api_update_org():
+    """
+    Update the GitHub organization for a monitored account.
+
+    Expects JSON payload: {"company_name": "Company", "github_org": "org-name"}
+
+    Returns:
+        JSON with update result.
+    """
+    from database import get_db_connection
+
+    data = request.get_json() or {}
+    company_name = data.get('company_name', '').strip()
+    github_org = data.get('github_org', '').strip()
+
+    if not company_name or not github_org:
+        return jsonify({'status': 'error', 'message': 'Missing required fields'}), 400
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Update the github_org for this account
+        cursor.execute('''
+            UPDATE monitored_accounts
+            SET github_org = ?, current_tier = 0, evidence_summary = 'GitHub org updated manually'
+            WHERE company_name = ?
+        ''', (github_org, company_name))
+
+        if cursor.rowcount == 0:
+            conn.close()
+            return jsonify({'status': 'error', 'message': 'Account not found'}), 404
+
+        conn.commit()
+        conn.close()
+
+        return jsonify({
+            'status': 'success',
+            'company_name': company_name,
+            'github_org': github_org
+        })
+
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
 @app.route('/api/rescan/<company_name>', methods=['POST'])
 def api_rescan(company_name: str):
     """
@@ -465,6 +512,7 @@ def api_rescan(company_name: str):
     analysis_data = None
 
     # Phase 1: Run the deep scan (silent)
+    scan_error = None
     try:
         for message in deep_scan_generator(company_name):
             # Check if this is the scan complete message
@@ -474,12 +522,48 @@ def api_rescan(company_name: str):
                 if json_str.startswith('data: '):
                     json_str = json_str[6:]
                 scan_data = json.loads(json_str)
+            # Check if there was an error during scan
+            elif 'ERROR:' in message:
+                scan_error = message.split('ERROR:', 1)[1].strip()
 
     except Exception as e:
-        return jsonify({'status': 'error', 'message': f'Scan failed: {str(e)}'}), 500
+        scan_error = str(e)
 
+    # If scan failed (no data or error), mark account as Tier 4 (Disqualified)
     if not scan_data:
-        return jsonify({'status': 'error', 'message': 'No scan data generated'}), 500
+        from database import get_db_connection
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+
+            # Update account to Tier 4 (Disqualified)
+            error_reason = scan_error or 'GitHub organization not found or no public repos'
+            cursor.execute('''
+                UPDATE monitored_accounts
+                SET current_tier = 4, 
+                    evidence_summary = ?,
+                    last_scanned_at = CURRENT_TIMESTAMP
+                WHERE company_name = ?
+            ''', (error_reason, company_name))
+
+            conn.commit()
+            conn.close()
+
+            tier_config = TIER_CONFIG.get(4, TIER_CONFIG[0])
+            return jsonify({
+                'status': 'success',
+                'company': company_name,
+                'new_tier': 4,
+                'tier_name': tier_config['name'],
+                'tier_color': tier_config['color'],
+                'tier_emoji': tier_config['emoji'],
+                'evidence': error_reason,
+                'last_scanned': 'Just now',
+                'tier_changed': True
+            })
+
+        except Exception as e:
+            return jsonify({'status': 'error', 'message': f'Failed to update account: {str(e)}'}), 500
 
     # Phase 2: Generate AI analysis (silent)
     try:
