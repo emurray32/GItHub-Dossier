@@ -396,23 +396,52 @@ def _scan_rfc_discussion(org: str, repo: str, company: str) -> Generator[tuple, 
 
 def _scan_dependency_injection(org: str, repo: str, company: str) -> Generator[tuple, None, None]:
     """
-    Signal 2: Dependency Injection Scan (Preparing Phase)
+    Signal 2: Dependency Injection Scan (Preparing Phase) - GOLDILOCKS ZONE DETECTION
 
-    Target: package.json, Gemfile, requirements.txt, composer.json, mix.exs
-    Logic: Flag if any of the 'Smoking Gun' i18n libraries are present
-    Constraint: Signal is valid ONLY if /locales/ or /messages/ folder does NOT exist
+    Target: package.json, Gemfile (focusing on our 4 target libraries)
+    Logic: Flag if SMOKING GUN i18n libraries are present
+
+    THE "GAP" REQUIREMENT (Negative Check):
+    - A signal is ONLY valid if the repository has NO localization folders
+    - If /locales, /i18n, /translations, or /lang exist -> DISQUALIFY (Already Launched)
+
+    TARGET LIBRARIES:
+    - babel-plugin-react-intl
+    - react-i18next
+    - formatjs
+    - uppy (only if i18n/locale properties are configured)
 
     Yields:
         Tuples of (log_message, signal_object)
     """
-    # First, check if locale folders exist (if they do, skip this repo)
-    locale_exists = _check_locale_folders_exist(org, repo)
+    # ============================================================
+    # NEGATIVE CHECK: Verify NO exclusion folders exist
+    # ============================================================
+    locale_exists, found_folders = _check_locale_folders_exist_detailed(org, repo)
 
     if locale_exists:
-        yield ("Locale folder exists - skipping (already implemented)", None)
+        # Company has ALREADY LAUNCHED - mark as "Too Late"
+        yield (f"⚠️ DISQUALIFIED: Found locale folders ({', '.join(found_folders)}) - Already Launched", None)
+
+        # Still emit a signal but mark it as "launched" status
+        signal = {
+            'Company': company,
+            'Signal': 'Already Launched',
+            'Evidence': f"Found localization folders: {', '.join(found_folders)} - Company has already launched i18n",
+            'Link': f"https://github.com/{org}/{repo}",
+            'priority': 'LOW',
+            'type': 'already_launched',
+            'repo': repo,
+            'locale_folders_found': found_folders,
+            'goldilocks_status': 'launched',
+            'bdr_summary': Config.BDR_TRANSLATIONS.get('locale_folder_exists', 'Already has translations'),
+        }
+        yield (f"📉 LOW PRIORITY: {repo} already has locale folders", signal)
         return
 
-    # Scan each dependency file
+    # ============================================================
+    # POSITIVE CHECK: Scan for Goldilocks Zone libraries
+    # ============================================================
     for dep_file in Config.DEPENDENCY_INJECTION_FILES:
         try:
             url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}/contents/{dep_file}"
@@ -434,33 +463,73 @@ def _scan_dependency_injection(org: str, repo: str, company: str) -> Generator[t
                     content = base64.b64decode(content_b64).decode('utf-8')
                     content_lower = content.lower()
 
-                    # Check for smoking gun libraries
                     found_libs = []
+                    bdr_explanations = []
+
+                    # Check for our 4 target SMOKING GUN libraries
                     for lib in Config.SMOKING_GUN_LIBS:
-                        # Match as dependency name (with quotes for JSON/YAML)
-                        if f'"{lib}"' in content_lower or f"'{lib}'" in content_lower or f'{lib}' in content_lower:
+                        # Match as dependency name (with quotes for JSON)
+                        if f'"{lib}"' in content_lower or f"'{lib}'" in content_lower:
                             found_libs.append(lib)
+                            bdr_explanations.append(Config.BDR_TRANSLATIONS.get(lib, f'Found {lib}'))
+
+                    # Special handling for Uppy - only count if i18n config is present
+                    if Config.UPPY_LIBRARY in content_lower:
+                        # Check if any i18n indicators are present
+                        for indicator in Config.UPPY_I18N_INDICATORS:
+                            if indicator in content_lower:
+                                found_libs.append(f"{Config.UPPY_LIBRARY} (with {indicator} config)")
+                                bdr_explanations.append(Config.BDR_TRANSLATIONS.get('uppy', 'Uppy with i18n'))
+                                break
 
                     if found_libs:
+                        # This is the GOLDILOCKS ZONE - Library found + NO locale folders!
                         signal = {
                             'Company': company,
                             'Signal': 'Dependency Injection',
-                            'Evidence': f"Found {', '.join(found_libs)} in {dep_file} but no /locales/ folder",
+                            'Evidence': f"🎯 GOLDILOCKS ZONE: Found {', '.join(found_libs)} in {dep_file} but NO locale folders exist!",
                             'Link': file_url,
-                            'priority': 'HIGH',
+                            'priority': 'CRITICAL',
                             'type': 'dependency_injection',
                             'repo': repo,
                             'file': dep_file,
                             'libraries_found': found_libs,
+                            'goldilocks_status': 'preparing',
+                            'gap_verified': True,  # Negative check passed!
+                            'bdr_summary': ' | '.join(bdr_explanations),
+                            'bdr_gap_explanation': Config.BDR_TRANSLATIONS.get('locale_folder_missing', 'Infrastructure ready, no translations'),
                         }
 
-                        yield (f"🎯 SMOKING GUN: {', '.join(found_libs)} in {dep_file}", signal)
+                        yield (f"🎯 GOLDILOCKS ZONE: {', '.join(found_libs)} in {dep_file} - NO TRANSLATIONS YET!", signal)
 
                 except Exception:
                     pass
 
         except requests.RequestException:
             continue
+
+
+def _check_locale_folders_exist_detailed(org: str, repo: str) -> tuple:
+    """
+    Check if locale/exclusion folders exist in the repo.
+    Returns (bool, list) - whether folders exist and which ones were found.
+    """
+    found_folders = []
+
+    for path in Config.EXCLUSION_FOLDERS:
+        try:
+            url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}/contents/{path}"
+            response = requests.get(
+                url,
+                headers=get_github_headers(),
+                timeout=10
+            )
+            if response.status_code == 200:
+                found_folders.append(path)
+        except requests.RequestException:
+            continue
+
+    return (len(found_folders) > 0, found_folders)
 
 
 def _check_locale_folders_exist(org: str, repo: str) -> bool:
@@ -595,36 +664,83 @@ def _scan_ghost_branches(org: str, repo: str, company: str) -> Generator[tuple, 
 
 def _calculate_intent_score(scan_results: dict) -> int:
     """
-    Calculate intent score based on detected signals.
+    Calculate intent score based on GOLDILOCKS ZONE scoring model.
 
-    Scoring:
-    - RFC & Discussion (HIGH): +30 pts each
-    - RFC & Discussion (MEDIUM): +15 pts each
-    - Dependency Injection: +40 pts each (smoking gun!)
-    - Ghost Branch: +25 pts each
+    NEW SCORING (Gap Requirement):
+    - PREPARING (Library + No locale folders) = 90-100/100 (GOLDILOCKS ZONE!)
+    - THINKING (RFC/Discussions found) = 40/100
+    - LAUNCHED (Locale folders exist) = 10/100 (Too Late)
+
+    The "GAP" is what we want: Infrastructure ready, but no translations.
 
     Returns score from 0-100.
     """
-    score = 0
     summary = scan_results.get('signal_summary', {})
+    signals = scan_results.get('signals', [])
 
-    # RFC & Discussion signals
-    rfc_hits = summary.get('rfc_discussion', {}).get('hits', [])
-    for hit in rfc_hits:
-        if hit.get('priority') == 'HIGH':
-            score += 30
-        else:
-            score += 15
+    # ============================================================
+    # Check for LAUNCHED status (disqualifying condition)
+    # ============================================================
+    already_launched_signals = [s for s in signals if s.get('type') == 'already_launched']
+    if already_launched_signals:
+        # They have locale folders - TOO LATE
+        scan_results['goldilocks_status'] = 'launched'
+        scan_results['lead_status'] = Config.LEAD_STATUS_LABELS.get('launched', 'LOW PRIORITY')
+        return Config.GOLDILOCKS_SCORES.get('launched', 10)
 
-    # Dependency Injection signals (highest value - smoking gun!)
-    dep_count = summary.get('dependency_injection', {}).get('count', 0)
-    score += dep_count * 40
+    # ============================================================
+    # Check for PREPARING status (Goldilocks Zone!)
+    # ============================================================
+    dep_hits = summary.get('dependency_injection', {}).get('hits', [])
+    goldilocks_hits = [h for h in dep_hits if h.get('goldilocks_status') == 'preparing' or h.get('gap_verified')]
 
-    # Ghost Branch signals
+    if goldilocks_hits:
+        # This is the GOLDILOCKS ZONE!
+        # Library found + No locale folders = PERFECT TIMING
+        scan_results['goldilocks_status'] = 'preparing'
+        scan_results['lead_status'] = Config.LEAD_STATUS_LABELS.get('preparing', 'HOT LEAD')
+
+        # Score based on number of libraries found (90-100 range)
+        base_score = Config.GOLDILOCKS_SCORES.get('preparing_min', 90)
+        bonus = min(len(goldilocks_hits) * 5, 10)  # Up to +10 bonus
+
+        # Add bonus for ghost branches (active work)
+        ghost_count = summary.get('ghost_branch', {}).get('count', 0)
+        if ghost_count > 0:
+            bonus = 10  # Max bonus if actively working on it
+
+        return min(base_score + bonus, Config.GOLDILOCKS_SCORES.get('preparing_max', 100))
+
+    # ============================================================
+    # Check for THINKING status
+    # ============================================================
+    rfc_count = summary.get('rfc_discussion', {}).get('count', 0)
+    if rfc_count > 0:
+        scan_results['goldilocks_status'] = 'thinking'
+        scan_results['lead_status'] = Config.LEAD_STATUS_LABELS.get('thinking', 'WARM LEAD')
+
+        # Base score for thinking + bonus for HIGH priority discussions
+        base_score = Config.GOLDILOCKS_SCORES.get('thinking', 40)
+        high_priority_count = summary.get('rfc_discussion', {}).get('high_priority_count', 0)
+        bonus = min(high_priority_count * 10, 20)  # Up to +20 for high priority
+
+        return min(base_score + bonus, 60)  # Cap at 60 for thinking
+
+    # ============================================================
+    # Check for Ghost Branches only (Active experimentation)
+    # ============================================================
     ghost_count = summary.get('ghost_branch', {}).get('count', 0)
-    score += ghost_count * 25
+    if ghost_count > 0:
+        scan_results['goldilocks_status'] = 'thinking'
+        scan_results['lead_status'] = Config.LEAD_STATUS_LABELS.get('thinking', 'WARM LEAD')
+        return min(35 + ghost_count * 5, 50)
 
-    return min(score, 100)
+    # ============================================================
+    # No signals found
+    # ============================================================
+    scan_results['goldilocks_status'] = 'none'
+    scan_results['lead_status'] = Config.LEAD_STATUS_LABELS.get('none', 'COLD')
+    return 0
 
 
 def _sse_log(message: str) -> str:
