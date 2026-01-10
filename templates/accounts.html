@@ -212,6 +212,79 @@
         animation: spin 0.8s linear infinite;
     }
 
+    .btn-start-scan {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+        padding: 0.4rem 0.75rem;
+        background: #3b82f6;
+        color: white;
+        border: none;
+        border-radius: 6px;
+        font-size: 0.8rem;
+        text-decoration: none;
+        cursor: pointer;
+        transition: background var(--transition-fast);
+    }
+
+    .btn-start-scan:hover:not(:disabled) {
+        background: #2563eb;
+    }
+
+    .btn-start-scan:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+
+    .btn-start-scan.scanning::before {
+        content: '';
+        display: inline-block;
+        width: 0.7rem;
+        height: 0.7rem;
+        margin-right: 0.4rem;
+        border: 2px solid rgba(255, 255, 255, 0.3);
+        border-top-color: white;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+    }
+
+    .btn-scan-all-new {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.5rem 1rem;
+        background: #10b981;
+        color: white;
+        border: none;
+        border-radius: 6px;
+        font-size: 0.875rem;
+        text-decoration: none;
+        cursor: pointer;
+        transition: background var(--transition-fast);
+        font-weight: 500;
+    }
+
+    .btn-scan-all-new:hover:not(:disabled) {
+        background: #059669;
+    }
+
+    .btn-scan-all-new:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+
+    .btn-scan-all-new.scanning::before {
+        content: '';
+        display: inline-block;
+        width: 0.7rem;
+        height: 0.7rem;
+        margin-right: 0.4rem;
+        border: 2px solid rgba(255, 255, 255, 0.3);
+        border-top-color: white;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+    }
+
     @keyframes spin {
         to { transform: rotate(360deg); }
     }
@@ -344,6 +417,9 @@
                     <span class="count">{{ tier_counts['0'] }}</span>
                     <span>Tracking</span>
                 </div>
+                <button type="button" class="btn-scan-all-new" onclick="scanAllNew()">
+                    ✨ Scan All New
+                </button>
             </div>
         </div>
     </header>
@@ -423,9 +499,16 @@
                             View
                         </a>
                         {% endif %}
+                        {% set needs_scan = not account.evidence_summary or account.last_scanned_at is none or account.last_scanned_at == account.created_at %}
+                        {% if needs_scan %}
+                        <button type="button" class="btn-start-scan" onclick="triggerRescan(this, '{{ account.company_name }}')">
+                            Start Scan
+                        </button>
+                        {% else %}
                         <button type="button" class="btn-rescan" onclick="triggerRescan(this, '{{ account.company_name }}')">
                             Rescan
                         </button>
+                        {% endif %}
                     </td>
                 </tr>
                 {% endfor %}
@@ -511,6 +594,57 @@ async function triggerRescan(buttonEl, companyName) {
 
     } catch (error) {
         console.error('Rescan error:', error);
+
+        // Show error state
+        buttonEl.classList.remove('scanning');
+        buttonEl.textContent = '✗ Error';
+        buttonEl.style.background = '#ef4444';
+
+        // Reset after 3 seconds
+        setTimeout(() => {
+            buttonEl.disabled = false;
+            buttonEl.textContent = originalText;
+            buttonEl.style.background = '';
+        }, 3000);
+    }
+}
+
+async function scanAllNew() {
+    const buttonEl = document.querySelector('.btn-scan-all-new');
+    if (!buttonEl) return;
+
+    // Disable button and show scanning state
+    buttonEl.disabled = true;
+    buttonEl.classList.add('scanning');
+    const originalText = buttonEl.textContent;
+    buttonEl.textContent = 'Scanning...';
+
+    try {
+        const response = await fetch('/api/scan-pending', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        });
+
+        const data = await response.json();
+
+        if (!response.ok || data.status !== 'success') {
+            throw new Error(data.message || 'Scan failed');
+        }
+
+        // Show success state
+        buttonEl.classList.remove('scanning');
+        buttonEl.textContent = `✓ Started ${data.scans_started} scan${data.scans_started !== 1 ? 's' : ''}`;
+        buttonEl.style.opacity = '0.7';
+
+        // Reload table after 2 seconds to show updated status
+        setTimeout(() => {
+            location.reload();
+        }, 2000);
+
+    } catch (error) {
+        console.error('Scan all new error:', error);
 
         // Show error state
         buttonEl.classList.remove('scanning');
