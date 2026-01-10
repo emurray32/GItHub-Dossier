@@ -616,6 +616,115 @@
         color: var(--text-secondary);
     }
 
+    /* Goldilocks Zone Status Banner */
+    .goldilocks-banner {
+        padding: 1.5rem 2rem;
+        border-radius: 12px;
+        margin-bottom: 2rem;
+        text-align: center;
+        font-weight: 700;
+    }
+
+    .goldilocks-preparing {
+        background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+        color: white;
+        border: 3px solid #15803d;
+    }
+
+    .goldilocks-preparing .status-icon {
+        font-size: 2.5rem;
+        margin-bottom: 0.5rem;
+    }
+
+    .goldilocks-preparing .status-title {
+        font-size: 1.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+
+    .goldilocks-preparing .status-subtitle {
+        font-size: 1.125rem;
+        font-weight: 500;
+        margin-top: 0.5rem;
+        opacity: 0.95;
+    }
+
+    .goldilocks-thinking {
+        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+        color: white;
+        border: 3px solid #b45309;
+    }
+
+    .goldilocks-launched {
+        background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
+        color: white;
+        border: 3px solid #374151;
+    }
+
+    .goldilocks-none {
+        background: var(--bg-secondary);
+        color: var(--text-secondary);
+        border: 2px dashed var(--border-color);
+    }
+
+    /* BDR-Friendly Highlight Boxes */
+    .bdr-highlight {
+        background: #fef3c7;
+        border-left: 4px solid #f59e0b;
+        padding: 1rem 1.25rem;
+        margin: 1rem 0;
+        border-radius: 0 8px 8px 0;
+    }
+
+    .bdr-highlight-critical {
+        background: #dcfce7;
+        border-left: 4px solid #22c55e;
+    }
+
+    .bdr-highlight-warning {
+        background: #fee2e2;
+        border-left: 4px solid #ef4444;
+    }
+
+    .bdr-label {
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: #92400e;
+        font-weight: 700;
+        margin-bottom: 0.25rem;
+    }
+
+    .bdr-highlight-critical .bdr-label {
+        color: #166534;
+    }
+
+    .bdr-highlight-warning .bdr-label {
+        color: #991b1b;
+    }
+
+    .bdr-text {
+        font-size: 1rem;
+        color: #1f2937;
+        font-weight: 600;
+    }
+
+    /* Finding Cards Enhancement */
+    .finding-item.critical-finding {
+        border-left: 4px solid #22c55e;
+        background: linear-gradient(90deg, #f0fdf4 0%, var(--bg-secondary) 100%);
+    }
+
+    .finding-item.low-priority-finding {
+        border-left: 4px solid #6b7280;
+        opacity: 0.7;
+    }
+
+    .significance-critical {
+        background: #22c55e;
+        color: white;
+    }
+
     /* Email Draft Section */
     .email-draft-section {
         background: var(--bg-secondary);
@@ -734,6 +843,36 @@
         </div>
     </header>
 
+    <!-- Goldilocks Zone Status Banner -->
+    {% set goldilocks_status = report.scan_data.goldilocks_status or report.ai_analysis.goldilocks_status or 'none' %}
+    {% set lead_status = report.scan_data.lead_status or report.ai_analysis.lead_status or '' %}
+
+    {% if goldilocks_status == 'preparing' %}
+    <div class="goldilocks-banner goldilocks-preparing">
+        <div class="status-icon">🎯</div>
+        <div class="status-title">Goldilocks Zone Detected!</div>
+        <div class="status-subtitle">Infrastructure is READY but NO translations exist yet. PERFECT time to call!</div>
+    </div>
+    {% elif goldilocks_status == 'thinking' %}
+    <div class="goldilocks-banner goldilocks-thinking">
+        <div class="status-icon">💭</div>
+        <div class="status-title">Warm Lead - Discussing i18n</div>
+        <div class="status-subtitle">Company is researching internationalization but hasn't started building yet.</div>
+    </div>
+    {% elif goldilocks_status == 'launched' %}
+    <div class="goldilocks-banner goldilocks-launched">
+        <div class="status-icon">⚠️</div>
+        <div class="status-title">Too Late - Already Localized</div>
+        <div class="status-subtitle">Company already has translation files. Low priority for outreach.</div>
+    </div>
+    {% else %}
+    <div class="goldilocks-banner goldilocks-none">
+        <div class="status-icon">❄️</div>
+        <div class="status-title">Cold Lead</div>
+        <div class="status-subtitle">No significant i18n signals detected.</div>
+    </div>
+    {% endif %}
+
     <!-- Stats Grid -->
     <div class="stats-grid">
         <div class="stat-card">
@@ -745,12 +884,12 @@
             <div class="stat-label">Repos Scanned</div>
         </div>
         <div class="stat-card">
-            <div class="stat-value">{{ report.commits_analyzed }}</div>
-            <div class="stat-label">Commits Analyzed</div>
+            <div class="stat-value">{{ report.scan_data.intent_score or 0 }}</div>
+            <div class="stat-label">Intent Score</div>
         </div>
         <div class="stat-card">
-            <div class="stat-value">{{ report.prs_analyzed }}</div>
-            <div class="stat-label">PRs Analyzed</div>
+            <div class="stat-value">{{ report.ai_analysis.opportunity_score or 5 }}/10</div>
+            <div class="stat-label">Opportunity Score</div>
         </div>
     </div>
 
@@ -758,6 +897,19 @@
     {% if report.ai_analysis.executive_summary %}
     <div class="executive-summary">
         {{ report.ai_analysis.executive_summary }}
+    </div>
+    {% endif %}
+
+    <!-- BDR Quick Action Box (for Goldilocks Zone) -->
+    {% if goldilocks_status == 'preparing' %}
+    <div class="bdr-highlight bdr-highlight-critical">
+        <div class="bdr-label">BDR Action Required</div>
+        <div class="bdr-text">This company has installed i18n libraries but has ZERO translation files. The infrastructure is ready, waiting for content. CALL TODAY!</div>
+    </div>
+    {% elif goldilocks_status == 'launched' %}
+    <div class="bdr-highlight bdr-highlight-warning">
+        <div class="bdr-label">Low Priority Notice</div>
+        <div class="bdr-text">This company already has translation files in place. They have a working i18n system. Focus on higher-priority leads.</div>
     </div>
     {% endif %}
 
@@ -813,20 +965,54 @@
         </ul>
     </div>
 
-    <!-- Maturity & Opportunity -->
+    <!-- Maturity & Opportunity - Goldilocks Zone Focused -->
     <div class="section">
         <h2 class="section-title">Assessment</h2>
 
-        {% set opp_type = report.ai_analysis.opportunity_type or 'unknown' %}
+        <!-- Goldilocks Zone Status -->
+        <div style="margin-bottom: 1.5rem; padding: 1rem; background: var(--bg-tertiary); border-radius: 8px;">
+            <p style="margin: 0 0 0.75rem 0;">
+                <strong>Goldilocks Status:</strong>
+                {% if goldilocks_status == 'preparing' %}
+                <span class="maturity-badge" style="background: #22c55e; color: white;">
+                    🎯 PREPARING - CALL NOW
+                </span>
+                {% elif goldilocks_status == 'thinking' %}
+                <span class="maturity-badge" style="background: #f59e0b; color: white;">
+                    💭 THINKING - WARM LEAD
+                </span>
+                {% elif goldilocks_status == 'launched' %}
+                <span class="maturity-badge" style="background: #6b7280; color: white;">
+                    ⚠️ LAUNCHED - TOO LATE
+                </span>
+                {% else %}
+                <span class="maturity-badge" style="background: #d1d5db; color: #374151;">
+                    ❄️ NO SIGNALS
+                </span>
+                {% endif %}
+            </p>
+            <p style="margin: 0; font-size: 0.875rem; color: var(--text-secondary);">
+                {% if goldilocks_status == 'preparing' %}
+                <strong style="color: #166534;">Infrastructure is ready, but no translations exist yet.</strong> This is our ideal customer.
+                {% elif goldilocks_status == 'thinking' %}
+                Company is discussing i18n but hasn't started building. Worth nurturing.
+                {% elif goldilocks_status == 'launched' %}
+                Company already has translation files. Low priority for greenfield sales.
+                {% else %}
+                No significant i18n signals detected in scanned repositories.
+                {% endif %}
+            </p>
+        </div>
+
+        {% set opp_type = report.ai_analysis.opportunity_type or goldilocks_status or 'unknown' %}
         <p>
             <strong>Opportunity Type:</strong>
-            <span
-                class="maturity-badge maturity-{{ 'mature' if opp_type in ['greenfield', 'pain_driven', 'competitor_displacement'] else 'developing' }}">
-                {{ opp_type|replace('_', ' ')|title }}
+            <span class="maturity-badge maturity-{{ 'mature' if opp_type == 'launched' else 'emerging' if opp_type == 'preparing' else 'developing' }}">
+                {% if opp_type == 'preparing' %}Goldilocks Zone{% elif opp_type == 'launched' %}Already Localized{% else %}{{ opp_type|replace('_', ' ')|title }}{% endif %}
             </span>
         </p>
 
-        {% set maturity = report.ai_analysis.localization_maturity or 'unknown' %}
+        {% set maturity = report.ai_analysis.localization_maturity or ('launched' if goldilocks_status == 'launched' else 'emerging') %}
         <p>
             <strong>Localization Maturity:</strong>
             <span class="maturity-badge maturity-{{ maturity }}">{{ maturity }}</span>
@@ -838,8 +1024,20 @@
             <div class="score-bar">
                 <div class="score-fill" style="width: {{ score * 10 }}%"></div>
             </div>
-            <span class="score-value">{{ score }}/10</span>
+            <span class="score-value {% if score >= 8 %}confidence-high{% elif score >= 5 %}confidence-medium{% else %}confidence-low{% endif %}">{{ score }}/10</span>
         </div>
+
+        {% if goldilocks_status == 'preparing' %}
+        <div class="bdr-highlight bdr-highlight-critical" style="margin-top: 1rem;">
+            <div class="bdr-label">Why This Score</div>
+            <div class="bdr-text">Found i18n libraries installed WITHOUT any locale/translation folders. The shelves are built, books are missing!</div>
+        </div>
+        {% elif goldilocks_status == 'launched' %}
+        <div class="bdr-highlight bdr-highlight-warning" style="margin-top: 1rem;">
+            <div class="bdr-label">Why Low Score</div>
+            <div class="bdr-text">Company already has locale folders with translations. They have a working system - we missed the window.</div>
+        </div>
+        {% endif %}
 
         {% if report.ai_analysis.semantic_analysis %}
         <div style="margin-top: 1.5rem; padding: 1rem; background: var(--bg-tertiary); border-radius: 8px;">
@@ -929,20 +1127,39 @@
     </div>
     {% endif %}
 
-    <!-- Key Findings -->
+    <!-- Key Findings - BDR-Optimized -->
     {% if report.ai_analysis.key_findings %}
     <div class="section">
         <h2 class="section-title">Key Findings</h2>
+        <p style="color: var(--text-secondary); margin-bottom: 1rem; font-style: italic;">
+            Technical signals translated into plain language for sales outreach.
+        </p>
         <ul class="findings-list">
             {% for finding in report.ai_analysis.key_findings %}
-            <li class="finding-item">
+            <li class="finding-item {% if finding.significance == 'critical' %}critical-finding{% elif finding.significance == 'low' %}low-priority-finding{% endif %}">
                 <div class="finding-header">
-                    <span class="finding-text">{{ finding.finding }}</span>
+                    <span class="finding-text">
+                        {% if finding.significance == 'critical' %}🎯 {% endif %}
+                        <strong>{{ finding.finding }}</strong>
+                    </span>
                     <span class="finding-significance significance-{{ finding.significance }}">
-                        {{ finding.significance }}
+                        {% if finding.significance == 'critical' %}GOLDILOCKS{% else %}{{ finding.significance }}{% endif %}
                     </span>
                 </div>
-                <div class="finding-evidence">{{ finding.evidence }}</div>
+                {% if finding.sales_angle %}
+                <div class="bdr-highlight" style="margin-top: 0.75rem; margin-bottom: 0;">
+                    <div class="bdr-label">Sales Angle</div>
+                    <div class="bdr-text">{{ finding.sales_angle }}</div>
+                </div>
+                {% endif %}
+                {% if finding.bdr_explanation %}
+                <div style="font-size: 0.875rem; color: var(--text-secondary); margin-top: 0.5rem; font-style: italic;">
+                    {{ finding.bdr_explanation }}
+                </div>
+                {% endif %}
+                {% if finding.evidence %}
+                <div class="finding-evidence" style="margin-top: 0.5rem;">{{ finding.evidence }}</div>
+                {% endif %}
             </li>
             {% endfor %}
         </ul>
