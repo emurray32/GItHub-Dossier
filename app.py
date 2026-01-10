@@ -353,6 +353,91 @@ def api_track():
         return jsonify({'error': f'Failed to track organization: {str(e)}'}), 500
 
 
+@app.route('/api/rescan/<company_name>', methods=['POST'])
+def api_rescan(company_name: str):
+    """
+    Background rescan endpoint - runs scan silently and updates account status.
+
+    Performs the full scan pipeline:
+    1. Runs deep_scan_generator to completion
+    2. Generates AI analysis
+    3. Saves report to database
+    4. Updates account status and tier
+
+    Returns:
+        JSON with new account status including tier, evidence, and freshness.
+    """
+    start_time = time.time()
+    scan_data = None
+    analysis_data = None
+
+    # Phase 1: Run the deep scan (silent)
+    try:
+        for message in deep_scan_generator(company_name):
+            # Check if this is the scan complete message
+            if 'SCAN_COMPLETE:' in message:
+                json_str = message.split('SCAN_COMPLETE:', 1)[1].strip()
+                # Remove the SSE data prefix formatting
+                if json_str.startswith('data: '):
+                    json_str = json_str[6:]
+                scan_data = json.loads(json_str)
+
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': f'Scan failed: {str(e)}'}), 500
+
+    if not scan_data:
+        return jsonify({'status': 'error', 'message': 'No scan data generated'}), 500
+
+    # Phase 2: Generate AI analysis (silent)
+    try:
+        for message in generate_analysis(scan_data):
+            # Check if this is the analysis complete message
+            if 'ANALYSIS_COMPLETE:' in message:
+                json_str = message.split('ANALYSIS_COMPLETE:', 1)[1].strip()
+                if json_str.startswith('data: '):
+                    json_str = json_str[6:]
+                analysis_data = json.loads(json_str)
+
+    except Exception as e:
+        analysis_data = {'error': str(e), 'executive_summary': 'Analysis failed'}
+
+    # Phase 3: Save report to database
+    duration = time.time() - start_time
+
+    try:
+        report_id = save_report(
+            company_name=company_name,
+            github_org=scan_data.get('org_login', ''),
+            scan_data=scan_data,
+            ai_analysis=analysis_data or {},
+            scan_duration=duration
+        )
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': f'Failed to save report: {str(e)}'}), 500
+
+    # Phase 4: Update monitored account status
+    try:
+        account_result = update_account_status(scan_data, report_id)
+        tier = account_result.get('tier', 0)
+        tier_config = TIER_CONFIG.get(tier, TIER_CONFIG[0])
+
+        # Format response with all frontend-needed data
+        return jsonify({
+            'status': 'success',
+            'company': company_name,
+            'new_tier': tier,
+            'tier_name': tier_config['name'],
+            'tier_color': tier_config['color'],
+            'tier_emoji': tier_config['emoji'],
+            'evidence': account_result.get('evidence', ''),
+            'last_scanned': 'Just now',
+            'tier_changed': account_result.get('tier_changed', False)
+        })
+
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': f'Failed to update account status: {str(e)}'}), 500
+
+
 @app.errorhandler(404)
 def page_not_found(e):
     """Handle 404 errors."""
