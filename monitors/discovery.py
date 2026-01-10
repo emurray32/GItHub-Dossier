@@ -274,3 +274,104 @@ def _prioritize_repos(repos: list) -> list:
         )
 
     return sorted(repos, key=score_repo, reverse=True)
+
+
+def search_github_orgs(keyword: str, limit: int = 20) -> list:
+    """
+    Search for GitHub organizations by keyword.
+
+    Uses GitHub's search API to find organizations matching the keyword.
+
+    Args:
+        keyword: Search keyword (e.g., 'fintech', 'health', 'react').
+        limit: Maximum number of results to return (default 20).
+
+    Returns:
+        List of dicts with: {login, avatar_url, description, html_url, public_repos}.
+        Empty list if no results or on error.
+    """
+    search_url = f"{Config.GITHUB_API_BASE}/search/users"
+    params = {
+        'q': f'{keyword} type:org',
+        'per_page': min(limit, 100),
+        'sort': 'repositories',
+        'order': 'desc'
+    }
+
+    try:
+        response = requests.get(
+            search_url,
+            headers=get_github_headers(),
+            params=params,
+            timeout=30
+        )
+        response.raise_for_status()
+        data = response.json()
+
+        results = []
+        for item in data.get('items', [])[:limit]:
+            results.append({
+                'login': item.get('login', ''),
+                'avatar_url': item.get('avatar_url', ''),
+                'description': item.get('bio', ''),
+                'html_url': item.get('html_url', ''),
+                'public_repos': item.get('public_repos', 0)
+            })
+
+        return results
+
+    except requests.RequestException as e:
+        print(f"Error searching GitHub organizations: {str(e)}")
+        return []
+
+
+def resolve_org_fast(company_name: str) -> Optional[dict]:
+    """
+    Fast organization lookup optimized for Grow pipeline.
+
+    Reuses the direct lookup logic from discover_organization but skips
+    the deep scan and complex matching. Returns the best match GitHub Org
+    without triggering a full discovery process.
+
+    Args:
+        company_name: The company name to look up.
+
+    Returns:
+        Organization data dict or None if not found.
+    """
+    # Try direct lookup first (fast, just API calls)
+    direct_result = _try_direct_lookup(company_name)
+    if direct_result:
+        return direct_result
+
+    # Quick search fallback
+    search_url = f"{Config.GITHUB_API_BASE}/search/users"
+    params = {
+        'q': f'{company_name} type:org',
+        'per_page': 5
+    }
+
+    try:
+        response = requests.get(
+            search_url,
+            headers=get_github_headers(),
+            params=params,
+            timeout=10
+        )
+        response.raise_for_status()
+        data = response.json()
+
+        if data.get('total_count', 0) == 0:
+            return None
+
+        items = data.get('items', [])
+        if not items:
+            return None
+
+        # Get details for the first result
+        best_match = items[0]
+        org_details = _get_org_details(best_match['login'])
+        return org_details if org_details else best_match
+
+    except requests.RequestException:
+        return None
