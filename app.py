@@ -7,13 +7,15 @@ import json
 import time
 import os
 import threading
+import queue
 from datetime import datetime
 from flask import Flask, render_template, Response, request, jsonify, redirect, url_for, stream_with_context, send_file
 from config import Config
 from database import (
     save_report, get_report, get_recent_reports, search_reports,
     update_account_status, get_all_accounts, add_account_to_tier_0, TIER_CONFIG,
-    get_account_by_company, mark_account_as_invalid
+    get_account_by_company, mark_account_as_invalid, get_refreshable_accounts,
+    get_db_connection
 )
 from monitors.scanner import deep_scan_generator
 from monitors.discovery import search_github_orgs, resolve_org_fast
@@ -24,83 +26,124 @@ from pdf_generator import generate_report_pdf
 app = Flask(__name__)
 app.config.from_object(Config)
 
+# =============================================================================
+# JOB QUEUE SYSTEM - Prevents SQLite 'Database Locked' errors
+# =============================================================================
+
+# Single job queue for all background scans
+scan_queue = queue.Queue()
+
+
+def perform_background_scan(company_name: str):
+    """
+    Execute a background scan for a company.
+
+    CRITICAL: This function creates its own database connection for thread safety.
+    SQLite requires each thread to have its own connection.
+    """
+    import sqlite3
+    from config import Config as AppConfig
+
+    try:
+        start_time = time.time()
+        scan_data = None
+        analysis_data = None
+
+        # Phase 1: Run the deep scan (silent)
+        for message in deep_scan_generator(company_name):
+            # Check for scan errors - mark as invalid and exit
+            if 'data: ERROR:' in message:
+                error_msg = message.split('data: ERROR:', 1)[1].strip()
+                error_msg = error_msg.replace('\n', '').strip()
+                # Create fresh connection for this thread
+                mark_account_as_invalid(company_name, error_msg)
+                return
+
+            if 'SCAN_COMPLETE:' in message:
+                json_str = message.split('SCAN_COMPLETE:', 1)[1].strip()
+                if json_str.startswith('data: '):
+                    json_str = json_str[6:]
+                scan_data = json.loads(json_str)
+
+        if not scan_data:
+            mark_account_as_invalid(company_name, 'No scan data generated')
+            return
+
+        # Phase 2: Generate AI analysis (silent)
+        try:
+            for message in generate_analysis(scan_data):
+                if 'ANALYSIS_COMPLETE:' in message:
+                    json_str = message.split('ANALYSIS_COMPLETE:', 1)[1].strip()
+                    if json_str.startswith('data: '):
+                        json_str = json_str[6:]
+                    analysis_data = json.loads(json_str)
+        except Exception:
+            analysis_data = {'error': 'Analysis failed'}
+
+        # Phase 3: Save report to database (uses fresh connection internally)
+        duration = time.time() - start_time
+        try:
+            report_id = save_report(
+                company_name=company_name,
+                github_org=scan_data.get('org_login', ''),
+                scan_data=scan_data,
+                ai_analysis=analysis_data or {},
+                scan_duration=duration
+            )
+        except Exception:
+            return
+
+        # Phase 4: Update monitored account status and tier
+        try:
+            update_account_status(scan_data, report_id)
+        except Exception:
+            pass
+
+    except Exception:
+        pass  # Silent failure in background
+
+
+def scan_worker():
+    """
+    Single worker thread that processes scan jobs from the queue.
+
+    Runs as a daemon thread - pulls company names from the queue
+    and processes them one at a time to prevent database conflicts.
+    """
+    while True:
+        try:
+            company_name = scan_queue.get()
+            if company_name is None:  # Shutdown signal
+                break
+            perform_background_scan(company_name)
+        except Exception:
+            pass  # Keep worker alive even on errors
+        finally:
+            scan_queue.task_done()
+
+
+def start_scan_worker():
+    """Start the background scan worker thread."""
+    worker_thread = threading.Thread(target=scan_worker, daemon=True)
+    worker_thread.start()
+    return worker_thread
+
+
+# Start the worker thread at module load
+_scan_worker_thread = start_scan_worker()
+
 
 def spawn_background_scan(company_name: str):
     """
-    Spawn a background thread to scan a company.
+    Queue a company for background scanning.
 
-    This function runs the full scan pipeline asynchronously without
-    blocking the API response. The account tier is automatically
-    updated with the scan results.
+    Instead of spawning a new thread (which causes SQLite 'database locked' errors),
+    this adds the company to the single-worker job queue.
 
-    If the scan fails (e.g., org not found, no repos), the account
-    is marked as invalid (Tier 4) and excluded from future scans.
+    The scan will run asynchronously without blocking the API response.
+    The account tier is automatically updated with the scan results.
     """
-    def _run_scan():
-        try:
-            start_time = time.time()
-            scan_data = None
-            analysis_data = None
-
-            # Phase 1: Run the deep scan (silent)
-            for message in deep_scan_generator(company_name):
-                # Check for scan errors - mark as invalid and exit
-                if 'data: ERROR:' in message:
-                    # Extract error message
-                    error_msg = message.split('data: ERROR:', 1)[1].strip()
-                    # Clean up newlines from SSE format
-                    error_msg = error_msg.replace('\n', '').strip()
-                    # Mark account as invalid (Tier 4)
-                    mark_account_as_invalid(company_name, error_msg)
-                    return
-
-                if 'SCAN_COMPLETE:' in message:
-                    json_str = message.split('SCAN_COMPLETE:', 1)[1].strip()
-                    if json_str.startswith('data: '):
-                        json_str = json_str[6:]
-                    scan_data = json.loads(json_str)
-
-            if not scan_data:
-                # No scan data generated - mark as invalid
-                mark_account_as_invalid(company_name, 'No scan data generated')
-                return
-
-            # Phase 2: Generate AI analysis (silent)
-            try:
-                for message in generate_analysis(scan_data):
-                    if 'ANALYSIS_COMPLETE:' in message:
-                        json_str = message.split('ANALYSIS_COMPLETE:', 1)[1].strip()
-                        if json_str.startswith('data: '):
-                            json_str = json_str[6:]
-                        analysis_data = json.loads(json_str)
-            except Exception:
-                analysis_data = {'error': 'Analysis failed'}
-
-            # Phase 3: Save report to database
-            duration = time.time() - start_time
-            try:
-                report_id = save_report(
-                    company_name=company_name,
-                    github_org=scan_data.get('org_login', ''),
-                    scan_data=scan_data,
-                    ai_analysis=analysis_data or {},
-                    scan_duration=duration
-                )
-            except Exception:
-                return
-
-            # Phase 4: Update monitored account status and tier
-            try:
-                update_account_status(scan_data, report_id)
-            except Exception:
-                pass
-
-        except Exception:
-            pass  # Silent failure in background
-
-    # Start scan in background thread (daemon=False ensures it completes)
-    thread = threading.Thread(target=_run_scan, daemon=False)
-    thread.start()
+    scan_queue.put(company_name)
 
 
 @app.route('/')
@@ -496,140 +539,53 @@ def api_update_org():
 @app.route('/api/rescan/<company_name>', methods=['POST'])
 def api_rescan(company_name: str):
     """
-    Background rescan endpoint - runs scan silently and updates account status.
+    Queue a rescan for a company.
 
-    Performs the full scan pipeline:
-    1. Runs deep_scan_generator to completion
-    2. Generates AI analysis
-    3. Saves report to database
-    4. Updates account status and tier
+    Instead of running synchronously (which blocks and can cause database locks),
+    this queues the scan job and returns immediately.
 
     Returns:
-        JSON with new account status including tier, evidence, and freshness.
+        JSON with queued status. The UI should refresh to see updated results.
     """
-    start_time = time.time()
-    scan_data = None
-    analysis_data = None
+    # Queue the scan job
+    scan_queue.put(company_name)
 
-    # Phase 1: Run the deep scan (silent)
-    scan_error = None
-    try:
-        for message in deep_scan_generator(company_name):
-            # Check if this is the scan complete message
-            if 'SCAN_COMPLETE:' in message:
-                json_str = message.split('SCAN_COMPLETE:', 1)[1].strip()
-                # Remove the SSE data prefix formatting
-                if json_str.startswith('data: '):
-                    json_str = json_str[6:]
-                scan_data = json.loads(json_str)
-            # Check if there was an error during scan
-            elif 'ERROR:' in message:
-                scan_error = message.split('ERROR:', 1)[1].strip()
-
-    except Exception as e:
-        scan_error = str(e)
-
-    # If scan failed (no data or error), mark account as Tier 4 (Disqualified)
-    if not scan_data:
-        from database import get_db_connection
-        try:
-            conn = get_db_connection()
-            cursor = conn.cursor()
-
-            # Update account to Tier 4 (Disqualified)
-            error_reason = scan_error or 'GitHub organization not found or no public repos'
-            cursor.execute('''
-                UPDATE monitored_accounts
-                SET current_tier = 4, 
-                    evidence_summary = ?,
-                    last_scanned_at = CURRENT_TIMESTAMP
-                WHERE company_name = ?
-            ''', (error_reason, company_name))
-
-            conn.commit()
-            conn.close()
-
-            tier_config = TIER_CONFIG.get(4, TIER_CONFIG[0])
-            return jsonify({
-                'status': 'success',
-                'company': company_name,
-                'new_tier': 4,
-                'tier_name': tier_config['name'],
-                'tier_color': tier_config['color'],
-                'tier_emoji': tier_config['emoji'],
-                'evidence': error_reason,
-                'last_scanned': 'Just now',
-                'tier_changed': True
-            })
-
-        except Exception as e:
-            return jsonify({'status': 'error', 'message': f'Failed to update account: {str(e)}'}), 500
-
-    # Phase 2: Generate AI analysis (silent)
-    try:
-        for message in generate_analysis(scan_data):
-            # Check if this is the analysis complete message
-            if 'ANALYSIS_COMPLETE:' in message:
-                json_str = message.split('ANALYSIS_COMPLETE:', 1)[1].strip()
-                if json_str.startswith('data: '):
-                    json_str = json_str[6:]
-                analysis_data = json.loads(json_str)
-
-    except Exception as e:
-        analysis_data = {'error': str(e), 'executive_summary': 'Analysis failed'}
-
-    # Phase 3: Save report to database
-    duration = time.time() - start_time
-
-    try:
-        report_id = save_report(
-            company_name=company_name,
-            github_org=scan_data.get('org_login', ''),
-            scan_data=scan_data,
-            ai_analysis=analysis_data or {},
-            scan_duration=duration
-        )
-    except Exception as e:
-        return jsonify({'status': 'error', 'message': f'Failed to save report: {str(e)}'}), 500
-
-    # Phase 4: Update monitored account status
-    try:
-        account_result = update_account_status(scan_data, report_id)
-        tier = account_result.get('tier', 0)
+    # Get current account info for response
+    account = get_account_by_company(company_name)
+    if account:
+        tier = account.get('current_tier', 0)
         tier_config = TIER_CONFIG.get(tier, TIER_CONFIG[0])
-
-        # Format response with all frontend-needed data
         return jsonify({
-            'status': 'success',
+            'status': 'queued',
             'company': company_name,
-            'new_tier': tier,
+            'message': 'Scan queued successfully',
+            'queue_size': scan_queue.qsize(),
+            'current_tier': tier,
             'tier_name': tier_config['name'],
-            'tier_color': tier_config['color'],
-            'tier_emoji': tier_config['emoji'],
-            'evidence': account_result.get('evidence', ''),
-            'last_scanned': 'Just now',
-            'tier_changed': account_result.get('tier_changed', False)
+            'tier_emoji': tier_config['emoji']
         })
 
-    except Exception as e:
-        return jsonify({'status': 'error', 'message': f'Failed to update account status: {str(e)}'}), 500
+    return jsonify({
+        'status': 'queued',
+        'company': company_name,
+        'message': 'Scan queued successfully',
+        'queue_size': scan_queue.qsize()
+    })
 
 
 @app.route('/api/scan-pending', methods=['POST'])
 def api_scan_pending():
     """
-    Scan all accounts that have never been scanned.
+    Queue scans for all accounts that have never been scanned.
 
     Logic: Query monitored_accounts for all records where last_scanned_at
     is NULL or equal to created_at (meaning never scanned).
 
-    Action: Loop through them and trigger a background scan for each.
+    Action: Add them all to the scan queue.
 
     Returns:
-        JSON with count of scans started.
+        JSON with count of scans queued.
     """
-    from database import get_db_connection
-
     conn = get_db_connection()
     cursor = conn.cursor()
 
@@ -643,16 +599,66 @@ def api_scan_pending():
     pending_accounts = [row[0] for row in cursor.fetchall()]
     conn.close()
 
-    # Spawn background scan for each pending account
-    scan_count = 0
+    # Queue scans for each pending account
+    queued_count = 0
     for company_name in pending_accounts:
-        spawn_background_scan(company_name)
-        scan_count += 1
+        scan_queue.put(company_name)
+        queued_count += 1
 
     return jsonify({
         'status': 'success',
-        'scans_started': scan_count,
-        'accounts': pending_accounts
+        'queued': queued_count,
+        'accounts': pending_accounts,
+        'queue_size': scan_queue.qsize()
+    })
+
+
+@app.route('/api/refresh-pipeline', methods=['POST'])
+def api_refresh_pipeline():
+    """
+    Queue all accounts eligible for weekly refresh.
+
+    Selects accounts where:
+    - current_tier IN (0, 1, 2) - Tracking, Thinking, or Preparing
+    - last_scanned_at < 7 days ago OR IS NULL
+
+    Excludes Tier 3 (Launched) and Tier 4 (Invalid) accounts.
+
+    Returns:
+        JSON with count of accounts queued for refresh.
+    """
+    # Get all refreshable accounts
+    refreshable = get_refreshable_accounts()
+
+    # Queue each account for scanning
+    queued_count = 0
+    queued_companies = []
+    for account in refreshable:
+        company_name = account.get('company_name')
+        if company_name:
+            scan_queue.put(company_name)
+            queued_count += 1
+            queued_companies.append(company_name)
+
+    return jsonify({
+        'status': 'success',
+        'queued': queued_count,
+        'accounts': queued_companies,
+        'queue_size': scan_queue.qsize()
+    })
+
+
+@app.route('/api/queue-status')
+def api_queue_status():
+    """
+    Get the current status of the scan queue.
+
+    Returns:
+        JSON with queue size and status.
+    """
+    return jsonify({
+        'queue_size': scan_queue.qsize(),
+        'worker_alive': _scan_worker_thread.is_alive()
     })
 
 
