@@ -200,12 +200,14 @@ TIER_TRACKING = 0    # Cold - No signals found
 TIER_THINKING = 1    # Warm - RFC discussions found
 TIER_PREPARING = 2   # Hot Lead (Goldilocks) - Dependencies without locale folders
 TIER_LAUNCHED = 3    # Too Late - Already launched
+TIER_INVALID = 4     # Disqualified - GitHub org not found or no public repos
 
 TIER_CONFIG = {
     TIER_TRACKING: {'name': 'Tracking', 'status': 'Cold', 'color': 'grey', 'emoji': '⚪'},
     TIER_THINKING: {'name': 'Thinking', 'status': 'Warm', 'color': 'yellow', 'emoji': '🟡'},
     TIER_PREPARING: {'name': 'Preparing', 'status': 'Hot Lead', 'color': 'green', 'emoji': '🟢'},
     TIER_LAUNCHED: {'name': 'Launched', 'status': 'Too Late', 'color': 'red', 'emoji': '🔴'},
+    TIER_INVALID: {'name': 'Not Found', 'status': 'Disqualified', 'color': 'dark-grey', 'emoji': '🚫'},
 }
 
 
@@ -431,12 +433,12 @@ def get_all_accounts() -> list:
     """
     Get all monitored accounts, sorted by tier priority.
 
-    Sort order: Tier 2 (Preparing) first, then Tier 1, Tier 0, and Tier 3 (dimmed) last.
+    Sort order: Tier 2 (Preparing) first, then Tier 1, Tier 0, Tier 3 (dimmed), and Tier 4 (invalid) last.
     """
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Custom sort: Tier 2 first (priority 1), Tier 1 (priority 2), Tier 0 (priority 3), Tier 3 last (priority 4)
+    # Custom sort: Tier 2 first (priority 1), Tier 1 (priority 2), Tier 0 (priority 3), Tier 3 (priority 4), Tier 4 last (priority 5)
     cursor.execute('''
         SELECT
             ma.*,
@@ -448,7 +450,8 @@ def get_all_accounts() -> list:
                 WHEN 1 THEN 2
                 WHEN 0 THEN 3
                 WHEN 3 THEN 4
-                ELSE 5
+                WHEN 4 THEN 5
+                ELSE 6
             END,
             ma.status_changed_at DESC
     ''')
@@ -512,6 +515,70 @@ def delete_account(account_id: int) -> bool:
     conn.close()
 
     return deleted
+
+
+def mark_account_as_invalid(company_name: str, reason: str) -> dict:
+    """
+    Mark a monitored account as invalid (Tier 4 - Disqualified).
+
+    Used when a scan fails due to:
+    - GitHub organization not found
+    - No public repositories
+    - Other scan errors
+
+    This sets next_scan_due to NULL so the batch scanner skips it.
+
+    Args:
+        company_name: The company name to mark as invalid.
+        reason: The failure reason (e.g., 'GitHub Org not found').
+
+    Returns:
+        Dictionary with the update result.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    now = datetime.now().isoformat()
+
+    # Check if account exists
+    cursor.execute('SELECT * FROM monitored_accounts WHERE company_name = ?', (company_name,))
+    existing = cursor.fetchone()
+
+    if existing:
+        # Update existing account to Tier 4
+        cursor.execute('''
+            UPDATE monitored_accounts
+            SET current_tier = ?,
+                last_scanned_at = ?,
+                status_changed_at = ?,
+                evidence_summary = ?,
+                next_scan_due = NULL
+            WHERE company_name = ?
+        ''', (TIER_INVALID, now, now, reason, company_name))
+        account_id = existing['id']
+    else:
+        # Create new account at Tier 4
+        cursor.execute('''
+            INSERT INTO monitored_accounts (
+                company_name, github_org, current_tier, last_scanned_at,
+                status_changed_at, evidence_summary, next_scan_due
+            ) VALUES (?, ?, ?, ?, ?, ?, NULL)
+        ''', (company_name, '', TIER_INVALID, now, now, reason))
+        account_id = cursor.lastrowid
+
+    conn.commit()
+    conn.close()
+
+    tier_config = TIER_CONFIG[TIER_INVALID]
+
+    return {
+        'account_id': account_id,
+        'company_name': company_name,
+        'tier': TIER_INVALID,
+        'tier_name': tier_config['name'],
+        'tier_status': tier_config['status'],
+        'reason': reason
+    }
 
 
 # Initialize database on module import

@@ -13,7 +13,7 @@ from config import Config
 from database import (
     save_report, get_report, get_recent_reports, search_reports,
     update_account_status, get_all_accounts, add_account_to_tier_0, TIER_CONFIG,
-    get_account_by_company
+    get_account_by_company, mark_account_as_invalid
 )
 from monitors.scanner import deep_scan_generator
 from monitors.discovery import search_github_orgs, resolve_org_fast
@@ -32,6 +32,9 @@ def spawn_background_scan(company_name: str):
     This function runs the full scan pipeline asynchronously without
     blocking the API response. The account tier is automatically
     updated with the scan results.
+
+    If the scan fails (e.g., org not found, no repos), the account
+    is marked as invalid (Tier 4) and excluded from future scans.
     """
     def _run_scan():
         try:
@@ -41,6 +44,16 @@ def spawn_background_scan(company_name: str):
 
             # Phase 1: Run the deep scan (silent)
             for message in deep_scan_generator(company_name):
+                # Check for scan errors - mark as invalid and exit
+                if 'data: ERROR:' in message:
+                    # Extract error message
+                    error_msg = message.split('data: ERROR:', 1)[1].strip()
+                    # Clean up newlines from SSE format
+                    error_msg = error_msg.replace('\n', '').strip()
+                    # Mark account as invalid (Tier 4)
+                    mark_account_as_invalid(company_name, error_msg)
+                    return
+
                 if 'SCAN_COMPLETE:' in message:
                     json_str = message.split('SCAN_COMPLETE:', 1)[1].strip()
                     if json_str.startswith('data: '):
@@ -48,6 +61,8 @@ def spawn_background_scan(company_name: str):
                     scan_data = json.loads(json_str)
 
             if not scan_data:
+                # No scan data generated - mark as invalid
+                mark_account_as_invalid(company_name, 'No scan data generated')
                 return
 
             # Phase 2: Generate AI analysis (silent)
