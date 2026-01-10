@@ -581,5 +581,56 @@ def mark_account_as_invalid(company_name: str, reason: str) -> dict:
     }
 
 
+def get_refreshable_accounts() -> list:
+    """
+    Get accounts eligible for the weekly refresh pipeline.
+
+    Selection criteria:
+    - current_tier IN (0, 1, 2) - Tracking, Thinking, or Preparing
+    - last_scanned_at < 7 days ago OR last_scanned_at IS NULL
+
+    Excludes:
+    - Tier 3 (Launched) - Already localized, no need to monitor
+    - Tier 4 (Invalid) - GitHub org not found or no public repos
+
+    Returns:
+        List of account dictionaries eligible for refresh.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Select accounts in Tiers 0, 1, 2 that haven't been scanned in 7+ days
+    cursor.execute('''
+        SELECT
+            ma.*,
+            (SELECT r.id FROM reports r WHERE r.company_name = ma.company_name ORDER BY r.created_at DESC LIMIT 1) as latest_report_id
+        FROM monitored_accounts ma
+        WHERE ma.current_tier IN (0, 1, 2)
+          AND (
+              ma.last_scanned_at IS NULL
+              OR ma.last_scanned_at < datetime('now', '-7 days')
+          )
+        ORDER BY
+            CASE ma.current_tier
+                WHEN 2 THEN 1  -- Hot leads first
+                WHEN 1 THEN 2  -- Then warm
+                WHEN 0 THEN 3  -- Then tracking
+            END,
+            ma.last_scanned_at ASC  -- Oldest scans first
+    ''')
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    accounts = []
+    for row in rows:
+        account = dict(row)
+        tier = account.get('current_tier', 0)
+        account['tier_config'] = TIER_CONFIG.get(tier, TIER_CONFIG[TIER_TRACKING])
+        accounts.append(account)
+
+    return accounts
+
+
 # Initialize database on module import
 init_db()

@@ -273,10 +273,88 @@
         color: #6b7280;
     }
 
-    /* Freshness cell */
-    .freshness-cell {
+    /* Last Check cell */
+    .last-check-cell {
         font-size: 0.85rem;
         color: var(--text-secondary);
+    }
+
+    .scanned-time {
+        color: var(--text-primary);
+        font-weight: 600;
+        display: block;
+        margin-bottom: 0.25rem;
+    }
+
+    .scanned-time.never-scanned {
+        color: #f59e0b;
+    }
+
+    .scanned-time.recent {
+        color: #22c55e;
+    }
+
+    .scanned-time.stale {
+        color: #f59e0b;
+    }
+
+    .tier-change-time {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+    }
+
+    /* Smart action buttons */
+    .btn-action-smart {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+        padding: 0.4rem 0.75rem;
+        background: var(--accent-color);
+        color: white;
+        border: none;
+        border-radius: 6px;
+        font-size: 0.8rem;
+        text-decoration: none;
+        cursor: pointer;
+        transition: all var(--transition-fast);
+    }
+
+    .btn-action-smart:hover:not(:disabled) {
+        background: var(--accent-hover);
+    }
+
+    .btn-action-smart:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+
+    .btn-action-smart.scanning::before {
+        content: '';
+        display: inline-block;
+        width: 0.7rem;
+        height: 0.7rem;
+        margin-right: 0.4rem;
+        border: 2px solid rgba(255, 255, 255, 0.3);
+        border-top-color: white;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+    }
+
+    .btn-action-smart.btn-scanned {
+        background: #6b7280;
+        cursor: default;
+    }
+
+    .btn-action-smart.btn-scanned:hover {
+        background: #6b7280;
+    }
+
+    .btn-action-smart.btn-refresh-needed {
+        background: #3b82f6;
+    }
+
+    .btn-action-smart.btn-refresh-needed:hover:not(:disabled) {
+        background: #2563eb;
     }
 
     .freshness-highlight {
@@ -376,12 +454,12 @@
         animation: spin 0.8s linear infinite;
     }
 
-    .btn-scan-all-new {
+    .btn-refresh-pipeline {
         display: inline-flex;
         align-items: center;
         gap: 0.5rem;
         padding: 0.5rem 1rem;
-        background: #10b981;
+        background: #3b82f6;
         color: white;
         border: none;
         border-radius: 6px;
@@ -392,16 +470,16 @@
         font-weight: 500;
     }
 
-    .btn-scan-all-new:hover:not(:disabled) {
-        background: #059669;
+    .btn-refresh-pipeline:hover:not(:disabled) {
+        background: #2563eb;
     }
 
-    .btn-scan-all-new:disabled {
+    .btn-refresh-pipeline:disabled {
         opacity: 0.6;
         cursor: not-allowed;
     }
 
-    .btn-scan-all-new.scanning::before {
+    .btn-refresh-pipeline.scanning::before {
         content: '';
         display: inline-block;
         width: 0.7rem;
@@ -568,8 +646,8 @@
                     <span>Invalid</span>
                 </div>
                 {% endif %}
-                <button type="button" class="btn-scan-all-new" onclick="scanAllNew()">
-                    ✨ Scan All New
+                <button type="button" class="btn-refresh-pipeline" onclick="refreshPipeline()">
+                    🔄 Refresh Pipeline
                 </button>
             </div>
         </div>
@@ -606,14 +684,14 @@
                     <th>Company</th>
                     <th>GitHub Org</th>
                     <th>Tier</th>
-                    <th>Freshness</th>
+                    <th>Last Check</th>
                     <th>Evidence</th>
                     <th>Actions</th>
                 </tr>
             </thead>
             <tbody>
                 {% for account in accounts %}
-                <tr class="tier-row-{{ account.current_tier }}" data-company="{{ account.company_name }}">
+                <tr class="tier-row-{{ account.current_tier }}" data-company="{{ account.company_name }}" data-tier="{{ account.current_tier }}" data-last-scanned="{{ account.last_scanned_at or '' }}" data-status-changed="{{ account.status_changed_at or '' }}">
                     <td class="company-cell">
                         {% if account.latest_report_id %}
                         <a href="{{ url_for('view_report', report_id=account.latest_report_id) }}">
@@ -653,17 +731,19 @@
                             {{ account.tier_config.emoji }} {{ account.tier_config.name }}
                         </span>
                     </td>
-                    <td class="freshness-cell">
-                        {% if account.status_changed_at %}
-                            {% set status_date = account.status_changed_at %}
-                            {% if 'T' in status_date %}
-                                {% set status_date = status_date.split('T')[0] %}
-                            {% endif %}
-                            <span class="freshness-highlight">Moved to Tier {{ account.current_tier }}</span>
+                    <td class="last-check-cell">
+                        {% if account.last_scanned_at %}
+                            <strong class="scanned-time" data-timestamp="{{ account.last_scanned_at }}">Scanned: calculating...</strong>
                             <br>
-                            <span class="last-scanned">{{ status_date }}</span>
+                            {% if account.status_changed_at %}
+                                {% set change_date = account.status_changed_at %}
+                                {% if 'T' in change_date %}
+                                    {% set change_date = change_date.split('T')[0] %}
+                                {% endif %}
+                                <span class="tier-change-time">Tier changed: {{ change_date }}</span>
+                            {% endif %}
                         {% else %}
-                            <span class="last-scanned">Unknown</span>
+                            <strong class="scanned-time never-scanned">Never scanned</strong>
                         {% endif %}
                     </td>
                     <td class="evidence-cell">
@@ -678,20 +758,13 @@
                         </a>
                         {% endif %}
                         {% if account.current_tier == 4 %}
-                        <span class="btn-invalid">
-                            🚫 No Repo
-                        </span>
-                        {% else %}
-                        {% set needs_scan = not account.evidence_summary or account.last_scanned_at is none or account.last_scanned_at == account.created_at %}
-                        {% if needs_scan %}
-                        <button type="button" class="btn-start-scan" onclick="triggerRescan(this, '{{ account.company_name }}')">
-                            Start Scan
+                        <button type="button" class="btn-invalid" disabled>
+                            🚫 Invalid
                         </button>
                         {% else %}
-                        <button type="button" class="btn-rescan" onclick="triggerRescan(this, '{{ account.company_name }}')">
+                        <button type="button" class="btn-action-smart" data-company="{{ account.company_name }}" onclick="triggerRescan(this, '{{ account.company_name }}')">
                             Rescan
                         </button>
-                        {% endif %}
                         {% endif %}
                     </td>
                 </tr>
@@ -708,13 +781,112 @@
 </div>
 
 <script>
+// =============================================================================
+// Time Utilities
+// =============================================================================
+
+function timeAgo(timestamp) {
+    if (!timestamp) return 'Never';
+
+    const now = new Date();
+    const scanned = new Date(timestamp);
+    const diffMs = now - scanned;
+    const diffSeconds = Math.floor(diffMs / 1000);
+    const diffMinutes = Math.floor(diffSeconds / 60);
+    const diffHours = Math.floor(diffMinutes / 60);
+    const diffDays = Math.floor(diffHours / 24);
+
+    if (diffSeconds < 60) return 'Just now';
+    if (diffMinutes < 60) return `${diffMinutes} minute${diffMinutes !== 1 ? 's' : ''} ago`;
+    if (diffHours < 24) return `${diffHours} hour${diffHours !== 1 ? 's' : ''} ago`;
+    if (diffDays === 1) return 'Yesterday';
+    if (diffDays < 7) return `${diffDays} days ago`;
+    if (diffDays < 30) return `${Math.floor(diffDays / 7)} week${Math.floor(diffDays / 7) !== 1 ? 's' : ''} ago`;
+    return `${Math.floor(diffDays / 30)} month${Math.floor(diffDays / 30) !== 1 ? 's' : ''} ago`;
+}
+
+function getHoursSinceScanned(timestamp) {
+    if (!timestamp) return Infinity;
+    const now = new Date();
+    const scanned = new Date(timestamp);
+    return (now - scanned) / (1000 * 60 * 60);
+}
+
+function getDaysSinceScanned(timestamp) {
+    if (!timestamp) return Infinity;
+    const now = new Date();
+    const scanned = new Date(timestamp);
+    return (now - scanned) / (1000 * 60 * 60 * 24);
+}
+
+// =============================================================================
+// UI Initialization
+// =============================================================================
+
+function initializeUI() {
+    // Update all "Scanned: X ago" timestamps
+    document.querySelectorAll('.scanned-time[data-timestamp]').forEach(el => {
+        const timestamp = el.dataset.timestamp;
+        if (timestamp) {
+            const ago = timeAgo(timestamp);
+            el.textContent = `Scanned: ${ago}`;
+
+            // Add visual class based on freshness
+            const hours = getHoursSinceScanned(timestamp);
+            if (hours < 24) {
+                el.classList.add('recent');
+            } else if (hours > 24 * 7) {
+                el.classList.add('stale');
+            }
+        }
+    });
+
+    // Update smart action buttons
+    document.querySelectorAll('.btn-action-smart').forEach(btn => {
+        const row = btn.closest('tr');
+        const lastScanned = row.dataset.lastScanned;
+        const tier = parseInt(row.dataset.tier, 10);
+
+        // Skip Tier 4 (handled separately)
+        if (tier === 4) return;
+
+        const hours = getHoursSinceScanned(lastScanned);
+        const days = getDaysSinceScanned(lastScanned);
+
+        if (!lastScanned || hours === Infinity) {
+            // Never scanned
+            btn.textContent = '▶ Start Scan';
+            btn.classList.add('btn-refresh-needed');
+        } else if (hours < 24) {
+            // Scanned < 24h ago - grey "Scanned" button
+            btn.textContent = '✓ Scanned';
+            btn.classList.add('btn-scanned');
+            btn.disabled = true;
+        } else if (days > 7) {
+            // Scanned > 7 days ago - blue "Refresh" button
+            btn.textContent = '⚡ Refresh';
+            btn.classList.add('btn-refresh-needed');
+        } else {
+            // Default: standard "Rescan" button
+            btn.textContent = 'Rescan';
+        }
+    });
+}
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', initializeUI);
+
+// =============================================================================
+// GitHub Org Edit Functions
+// =============================================================================
+
 function showOrgEdit(buttonEl) {
     const cell = buttonEl.closest('.github-org-cell');
     const orgDisplay = cell.querySelector('.org-display');
     const inputContainer = cell.querySelector('.github-org-input-container');
     const input = cell.querySelector('.github-org-input');
     const currentOrg = cell.dataset.org || '';
-    
+
     orgDisplay.classList.add('hidden');
     inputContainer.classList.add('active');
     input.value = currentOrg;
@@ -725,7 +897,7 @@ function cancelOrgEdit(buttonEl) {
     const cell = buttonEl.closest('.github-org-cell');
     const orgDisplay = cell.querySelector('.org-display');
     const inputContainer = cell.querySelector('.github-org-input-container');
-    
+
     inputContainer.classList.remove('active');
     orgDisplay.classList.remove('hidden');
 }
@@ -735,15 +907,15 @@ async function saveOrgEdit(buttonEl) {
     const companyName = cell.dataset.company;
     const input = cell.querySelector('.github-org-input');
     const newOrg = input.value.trim();
-    
+
     if (!newOrg) {
         alert('Please enter a GitHub organization name');
         return;
     }
-    
+
     buttonEl.disabled = true;
     buttonEl.textContent = 'Saving...';
-    
+
     try {
         const response = await fetch('/api/update-org', {
             method: 'POST',
@@ -755,16 +927,16 @@ async function saveOrgEdit(buttonEl) {
                 github_org: newOrg
             })
         });
-        
+
         const data = await response.json();
-        
+
         if (!response.ok || data.status !== 'success') {
             throw new Error(data.message || 'Failed to update org');
         }
-        
+
         // Reload page to show updated org
         location.reload();
-        
+
     } catch (error) {
         console.error('Update org error:', error);
         alert('Failed to update GitHub org: ' + error.message);
@@ -773,12 +945,21 @@ async function saveOrgEdit(buttonEl) {
     }
 }
 
+// =============================================================================
+// Scan Functions
+// =============================================================================
+
 async function triggerRescan(buttonEl, companyName) {
+    // Don't trigger if already scanned recently
+    if (buttonEl.classList.contains('btn-scanned')) {
+        return;
+    }
+
     // Disable button and show scanning state
     buttonEl.disabled = true;
     buttonEl.classList.add('scanning');
     const originalText = buttonEl.textContent;
-    buttonEl.textContent = 'Scanning...';
+    buttonEl.textContent = 'Queuing...';
 
     try {
         const response = await fetch(`/api/rescan/${encodeURIComponent(companyName)}`, {
@@ -790,17 +971,44 @@ async function triggerRescan(buttonEl, companyName) {
 
         const data = await response.json();
 
-        if (!response.ok || data.status !== 'success') {
+        if (!response.ok) {
             throw new Error(data.message || 'Rescan failed');
         }
 
-        // Update the row with new data
+        // Handle queued response (new queue-based system)
+        if (data.status === 'queued') {
+            buttonEl.classList.remove('scanning');
+            buttonEl.textContent = `✓ Queued (#${data.queue_size})`;
+            buttonEl.style.background = '#22c55e';
+
+            // Show info message
+            const row = buttonEl.closest('tr');
+            const lastCheckCell = row.querySelector('.last-check-cell');
+            if (lastCheckCell) {
+                const scanTime = lastCheckCell.querySelector('.scanned-time');
+                if (scanTime) {
+                    scanTime.textContent = 'Scan queued...';
+                    scanTime.classList.remove('recent', 'stale');
+                }
+            }
+
+            // Reset button after 3 seconds
+            setTimeout(() => {
+                buttonEl.disabled = false;
+                buttonEl.textContent = '⏳ Pending';
+                buttonEl.style.background = '#6b7280';
+            }, 3000);
+
+            return;
+        }
+
+        // Legacy: Handle immediate success response (if any)
         const row = buttonEl.closest('tr');
         if (!row) throw new Error('Could not find table row');
 
         // Update tier badge
         const tierBadge = row.querySelector('.tier-badge');
-        if (tierBadge) {
+        if (tierBadge && data.new_tier !== undefined) {
             const newTierClass = `tier-badge-${data.new_tier}`;
             tierBadge.className = `tier-badge ${newTierClass}`;
             tierBadge.innerHTML = `${data.tier_emoji} ${data.tier_name}`;
@@ -808,37 +1016,22 @@ async function triggerRescan(buttonEl, companyName) {
 
         // Update evidence text
         const evidenceText = row.querySelector('.evidence-text');
-        if (evidenceText) {
-            evidenceText.textContent = data.evidence || 'No evidence recorded';
-            evidenceText.title = data.evidence || 'No evidence recorded';
-        }
-
-        // Update freshness/last scanned
-        const freshnessCell = row.querySelector('.freshness-cell');
-        if (freshnessCell) {
-            const today = new Date().toISOString().split('T')[0];
-            freshnessCell.innerHTML = `
-                <span class="freshness-highlight">Moved to Tier ${data.new_tier}</span>
-                <br>
-                <span class="last-scanned">${today}</span>
-            `;
-        }
-
-        // Update row styling if tier changed
-        if (data.tier_changed) {
-            row.className = `tier-row-${data.new_tier}`;
+        if (evidenceText && data.evidence) {
+            evidenceText.textContent = data.evidence;
+            evidenceText.title = data.evidence;
         }
 
         // Update button to show completion
         buttonEl.classList.remove('scanning');
         buttonEl.textContent = '✓ Done';
-        buttonEl.style.opacity = '0.7';
+        buttonEl.style.background = '#22c55e';
 
         // Reset button after 2 seconds
         setTimeout(() => {
             buttonEl.disabled = false;
-            buttonEl.textContent = 'Rescan';
-            buttonEl.style.opacity = '1';
+            buttonEl.textContent = '✓ Scanned';
+            buttonEl.classList.add('btn-scanned');
+            buttonEl.style.background = '';
         }, 2000);
 
     } catch (error) {
@@ -858,18 +1051,18 @@ async function triggerRescan(buttonEl, companyName) {
     }
 }
 
-async function scanAllNew() {
-    const buttonEl = document.querySelector('.btn-scan-all-new');
+async function refreshPipeline() {
+    const buttonEl = document.querySelector('.btn-refresh-pipeline');
     if (!buttonEl) return;
 
     // Disable button and show scanning state
     buttonEl.disabled = true;
     buttonEl.classList.add('scanning');
     const originalText = buttonEl.textContent;
-    buttonEl.textContent = 'Scanning...';
+    buttonEl.textContent = 'Refreshing...';
 
     try {
-        const response = await fetch('/api/scan-pending', {
+        const response = await fetch('/api/refresh-pipeline', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -879,21 +1072,40 @@ async function scanAllNew() {
         const data = await response.json();
 
         if (!response.ok || data.status !== 'success') {
-            throw new Error(data.message || 'Scan failed');
+            throw new Error(data.message || 'Refresh failed');
         }
 
         // Show success state
         buttonEl.classList.remove('scanning');
-        buttonEl.textContent = `✓ Started ${data.scans_started} scan${data.scans_started !== 1 ? 's' : ''}`;
-        buttonEl.style.opacity = '0.7';
+        const queuedCount = data.queued || 0;
+        buttonEl.textContent = `✓ Queued ${queuedCount} account${queuedCount !== 1 ? 's' : ''}`;
+        buttonEl.style.background = '#22c55e';
 
-        // Reload table after 2 seconds to show updated status
+        // Update any refresh-needed buttons to show pending
+        if (data.accounts && data.accounts.length > 0) {
+            data.accounts.forEach(companyName => {
+                const row = document.querySelector(`tr[data-company="${companyName}"]`);
+                if (row) {
+                    const btn = row.querySelector('.btn-action-smart');
+                    if (btn && !btn.classList.contains('btn-scanned')) {
+                        btn.textContent = '⏳ Pending';
+                        btn.classList.remove('btn-refresh-needed');
+                        btn.style.background = '#6b7280';
+                        btn.disabled = true;
+                    }
+                }
+            });
+        }
+
+        // Reset button after 3 seconds
         setTimeout(() => {
-            location.reload();
-        }, 2000);
+            buttonEl.disabled = false;
+            buttonEl.textContent = originalText;
+            buttonEl.style.background = '';
+        }, 3000);
 
     } catch (error) {
-        console.error('Scan all new error:', error);
+        console.error('Refresh pipeline error:', error);
 
         // Show error state
         buttonEl.classList.remove('scanning');
