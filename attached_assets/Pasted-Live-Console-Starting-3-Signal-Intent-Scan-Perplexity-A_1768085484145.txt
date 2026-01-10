@@ -1,0 +1,136 @@
+Live Console
+
+🔍 Starting 3-Signal Intent Scan: Perplexity AI
+
+============================================================
+
+Target: Pre-launch internationalization signals
+
+PHASE 1: Organization Discovery
+
+----------------------------------------
+
+Searching for GitHub organization: Perplexity AI
+
+Found organization via direct lookup: perplexityai
+
+✓ Organization confirmed: Perplexity AI (@perplexityai)
+
+Public repos: 25
+
+PHASE 2: Repository Discovery
+
+----------------------------------------
+
+Fetching repositories for perplexityai...
+
+Fetched page 1: 24 active repos (total: 24)
+
+Total repositories found: 24
+
+✓ Selected 15 repositories for intent scan
+
+PHASE 3: RFC & Discussion Scan (Thinking Phase)
+
+----------------------------------------
+
+Scanning Issues and Discussions for high-intent keywords...
+
+[1/5] Scanning issues in: modelcontextprotocol
+
+[2/5] Scanning issues in: api-cookbook
+
+[3/5] Scanning issues in: next-auth
+
+[4/5] Scanning issues in: socket.io-client-swift
+
+[5/5] Scanning issues in: dd-trace-js
+
+✓ RFC & Discussion scan complete: 0 signals (0 HIGH priority)
+
+PHASE 4: Dependency Injection Scan (Preparing Phase)
+
+----------------------------------------
+
+Checking for i18n libraries WITHOUT locale folders...
+
+[1/5] Scanning dependencies in: modelcontextprotocol
+
+[2/5] Scanning dependencies in: api-cookbook
+
+[3/5] Scanning dependencies in: next-auth
+
+[4/5] Scanning dependencies in: socket.io-client-swift
+
+[5/5] Scanning dependencies in: dd-trace-js
+
+✓ Dependency Injection scan complete: 0 signals
+
+PHASE 5: Ghost Branch Scan (Active Phase)
+
+----------------------------------------
+
+Scanning for WIP i18n branches and unmerged PRs...
+
+[1/5] Scanning branches in: modelcontextprotocol
+
+[2/5] Scanning branches in: api-cookbook
+
+[3/5] Scanning branches in: next-auth
+
+[4/5] Scanning branches in: socket.io-client-swift
+
+[5/5] Scanning branches in: dd-trace-js
+
+✓ Ghost Branch scan complete: 0 signals
+
+PHASE 6: Intent Score Calculation
+
+----------------------------------------
+
+============================================================
+
+3-SIGNAL INTENT SCAN COMPLETE
+
+============================================================
+
+📊 Total Signals Detected: 0
+
+• RFC & Discussion: 0 (0 HIGH)
+
+• Dependency Injection: 0
+
+• Ghost Branches: 0
+
+📊 Intent Score: 0/100
+
+📊 Scan Duration: 17.7s
+
+⚪ No pre-launch signals detected.
+
+🤖 Generating AI Sales Intelligence...
+
+Scan complete! Generating AI analysis...
+
+Initializing AI Sales Intelligence Engine...
+
+Warning: GEMINI_API_KEY not configured, using fallback analysis
+
+AI analysis complete!
+
+Saving report to database...
+
+Report saved (ID: 18)
+
+Account status updated: ⚪ Tracking (Cold)
+
+==================================================
+
+
+
+SCAN COMPLETE
+
+Duration: 17.7 seconds
+
+Report saved with ID: 18
+
