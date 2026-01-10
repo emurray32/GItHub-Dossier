@@ -364,6 +364,69 @@ def update_account_status(scan_data: dict, report_id: Optional[int] = None) -> d
     }
 
 
+def add_account_to_tier_0(company_name: str, github_org: str) -> dict:
+    """
+    Add or update a company account to Tier 0 (Tracking) status.
+
+    Used by the Grow pipeline for bulk imports. If account already exists,
+    updates the github_org and timestamps.
+
+    Args:
+        company_name: The company name.
+        github_org: The GitHub organization login.
+
+    Returns:
+        Dictionary with account creation/update result.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    now = datetime.now().isoformat()
+    # Set next scan due to 7 days from now
+    next_scan = datetime.now()
+    next_scan = next_scan.replace(day=next_scan.day + 7) if next_scan.day <= 24 else next_scan.replace(month=next_scan.month + 1, day=1)
+    next_scan_iso = next_scan.isoformat()
+
+    # Check if account exists
+    cursor.execute('SELECT * FROM monitored_accounts WHERE company_name = ?', (company_name,))
+    existing = cursor.fetchone()
+
+    if existing:
+        # Update existing account
+        cursor.execute('''
+            UPDATE monitored_accounts
+            SET github_org = ?,
+                last_scanned_at = ?,
+                next_scan_due = ?
+            WHERE company_name = ?
+        ''', (github_org, now, next_scan_iso, company_name))
+        account_id = existing['id']
+    else:
+        # Create new account at Tier 0
+        cursor.execute('''
+            INSERT INTO monitored_accounts (
+                company_name, github_org, current_tier, last_scanned_at,
+                status_changed_at, evidence_summary, next_scan_due
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (company_name, github_org, TIER_TRACKING, now, now,
+              "Added via Grow pipeline", next_scan_iso))
+        account_id = cursor.lastrowid
+
+    conn.commit()
+    conn.close()
+
+    tier_config = TIER_CONFIG[TIER_TRACKING]
+
+    return {
+        'account_id': account_id,
+        'company_name': company_name,
+        'github_org': github_org,
+        'tier': TIER_TRACKING,
+        'tier_name': tier_config['name'],
+        'tier_status': tier_config['status']
+    }
+
+
 def get_all_accounts() -> list:
     """
     Get all monitored accounts, sorted by tier priority.

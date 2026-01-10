@@ -11,9 +11,10 @@ from flask import Flask, render_template, Response, request, jsonify, redirect, 
 from config import Config
 from database import (
     save_report, get_report, get_recent_reports, search_reports,
-    update_account_status, get_all_accounts, TIER_CONFIG
+    update_account_status, get_all_accounts, add_account_to_tier_0, TIER_CONFIG
 )
 from monitors.scanner import deep_scan_generator
+from monitors.discovery import search_github_orgs, resolve_org_fast
 from ai_summary import generate_analysis
 from pdf_generator import generate_report_pdf
 
@@ -221,6 +222,135 @@ def api_accounts():
     """API endpoint to get all monitored accounts."""
     all_accounts = get_all_accounts()
     return jsonify(all_accounts)
+
+
+@app.route('/grow')
+def grow():
+    """Render the Grow pipeline dashboard."""
+    return render_template('grow.html')
+
+
+@app.route('/api/discover')
+def api_discover():
+    """
+    Search for GitHub organizations by keyword.
+
+    Query parameters:
+        q: Search keyword (required)
+        limit: Maximum results (default 20)
+
+    Returns JSON list of organization candidates not already in monitored_accounts.
+    """
+    keyword = request.args.get('q', '').strip()
+    limit = request.args.get('limit', 20, type=int)
+
+    if not keyword:
+        return jsonify({'error': 'Missing query parameter: q'}), 400
+
+    # Search for orgs matching the keyword
+    results = search_github_orgs(keyword, limit=limit)
+
+    # Get existing accounts to filter them out
+    existing_accounts = get_all_accounts()
+    existing_logins = {acc['github_org'].lower() for acc in existing_accounts if acc.get('github_org')}
+
+    # Filter out orgs already being monitored
+    fresh_candidates = [
+        org for org in results
+        if org['login'].lower() not in existing_logins
+    ]
+
+    return jsonify(fresh_candidates)
+
+
+@app.route('/api/import', methods=['POST'])
+def api_import():
+    """
+    Bulk import companies by resolving them to GitHub organizations.
+
+    Expects JSON payload: {"companies": ["Shopify", "Stripe", ...]}
+
+    Returns:
+        JSON with: {
+            "added": ["Shopify", ...],
+            "failed": ["MomPop", ...],
+            "results": [{"company": "...", "github_org": "...", "status": "..."}]
+        }
+    """
+    data = request.get_json() or {}
+    companies = data.get('companies', [])
+
+    if not isinstance(companies, list) or not companies:
+        return jsonify({'error': 'Invalid payload: expected {"companies": [...]}'}), 400
+
+    added = []
+    failed = []
+    results = []
+
+    for company_name in companies:
+        company_name = company_name.strip()
+        if not company_name:
+            continue
+
+        try:
+            # Try to resolve the company to a GitHub org
+            org = resolve_org_fast(company_name)
+
+            if org:
+                github_org = org.get('login', '')
+                # Add to monitored_accounts at Tier 0
+                add_account_to_tier_0(company_name, github_org)
+                added.append(company_name)
+                results.append({
+                    'company': company_name,
+                    'github_org': github_org,
+                    'status': 'added'
+                })
+            else:
+                failed.append(company_name)
+                results.append({
+                    'company': company_name,
+                    'github_org': None,
+                    'status': 'not_found'
+                })
+        except Exception as e:
+            failed.append(company_name)
+            results.append({
+                'company': company_name,
+                'github_org': None,
+                'status': f'error: {str(e)}'
+            })
+
+    return jsonify({
+        'added': added,
+        'failed': failed,
+        'total_processed': len(companies),
+        'results': results
+    })
+
+
+@app.route('/api/track', methods=['POST'])
+def api_track():
+    """
+    Add a specific discovered organization to Tier 0 monitoring.
+
+    Expects JSON payload: {"org_login": "shopify", "company_name": "Shopify"}
+
+    Returns:
+        JSON with account creation result.
+    """
+    data = request.get_json() or {}
+    org_login = data.get('org_login', '').strip()
+    company_name = data.get('company_name', '').strip()
+
+    if not org_login or not company_name:
+        return jsonify({'error': 'Missing required fields: org_login, company_name'}), 400
+
+    try:
+        result = add_account_to_tier_0(company_name, org_login)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': f'Failed to track organization: {str(e)}'}), 500
 
 
 @app.errorhandler(404)
