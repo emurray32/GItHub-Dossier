@@ -191,8 +191,29 @@
         transition: background var(--transition-fast);
     }
 
-    .btn-rescan:hover {
+    .btn-rescan:hover:not(:disabled) {
         background: var(--accent-hover);
+    }
+
+    .btn-rescan:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+
+    .btn-rescan.scanning::before {
+        content: '';
+        display: inline-block;
+        width: 0.7rem;
+        height: 0.7rem;
+        margin-right: 0.4rem;
+        border: 2px solid rgba(255, 255, 255, 0.3);
+        border-top-color: white;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+        to { transform: rotate(360deg); }
     }
 
     .btn-view-report {
@@ -402,9 +423,9 @@
                             View
                         </a>
                         {% endif %}
-                        <a href="{{ url_for('scan_page', company=account.company_name) }}" class="btn-rescan">
+                        <button type="button" class="btn-rescan" onclick="triggerRescan(this, '{{ account.company_name }}')">
                             Rescan
-                        </a>
+                        </button>
                     </td>
                 </tr>
                 {% endfor %}
@@ -418,4 +439,91 @@
     </div>
     {% endif %}
 </div>
+
+<script>
+async function triggerRescan(buttonEl, companyName) {
+    // Disable button and show scanning state
+    buttonEl.disabled = true;
+    buttonEl.classList.add('scanning');
+    const originalText = buttonEl.textContent;
+    buttonEl.textContent = 'Scanning...';
+
+    try {
+        const response = await fetch(`/api/rescan/${encodeURIComponent(companyName)}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        });
+
+        const data = await response.json();
+
+        if (!response.ok || data.status !== 'success') {
+            throw new Error(data.message || 'Rescan failed');
+        }
+
+        // Update the row with new data
+        const row = buttonEl.closest('tr');
+        if (!row) throw new Error('Could not find table row');
+
+        // Update tier badge
+        const tierBadge = row.querySelector('.tier-badge');
+        if (tierBadge) {
+            const newTierClass = `tier-badge-${data.new_tier}`;
+            tierBadge.className = `tier-badge ${newTierClass}`;
+            tierBadge.innerHTML = `${data.tier_emoji} ${data.tier_name}`;
+        }
+
+        // Update evidence text
+        const evidenceText = row.querySelector('.evidence-text');
+        if (evidenceText) {
+            evidenceText.textContent = data.evidence || 'No evidence recorded';
+            evidenceText.title = data.evidence || 'No evidence recorded';
+        }
+
+        // Update freshness/last scanned
+        const freshnessCell = row.querySelector('.freshness-cell');
+        if (freshnessCell) {
+            const today = new Date().toISOString().split('T')[0];
+            freshnessCell.innerHTML = `
+                <span class="freshness-highlight">Moved to Tier ${data.new_tier}</span>
+                <br>
+                <span class="last-scanned">${today}</span>
+            `;
+        }
+
+        // Update row styling if tier changed
+        if (data.tier_changed) {
+            row.className = `tier-row-${data.new_tier}`;
+        }
+
+        // Update button to show completion
+        buttonEl.classList.remove('scanning');
+        buttonEl.textContent = '✓ Done';
+        buttonEl.style.opacity = '0.7';
+
+        // Reset button after 2 seconds
+        setTimeout(() => {
+            buttonEl.disabled = false;
+            buttonEl.textContent = 'Rescan';
+            buttonEl.style.opacity = '1';
+        }, 2000);
+
+    } catch (error) {
+        console.error('Rescan error:', error);
+
+        // Show error state
+        buttonEl.classList.remove('scanning');
+        buttonEl.textContent = '✗ Error';
+        buttonEl.style.background = '#ef4444';
+
+        // Reset after 3 seconds
+        setTimeout(() => {
+            buttonEl.disabled = false;
+            buttonEl.textContent = originalText;
+            buttonEl.style.background = '';
+        }, 3000);
+    }
+}
+</script>
 {% endblock %}
