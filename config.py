@@ -29,7 +29,7 @@ class Config:
     DATABASE_PATH = os.path.join(os.path.dirname(__file__), 'data', 'lead_machine.db')
 
     # Scan Configuration
-    MAX_REPOS_TO_SCAN = 15  # Top N most active repos
+    MAX_REPOS_TO_SCAN = 50  # Top N most active repos
 
     # Priority keywords for repo selection
     PRIORITY_KEYWORDS = [
