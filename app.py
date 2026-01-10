@@ -9,7 +9,10 @@ import os
 from datetime import datetime
 from flask import Flask, render_template, Response, request, jsonify, redirect, url_for, stream_with_context, send_file
 from config import Config
-from database import save_report, get_report, get_recent_reports, search_reports
+from database import (
+    save_report, get_report, get_recent_reports, search_reports,
+    update_account_status, get_all_accounts, TIER_CONFIG
+)
 from monitors.scanner import deep_scan_generator
 from ai_summary import generate_analysis
 from pdf_generator import generate_report_pdf
@@ -99,6 +102,20 @@ def stream_scan(company: str):
         except Exception as e:
             yield f"data: LOG:Warning: Could not save report: {str(e)}\n\n"
             report_id = None
+
+        # Phase 3.5: Update monitored account status
+        try:
+            account_result = update_account_status(scan_data, report_id)
+            tier_name = account_result.get('tier_name', 'Unknown')
+            tier_status = account_result.get('tier_status', '')
+            tier_emoji = TIER_CONFIG.get(account_result.get('tier', 0), {}).get('emoji', '')
+            yield f"data: LOG:Account status updated: {tier_emoji} {tier_name} ({tier_status})\n\n"
+
+            if account_result.get('tier_changed'):
+                yield f"data: LOG:Tier changed! Evidence: {account_result.get('evidence', 'N/A')}\n\n"
+
+        except Exception as e:
+            yield f"data: LOG:Warning: Could not update account status: {str(e)}\n\n"
 
         # Phase 4: Send final result
         final_result = {
@@ -190,6 +207,20 @@ def history():
     """View scan history."""
     reports = get_recent_reports(limit=50)
     return render_template('history.html', reports=reports)
+
+
+@app.route('/accounts')
+def accounts():
+    """View monitored accounts dashboard."""
+    all_accounts = get_all_accounts()
+    return render_template('accounts.html', accounts=all_accounts, tier_config=TIER_CONFIG)
+
+
+@app.route('/api/accounts')
+def api_accounts():
+    """API endpoint to get all monitored accounts."""
+    all_accounts = get_all_accounts()
+    return jsonify(all_accounts)
 
 
 @app.errorhandler(404)

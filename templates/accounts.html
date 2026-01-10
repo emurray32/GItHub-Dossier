@@ -1,0 +1,421 @@
+{% extends "base.html" %}
+
+{% block title %}Monitored Accounts - Lead Machine{% endblock %}
+
+{% block head %}
+<style>
+    .accounts-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1.5rem;
+    }
+
+    .accounts-stats {
+        display: flex;
+        gap: 1rem;
+    }
+
+    .stat-badge {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.5rem 1rem;
+        background: var(--bg-secondary);
+        border-radius: 8px;
+        font-size: 0.875rem;
+    }
+
+    .stat-badge .count {
+        font-weight: 600;
+        font-size: 1.1rem;
+    }
+
+    .accounts-table-container {
+        background: var(--bg-secondary);
+        border-radius: 12px;
+        overflow: hidden;
+        border: 1px solid var(--border-color);
+    }
+
+    .accounts-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.9rem;
+    }
+
+    .accounts-table thead {
+        background: var(--bg-tertiary);
+    }
+
+    .accounts-table th {
+        padding: 0.875rem 1rem;
+        text-align: left;
+        font-weight: 600;
+        color: var(--text-secondary);
+        text-transform: uppercase;
+        font-size: 0.75rem;
+        letter-spacing: 0.5px;
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    .accounts-table td {
+        padding: 0.875rem 1rem;
+        border-bottom: 1px solid var(--border-color);
+        vertical-align: middle;
+    }
+
+    .accounts-table tbody tr:hover {
+        background: var(--bg-tertiary);
+    }
+
+    .accounts-table tbody tr:last-child td {
+        border-bottom: none;
+    }
+
+    /* Tier-specific row styling */
+    .tier-row-3 {
+        opacity: 0.6;
+        background: rgba(239, 68, 68, 0.05);
+    }
+
+    .tier-row-3:hover {
+        opacity: 0.8;
+    }
+
+    .tier-row-2 {
+        background: rgba(34, 197, 94, 0.08);
+    }
+
+    .tier-row-1 {
+        background: rgba(245, 158, 11, 0.05);
+    }
+
+    /* Company cell */
+    .company-cell {
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+
+    .company-cell a {
+        color: inherit;
+        text-decoration: none;
+        transition: color var(--transition-fast);
+    }
+
+    .company-cell a:hover {
+        color: var(--accent-color);
+    }
+
+    .company-org {
+        font-size: 0.8rem;
+        color: var(--text-muted);
+        font-weight: 400;
+    }
+
+    /* Tier badge */
+    .tier-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 0.35rem 0.75rem;
+        border-radius: 20px;
+        font-size: 0.8rem;
+        font-weight: 500;
+        white-space: nowrap;
+    }
+
+    .tier-badge-0 {
+        background: rgba(100, 116, 139, 0.2);
+        color: #94a3b8;
+    }
+
+    .tier-badge-1 {
+        background: rgba(245, 158, 11, 0.2);
+        color: #fbbf24;
+    }
+
+    .tier-badge-2 {
+        background: rgba(34, 197, 94, 0.2);
+        color: #4ade80;
+    }
+
+    .tier-badge-3 {
+        background: rgba(239, 68, 68, 0.2);
+        color: #f87171;
+    }
+
+    /* Freshness cell */
+    .freshness-cell {
+        font-size: 0.85rem;
+        color: var(--text-secondary);
+    }
+
+    .freshness-highlight {
+        color: var(--accent-color);
+        font-weight: 500;
+    }
+
+    /* Evidence cell */
+    .evidence-cell {
+        max-width: 300px;
+        font-size: 0.85rem;
+        color: var(--text-secondary);
+        line-height: 1.4;
+    }
+
+    .evidence-text {
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+
+    /* Actions cell */
+    .actions-cell {
+        white-space: nowrap;
+    }
+
+    .btn-rescan {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+        padding: 0.4rem 0.75rem;
+        background: var(--accent-color);
+        color: white;
+        border: none;
+        border-radius: 6px;
+        font-size: 0.8rem;
+        text-decoration: none;
+        cursor: pointer;
+        transition: background var(--transition-fast);
+    }
+
+    .btn-rescan:hover {
+        background: var(--accent-hover);
+    }
+
+    .btn-view-report {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+        padding: 0.4rem 0.75rem;
+        background: transparent;
+        color: var(--text-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        font-size: 0.8rem;
+        text-decoration: none;
+        cursor: pointer;
+        transition: all var(--transition-fast);
+        margin-right: 0.5rem;
+    }
+
+    .btn-view-report:hover {
+        background: var(--bg-tertiary);
+        color: var(--text-primary);
+        border-color: var(--text-muted);
+    }
+
+    /* Last scanned */
+    .last-scanned {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+    }
+
+    /* Empty state */
+    .empty-state {
+        text-align: center;
+        padding: 4rem 2rem;
+    }
+
+    .empty-state p {
+        color: var(--text-secondary);
+        margin-bottom: 1.5rem;
+    }
+
+    /* Legend */
+    .tier-legend {
+        display: flex;
+        gap: 1.5rem;
+        margin-bottom: 1.5rem;
+        padding: 1rem;
+        background: var(--bg-secondary);
+        border-radius: 8px;
+        flex-wrap: wrap;
+    }
+
+    .legend-item {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.85rem;
+        color: var(--text-secondary);
+    }
+
+    .legend-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+    }
+
+    .legend-dot-0 { background: #64748b; }
+    .legend-dot-1 { background: #f59e0b; }
+    .legend-dot-2 { background: #22c55e; }
+    .legend-dot-3 { background: #ef4444; }
+
+    @media (max-width: 768px) {
+        .accounts-header {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 1rem;
+        }
+
+        .accounts-stats {
+            flex-wrap: wrap;
+        }
+
+        .accounts-table {
+            font-size: 0.8rem;
+        }
+
+        .accounts-table th,
+        .accounts-table td {
+            padding: 0.6rem 0.5rem;
+        }
+
+        .evidence-cell {
+            display: none;
+        }
+
+        .tier-legend {
+            gap: 1rem;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <header class="page-header">
+        <div class="accounts-header">
+            <div>
+                <h1>Monitored Accounts</h1>
+                <p class="subtitle">Track companies through their localization journey</p>
+            </div>
+            <div class="accounts-stats">
+                {% set tier_counts = {'0': 0, '1': 0, '2': 0, '3': 0} %}
+                {% for account in accounts %}
+                    {% set _ = tier_counts.update({account.current_tier|string: tier_counts[account.current_tier|string] + 1}) %}
+                {% endfor %}
+                <div class="stat-badge">
+                    <span class="tier-badge tier-badge-2">{{ tier_config[2].emoji }}</span>
+                    <span class="count">{{ tier_counts['2'] }}</span>
+                    <span>Hot Leads</span>
+                </div>
+                <div class="stat-badge">
+                    <span class="tier-badge tier-badge-1">{{ tier_config[1].emoji }}</span>
+                    <span class="count">{{ tier_counts['1'] }}</span>
+                    <span>Warm</span>
+                </div>
+                <div class="stat-badge">
+                    <span class="tier-badge tier-badge-0">{{ tier_config[0].emoji }}</span>
+                    <span class="count">{{ tier_counts['0'] }}</span>
+                    <span>Tracking</span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="tier-legend">
+        <div class="legend-item">
+            <span class="legend-dot legend-dot-2"></span>
+            <strong>Tier 2 - Preparing:</strong> i18n libraries installed, no locale folders (GOLDILOCKS)
+        </div>
+        <div class="legend-item">
+            <span class="legend-dot legend-dot-1"></span>
+            <strong>Tier 1 - Thinking:</strong> RFC discussions found
+        </div>
+        <div class="legend-item">
+            <span class="legend-dot legend-dot-0"></span>
+            <strong>Tier 0 - Tracking:</strong> No signals yet
+        </div>
+        <div class="legend-item">
+            <span class="legend-dot legend-dot-3"></span>
+            <strong>Tier 3 - Launched:</strong> Already localized (too late)
+        </div>
+    </div>
+
+    {% if accounts %}
+    <div class="accounts-table-container">
+        <table class="accounts-table">
+            <thead>
+                <tr>
+                    <th>Company</th>
+                    <th>Tier</th>
+                    <th>Freshness</th>
+                    <th>Evidence</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for account in accounts %}
+                <tr class="tier-row-{{ account.current_tier }}">
+                    <td class="company-cell">
+                        {% if account.latest_report_id %}
+                        <a href="{{ url_for('view_report', report_id=account.latest_report_id) }}">
+                            {{ account.company_name }}
+                        </a>
+                        {% else %}
+                        {{ account.company_name }}
+                        {% endif %}
+                        {% if account.github_org %}
+                        <div class="company-org">@{{ account.github_org }}</div>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <span class="tier-badge tier-badge-{{ account.current_tier }}">
+                            {{ account.tier_config.emoji }} {{ account.tier_config.name }}
+                        </span>
+                    </td>
+                    <td class="freshness-cell">
+                        {% if account.status_changed_at %}
+                            {% set status_date = account.status_changed_at %}
+                            {% if 'T' in status_date %}
+                                {% set status_date = status_date.split('T')[0] %}
+                            {% endif %}
+                            <span class="freshness-highlight">Moved to Tier {{ account.current_tier }}</span>
+                            <br>
+                            <span class="last-scanned">{{ status_date }}</span>
+                        {% else %}
+                            <span class="last-scanned">Unknown</span>
+                        {% endif %}
+                    </td>
+                    <td class="evidence-cell">
+                        <span class="evidence-text" title="{{ account.evidence_summary or 'No evidence recorded' }}">
+                            {{ account.evidence_summary or 'No evidence recorded' }}
+                        </span>
+                    </td>
+                    <td class="actions-cell">
+                        {% if account.latest_report_id %}
+                        <a href="{{ url_for('view_report', report_id=account.latest_report_id) }}" class="btn-view-report">
+                            View
+                        </a>
+                        {% endif %}
+                        <a href="{{ url_for('scan_page', company=account.company_name) }}" class="btn-rescan">
+                            Rescan
+                        </a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <p>No monitored accounts yet. Run a scan to start tracking companies!</p>
+        <a href="{{ url_for('index') }}" class="btn-primary">Start Scanning</a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
