@@ -6,12 +6,14 @@ A Flask application for analyzing GitHub organizations for localization signals.
 import json
 import time
 import os
+import threading
 from datetime import datetime
 from flask import Flask, render_template, Response, request, jsonify, redirect, url_for, stream_with_context, send_file
 from config import Config
 from database import (
     save_report, get_report, get_recent_reports, search_reports,
-    update_account_status, get_all_accounts, add_account_to_tier_0, TIER_CONFIG
+    update_account_status, get_all_accounts, add_account_to_tier_0, TIER_CONFIG,
+    get_account_by_company
 )
 from monitors.scanner import deep_scan_generator
 from monitors.discovery import search_github_orgs, resolve_org_fast
@@ -21,6 +23,69 @@ from pdf_generator import generate_report_pdf
 
 app = Flask(__name__)
 app.config.from_object(Config)
+
+
+def spawn_background_scan(company_name: str):
+    """
+    Spawn a background thread to scan a company.
+
+    This function runs the full scan pipeline asynchronously without
+    blocking the API response. The account tier is automatically
+    updated with the scan results.
+    """
+    def _run_scan():
+        try:
+            start_time = time.time()
+            scan_data = None
+            analysis_data = None
+
+            # Phase 1: Run the deep scan (silent)
+            for message in deep_scan_generator(company_name):
+                if 'SCAN_COMPLETE:' in message:
+                    json_str = message.split('SCAN_COMPLETE:', 1)[1].strip()
+                    if json_str.startswith('data: '):
+                        json_str = json_str[6:]
+                    scan_data = json.loads(json_str)
+
+            if not scan_data:
+                return
+
+            # Phase 2: Generate AI analysis (silent)
+            try:
+                for message in generate_analysis(scan_data):
+                    if 'ANALYSIS_COMPLETE:' in message:
+                        json_str = message.split('ANALYSIS_COMPLETE:', 1)[1].strip()
+                        if json_str.startswith('data: '):
+                            json_str = json_str[6:]
+                        analysis_data = json.loads(json_str)
+            except Exception:
+                analysis_data = {'error': 'Analysis failed'}
+
+            # Phase 3: Save report to database
+            duration = time.time() - start_time
+            try:
+                report_id = save_report(
+                    company_name=company_name,
+                    github_org=scan_data.get('org_login', ''),
+                    scan_data=scan_data,
+                    ai_analysis=analysis_data or {},
+                    scan_duration=duration
+                )
+            except Exception:
+                return
+
+            # Phase 4: Update monitored account status and tier
+            try:
+                update_account_status(scan_data, report_id)
+            except Exception:
+                pass
+
+        except Exception:
+            pass  # Silent failure in background
+
+    # Start scan in background thread (daemon=False ensures it completes)
+    thread = threading.Thread(target=_run_scan, daemon=False)
+    thread.start()
 
 
 @app.route('/')
@@ -276,6 +341,9 @@ def api_import():
             "failed": ["MomPop", ...],
             "results": [{"company": "...", "github_org": "...", "status": "..."}]
         }
+
+    After adding each company to the database, spawns a background scan
+    thread so the company data is analyzed automatically.
     """
     data = request.get_json() or {}
     companies = data.get('companies', [])
@@ -306,6 +374,9 @@ def api_import():
                     'github_org': github_org,
                     'status': 'added'
                 })
+
+                # Spawn background scan immediately after adding to DB
+                spawn_background_scan(company_name)
             else:
                 failed.append(company_name)
                 results.append({
@@ -338,6 +409,9 @@ def api_track():
 
     Returns:
         JSON with account creation result.
+
+    After adding the organization to the database, spawns a background scan
+    thread so the organization data is analyzed automatically.
     """
     data = request.get_json() or {}
     org_login = data.get('org_login', '').strip()
@@ -348,6 +422,10 @@ def api_track():
 
     try:
         result = add_account_to_tier_0(company_name, org_login)
+
+        # Spawn background scan immediately after adding to DB
+        spawn_background_scan(company_name)
+
         return jsonify(result)
     except Exception as e:
         return jsonify({'error': f'Failed to track organization: {str(e)}'}), 500
@@ -436,6 +514,47 @@ def api_rescan(company_name: str):
 
     except Exception as e:
         return jsonify({'status': 'error', 'message': f'Failed to update account status: {str(e)}'}), 500
+
+
+@app.route('/api/scan-pending', methods=['POST'])
+def api_scan_pending():
+    """
+    Scan all accounts that have never been scanned.
+
+    Logic: Query monitored_accounts for all records where last_scanned_at
+    is NULL or equal to created_at (meaning never scanned).
+
+    Action: Loop through them and trigger a background scan for each.
+
+    Returns:
+        JSON with count of scans started.
+    """
+    from database import get_db_connection
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Find accounts that have never been scanned
+    # (last_scanned_at equals created_at or is NULL)
+    cursor.execute('''
+        SELECT company_name FROM monitored_accounts
+        WHERE last_scanned_at IS NULL OR last_scanned_at = created_at
+    ''')
+
+    pending_accounts = [row[0] for row in cursor.fetchall()]
+    conn.close()
+
+    # Spawn background scan for each pending account
+    scan_count = 0
+    for company_name in pending_accounts:
+        spawn_background_scan(company_name)
+        scan_count += 1
+
+    return jsonify({
+        'status': 'success',
+        'scans_started': scan_count,
+        'accounts': pending_accounts
+    })
 
 
 @app.errorhandler(404)
