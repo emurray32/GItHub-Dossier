@@ -1083,6 +1083,17 @@
 
     <!-- Key Contacts Needed -->
     {% if report.ai_analysis.key_contacts_to_find %}
+    <div class="section">
+        <h2 class="section-title">Key Contacts to Find</h2>
+        <div class="contacts-grid">
+            {% for contact in report.ai_analysis.key_contacts_to_find %}
+            <div class="contact-card">
+                <div class="contact-role">{{ contact }}</div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
 
     <!-- Conversation Starters -->
     {% if report.ai_analysis.conversation_starters %}
