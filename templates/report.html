@@ -1186,6 +1186,7 @@
     {% endif %}
 
     <!-- Risk Intelligence: Compliance -->
+    {% if report.scan_data and report.scan_data.get('compliance_assets') %}
     {% set compliance_assets = report.scan_data.get('compliance_assets', {}) %}
     {% if compliance_assets.get('detected_files') %}
     <div class="section">
@@ -1209,6 +1210,7 @@
             {% endfor %}
         </div>
     </div>
+    {% endif %}
     {% endif %}
 
     <!-- Recommended Approach -->
