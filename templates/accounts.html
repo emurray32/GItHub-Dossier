@@ -83,6 +83,15 @@
         opacity: 0.8;
     }
 
+    .tier-row-4 {
+        opacity: 0.5;
+        background: #1a1a1a;
+    }
+
+    .tier-row-4:hover {
+        opacity: 0.65;
+    }
+
     .tier-row-2 {
         background: rgba(34, 197, 94, 0.08);
     }
@@ -143,6 +152,11 @@
     .tier-badge-3 {
         background: rgba(239, 68, 68, 0.2);
         color: #f87171;
+    }
+
+    .tier-badge-4 {
+        background: rgba(75, 75, 75, 0.3);
+        color: #6b7280;
     }
 
     /* Freshness cell */
@@ -357,6 +371,22 @@
     .legend-dot-1 { background: #f59e0b; }
     .legend-dot-2 { background: #22c55e; }
     .legend-dot-3 { background: #ef4444; }
+    .legend-dot-4 { background: #4b5563; }
+
+    /* Invalid/disabled button for Tier 4 */
+    .btn-invalid {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+        padding: 0.4rem 0.75rem;
+        background: #374151;
+        color: #6b7280;
+        border: 1px solid #4b5563;
+        border-radius: 6px;
+        font-size: 0.8rem;
+        cursor: not-allowed;
+        opacity: 0.7;
+    }
 
     @media (max-width: 768px) {
         .accounts-header {
@@ -398,9 +428,9 @@
                 <p class="subtitle">Track companies through their localization journey</p>
             </div>
             <div class="accounts-stats">
-                {% set tier_counts = {'0': 0, '1': 0, '2': 0, '3': 0} %}
+                {% set tier_counts = {'0': 0, '1': 0, '2': 0, '3': 0, '4': 0} %}
                 {% for account in accounts %}
-                    {% set _ = tier_counts.update({account.current_tier|string: tier_counts[account.current_tier|string] + 1}) %}
+                    {% set _ = tier_counts.update({account.current_tier|string: tier_counts.get(account.current_tier|string, 0) + 1}) %}
                 {% endfor %}
                 <div class="stat-badge">
                     <span class="tier-badge tier-badge-2">{{ tier_config[2].emoji }}</span>
@@ -417,6 +447,13 @@
                     <span class="count">{{ tier_counts['0'] }}</span>
                     <span>Tracking</span>
                 </div>
+                {% if tier_counts['4'] > 0 %}
+                <div class="stat-badge">
+                    <span class="tier-badge tier-badge-4">{{ tier_config[4].emoji }}</span>
+                    <span class="count">{{ tier_counts['4'] }}</span>
+                    <span>Invalid</span>
+                </div>
+                {% endif %}
                 <button type="button" class="btn-scan-all-new" onclick="scanAllNew()">
                     ✨ Scan All New
                 </button>
@@ -440,6 +477,10 @@
         <div class="legend-item">
             <span class="legend-dot legend-dot-3"></span>
             <strong>Tier 3 - Launched:</strong> Already localized (too late)
+        </div>
+        <div class="legend-item">
+            <span class="legend-dot legend-dot-4"></span>
+            <strong>Tier 4 - Not Found:</strong> GitHub org not found or no public repos
         </div>
     </div>
 
@@ -499,6 +540,11 @@
                             View
                         </a>
                         {% endif %}
+                        {% if account.current_tier == 4 %}
+                        <span class="btn-invalid">
+                            🚫 No Repo
+                        </span>
+                        {% else %}
                         {% set needs_scan = not account.evidence_summary or account.last_scanned_at is none or account.last_scanned_at == account.created_at %}
                         {% if needs_scan %}
                         <button type="button" class="btn-start-scan" onclick="triggerRescan(this, '{{ account.company_name }}')">
@@ -508,6 +554,7 @@
                         <button type="button" class="btn-rescan" onclick="triggerRescan(this, '{{ account.company_name }}')">
                             Rescan
                         </button>
+                        {% endif %}
                         {% endif %}
                     </td>
                 </tr>
