@@ -15,7 +15,7 @@ from database import (
     save_report, get_report, get_recent_reports, search_reports,
     update_account_status, get_all_accounts, add_account_to_tier_0, TIER_CONFIG,
     get_account_by_company, get_account_by_company_case_insensitive,
-    mark_account_as_invalid, get_refreshable_accounts,
+    mark_account_as_invalid, get_refreshable_accounts, delete_account,
     get_db_connection
 )
 from monitors.scanner import deep_scan_generator
@@ -385,6 +385,15 @@ def api_accounts():
     """API endpoint to get all monitored accounts."""
     all_accounts = get_all_accounts()
     return jsonify(all_accounts)
+
+
+@app.route('/api/accounts/<int:account_id>', methods=['DELETE'])
+def api_delete_account(account_id: int):
+    """Delete a monitored account by ID."""
+    deleted = delete_account(account_id)
+    if not deleted:
+        return jsonify({'error': 'Account not found'}), 404
+    return jsonify({'status': 'success'})
 
 
 @app.route('/grow')
