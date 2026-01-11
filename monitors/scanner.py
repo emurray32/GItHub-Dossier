@@ -415,29 +415,46 @@ def _scan_dependency_injection(org: str, repo: str, company: str) -> Generator[t
         Tuples of (log_message, signal_object)
     """
     # ============================================================
-    # NEGATIVE CHECK: Verify NO exclusion folders exist
+    # NEGATIVE CHECK: Verify NO exclusion folders exist (with source-only exception)
     # ============================================================
-    locale_exists, found_folders = _check_locale_folders_exist_detailed(org, repo)
+    locale_exists, found_folders, source_only, folder_contents = _check_locale_folders_exist_detailed(org, repo)
+
+    # Track if we found source-only folders for evidence logging
+    source_only_evidence = None
 
     if locale_exists:
-        # Company has ALREADY LAUNCHED - mark as "Too Late"
-        yield (f"⚠️ DISQUALIFIED: Found locale folders ({', '.join(found_folders)}) - Already Launched", None)
+        if source_only:
+            # GOLDILOCKS ZONE EXCEPTION: Folder exists but ONLY contains source files
+            # This means infrastructure is ready, but no translations yet!
+            # Format the files for logging
+            all_files = []
+            for folder, files in folder_contents.items():
+                all_files.extend(files)
+            files_str = ', '.join(all_files) if all_files else 'empty'
+            folders_str = ', '.join(found_folders)
 
-        # Still emit a signal but mark it as "launched" status
-        signal = {
-            'Company': company,
-            'Signal': 'Already Launched',
-            'Evidence': f"Found localization folders: {', '.join(found_folders)} - Company has already launched i18n",
-            'Link': f"https://github.com/{org}/{repo}",
-            'priority': 'LOW',
-            'type': 'already_launched',
-            'repo': repo,
-            'locale_folders_found': found_folders,
-            'goldilocks_status': 'launched',
-            'bdr_summary': Config.BDR_TRANSLATIONS.get('locale_folder_exists', 'Already has translations'),
-        }
-        yield (f"📉 LOW PRIORITY: {repo} already has locale folders", signal)
-        return
+            source_only_evidence = f"Found locale folder ({folders_str}) but it only contains source files ({files_str}) - Infrastructure ready, waiting for translation."
+            yield (f"✅ GOLDILOCKS: {folders_str} contains only source files ({files_str}) - Still a valid lead!", None)
+            # Continue to positive check - don't return!
+        else:
+            # Company has ALREADY LAUNCHED - mark as "Too Late"
+            yield (f"⚠️ DISQUALIFIED: Found locale folders ({', '.join(found_folders)}) - Already Launched", None)
+
+            # Still emit a signal but mark it as "launched" status
+            signal = {
+                'Company': company,
+                'Signal': 'Already Launched',
+                'Evidence': f"Found localization folders: {', '.join(found_folders)} - Company has already launched i18n",
+                'Link': f"https://github.com/{org}/{repo}",
+                'priority': 'LOW',
+                'type': 'already_launched',
+                'repo': repo,
+                'locale_folders_found': found_folders,
+                'goldilocks_status': 'launched',
+                'bdr_summary': Config.BDR_TRANSLATIONS.get('locale_folder_exists', 'Already has translations'),
+            }
+            yield (f"📉 LOW PRIORITY: {repo} already has locale folders", signal)
+            return
 
     # ============================================================
     # POSITIVE CHECK: Scan for Goldilocks Zone libraries
@@ -483,11 +500,20 @@ def _scan_dependency_injection(org: str, repo: str, company: str) -> Generator[t
                                 break
 
                     if found_libs:
-                        # This is the GOLDILOCKS ZONE - Library found + NO locale folders!
+                        # This is the GOLDILOCKS ZONE - Library found + NO locale folders (or source-only)!
+                        if source_only_evidence:
+                            # Source-only case: folder exists but only has source files
+                            evidence = f"🎯 GOLDILOCKS ZONE: Found {', '.join(found_libs)} in {dep_file}. {source_only_evidence}"
+                            gap_explanation = Config.BDR_TRANSLATIONS.get('locale_folder_source_only', 'Infrastructure ready, only source files')
+                        else:
+                            # No folder case: no locale folders at all
+                            evidence = f"🎯 GOLDILOCKS ZONE: Found {', '.join(found_libs)} in {dep_file} but NO locale folders exist!"
+                            gap_explanation = Config.BDR_TRANSLATIONS.get('locale_folder_missing', 'Infrastructure ready, no translations')
+
                         signal = {
                             'Company': company,
                             'Signal': 'Dependency Injection',
-                            'Evidence': f"🎯 GOLDILOCKS ZONE: Found {', '.join(found_libs)} in {dep_file} but NO locale folders exist!",
+                            'Evidence': evidence,
                             'Link': file_url,
                             'priority': 'CRITICAL',
                             'type': 'dependency_injection',
@@ -496,8 +522,9 @@ def _scan_dependency_injection(org: str, repo: str, company: str) -> Generator[t
                             'libraries_found': found_libs,
                             'goldilocks_status': 'preparing',
                             'gap_verified': True,  # Negative check passed!
+                            'source_only': source_only_evidence is not None,
                             'bdr_summary': ' | '.join(bdr_explanations),
-                            'bdr_gap_explanation': Config.BDR_TRANSLATIONS.get('locale_folder_missing', 'Infrastructure ready, no translations'),
+                            'bdr_gap_explanation': gap_explanation,
                         }
 
                         yield (f"🎯 GOLDILOCKS ZONE: {', '.join(found_libs)} in {dep_file} - NO TRANSLATIONS YET!", signal)
@@ -511,10 +538,20 @@ def _scan_dependency_injection(org: str, repo: str, company: str) -> Generator[t
 
 def _check_locale_folders_exist_detailed(org: str, repo: str) -> tuple:
     """
-    Check if locale/exclusion folders exist in the repo.
-    Returns (bool, list) - whether folders exist and which ones were found.
+    Check if locale/exclusion folders exist in the repo and analyze their contents.
+
+    Returns a tuple of:
+        - folders_exist (bool): True if any locale folder exists
+        - found_folders (list): List of folder paths that were found
+        - source_only (bool): True if ALL found folders contain ONLY source language files
+        - folder_contents (dict): Mapping of folder path to list of filenames
+
+    Source-only folders (e.g., containing just en.json) indicate infrastructure
+    is ready but translations haven't started - this is still a GOLDILOCKS ZONE.
     """
     found_folders = []
+    folder_contents = {}
+    all_source_only = True  # Assume source-only until proven otherwise
 
     for path in Config.EXCLUSION_FOLDERS:
         try:
@@ -526,10 +563,70 @@ def _check_locale_folders_exist_detailed(org: str, repo: str) -> tuple:
             )
             if response.status_code == 200:
                 found_folders.append(path)
+
+                # Parse the folder contents
+                contents = response.json()
+                files_in_folder = []
+
+                if isinstance(contents, list):
+                    for item in contents:
+                        item_name = item.get('name', '')
+                        item_type = item.get('type', '')
+
+                        # Only consider files, not subdirectories
+                        if item_type == 'file':
+                            files_in_folder.append(item_name)
+
+                folder_contents[path] = files_in_folder
+
+                # Check if this folder contains ONLY source locale files
+                if files_in_folder:
+                    folder_is_source_only = _is_source_only_folder(files_in_folder)
+                    if not folder_is_source_only:
+                        all_source_only = False
+                else:
+                    # Empty folder - treat as source-only (infrastructure ready)
+                    pass
+
         except requests.RequestException:
             continue
 
-    return (len(found_folders) > 0, found_folders)
+    folders_exist = len(found_folders) > 0
+
+    # If no folders found, source_only is not applicable (return False)
+    source_only = all_source_only if folders_exist else False
+
+    return (folders_exist, found_folders, source_only, folder_contents)
+
+
+def _is_source_only_folder(files: list) -> bool:
+    """
+    Check if a list of files contains ONLY source language files.
+
+    Source language files are files that match patterns like:
+    en.json, en-US.json, en-GB.json, base.json, source.json
+    and their .js/.ts/.yml variants.
+
+    Args:
+        files: List of filenames in the folder
+
+    Returns:
+        True if ALL files are source language files, False otherwise
+    """
+    if not files:
+        return True  # Empty folder is considered source-only
+
+    for filename in files:
+        filename_lower = filename.lower()
+
+        # Check if this file matches any source locale pattern
+        is_source_file = filename_lower in Config.SOURCE_LOCALE_PATTERNS
+
+        if not is_source_file:
+            # This file is not a source locale file - folder has translations
+            return False
+
+    return True
 
 
 def _check_locale_folders_exist(org: str, repo: str) -> bool:
