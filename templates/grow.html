@@ -145,6 +145,38 @@
     }
 
     /* Right Panel - Discovery Engine */
+    .icp-presets {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+    }
+
+    .icp-btn {
+        padding: 0.5rem 1rem;
+        font-size: 0.85rem;
+        font-weight: 500;
+        background: var(--bg-primary);
+        color: var(--text-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 20px;
+        cursor: pointer;
+        transition: all var(--transition-fast);
+    }
+
+    .icp-btn:hover {
+        background: var(--accent-color);
+        color: white;
+        border-color: var(--accent-color);
+        transform: translateY(-1px);
+    }
+
+    .icp-btn.active {
+        background: var(--accent-color);
+        color: white;
+        border-color: var(--accent-color);
+    }
+
     .search-box {
         display: flex;
         gap: 0.75rem;
@@ -195,7 +227,7 @@
 
     .results-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
         gap: 1rem;
         overflow-y: auto;
         flex: 1;
@@ -209,6 +241,7 @@
         transition: all var(--transition-normal);
         display: flex;
         flex-direction: column;
+        position: relative;
     }
 
     .org-card:hover {
@@ -220,13 +253,25 @@
         opacity: 0.5;
     }
 
-    .org-avatar {
-        width: 60px;
-        height: 60px;
-        border-radius: 8px;
+    .org-card-header {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.75rem;
         margin-bottom: 0.75rem;
+    }
+
+    .org-avatar {
+        width: 50px;
+        height: 50px;
+        border-radius: 8px;
         background: var(--bg-secondary);
         border: 1px solid var(--border-color);
+        flex-shrink: 0;
+    }
+
+    .org-header-info {
+        flex: 1;
+        min-width: 0;
     }
 
     .org-name {
@@ -235,6 +280,36 @@
         color: var(--text-primary);
         margin-bottom: 0.25rem;
         word-break: break-word;
+    }
+
+    .org-company-name {
+        font-size: 0.8rem;
+        color: var(--text-muted);
+        margin-bottom: 0.25rem;
+    }
+
+    .revenue-badge {
+        position: absolute;
+        top: 0.75rem;
+        right: 0.75rem;
+        padding: 0.25rem 0.5rem;
+        font-size: 0.7rem;
+        font-weight: 600;
+        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+        color: white;
+        border-radius: 4px;
+    }
+
+    .industry-tag {
+        display: inline-block;
+        padding: 0.2rem 0.5rem;
+        font-size: 0.7rem;
+        font-weight: 500;
+        background: var(--bg-secondary);
+        color: var(--text-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 4px;
+        margin-bottom: 0.5rem;
     }
 
     .org-description {
@@ -246,13 +321,38 @@
         -webkit-line-clamp: 2;
         -webkit-box-orient: vertical;
         overflow: hidden;
-        min-height: 1.5em;
+        min-height: 2.1em;
+    }
+
+    .org-meta {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 0.75rem;
+        font-size: 0.7rem;
     }
 
     .org-repos {
-        font-size: 0.7rem;
         color: var(--text-muted);
-        margin-bottom: 0.75rem;
+    }
+
+    .github-status {
+        display: flex;
+        align-items: center;
+        gap: 0.25rem;
+        padding: 0.2rem 0.4rem;
+        border-radius: 4px;
+        font-weight: 500;
+    }
+
+    .github-status.validated {
+        background: rgba(34, 197, 94, 0.1);
+        color: var(--success-color);
+    }
+
+    .github-status.uncertain {
+        background: rgba(245, 158, 11, 0.1);
+        color: var(--warning-color);
     }
 
     .track-btn {
@@ -305,6 +405,34 @@
 
     @keyframes spin {
         to { transform: rotate(360deg); }
+    }
+
+    .discovery-mode-toggle {
+        display: flex;
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+    }
+
+    .mode-btn {
+        padding: 0.4rem 0.75rem;
+        font-size: 0.75rem;
+        font-weight: 500;
+        background: var(--bg-primary);
+        color: var(--text-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        cursor: pointer;
+        transition: all var(--transition-fast);
+    }
+
+    .mode-btn:hover {
+        border-color: var(--accent-color);
+    }
+
+    .mode-btn.active {
+        background: var(--accent-color);
+        color: white;
+        border-color: var(--accent-color);
     }
 
     .page-header {
@@ -362,23 +490,38 @@
 
         <!-- Right Panel: Discovery Engine -->
         <div class="panel">
-            <h2 class="panel-title">🔍 Discovery Engine</h2>
+            <h2 class="panel-title">🔍 Universal Discovery Engine</h2>
+
+            <!-- Discovery Mode Toggle -->
+            <div class="discovery-mode-toggle">
+                <button class="mode-btn" id="modeGithub" onclick="setDiscoveryMode('github')">GitHub Search</button>
+                <button class="mode-btn active" id="modeAI" onclick="setDiscoveryMode('ai')">AI Discovery</button>
+            </div>
+
+            <!-- ICP Presets -->
+            <div class="icp-presets" id="icpPresets">
+                <button class="icp-btn" onclick="selectICP('Retail/DTC E-commerce')">🛍️ Retail/DTC</button>
+                <button class="icp-btn" onclick="selectICP('Fintech Banking')">💸 Fintech</button>
+                <button class="icp-btn" onclick="selectICP('HealthTech Medical')">🏥 HealthTech</button>
+                <button class="icp-btn" onclick="selectICP('Logistics Supply Chain')">🏭 Logistics</button>
+                <button class="icp-btn" onclick="selectICP('SaaS B2B Software')">☁️ SaaS</button>
+            </div>
 
             <div class="search-box">
                 <input
                     type="text"
                     class="discovery-search"
                     id="discoverySearch"
-                    placeholder="Search keywords (e.g., fintech, health, react)"
+                    placeholder="Enter industry (e.g., Fintech, HealthTech, DTC Retail)"
                     onkeyup="handleSearchKeyup(event)"
                 />
                 <button class="search-discovery-btn" id="searchBtn" onclick="performDiscovery()">
-                    Search
+                    Discover
                 </button>
             </div>
 
             <div class="results-grid" id="resultsGrid">
-                <div class="console-empty">Enter a keyword to discover organizations...</div>
+                <div class="console-empty">Select an ICP preset or enter an industry to discover companies...</div>
             </div>
         </div>
     </div>
@@ -388,6 +531,48 @@
 
 {% block scripts %}
 <script>
+    // Discovery mode: 'ai' or 'github'
+    let discoveryMode = 'ai';
+
+    function setDiscoveryMode(mode) {
+        discoveryMode = mode;
+
+        // Update button states
+        document.getElementById('modeAI').classList.toggle('active', mode === 'ai');
+        document.getElementById('modeGithub').classList.toggle('active', mode === 'github');
+
+        // Show/hide ICP presets (only for AI mode)
+        document.getElementById('icpPresets').style.display = mode === 'ai' ? 'flex' : 'none';
+
+        // Update placeholder
+        const searchInput = document.getElementById('discoverySearch');
+        if (mode === 'ai') {
+            searchInput.placeholder = 'Enter industry (e.g., Fintech, HealthTech, DTC Retail)';
+        } else {
+            searchInput.placeholder = 'Search keywords (e.g., fintech, health, react)';
+        }
+
+        // Clear results
+        showGridMessage(mode === 'ai'
+            ? 'Select an ICP preset or enter an industry to discover companies...'
+            : 'Enter a keyword to search GitHub organizations...'
+        );
+    }
+
+    function selectICP(industry) {
+        // Update search input
+        document.getElementById('discoverySearch').value = industry;
+
+        // Clear active state from all ICP buttons
+        document.querySelectorAll('.icp-btn').forEach(btn => btn.classList.remove('active'));
+
+        // Mark clicked button as active
+        event.target.classList.add('active');
+
+        // Trigger discovery
+        performDiscovery();
+    }
+
     function handleSearchKeyup(event) {
         if (event.key === 'Enter') {
             performDiscovery();
@@ -405,15 +590,27 @@
         const btn = document.getElementById('searchBtn');
         btn.disabled = true;
 
-        // Show loading
-        grid.innerHTML = '<div class="loading"><div class="spinner"></div> Searching...</div>';
+        // Show loading with mode-specific message
+        const loadingMsg = discoveryMode === 'ai'
+            ? 'AI is discovering companies...'
+            : 'Searching GitHub...';
+        grid.innerHTML = `<div class="loading"><div class="spinner"></div> ${loadingMsg}</div>`;
 
         try {
-            const response = await fetch(`/api/discover?q=${encodeURIComponent(keyword)}`);
+            // Use different API based on mode
+            const apiUrl = discoveryMode === 'ai'
+                ? `/api/ai-discover?q=${encodeURIComponent(keyword)}`
+                : `/api/discover?q=${encodeURIComponent(keyword)}`;
+
+            const response = await fetch(apiUrl);
             const data = await response.json();
 
             if (response.ok) {
-                displayResults(data);
+                if (discoveryMode === 'ai') {
+                    displayAIResults(data);
+                } else {
+                    displayGitHubResults(data);
+                }
             } else {
                 showGridMessage(`Error: ${data.error || 'Search failed'}`);
             }
@@ -424,7 +621,58 @@
         }
     }
 
-    function displayResults(orgs) {
+    function displayAIResults(companies) {
+        const grid = document.getElementById('resultsGrid');
+
+        if (!companies || companies.length === 0) {
+            showGridMessage('No companies found. Try a different industry or check if AI is configured.');
+            return;
+        }
+
+        grid.innerHTML = companies.map(company => {
+            const githubData = company.github_data || {};
+            const orgLogin = githubData.login || company.suggested_github_org || '';
+            const avatarUrl = githubData.avatar_url || 'https://via.placeholder.com/50?text=' + encodeURIComponent(company.name.charAt(0));
+            const repoCount = githubData.public_repos || 0;
+            const isValidated = company.github_validated;
+
+            return `
+                <div class="org-card" data-login="${escapeHtml(orgLogin)}">
+                    <span class="revenue-badge">💰 ${escapeHtml(company.revenue || 'Unknown')}</span>
+
+                    <div class="org-card-header">
+                        <img src="${avatarUrl}" alt="${escapeHtml(company.name)}" class="org-avatar" onerror="this.src='https://via.placeholder.com/50'">
+                        <div class="org-header-info">
+                            <div class="org-name">${escapeHtml(company.name)}</div>
+                            <div class="org-company-name">@${escapeHtml(orgLogin)}</div>
+                        </div>
+                    </div>
+
+                    <span class="industry-tag">${escapeHtml(company.industry || 'Tech')}</span>
+
+                    <div class="org-description">${escapeHtml(company.description || 'No description available')}</div>
+
+                    <div class="org-meta">
+                        <span class="org-repos">📦 ${repoCount} repos</span>
+                        <span class="github-status ${isValidated ? 'validated' : 'uncertain'}">
+                            ${isValidated ? '✅ GitHub Found' : '⚠️ GitHub Uncertain'}
+                        </span>
+                    </div>
+
+                    <button
+                        class="track-btn"
+                        onclick="trackOrganization('${escapeHtml(orgLogin)}', '${escapeHtml(company.name)}', this)"
+                        data-org="${escapeHtml(orgLogin)}"
+                        ${!isValidated ? 'disabled title="GitHub org not validated"' : ''}
+                    >
+                        ${isValidated ? '+ Track' : 'GitHub Not Found'}
+                    </button>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function displayGitHubResults(orgs) {
         const grid = document.getElementById('resultsGrid');
 
         if (!orgs || orgs.length === 0) {
@@ -433,15 +681,25 @@
         }
 
         grid.innerHTML = orgs.map(org => `
-            <div class="org-card" data-login="${org.login}">
-                <img src="${org.avatar_url}" alt="${org.login}" class="org-avatar" onerror="this.src='https://via.placeholder.com/60'">
-                <div class="org-name">${escapeHtml(org.login)}</div>
+            <div class="org-card" data-login="${escapeHtml(org.login)}">
+                <div class="org-card-header">
+                    <img src="${org.avatar_url}" alt="${escapeHtml(org.login)}" class="org-avatar" onerror="this.src='https://via.placeholder.com/50'">
+                    <div class="org-header-info">
+                        <div class="org-name">${escapeHtml(org.login)}</div>
+                    </div>
+                </div>
+
                 <div class="org-description">${escapeHtml(org.description || 'No description')}</div>
-                <div class="org-repos">📦 ${org.public_repos} repos</div>
+
+                <div class="org-meta">
+                    <span class="org-repos">📦 ${org.public_repos} repos</span>
+                    <span class="github-status validated">✅ GitHub Found</span>
+                </div>
+
                 <button
                     class="track-btn"
-                    onclick="trackOrganization('${org.login}', this)"
-                    data-org="${org.login}"
+                    onclick="trackOrganization('${escapeHtml(org.login)}', '${escapeHtml(org.login)}', this)"
+                    data-org="${escapeHtml(org.login)}"
                 >
                     + Track
                 </button>
@@ -453,7 +711,7 @@
         document.getElementById('resultsGrid').innerHTML = `<div class="console-empty">${escapeHtml(message)}</div>`;
     }
 
-    async function trackOrganization(orgLogin, button) {
+    async function trackOrganization(orgLogin, companyName, button) {
         button.disabled = true;
 
         try {
@@ -462,7 +720,7 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     org_login: orgLogin,
-                    company_name: orgLogin
+                    company_name: companyName || orgLogin
                 })
             });
 
@@ -471,7 +729,7 @@
             if (response.ok) {
                 button.textContent = '✅ Added';
                 button.parentElement.classList.add('added');
-                addConsoleEntry(`✓ Tracked ${orgLogin} to Tier 0`, 'success');
+                addConsoleEntry(`✓ Tracked ${companyName || orgLogin} (@${orgLogin}) to Tier 0`, 'success');
             } else {
                 addConsoleEntry(`✗ Failed to track ${orgLogin}: ${data.error}`, 'error');
                 button.disabled = false;
@@ -558,6 +816,7 @@
     }
 
     function escapeHtml(text) {
+        if (!text) return '';
         const map = {
             '&': '&amp;',
             '<': '&lt;',
@@ -565,7 +824,12 @@
             '"': '&quot;',
             "'": '&#039;'
         };
-        return text.replace(/[&<>"']/g, m => map[m]);
+        return String(text).replace(/[&<>"']/g, m => map[m]);
     }
+
+    // Initialize on page load
+    document.addEventListener('DOMContentLoaded', function() {
+        setDiscoveryMode('ai');
+    });
 </script>
 {% endblock %}
