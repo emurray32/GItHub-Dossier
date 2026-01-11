@@ -72,6 +72,30 @@ def init_db() -> None:
         ON monitored_accounts(company_name)
     ''')
 
+    # Monitored Repos table for incremental diff scanning
+    # Tracks the last commit SHA for each repo to detect changes
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS monitored_repos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            account_id INTEGER NOT NULL,
+            repo_name TEXT NOT NULL,
+            last_commit_sha TEXT,
+            last_scanned_at TIMESTAMP,
+            FOREIGN KEY (account_id) REFERENCES monitored_accounts(id) ON DELETE CASCADE,
+            UNIQUE(account_id, repo_name)
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_repos_account
+        ON monitored_repos(account_id)
+    ''')
+
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_repos_name
+        ON monitored_repos(repo_name)
+    ''')
+
     conn.commit()
     conn.close()
 
@@ -733,6 +757,139 @@ def get_refreshable_accounts() -> list:
         accounts.append(account)
 
     return accounts
+
+
+# =============================================================================
+# MONITORED REPOS - Incremental Diff Functions
+# =============================================================================
+
+
+def get_repo_last_commit(account_id: int, repo_name: str) -> Optional[str]:
+    """
+    Get the last commit SHA for a repo.
+
+    Args:
+        account_id: The monitored account ID.
+        repo_name: The repository name.
+
+    Returns:
+        The last commit SHA or None if not tracked.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT last_commit_sha FROM monitored_repos
+        WHERE account_id = ? AND repo_name = ?
+    ''', (account_id, repo_name))
+
+    row = cursor.fetchone()
+    conn.close()
+
+    if row and row['last_commit_sha']:
+        return row['last_commit_sha']
+    return None
+
+
+def update_repo_commit(account_id: int, repo_name: str, commit_sha: str) -> None:
+    """
+    Update or insert the last commit SHA for a repo.
+
+    Args:
+        account_id: The monitored account ID.
+        repo_name: The repository name.
+        commit_sha: The new commit SHA to store.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    now = datetime.now().isoformat()
+
+    # Use INSERT OR REPLACE to handle both insert and update
+    cursor.execute('''
+        INSERT INTO monitored_repos (account_id, repo_name, last_commit_sha, last_scanned_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(account_id, repo_name) DO UPDATE SET
+            last_commit_sha = excluded.last_commit_sha,
+            last_scanned_at = excluded.last_scanned_at
+    ''', (account_id, repo_name, commit_sha, now))
+
+    conn.commit()
+    conn.close()
+
+
+def get_all_repo_commits_for_account(account_id: int) -> dict:
+    """
+    Get all repo commit SHAs for an account.
+
+    Args:
+        account_id: The monitored account ID.
+
+    Returns:
+        Dictionary mapping repo_name to last_commit_sha.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT repo_name, last_commit_sha FROM monitored_repos
+        WHERE account_id = ?
+    ''', (account_id,))
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    return {row['repo_name']: row['last_commit_sha'] for row in rows if row['last_commit_sha']}
+
+
+def delete_repo_tracking(account_id: int, repo_name: str) -> bool:
+    """
+    Delete tracking record for a repo.
+
+    Args:
+        account_id: The monitored account ID.
+        repo_name: The repository name.
+
+    Returns:
+        True if a record was deleted.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        DELETE FROM monitored_repos WHERE account_id = ? AND repo_name = ?
+    ''', (account_id, repo_name))
+
+    deleted = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+
+    return deleted
+
+
+def get_account_id_by_org(github_org: str) -> Optional[int]:
+    """
+    Get the account ID for a GitHub organization.
+
+    Args:
+        github_org: The GitHub organization login.
+
+    Returns:
+        The account ID or None if not found.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT id FROM monitored_accounts WHERE github_org = ?
+    ''', (github_org,))
+
+    row = cursor.fetchone()
+    conn.close()
+
+    if row:
+        return row['id']
+    return None
 
 
 # Initialize database on module import

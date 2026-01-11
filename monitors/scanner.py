@@ -18,6 +18,222 @@ from datetime import datetime, timedelta
 from typing import Generator, Optional, List, Dict
 from config import Config
 from .discovery import get_github_headers, discover_organization, get_organization_repos
+from database import (
+    get_account_id_by_org,
+    get_all_repo_commits_for_account,
+    update_repo_commit
+)
+
+
+# =============================================================================
+# INCREMENTAL DIFF ENGINE - Helper Functions
+# =============================================================================
+
+
+def _get_repo_head_sha(org: str, repo: str, branch: str = None) -> Optional[str]:
+    """
+    Get the HEAD commit SHA for a repository's default branch.
+
+    Args:
+        org: The GitHub organization login.
+        repo: The repository name.
+        branch: Optional branch name. If None, uses the repo's default branch.
+
+    Returns:
+        The HEAD commit SHA or None on error.
+    """
+    try:
+        if branch:
+            # Get specific branch
+            url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}/branches/{branch}"
+        else:
+            # Get repo info to find default branch, then get its SHA
+            url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}"
+            response = requests.get(
+                url,
+                headers=get_github_headers(),
+                timeout=10
+            )
+            if response.status_code != 200:
+                return None
+
+            repo_data = response.json()
+            default_branch = repo_data.get('default_branch', 'main')
+
+            # Now get the branch SHA
+            url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}/branches/{default_branch}"
+
+        response = requests.get(
+            url,
+            headers=get_github_headers(),
+            timeout=10
+        )
+
+        if response.status_code == 200:
+            branch_data = response.json()
+            return branch_data.get('commit', {}).get('sha')
+        return None
+
+    except requests.RequestException:
+        return None
+
+
+def _get_changed_files_from_compare(org: str, repo: str, base_sha: str, head_sha: str) -> Optional[List[str]]:
+    """
+    Get list of changed files between two commits using GitHub Compare API.
+
+    Args:
+        org: The GitHub organization login.
+        repo: The repository name.
+        base_sha: The base commit SHA (old).
+        head_sha: The head commit SHA (new).
+
+    Returns:
+        List of changed file paths, or None if comparison fails.
+    """
+    try:
+        url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}/compare/{base_sha}...{head_sha}"
+
+        response = requests.get(
+            url,
+            headers=get_github_headers(),
+            timeout=30
+        )
+
+        if response.status_code == 200:
+            compare_data = response.json()
+            files = compare_data.get('files', [])
+            return [f.get('filename') for f in files if f.get('filename')]
+        return None
+
+    except requests.RequestException:
+        return None
+
+
+def _should_scan_file(filename: str) -> bool:
+    """
+    Determine if a file is relevant for i18n signal scanning.
+
+    Args:
+        filename: The file path to check.
+
+    Returns:
+        True if the file should be scanned for i18n signals.
+    """
+    # Files relevant for dependency injection scan
+    relevant_files = {
+        'package.json', 'gemfile', 'requirements.txt', 'composer.json', 'mix.exs'
+    }
+
+    # Framework config files
+    framework_configs = {
+        'next.config.js', 'next.config.mjs', 'nuxt.config.js', 'nuxt.config.ts',
+        'remix.config.js', 'angular.json', 'i18n.config.js'
+    }
+
+    # Directories relevant for i18n signals
+    relevant_dirs = ['locales', 'locale', 'i18n', 'translations', 'lang', 'languages', 'l10n', 'messages']
+
+    filename_lower = filename.lower()
+    basename = filename.split('/')[-1].lower()
+
+    # Check if file is a relevant config file
+    if basename in relevant_files or basename in framework_configs:
+        return True
+
+    # Check if file is in a locale-related directory
+    for dir_name in relevant_dirs:
+        if f'/{dir_name}/' in filename_lower or filename_lower.startswith(f'{dir_name}/'):
+            return True
+
+    # Check for mobile-related files
+    if '.lproj/' in filename_lower or '/res/values' in filename_lower:
+        return True
+
+    return False
+
+
+def _filter_repos_for_incremental_scan(
+    org: str,
+    repos: List[dict],
+    stored_commits: dict
+) -> tuple:
+    """
+    Filter repos based on incremental diff logic.
+
+    Args:
+        org: The GitHub organization login.
+        repos: List of repository dicts.
+        stored_commits: Dict mapping repo_name to last_commit_sha.
+
+    Returns:
+        Tuple of:
+        - repos_to_scan: List of repos that need scanning (with optional changed_files)
+        - repos_skipped: List of repo names that were skipped (no changes)
+        - new_commits: Dict mapping repo_name to new commit SHA
+    """
+    repos_to_scan = []
+    repos_skipped = []
+    new_commits = {}
+
+    for repo in repos:
+        repo_name = repo.get('name')
+        stored_sha = stored_commits.get(repo_name)
+
+        # Get current HEAD SHA
+        current_sha = _get_repo_head_sha(org, repo_name)
+
+        if not current_sha:
+            # Could not get current SHA, include in full scan
+            repos_to_scan.append({
+                'repo': repo,
+                'changed_files': None,  # Full scan
+                'is_new': stored_sha is None,
+                'reason': 'Could not fetch HEAD SHA'
+            })
+            continue
+
+        new_commits[repo_name] = current_sha
+
+        if stored_sha is None:
+            # New repo, needs full scan
+            repos_to_scan.append({
+                'repo': repo,
+                'changed_files': None,  # Full scan
+                'is_new': True,
+                'reason': 'New repository'
+            })
+        elif stored_sha == current_sha:
+            # No changes, skip this repo
+            repos_skipped.append(repo_name)
+        else:
+            # Changes detected, try to get diff
+            changed_files = _get_changed_files_from_compare(org, repo_name, stored_sha, current_sha)
+
+            if changed_files is not None:
+                # Filter to only i18n-relevant files
+                relevant_files = [f for f in changed_files if _should_scan_file(f)]
+
+                if relevant_files:
+                    repos_to_scan.append({
+                        'repo': repo,
+                        'changed_files': relevant_files,
+                        'is_new': False,
+                        'reason': f'{len(relevant_files)} relevant file(s) changed'
+                    })
+                else:
+                    # Changes detected but none are i18n-relevant
+                    repos_skipped.append(repo_name)
+            else:
+                # Could not get diff, fall back to full scan
+                repos_to_scan.append({
+                    'repo': repo,
+                    'changed_files': None,  # Full scan
+                    'is_new': False,
+                    'reason': 'Diff unavailable, full scan required'
+                })
+
+    return repos_to_scan, repos_skipped, new_commits
 
 
 def deep_scan_generator(company_name: str) -> Generator[str, None, None]:
@@ -94,8 +310,53 @@ def deep_scan_generator(company_name: str) -> Generator[str, None, None]:
         return
 
     # Select top repos for deep scan
-    repos_to_scan = repos[:Config.MAX_REPOS_TO_SCAN]
-    yield _sse_log(f"✓ Selected {len(repos_to_scan)} repositories for intent scan")
+    candidate_repos = repos[:Config.MAX_REPOS_TO_SCAN]
+    yield _sse_log(f"✓ Selected {len(candidate_repos)} candidate repositories for intent scan")
+
+    # ========================================================================
+    # INCREMENTAL DIFF ENGINE - Check for changes before scanning
+    # ========================================================================
+    yield _sse_log("")
+    yield _sse_log("INCREMENTAL DIFF CHECK")
+    yield _sse_log("-" * 40)
+
+    # Get stored commit SHAs for this org
+    account_id = get_account_id_by_org(org_login)
+    stored_commits = {}
+    if account_id:
+        stored_commits = get_all_repo_commits_for_account(account_id)
+        yield _sse_log(f"Found {len(stored_commits)} tracked repos in database")
+    else:
+        yield _sse_log("New organization - all repos will be scanned")
+
+    # Filter repos using incremental diff logic
+    repos_to_scan_info, repos_skipped, new_commits = _filter_repos_for_incremental_scan(
+        org_login, candidate_repos, stored_commits
+    )
+
+    # Log skipped repos
+    if repos_skipped:
+        yield _sse_log(f"⏭️  Skipping {len(repos_skipped)} repos with no changes:")
+        for repo_name in repos_skipped[:5]:  # Show first 5
+            yield _sse_log(f"   • {repo_name}")
+        if len(repos_skipped) > 5:
+            yield _sse_log(f"   ... and {len(repos_skipped) - 5} more")
+
+    # Log repos to scan
+    if repos_to_scan_info:
+        yield _sse_log(f"🔍 Scanning {len(repos_to_scan_info)} repos with changes:")
+        for info in repos_to_scan_info[:5]:  # Show first 5
+            repo_name = info['repo'].get('name')
+            reason = info.get('reason', 'unknown')
+            yield _sse_log(f"   • {repo_name}: {reason}")
+        if len(repos_to_scan_info) > 5:
+            yield _sse_log(f"   ... and {len(repos_to_scan_info) - 5} more")
+    else:
+        yield _sse_log("✅ No changes detected in any tracked repos")
+        yield _sse_log("   All repos are up-to-date, skipping deep scan")
+
+    # Extract just the repo dicts for the scanning phases
+    repos_to_scan = [info['repo'] for info in repos_to_scan_info]
 
     # Initialize scan results with 3-Signal structure
     scan_results = {
@@ -107,7 +368,16 @@ def deep_scan_generator(company_name: str) -> Generator[str, None, None]:
         'org_public_repos': org_data.get('public_repos'),
         'repos_scanned': [],
         'scan_timestamp': datetime.now().isoformat(),
-        'total_stars': sum(r.get('stargazers_count', 0) for r in repos_to_scan),
+        'total_stars': sum(r.get('stargazers_count', 0) for r in candidate_repos),
+
+        # Incremental Diff Engine metadata
+        'incremental_scan': {
+            'enabled': True,
+            'repos_scanned': len(repos_to_scan),
+            'repos_skipped': len(repos_skipped),
+            'skipped_repo_names': repos_skipped[:10],  # First 10 for brevity
+            'is_first_scan': account_id is None,
+        },
 
         # 3-Signal Intent Results
         'signals': [],  # List of structured signal objects
@@ -282,6 +552,9 @@ def deep_scan_generator(company_name: str) -> Generator[str, None, None]:
     yield _sse_log(f"📊 Intent Score: {scan_results['intent_score']}/100")
     yield _sse_log(f"📊 Scan Duration: {duration:.1f}s")
 
+    # Incremental scan summary
+    yield _sse_log(f"📊 Incremental Scan: {len(repos_to_scan)} scanned, {len(repos_skipped)} skipped (no changes)")
+
     if total_signals > 0:
         yield _sse_log("")
         yield _sse_log("🎯 INTENT DETECTED: Company is in Thinking/Preparing phase!")
@@ -291,6 +564,22 @@ def deep_scan_generator(company_name: str) -> Generator[str, None, None]:
 
     yield _sse_log("")
     yield _sse_log("🤖 Generating AI Sales Intelligence...")
+
+    # ========================================================================
+    # INCREMENTAL DIFF ENGINE - Update stored commit SHAs
+    # ========================================================================
+    if new_commits and account_id:
+        yield _sse_log("")
+        yield _sse_log("💾 Updating commit tracking...")
+        updated_count = 0
+        for repo_name, commit_sha in new_commits.items():
+            try:
+                update_repo_commit(account_id, repo_name, commit_sha)
+                updated_count += 1
+            except Exception as e:
+                yield _sse_log(f"   ⚠️ Failed to update {repo_name}: {str(e)}")
+        yield _sse_log(f"   ✓ Updated {updated_count} repo commit SHAs")
+        scan_results['incremental_scan']['commits_updated'] = updated_count
 
     # Send scan results
     yield _sse_data('SCAN_COMPLETE', scan_results)
