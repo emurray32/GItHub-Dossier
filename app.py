@@ -712,11 +712,10 @@ def api_scan_pending():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Find accounts that have never been scanned
-    # (last_scanned_at equals created_at or is NULL)
+    # Find accounts that have never been scanned (last_scanned_at is NULL)
     cursor.execute('''
         SELECT company_name FROM monitored_accounts
-        WHERE last_scanned_at IS NULL OR last_scanned_at = created_at
+        WHERE last_scanned_at IS NULL
     ''')
 
     pending_accounts = [row[0] for row in cursor.fetchall()]

@@ -421,23 +421,23 @@ def add_account_to_tier_0(company_name: str, github_org: str) -> dict:
     existing = cursor.fetchone()
 
     if existing:
-        # Update existing account
+        # Update existing account - don't change last_scanned_at
         cursor.execute('''
             UPDATE monitored_accounts
             SET github_org = ?,
-                last_scanned_at = ?,
                 next_scan_due = ?
             WHERE company_name = ?
-        ''', (github_org, now, next_scan_iso, company_name))
+        ''', (github_org, next_scan_iso, company_name))
         account_id = existing['id']
     else:
         # Create new account at Tier 0
+        # Note: last_scanned_at is NULL until a scan actually completes
         cursor.execute('''
             INSERT INTO monitored_accounts (
                 company_name, github_org, current_tier, last_scanned_at,
                 status_changed_at, evidence_summary, next_scan_due
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
-        ''', (company_name, github_org, TIER_TRACKING, now, now,
+            ) VALUES (?, ?, ?, NULL, ?, ?, ?)
+        ''', (company_name, github_org, TIER_TRACKING, now,
               "Added via Grow pipeline", next_scan_iso))
         account_id = cursor.lastrowid
 
