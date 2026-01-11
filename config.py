@@ -126,6 +126,28 @@ class Config:
     LOCALE_FOLDERS = EXCLUSION_FOLDERS
 
     # ============================================================
+    # SOURCE LOCALE PATTERNS - Files that indicate "preparing" not "launched"
+    # ============================================================
+    # If a locale folder ONLY contains these source language files,
+    # it means the infrastructure is ready but no translations exist yet.
+    # This is still a GOLDILOCKS ZONE - don't disqualify!
+    #
+    # Pattern matching is case-insensitive.
+
+    SOURCE_LOCALE_BASE_NAMES = [
+        'en', 'en-us', 'en-gb', 'en_us', 'en_gb',  # English variants
+        'base', 'source', 'default',                # Generic source names
+    ]
+
+    SOURCE_LOCALE_EXTENSIONS = ['.json', '.js', '.ts', '.yml', '.yaml']
+
+    # Pre-computed list of all valid source-only filenames (lowercase)
+    SOURCE_LOCALE_PATTERNS = []
+    for base in SOURCE_LOCALE_BASE_NAMES:
+        for ext in SOURCE_LOCALE_EXTENSIONS:
+            SOURCE_LOCALE_PATTERNS.append(f"{base}{ext}")
+
+    # ============================================================
     # SIGNAL 3: GHOST BRANCH (Active Phase)
     # ============================================================
     # Target: Branches and Pull Requests
@@ -226,6 +248,7 @@ class Config:
         'formatjs': 'The team is setting up MESSAGE FORMATTING - how dates, numbers, and plurals will display in different languages.',
         'uppy': 'The file uploader is being prepared for MULTIPLE LANGUAGES. International users are expected.',
         'locale_folder_missing': '🔥 GOLDILOCKS: They built the shelves, but have no books. Call now!',
+        'locale_folder_source_only': '🔥 GOLDILOCKS: They have a locale folder but ONLY source files. Infrastructure ready, waiting for translation!',
         'locale_folder_exists': '🚫 BLOCKED: They already have translation files. We are too late.',
         'unknown': 'Generic Localization Software',
     }
