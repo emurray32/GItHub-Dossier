@@ -215,8 +215,9 @@ class Config:
         'react-i18next': 'The team has installed the TRANSLATION ENGINE but hasnt loaded any languages yet. The car is built, but theres no gas.',
         'formatjs': 'The team is setting up MESSAGE FORMATTING - how dates, numbers, and plurals will display in different languages.',
         'uppy': 'The file uploader is being prepared for MULTIPLE LANGUAGES. International users are expected.',
-        'locale_folder_missing': 'The SHELVES are built, but the BOOKS (translations) are missing. This is the PERFECT time to call.',
-        'locale_folder_exists': 'They already have translation files. We are TOO LATE - they have a working system.',
+        'locale_folder_missing': '🔥 GOLDILOCKS: They built the shelves, but have no books. Call now!',
+        'locale_folder_exists': '🚫 BLOCKED: They already have translation files. We are too late.',
+        'unknown': 'Generic Localization Software',
     }
 
     # Bot accounts to exclude

@@ -211,9 +211,43 @@ TIER_CONFIG = {
 }
 
 
+def _convert_library_to_sales_name(lib_name: str) -> str:
+    """
+    Convert technical library names to sales-friendly title-case names.
+
+    Examples:
+        'react-i18next' -> 'React Translation Engine'
+        'babel-plugin-react-intl' -> 'React String Extraction'
+    """
+    # Sales-friendly name mappings for common libraries
+    SALES_NAMES = {
+        'react-i18next': 'React Translation Engine',
+        'babel-plugin-react-intl': 'React String Extraction',
+        'formatjs': 'Message Formatting Library',
+        'uppy': 'File Uploader i18n',
+        'i18next': 'Translation Engine',
+        'vue-i18n': 'Vue Translation Engine',
+        'next-intl': 'Next.js Translation Engine',
+        'lingui': 'React Localization Framework',
+        'react-intl': 'React Internationalization',
+    }
+
+    if lib_name in SALES_NAMES:
+        return SALES_NAMES[lib_name]
+
+    # Fallback: Convert to title case (replace hyphens/underscores with spaces)
+    return lib_name.replace('-', ' ').replace('_', ' ').title()
+
+
 def calculate_tier_from_scan(scan_data: dict) -> tuple[int, str]:
     """
-    Apply strict tier logic based on scan results.
+    Apply Sales-First tier logic based on scan results.
+
+    Tier Priority Order:
+    1. Tier 3 (Launched) - Locale folders exist = Too Late
+    2. Tier 2 (Preparing) - i18n libraries WITHOUT locale folders = Hot Lead
+    3. Tier 1 (Thinking) - RFCs or Ghost Branches = Warm Lead
+    4. Tier 0 vs Tier 4 Split - Based on star count (>1000 = Greenfield, <1000 = Disqualified)
 
     Returns:
         Tuple of (tier_number, evidence_summary)
@@ -224,6 +258,9 @@ def calculate_tier_from_scan(scan_data: dict) -> tuple[int, str]:
     rfc_count = signal_summary.get('rfc_discussion', {}).get('count', 0)
     dependency_count = signal_summary.get('dependency_injection', {}).get('count', 0)
     ghost_count = signal_summary.get('ghost_branch', {}).get('count', 0)
+
+    # Get star count for Tier 0 vs Tier 4 decision
+    total_stars = scan_data.get('total_stars', 0)
 
     # Check for locale folders in the scan
     locale_folders_found = False
@@ -244,15 +281,16 @@ def calculate_tier_from_scan(scan_data: dict) -> tuple[int, str]:
     if goldilocks_status == 'launched':
         locale_folders_found = True
 
-    # Apply STRICT tier logic (order matters - most specific first)
-
-    # Tier 3: Launched - locale folders detected (company has already launched i18n)
-    # Note: Ghost branches do NOT indicate launched status - they indicate active WIP
+    # =========================================================================
+    # TIER 3: LAUNCHED - Locale folders detected (Too Late)
+    # =========================================================================
     if locale_folders_found:
-        return TIER_LAUNCHED, "Locale folders detected"
+        return TIER_LAUNCHED, "🚫 Too Late: Translation files already exist in codebase."
 
-    # Tier 2: Preparing (GOLDILOCKS) - dependencies WITHOUT locale folders
-    if dependency_count > 0 and not locale_folders_found:
+    # =========================================================================
+    # TIER 2: PREPARING (GOLDILOCKS) - i18n libraries WITHOUT locale folders
+    # =========================================================================
+    if dependency_count > 0:
         dep_names = []
         for hit in dependency_hits:
             if isinstance(hit, dict):
@@ -265,6 +303,7 @@ def calculate_tier_from_scan(scan_data: dict) -> tuple[int, str]:
                     lib_name = hit.get('library', hit.get('name', ''))
                     if lib_name:
                         dep_names.append(lib_name)
+
         # Remove duplicates while preserving order
         seen = set()
         unique_deps = []
@@ -275,29 +314,46 @@ def calculate_tier_from_scan(scan_data: dict) -> tuple[int, str]:
         dep_names = unique_deps
 
         if dep_names:
-            evidence = f"i18n libraries installed: {', '.join(dep_names[:3])}"
-            if len(dep_names) > 3:
-                evidence += f" (+{len(dep_names) - 3} more)"
+            # Convert first library to sales-friendly name
+            sales_name = _convert_library_to_sales_name(dep_names[0])
+            evidence = f"🔥 INFRASTRUCTURE READY: Installed {sales_name} but NO translations found."
         else:
-            evidence = "i18n dependencies detected"
+            evidence = "🔥 INFRASTRUCTURE READY: i18n library installed but NO translations found."
         return TIER_PREPARING, evidence
 
-    # Tier 1: Thinking - RFC discussions OR ghost branches found
-    # (Ghost branches = active WIP on i18n, indicates thinking/preparing phase)
+    # =========================================================================
+    # TIER 1: THINKING - RFC discussions OR Ghost Branches found
+    # =========================================================================
     if rfc_count > 0 or ghost_count > 0:
         evidence_parts = []
+
         if rfc_count > 0:
             rfc_hits = signal_summary.get('rfc_discussion', {}).get('hits', [])
             if rfc_hits and isinstance(rfc_hits[0], dict):
-                evidence_parts.append(f"{rfc_count} RFC/discussion(s): {rfc_hits[0].get('title', 'i18n discussion')[:50]}")
+                title = rfc_hits[0].get('title', 'i18n discussion')[:50]
+                evidence_parts.append(f"💭 STRATEGY SIGNAL: {title}")
             else:
-                evidence_parts.append(f"{rfc_count} i18n RFC/discussion(s) found")
+                evidence_parts.append(f"💭 STRATEGY SIGNAL: {rfc_count} i18n RFC/discussion(s)")
+
         if ghost_count > 0:
-            evidence_parts.append(f"{ghost_count} i18n branch(es)/PR(s) in progress")
+            ghost_hits = signal_summary.get('ghost_branch', {}).get('hits', [])
+            if ghost_hits and isinstance(ghost_hits[0], dict):
+                branch_name = ghost_hits[0].get('name', ghost_hits[0].get('ref', 'i18n branch'))[:40]
+                evidence_parts.append(f"🛠️ ACTIVE BUILD: {branch_name}")
+            else:
+                evidence_parts.append(f"🛠️ ACTIVE BUILD: {ghost_count} i18n branch(es)")
+
         return TIER_THINKING, "; ".join(evidence_parts)
 
-    # Tier 0: Tracking - No signals
-    return TIER_TRACKING, "No localization signals detected"
+    # =========================================================================
+    # TIER 0 vs TIER 4: No signals found - Split based on star count
+    # =========================================================================
+    if total_stars > 1000:
+        # Major open source project with zero localization = Greenfield opportunity
+        return TIER_TRACKING, f"⭐ GREENFIELD: Major Open Source Project ({total_stars:,} stars) with ZERO localization."
+    else:
+        # Low star count with no signals = Likely private codebase, disqualify
+        return TIER_INVALID, "🚫 DISQUALIFIED: No public code signals found (Main codebase likely private)."
 
 
 def update_account_status(scan_data: dict, report_id: Optional[int] = None) -> dict:
