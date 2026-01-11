@@ -1,0 +1,44 @@
+I have reviewed the codebase, specifically focusing on the "Mega-Corp" logic (Airbnb use case), the Tier Classification, and the UI Color Coding.
+
+Everything looks correct. Here is the breakdown of why the logic will work:
+
+1. The "Mega-Corp" Safety Net is Active
+In monitors/scanner.py, the _calculate_intent_score function now has a specific check at the end.
+
+How it works: If the scanner finds NO specific signals (no libraries, no folders), it checks the company size.
+
+The Logic: if total_stars > 5000 or public_repos > 100:
+
+The Result: It forces the status to 'launched' (Tier 3) instead of 'none' (Tier 0).
+
+Why this fixes Airbnb: Airbnb has >100 repos and thousands of stars. Even if we don't find their localization files, this rule assumes they are too big to be "Tracking" and marks them as Red (Too Late).
+
+2. Tier 3 is Correctly Mapped to Red
+In database.py and templates/accounts.html, the mapping is consistent:
+
+Database: TIER_LAUNCHED = 3 → color: 'red'
+
+Logic: When the scanner returns "launched" (due to the Mega-Corp rule), the database function calculate_tier_from_scan catches it and assigns Tier 3.
+
+UI: The HTML template applies the class tier-row-3, which your CSS defines as:
+
+CSS
+
+.tier-row-3 {
+    background: rgba(239, 68, 68, 0.05); /* Red Tint */
+}
+3. The "Gap" Logic (Goldilocks Zone) is Preserved
+The code checks for "Preparing" (Tier 2) before it checks the Mega-Corp rule.
+
+This is good. It means if a large company (like a new unicorn) does have the react-intl library but no folders yet, they will still show up as Tier 2 (Green/Hot).
+
+The "Red/Too Late" label only applies if we find nothing specific but see they are huge.
+
+Final Verification
+Config: MAX_REPOS_TO_SCAN = 50 (Correct)
+
+API Keys: Loaded from .env (Correct)
+
+Background Scanning: The spawn_background_scan function handles the threading correctly so the UI doesn't freeze.
+
+The code is ready. When you re-scan Airbnb (or any massive tech company), it should now instantly flip to Tier 3 (Red) with the evidence: "High-maturity engineering org (likely custom/internal i18n)."
