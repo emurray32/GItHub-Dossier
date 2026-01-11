@@ -113,6 +113,16 @@ class Config:
         'netlify-cms-widget-i18n',
     ]
 
+    # Code cleaning/linting libraries for scrubbing hardcoded strings
+    LINTER_LIBRARIES = [
+        'eslint-plugin-i18n',
+        'eslint-plugin-no-literal-string',
+        'eslint-plugin-vue-i18n',
+        'i18next-scanner',
+        'babel-plugin-react-intl-auto',
+        'rubocop-i18n',
+    ]
+
     # Uppy requires special handling - only counts if i18n/locale config is present
     UPPY_LIBRARY = 'uppy'
     UPPY_I18N_INDICATORS = ['locale', 'i18n', 'locales', 'strings']
