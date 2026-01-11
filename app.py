@@ -14,7 +14,8 @@ from config import Config
 from database import (
     save_report, get_report, get_recent_reports, search_reports,
     update_account_status, get_all_accounts, add_account_to_tier_0, TIER_CONFIG,
-    get_account_by_company, mark_account_as_invalid, get_refreshable_accounts,
+    get_account_by_company, get_account_by_company_case_insensitive,
+    mark_account_as_invalid, get_refreshable_accounts,
     get_db_connection
 )
 from monitors.scanner import deep_scan_generator
@@ -497,6 +498,7 @@ def api_import():
 
     added = []
     failed = []
+    skipped = []
     results = []
 
     for company_name in companies:
@@ -505,6 +507,16 @@ def api_import():
             continue
 
         try:
+            existing = get_account_by_company_case_insensitive(company_name)
+            if existing:
+                skipped.append(company_name)
+                results.append({
+                    'company': company_name,
+                    'github_org': existing.get('github_org'),
+                    'status': 'already_indexed'
+                })
+                continue
+
             # Try to resolve the company to a GitHub org
             org = resolve_org_fast(company_name)
 
@@ -539,6 +551,7 @@ def api_import():
     return jsonify({
         'added': added,
         'failed': failed,
+        'skipped': skipped,
         'total_processed': len(companies),
         'results': results
     })
@@ -565,6 +578,14 @@ def api_track():
         return jsonify({'error': 'Missing required fields: org_login, company_name'}), 400
 
     try:
+        existing = get_account_by_company_case_insensitive(company_name)
+        if existing:
+            return jsonify({
+                'error': 'Account already indexed',
+                'company_name': existing.get('company_name'),
+                'github_org': existing.get('github_org')
+            }), 409
+
         result = add_account_to_tier_0(company_name, org_login)
 
         # Spawn background scan immediately after adding to DB
