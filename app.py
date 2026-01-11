@@ -17,7 +17,8 @@ from database import (
     update_account_status, get_all_accounts, add_account_to_tier_0, TIER_CONFIG,
     get_account_by_company, get_account_by_company_case_insensitive,
     mark_account_as_invalid, get_refreshable_accounts, delete_account,
-    get_db_connection
+    get_db_connection, get_setting, set_setting, increment_daily_stat,
+    get_stats_last_n_days, log_webhook, get_recent_webhook_logs
 )
 from monitors.scanner import deep_scan_generator
 from monitors.discovery import search_github_orgs, resolve_org_fast, discover_companies_via_ai
@@ -33,27 +34,30 @@ app.config.from_object(Config)
 # WEBHOOK NOTIFICATIONS - Push leads to Zapier/Salesforce
 # =============================================================================
 
-def trigger_webhook(payload: dict) -> None:
+def trigger_webhook(event_type: str, company_data: dict) -> None:
     """
     Send a webhook notification asynchronously.
 
     This function runs in a background thread to avoid blocking the UI.
-    Sends a POST request to Config.WEBHOOK_URL with lead data.
+    Fetches the webhook URL from system_settings and sends a POST request.
 
     Args:
-        payload: Dictionary containing:
-            - company: Company name
-            - tier: New tier number (1=Thinking, 2=Preparing)
-            - tier_name: Human-readable tier name
-            - signal: The evidence string
-            - timestamp: ISO format timestamp
+        event_type: Type of event (e.g., 'tier_change', 'scan_complete')
+        company_data: Dictionary containing company information to send
     """
-    webhook_url = Config.WEBHOOK_URL
+    webhook_url = get_setting('webhook_url')
     if not webhook_url:
-        print("[WEBHOOK] No WEBHOOK_URL configured, skipping notification")
+        print("[WEBHOOK] No webhook_url configured in settings, skipping notification")
         return
 
+    payload = {
+        'event_type': event_type,
+        'timestamp': datetime.now().isoformat(),
+        **company_data
+    }
+
     def send_webhook():
+        company_name = company_data.get('company', company_data.get('company_name', 'Unknown'))
         try:
             response = requests.post(
                 webhook_url,
@@ -62,13 +66,18 @@ def trigger_webhook(payload: dict) -> None:
                 timeout=10
             )
             if response.status_code >= 200 and response.status_code < 300:
-                print(f"[WEBHOOK] Success: {payload.get('company')} -> {webhook_url} (status: {response.status_code})")
+                print(f"[WEBHOOK] Success: {company_name} -> {webhook_url} (status: {response.status_code})")
+                log_webhook(event_type, company_name, 'success')
+                increment_daily_stat('webhooks_fired')
             else:
-                print(f"[WEBHOOK] Failed: {payload.get('company')} -> {webhook_url} (status: {response.status_code})")
+                print(f"[WEBHOOK] Failed: {company_name} -> {webhook_url} (status: {response.status_code})")
+                log_webhook(event_type, company_name, 'fail')
         except requests.exceptions.Timeout:
-            print(f"[WEBHOOK] Timeout: {payload.get('company')} -> {webhook_url}")
+            print(f"[WEBHOOK] Timeout: {company_name} -> {webhook_url}")
+            log_webhook(event_type, company_name, 'fail')
         except requests.exceptions.RequestException as e:
-            print(f"[WEBHOOK] Error: {payload.get('company')} -> {str(e)}")
+            print(f"[WEBHOOK] Error: {company_name} -> {str(e)}")
+            log_webhook(event_type, company_name, 'fail')
 
     # Run in background thread to avoid blocking
     webhook_thread = threading.Thread(target=send_webhook, daemon=True, name="WebhookSender")
@@ -161,14 +170,13 @@ def perform_background_scan(company_name: str):
 
             # Phase 5: Trigger webhook if tier changed to Thinking or Preparing
             if result.get('webhook_event'):
-                webhook_payload = {
+                webhook_data = {
                     'company': company_name,
                     'tier': result.get('tier'),
                     'tier_name': tier_name,
-                    'signal': result.get('evidence', ''),
-                    'timestamp': datetime.now().isoformat()
+                    'signal': result.get('evidence', '')
                 }
-                trigger_webhook(webhook_payload)
+                trigger_webhook('tier_change', webhook_data)
                 print(f"[WORKER] Webhook triggered for {company_name} (Tier {result.get('tier')})")
         except Exception as e:
             print(f"[WORKER] Failed to update account status for {company_name}: {str(e)}")
@@ -340,14 +348,13 @@ def stream_scan(company: str):
 
             # Phase 3.6: Trigger webhook if tier changed to Thinking or Preparing
             if account_result.get('webhook_event'):
-                webhook_payload = {
+                webhook_data = {
                     'company': company,
                     'tier': account_result.get('tier'),
                     'tier_name': tier_name,
-                    'signal': account_result.get('evidence', ''),
-                    'timestamp': datetime.now().isoformat()
+                    'signal': account_result.get('evidence', '')
                 }
-                trigger_webhook(webhook_payload)
+                trigger_webhook('tier_change', webhook_data)
                 yield f"data: LOG:Webhook notification sent for {tier_name} lead\n\n"
 
         except Exception as e:
@@ -960,6 +967,76 @@ def _auto_scan_pending_accounts():
 
     except Exception as e:
         print(f"[APP] Error auto-scanning pending accounts: {str(e)}")
+
+
+# =============================================================================
+# SETTINGS & STATS API ROUTES
+# =============================================================================
+
+@app.route('/api/settings', methods=['GET', 'POST'])
+def api_settings():
+    """
+    Get or update system settings.
+
+    GET: Returns current settings (webhook_url, etc.)
+    POST: Updates settings from JSON payload {"webhook_url": "..."}
+    """
+    if request.method == 'GET':
+        return jsonify({
+            'webhook_url': get_setting('webhook_url') or ''
+        })
+
+    # POST - update settings
+    data = request.get_json() or {}
+
+    # Update webhook URL if provided
+    if 'webhook_url' in data:
+        webhook_url = data['webhook_url'].strip()
+        set_setting('webhook_url', webhook_url)
+
+    return jsonify({
+        'status': 'success',
+        'webhook_url': get_setting('webhook_url') or ''
+    })
+
+
+@app.route('/api/stats')
+def api_stats():
+    """
+    Get system usage statistics for the last 30 days.
+
+    Returns:
+        JSON with daily stats for graphing:
+        {
+            "stats": [
+                {"date": "2026-01-01", "scans_run": 5, "api_calls_estimated": 200, "webhooks_fired": 2},
+                ...
+            ]
+        }
+    """
+    days = request.args.get('days', 30, type=int)
+    stats = get_stats_last_n_days(days)
+
+    return jsonify({
+        'stats': stats,
+        'days': days
+    })
+
+
+@app.route('/api/webhook-logs')
+def api_webhook_logs():
+    """
+    Get recent webhook delivery logs.
+
+    Returns:
+        JSON with recent webhook logs for display.
+    """
+    limit = request.args.get('limit', 50, type=int)
+    logs = get_recent_webhook_logs(limit)
+
+    return jsonify({
+        'logs': logs
+    })
 
 
 if __name__ == '__main__':

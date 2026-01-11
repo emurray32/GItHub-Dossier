@@ -774,5 +774,136 @@ def get_refreshable_accounts() -> list:
     return accounts
 
 
+# =============================================================================
+# SYSTEM SETTINGS & STATS FUNCTIONS
+# =============================================================================
+
+def get_setting(key: str) -> Optional[str]:
+    """Get a system setting value by key."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT value FROM system_settings WHERE key = ?', (key,))
+    row = cursor.fetchone()
+    conn.close()
+    return row['value'] if row else None
+
+
+def set_setting(key: str, value: str) -> None:
+    """Set a system setting value."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT OR REPLACE INTO system_settings (key, value)
+        VALUES (?, ?)
+    ''', (key, value))
+    conn.commit()
+    conn.close()
+
+
+def increment_daily_stat(stat_name: str, amount: int = 1) -> None:
+    """
+    Increment a daily statistic counter.
+    
+    Args:
+        stat_name: One of 'scans_run', 'api_calls_estimated', 'webhooks_fired'
+        amount: Amount to increment by (default 1)
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    today = datetime.now().strftime('%Y-%m-%d')
+    
+    # Try to update existing row
+    cursor.execute(f'''
+        UPDATE system_stats
+        SET {stat_name} = {stat_name} + ?
+        WHERE date = ?
+    ''', (amount, today))
+    
+    if cursor.rowcount == 0:
+        # No row for today, create one
+        cursor.execute('''
+            INSERT INTO system_stats (date, scans_run, api_calls_estimated, webhooks_fired)
+            VALUES (?, 0, 0, 0)
+        ''', (today,))
+        # Now update the stat
+        cursor.execute(f'''
+            UPDATE system_stats
+            SET {stat_name} = {stat_name} + ?
+            WHERE date = ?
+        ''', (amount, today))
+    
+    conn.commit()
+    conn.close()
+
+
+def get_stats_last_n_days(days: int = 30) -> list:
+    """
+    Get system stats for the last N days.
+    
+    Returns:
+        List of dicts with date, scans_run, api_calls_estimated, webhooks_fired
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        SELECT date, scans_run, api_calls_estimated, webhooks_fired
+        FROM system_stats
+        WHERE date >= date('now', ?)
+        ORDER BY date ASC
+    ''', (f'-{days} days',))
+    
+    rows = cursor.fetchall()
+    conn.close()
+    
+    return [dict(row) for row in rows]
+
+
+def log_webhook(event_type: str, company: str, status: str) -> int:
+    """
+    Log a webhook delivery attempt.
+    
+    Args:
+        event_type: Type of event (e.g., 'tier_change', 'scan_complete')
+        company: Company name
+        status: 'success' or 'fail'
+    
+    Returns:
+        ID of the log entry
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        INSERT INTO webhook_logs (event_type, company, status)
+        VALUES (?, ?, ?)
+    ''', (event_type, company, status))
+    
+    log_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    
+    return log_id
+
+
+def get_recent_webhook_logs(limit: int = 50) -> list:
+    """Get recent webhook logs."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        SELECT id, timestamp, event_type, company, status
+        FROM webhook_logs
+        ORDER BY timestamp DESC
+        LIMIT ?
+    ''', (limit,))
+    
+    rows = cursor.fetchall()
+    conn.close()
+    
+    return [dict(row) for row in rows]
+
+
 # Initialize database on module import
 init_db()

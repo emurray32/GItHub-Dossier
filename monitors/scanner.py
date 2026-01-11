@@ -18,6 +18,7 @@ from datetime import datetime, timedelta
 from typing import Generator, Optional, List, Dict
 from config import Config
 from .discovery import get_github_headers, discover_organization, get_organization_repos
+from database import increment_daily_stat
 
 
 def deep_scan_generator(company_name: str) -> Generator[str, None, None]:
@@ -291,6 +292,15 @@ def deep_scan_generator(company_name: str) -> Generator[str, None, None]:
 
     yield _sse_log("")
     yield _sse_log("🤖 Generating AI Sales Intelligence...")
+
+    # Track stats - increment scans_run and estimate API calls
+    try:
+        increment_daily_stat('scans_run', 1)
+        # Estimate API calls: ~3-5 per repo scanned (issues, branches, files)
+        api_calls_estimate = len(repos_to_scan) * 4
+        increment_daily_stat('api_calls_estimated', api_calls_estimate)
+    except Exception as e:
+        pass  # Stats tracking should not break scans
 
     # Send scan results
     yield _sse_data('SCAN_COMPLETE', scan_results)
