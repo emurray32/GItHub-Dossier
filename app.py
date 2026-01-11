@@ -18,7 +18,7 @@ from database import (
     get_db_connection
 )
 from monitors.scanner import deep_scan_generator
-from monitors.discovery import search_github_orgs, resolve_org_fast
+from monitors.discovery import search_github_orgs, resolve_org_fast, discover_companies_via_ai
 from ai_summary import generate_analysis
 from pdf_generator import generate_report_pdf
 
@@ -382,6 +382,53 @@ def api_discover():
         org for org in results
         if org['login'].lower() not in existing_logins
     ]
+
+    return jsonify(fresh_candidates)
+
+
+@app.route('/api/ai-discover')
+def api_ai_discover():
+    """
+    AI-powered Universal Discovery Engine for any industry.
+
+    Uses AI to find companies that:
+    - Have an internal engineering team (likely to use GitHub)
+    - Are growing companies (Series B+ or >$10M Revenue)
+    - Have a need for Internationalization (global customer base)
+
+    Query parameters:
+        q: Industry/sector keyword (e.g., "Fintech", "DTC Retail", "HealthTech")
+        limit: Maximum results (default 15)
+
+    Returns JSON list of AI-discovered companies with validated GitHub orgs.
+    Each result includes:
+    - name: Company name
+    - revenue: Estimated revenue
+    - industry: Specific niche
+    - description: Tech/product summary
+    - suggested_github_org: GitHub handle
+    - github_validated: Boolean (True = confirmed GitHub org)
+    - github_data: GitHub org details if validated
+    """
+    keyword = request.args.get('q', '').strip()
+    limit = request.args.get('limit', 15, type=int)
+
+    if not keyword:
+        return jsonify({'error': 'Missing query parameter: q'}), 400
+
+    # Use AI to discover companies in this sector
+    companies = discover_companies_via_ai(keyword, limit=limit)
+
+    # Get existing accounts to filter them out
+    existing_accounts = get_all_accounts()
+    existing_logins = {acc['github_org'].lower() for acc in existing_accounts if acc.get('github_org')}
+
+    # Filter out companies already being monitored
+    fresh_candidates = []
+    for company in companies:
+        github_login = company.get('github_data', {}).get('login', '')
+        if github_login and github_login.lower() not in existing_logins:
+            fresh_candidates.append(company)
 
     return jsonify(fresh_candidates)
 
