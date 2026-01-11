@@ -176,6 +176,31 @@ def deep_scan_generator(company_name: str) -> Generator[str, None, None]:
     dep_count = scan_results['signal_summary']['dependency_injection']['count']
     yield _sse_log(f"✓ Dependency Injection scan complete: {dep_count} signals")
 
+    # Phase 4b: Mobile Architecture Scan (iOS & Android Goldilocks)
+    yield _sse_log("")
+    yield _sse_log("PHASE 4b: Mobile Architecture Scan (iOS & Android)")
+    yield _sse_log("-" * 40)
+    yield _sse_log("Checking for mobile i18n infrastructure without translations...")
+
+    for idx, repo in enumerate(repos_to_scan[:5], 1):  # Top 5 repos
+        repo_name = repo.get('name')
+        yield _sse_log(f"  [{idx}/5] Scanning mobile architecture in: {repo_name}")
+
+        for log_msg, signal in _scan_mobile_architecture(org_login, repo_name, company_name):
+            if log_msg:
+                yield _sse_log(f"    {log_msg}")
+            if signal:
+                scan_results['signals'].append(signal)
+                scan_results['signal_summary']['dependency_injection']['hits'].append(signal)
+                scan_results['signal_summary']['dependency_injection']['count'] += 1
+                yield _sse_signal(signal)
+
+    mobile_count = scan_results['signal_summary']['dependency_injection']['count'] - dep_count
+    yield _sse_log(f"✓ Mobile Architecture scan complete: {mobile_count} signals")
+
+    # Update dep_count to include mobile signals
+    dep_count = scan_results['signal_summary']['dependency_injection']['count']
+
     # Phase 5: Signal 3 - Ghost Branch Scan (Active Phase)
     yield _sse_log("")
     yield _sse_log("PHASE 5: Ghost Branch Scan (Active Phase)")
@@ -589,6 +614,175 @@ def _scan_pseudo_localization_configs(org: str, repo: str, company: str) -> Gene
 
         except requests.RequestException:
             continue
+
+
+def _scan_mobile_architecture(org: str, repo: str, company: str) -> Generator[tuple, None, None]:
+    """
+    Scan for Mobile Goldilocks Zone signals (iOS and Android).
+
+    iOS Logic:
+        - Check if Base.lproj folder exists
+        - If YES, search for ANY other folders ending in .lproj
+        - Signal if Base.lproj exists AND count of other .lproj folders == 0
+
+    Android Logic:
+        - Check if res/values/strings.xml exists
+        - If YES, search for ANY folders matching values-[a-z]{2}
+        - Signal if strings.xml exists AND count of values-* folders == 0
+
+    Yields:
+        Tuples of (log_message, signal_object)
+    """
+    # ============================================================
+    # iOS DETECTION: Base.lproj without translations
+    # ============================================================
+    ios_indicator = Config.MOBILE_INDICATORS.get('ios', {})
+    base_lproj_path = ios_indicator.get('path', 'Base.lproj')
+
+    try:
+        # Search for Base.lproj folder anywhere in the repo
+        search_url = f"{Config.GITHUB_API_BASE}/search/code"
+        params = {
+            'q': f'repo:{org}/{repo} path:**/{base_lproj_path}',
+            'per_page': 5
+        }
+
+        response = requests.get(
+            search_url,
+            headers=get_github_headers(),
+            timeout=15
+        )
+
+        base_lproj_found = False
+        base_lproj_parent = None
+
+        if response.status_code == 200:
+            results = response.json().get('items', [])
+            for item in results:
+                path = item.get('path', '')
+                # Check if this is inside a Base.lproj folder
+                if '/Base.lproj/' in path or path.startswith('Base.lproj/'):
+                    base_lproj_found = True
+                    # Extract parent directory for searching siblings
+                    if '/Base.lproj/' in path:
+                        base_lproj_parent = path.split('/Base.lproj/')[0]
+                    else:
+                        base_lproj_parent = ''
+                    break
+
+        if base_lproj_found:
+            yield (f"📱 iOS: Found Base.lproj folder", None)
+
+            # Search for other .lproj folders (translations)
+            other_lproj_count = 0
+            lproj_search_url = f"{Config.GITHUB_API_BASE}/search/code"
+            lproj_params = {
+                'q': f'repo:{org}/{repo} path:*.lproj',
+                'per_page': 50
+            }
+
+            lproj_response = requests.get(
+                lproj_search_url,
+                headers=get_github_headers(),
+                timeout=15
+            )
+
+            if lproj_response.status_code == 200:
+                lproj_results = lproj_response.json().get('items', [])
+                seen_folders = set()
+
+                for item in lproj_results:
+                    path = item.get('path', '')
+                    # Extract .lproj folder name from path
+                    lproj_match = re.search(r'/([^/]+\.lproj)/', path)
+                    if lproj_match:
+                        folder_name = lproj_match.group(1)
+                        if folder_name != 'Base.lproj' and folder_name not in seen_folders:
+                            seen_folders.add(folder_name)
+                            other_lproj_count += 1
+
+            if other_lproj_count == 0:
+                # GOLDILOCKS ZONE: Base.lproj exists but no translations!
+                signal = {
+                    'Company': company,
+                    'Signal': 'Mobile Architecture (iOS)',
+                    'Evidence': f"🎯 iOS GOLDILOCKS: Base.lproj exists but NO other .lproj folders found - iOS app ready for localization!",
+                    'Link': f"https://github.com/{org}/{repo}",
+                    'priority': 'CRITICAL',
+                    'type': 'mobile_architecture',
+                    'platform': 'ios',
+                    'repo': repo,
+                    'goldilocks_status': 'preparing',
+                    'gap_verified': True,
+                    'bdr_summary': 'iOS Base Architecture ready, no translations',
+                }
+                yield (f"🎯 iOS GOLDILOCKS: Base.lproj found, no translations yet!", signal)
+            else:
+                yield (f"📱 iOS: Found {other_lproj_count} translation .lproj folders - Already localized", None)
+
+    except requests.RequestException as e:
+        yield (f"iOS scan error: {str(e)}", None)
+
+    # ============================================================
+    # ANDROID DETECTION: strings.xml without translations
+    # ============================================================
+    android_indicator = Config.MOBILE_INDICATORS.get('android', {})
+    strings_xml_path = android_indicator.get('path', 'res/values/strings.xml')
+
+    try:
+        # Check if res/values/strings.xml exists
+        url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}/contents/{strings_xml_path}"
+        response = requests.get(
+            url,
+            headers=get_github_headers(),
+            timeout=15
+        )
+
+        if response.status_code == 200:
+            yield (f"📱 Android: Found {strings_xml_path}", None)
+
+            # Search for values-XX folders (language variants)
+            values_folder_count = 0
+
+            # Get contents of res/ folder to check for values-* folders
+            res_url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}/contents/res"
+            res_response = requests.get(
+                res_url,
+                headers=get_github_headers(),
+                timeout=15
+            )
+
+            if res_response.status_code == 200:
+                res_contents = res_response.json()
+                if isinstance(res_contents, list):
+                    for item in res_contents:
+                        item_name = item.get('name', '')
+                        item_type = item.get('type', '')
+                        # Match values-XX pattern (e.g., values-fr, values-de)
+                        if item_type == 'dir' and re.match(r'^values-[a-z]{2}(-[a-zA-Z]+)?$', item_name):
+                            values_folder_count += 1
+
+            if values_folder_count == 0:
+                # GOLDILOCKS ZONE: strings.xml exists but no translations!
+                signal = {
+                    'Company': company,
+                    'Signal': 'Mobile Architecture (Android)',
+                    'Evidence': f"🎯 Android GOLDILOCKS: res/values/strings.xml exists but NO values-* folders found - Android app ready for localization!",
+                    'Link': f"https://github.com/{org}/{repo}",
+                    'priority': 'CRITICAL',
+                    'type': 'mobile_architecture',
+                    'platform': 'android',
+                    'repo': repo,
+                    'goldilocks_status': 'preparing',
+                    'gap_verified': True,
+                    'bdr_summary': 'Android Strings architecture ready, no translations',
+                }
+                yield (f"🎯 Android GOLDILOCKS: strings.xml found, no translations yet!", signal)
+            else:
+                yield (f"📱 Android: Found {values_folder_count} translation values-* folders - Already localized", None)
+
+    except requests.RequestException as e:
+        yield (f"Android scan error: {str(e)}", None)
 
 
 def _check_locale_folders_exist_detailed(org: str, repo: str) -> tuple:

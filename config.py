@@ -148,6 +148,28 @@ class Config:
             SOURCE_LOCALE_PATTERNS.append(f"{base}{ext}")
 
     # ============================================================
+    # MOBILE GOLDILOCKS ZONE DETECTION
+    # ============================================================
+    # Mobile apps (iOS/Android) have their own locale folder patterns.
+    # These are excluded from web-style detection but checked separately.
+
+    MOBILE_EXCLUSION_PATTERNS = ['*.lproj', 'values-*']
+
+    # Indicators that mobile i18n infrastructure is set up
+    MOBILE_INDICATORS = {
+        'ios': {
+            'type': 'folder',
+            'path': 'Base.lproj',
+            'description': 'iOS Base localization folder',
+        },
+        'android': {
+            'type': 'file',
+            'path': 'res/values/strings.xml',
+            'description': 'Android default strings resource',
+        },
+    }
+
+    # ============================================================
     # SIGNAL 3: GHOST BRANCH (Active Phase)
     # ============================================================
     # Target: Branches and Pull Requests
