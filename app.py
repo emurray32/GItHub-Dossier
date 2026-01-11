@@ -67,17 +67,29 @@ def trigger_webhook(event_type: str, company_data: dict) -> None:
             )
             if response.status_code >= 200 and response.status_code < 300:
                 print(f"[WEBHOOK] Success: {company_name} -> {webhook_url} (status: {response.status_code})")
-                log_webhook(event_type, company_name, 'success')
-                increment_daily_stat('webhooks_fired')
+                try:
+                    log_webhook(event_type, company_name, 'success')
+                    increment_daily_stat('webhooks_fired')
+                except Exception as db_err:
+                    print(f"[WEBHOOK] DB logging error: {db_err}")
             else:
                 print(f"[WEBHOOK] Failed: {company_name} -> {webhook_url} (status: {response.status_code})")
-                log_webhook(event_type, company_name, 'fail')
+                try:
+                    log_webhook(event_type, company_name, 'fail')
+                except Exception as db_err:
+                    print(f"[WEBHOOK] DB logging error: {db_err}")
         except requests.exceptions.Timeout:
             print(f"[WEBHOOK] Timeout: {company_name} -> {webhook_url}")
-            log_webhook(event_type, company_name, 'fail')
+            try:
+                log_webhook(event_type, company_name, 'fail')
+            except Exception:
+                pass
         except requests.exceptions.RequestException as e:
             print(f"[WEBHOOK] Error: {company_name} -> {str(e)}")
-            log_webhook(event_type, company_name, 'fail')
+            try:
+                log_webhook(event_type, company_name, 'fail')
+            except Exception:
+                pass
 
     # Run in background thread to avoid blocking
     webhook_thread = threading.Thread(target=send_webhook, daemon=True, name="WebhookSender")
@@ -992,6 +1004,12 @@ def api_settings():
     # Update webhook URL if provided
     if 'webhook_url' in data:
         webhook_url = data['webhook_url'].strip()
+        # Validate URL format (must be empty or start with http:// or https://)
+        if webhook_url and not (webhook_url.startswith('http://') or webhook_url.startswith('https://')):
+            return jsonify({
+                'status': 'error',
+                'message': 'Webhook URL must start with http:// or https://'
+            }), 400
         set_setting('webhook_url', webhook_url)
 
     return jsonify({
