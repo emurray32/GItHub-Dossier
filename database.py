@@ -72,6 +72,40 @@ def init_db() -> None:
         ON monitored_accounts(company_name)
     ''')
 
+    # System Settings table - key-value store
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS system_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        )
+    ''')
+
+    # System Stats table - daily usage tracking
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS system_stats (
+            date TEXT PRIMARY KEY,
+            scans_run INTEGER DEFAULT 0,
+            api_calls_estimated INTEGER DEFAULT 0,
+            webhooks_fired INTEGER DEFAULT 0
+        )
+    ''')
+
+    # Webhook Logs table - webhook delivery history
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS webhook_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            event_type TEXT NOT NULL,
+            company TEXT,
+            status TEXT NOT NULL
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_webhook_logs_timestamp
+        ON webhook_logs(timestamp DESC)
+    ''')
+
     conn.commit()
     conn.close()
 
