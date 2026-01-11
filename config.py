@@ -68,6 +68,24 @@ class Config:
         'app', 'client', 'site', 'platform', 'ui', 'portal'
     ]
 
+    # High-value repository patterns (core product indicators)
+    # +1000 points if repo name contains any of these
+    HIGH_VALUE_PATTERNS = [
+        'web', 'app', 'frontend', 'mobile', 'ios', 'android',
+        'server', 'api', 'ui', 'client', 'monorepo'
+    ]
+
+    # Low-value repository patterns (non-core repos to deprioritize)
+    # -500 points if repo name contains any of these
+    LOW_VALUE_PATTERNS = [
+        'docs', 'documentation', 'tool', 'script', 'demo',
+        'example', 'test', 'fork'
+    ]
+
+    # High-value programming languages for i18n scanning
+    # +500 points if repo uses these languages
+    HIGH_VALUE_LANGUAGES = ['TypeScript', 'JavaScript', 'Swift', 'Kotlin']
+
     # ============================================================
     # 3-SIGNAL INTENT SYSTEM CONFIGURATION
     # ============================================================
