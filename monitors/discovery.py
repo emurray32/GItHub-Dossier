@@ -310,32 +310,74 @@ def get_organization_repos(org_login: str) -> Generator[str, None, list]:
     return prioritized
 
 
+def score_repository(repo: dict) -> int:
+    """
+    Calculate a priority score for a repository.
+
+    Scoring Logic:
+        - Base score: stargazers_count
+        - +1000 points if name contains a HIGH_VALUE pattern (core product)
+        - -500 points if name contains a LOW_VALUE pattern (non-core)
+        - -1000 points if fork is True
+        - +500 points if language is TypeScript, JavaScript, Swift, or Kotlin
+
+    Args:
+        repo: Repository data dict from GitHub API.
+
+    Returns:
+        Integer score (higher = more valuable for scanning).
+    """
+    name_lower = repo.get('name', '').lower()
+    language = repo.get('language') or ''
+    is_fork = repo.get('fork', False)
+
+    # Start with stargazers_count as base score
+    score = repo.get('stargazers_count', 0)
+
+    # +1000 for high-value patterns (core product repos)
+    for pattern in Config.HIGH_VALUE_PATTERNS:
+        if pattern.lower() in name_lower:
+            score += 1000
+            break  # Only apply bonus once
+
+    # -500 for low-value patterns (docs, tools, demos, etc.)
+    for pattern in Config.LOW_VALUE_PATTERNS:
+        if pattern.lower() in name_lower:
+            score -= 500
+            break  # Only apply penalty once
+
+    # -1000 for forks (not original work)
+    if is_fork:
+        score -= 1000
+
+    # +500 for high-value languages (frontend/mobile focus)
+    if language in Config.HIGH_VALUE_LANGUAGES:
+        score += 500
+
+    return score
+
+
 def _prioritize_repos(repos: list) -> list:
     """
-    Sort repositories by relevance and activity.
+    Sort repositories by priority score (descending).
 
-    Priority is given to repos matching keywords, then sorted by recent activity.
+    Uses score_repository() to calculate a composite score based on:
+    - Star count (base score)
+    - High-value name patterns (+1000)
+    - Low-value name patterns (-500)
+    - Fork status (-1000)
+    - High-value languages (+500)
+
+    This ensures the scanner focuses on core product repos first,
+    deprioritizing docs, forks, tools, and demos.
+
+    Args:
+        repos: List of repository data dicts.
+
+    Returns:
+        List of repos sorted by priority score (highest first).
     """
-    def score_repo(repo: dict) -> tuple:
-        name_lower = repo.get('name', '').lower()
-        desc_lower = (repo.get('description') or '').lower()
-
-        # Check for priority keywords
-        keyword_match = any(
-            kw in name_lower or kw in desc_lower
-            for kw in Config.PRIORITY_KEYWORDS
-        )
-
-        # Activity score based on recent push
-        pushed_at = repo.get('pushed_at', '')
-
-        return (
-            keyword_match,  # Priority keyword match first
-            pushed_at,      # Then by most recent push
-            repo.get('stargazers_count', 0)  # Then by stars
-        )
-
-    return sorted(repos, key=score_repo, reverse=True)
+    return sorted(repos, key=score_repository, reverse=True)
 
 
 def search_github_orgs(keyword: str, limit: int = 20) -> list:
