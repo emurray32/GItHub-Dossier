@@ -57,6 +57,26 @@
         font-size: 0.75rem;
         letter-spacing: 0.5px;
         border-bottom: 1px solid var(--border-color);
+        position: relative;
+    }
+
+    .accounts-table th.sortable {
+        cursor: pointer;
+        user-select: none;
+    }
+
+    .accounts-table th.sortable:hover {
+        color: var(--text-primary);
+    }
+
+    .sort-indicator {
+        margin-left: 0.35rem;
+        font-size: 0.7rem;
+        color: var(--text-muted);
+    }
+
+    .sort-indicator.active {
+        color: var(--accent-color);
     }
 
     .accounts-table td {
@@ -355,6 +375,32 @@
 
     .btn-action-smart.btn-refresh-needed:hover:not(:disabled) {
         background: #2563eb;
+    }
+
+    .btn-delete-account {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+        padding: 0.4rem 0.75rem;
+        margin-left: 0.4rem;
+        background: rgba(239, 68, 68, 0.15);
+        color: #fca5a5;
+        border: 1px solid rgba(239, 68, 68, 0.3);
+        border-radius: 6px;
+        font-size: 0.8rem;
+        text-decoration: none;
+        cursor: pointer;
+        transition: all var(--transition-fast);
+    }
+
+    .btn-delete-account:hover:not(:disabled) {
+        background: rgba(239, 68, 68, 0.25);
+        color: #fecaca;
+    }
+
+    .btn-delete-account:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
     }
 
     .freshness-highlight {
@@ -691,17 +737,17 @@
         <table class="accounts-table">
             <thead>
                 <tr>
-                    <th>Company</th>
-                    <th>GitHub Org</th>
-                    <th>Tier</th>
-                    <th>Last Check</th>
-                    <th>Evidence</th>
+                    <th class="sortable" data-sort-key="company">Company <span class="sort-indicator">↕</span></th>
+                    <th class="sortable" data-sort-key="github_org">GitHub Org <span class="sort-indicator">↕</span></th>
+                    <th class="sortable" data-sort-key="tier">Tier <span class="sort-indicator">↕</span></th>
+                    <th class="sortable" data-sort-key="last_scanned">Last Check <span class="sort-indicator">↕</span></th>
+                    <th class="sortable" data-sort-key="evidence">Evidence <span class="sort-indicator">↕</span></th>
                     <th>Actions</th>
                 </tr>
             </thead>
             <tbody>
                 {% for account in accounts %}
-                <tr class="tier-row-{{ account.current_tier }}" data-company="{{ account.company_name }}" data-tier="{{ account.current_tier }}" data-last-scanned="{{ account.last_scanned_at or '' }}" data-status-changed="{{ account.status_changed_at or '' }}">
+                <tr class="tier-row-{{ account.current_tier }}" data-account-id="{{ account.id }}" data-company="{{ account.company_name }}" data-tier="{{ account.current_tier }}" data-last-scanned="{{ account.last_scanned_at or '' }}" data-status-changed="{{ account.status_changed_at or '' }}">
                     <td class="company-cell">
                         {% if account.latest_report_id %}
                         <a href="{{ url_for('view_report', report_id=account.latest_report_id) }}">
@@ -776,6 +822,9 @@
                             Rescan
                         </button>
                         {% endif %}
+                        <button type="button" class="btn-delete-account" data-company="{{ account.company_name }}" onclick="removeAccount(this)">
+                            Remove
+                        </button>
                     </td>
                 </tr>
                 {% endfor %}
@@ -855,8 +904,109 @@ function initializeUI() {
     // The button state is set in the HTML template, no dynamic changes needed
 }
 
+// =============================================================================
+// Sorting
+// =============================================================================
+
+let activeSort = { key: null, direction: 'asc' };
+
+function getSortValue(row, key) {
+    if (key === 'company') {
+        return (row.dataset.company || '').toLowerCase();
+    }
+    if (key === 'github_org') {
+        const orgCell = row.querySelector('.github-org-cell');
+        return (orgCell?.dataset.org || '').toLowerCase();
+    }
+    if (key === 'tier') {
+        return parseInt(row.dataset.tier || '0', 10);
+    }
+    if (key === 'last_scanned') {
+        return row.dataset.lastScanned ? new Date(row.dataset.lastScanned).getTime() : 0;
+    }
+    if (key === 'evidence') {
+        const evidence = row.querySelector('.evidence-text');
+        return (evidence?.textContent || '').toLowerCase();
+    }
+    return '';
+}
+
+function sortTableBy(key) {
+    const tbody = document.querySelector('.accounts-table tbody');
+    if (!tbody) return;
+
+    if (activeSort.key === key) {
+        activeSort.direction = activeSort.direction === 'asc' ? 'desc' : 'asc';
+    } else {
+        activeSort = { key, direction: 'asc' };
+    }
+
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    rows.sort((a, b) => {
+        const valueA = getSortValue(a, key);
+        const valueB = getSortValue(b, key);
+        if (valueA < valueB) return activeSort.direction === 'asc' ? -1 : 1;
+        if (valueA > valueB) return activeSort.direction === 'asc' ? 1 : -1;
+        return 0;
+    });
+
+    rows.forEach(row => tbody.appendChild(row));
+
+    document.querySelectorAll('.accounts-table th.sortable').forEach(th => {
+        const indicator = th.querySelector('.sort-indicator');
+        if (!indicator) return;
+        if (th.dataset.sortKey === key) {
+            indicator.textContent = activeSort.direction === 'asc' ? '↑' : '↓';
+            indicator.classList.add('active');
+        } else {
+            indicator.textContent = '↕';
+            indicator.classList.remove('active');
+        }
+    });
+}
+
+// =============================================================================
+// Manual Removal
+// =============================================================================
+
+async function removeAccount(button) {
+    const row = button.closest('tr');
+    const company = row?.dataset.company || 'this account';
+    const accountId = row?.dataset.accountId;
+    if (!accountId) {
+        showNotification('Could not identify the selected account.', 'error');
+        return;
+    }
+
+    if (!confirm(`Remove ${company} from monitored accounts? This cannot be undone.`)) {
+        return;
+    }
+
+    button.disabled = true;
+    button.textContent = 'Removing...';
+
+    try {
+        const response = await fetch(`/api/accounts/${accountId}`, { method: 'DELETE' });
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to remove account.');
+        }
+        row.remove();
+        showNotification(`${company} removed from monitored accounts.`, 'success');
+    } catch (error) {
+        showNotification(error.message || 'Failed to remove account.', 'error');
+        button.disabled = false;
+        button.textContent = 'Remove';
+    }
+}
+
 // Initialize on page load
-document.addEventListener('DOMContentLoaded', initializeUI);
+document.addEventListener('DOMContentLoaded', () => {
+    initializeUI();
+    document.querySelectorAll('.accounts-table th.sortable').forEach(th => {
+        th.addEventListener('click', () => sortTableBy(th.dataset.sortKey));
+    });
+});
 
 // =============================================================================
 // GitHub Org Edit Functions
