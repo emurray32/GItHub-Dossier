@@ -240,34 +240,55 @@ def calculate_tier_from_scan(scan_data: dict) -> tuple[int, str]:
 
     # Apply STRICT tier logic (order matters - most specific first)
 
-    # Tier 3: Launched/Active - locale folders OR ghost branches
-    if locale_folders_found or ghost_count > 0:
-        evidence = []
-        if locale_folders_found:
-            evidence.append("Locale folders detected")
-        if ghost_count > 0:
-            evidence.append(f"{ghost_count} i18n branch(es) found")
-        return TIER_LAUNCHED, "; ".join(evidence)
+    # Tier 3: Launched - locale folders detected (company has already launched i18n)
+    # Note: Ghost branches do NOT indicate launched status - they indicate active WIP
+    if locale_folders_found:
+        return TIER_LAUNCHED, "Locale folders detected"
 
     # Tier 2: Preparing (GOLDILOCKS) - dependencies WITHOUT locale folders
     if dependency_count > 0 and not locale_folders_found:
         dep_names = []
         for hit in dependency_hits:
             if isinstance(hit, dict):
-                dep_names.append(hit.get('library', hit.get('name', 'unknown')))
-        evidence = f"i18n libraries installed: {', '.join(dep_names[:3])}"
-        if len(dep_names) > 3:
-            evidence += f" (+{len(dep_names) - 3} more)"
+                # The scanner uses 'libraries_found' as a list of library names
+                libs = hit.get('libraries_found', [])
+                if libs:
+                    dep_names.extend(libs)
+                else:
+                    # Fallback to other possible keys
+                    lib_name = hit.get('library', hit.get('name', ''))
+                    if lib_name:
+                        dep_names.append(lib_name)
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_deps = []
+        for name in dep_names:
+            if name not in seen:
+                seen.add(name)
+                unique_deps.append(name)
+        dep_names = unique_deps
+
+        if dep_names:
+            evidence = f"i18n libraries installed: {', '.join(dep_names[:3])}"
+            if len(dep_names) > 3:
+                evidence += f" (+{len(dep_names) - 3} more)"
+        else:
+            evidence = "i18n dependencies detected"
         return TIER_PREPARING, evidence
 
-    # Tier 1: Thinking - RFC discussions found
-    if rfc_count > 0:
-        rfc_hits = signal_summary.get('rfc_discussion', {}).get('hits', [])
-        if rfc_hits and isinstance(rfc_hits[0], dict):
-            evidence = f"{rfc_count} RFC/discussion(s): {rfc_hits[0].get('title', 'i18n discussion')[:50]}"
-        else:
-            evidence = f"{rfc_count} i18n RFC/discussion(s) found"
-        return TIER_THINKING, evidence
+    # Tier 1: Thinking - RFC discussions OR ghost branches found
+    # (Ghost branches = active WIP on i18n, indicates thinking/preparing phase)
+    if rfc_count > 0 or ghost_count > 0:
+        evidence_parts = []
+        if rfc_count > 0:
+            rfc_hits = signal_summary.get('rfc_discussion', {}).get('hits', [])
+            if rfc_hits and isinstance(rfc_hits[0], dict):
+                evidence_parts.append(f"{rfc_count} RFC/discussion(s): {rfc_hits[0].get('title', 'i18n discussion')[:50]}")
+            else:
+                evidence_parts.append(f"{rfc_count} i18n RFC/discussion(s) found")
+        if ghost_count > 0:
+            evidence_parts.append(f"{ghost_count} i18n branch(es)/PR(s) in progress")
+        return TIER_THINKING, "; ".join(evidence_parts)
 
     # Tier 0: Tracking - No signals
     return TIER_TRACKING, "No localization signals detected"
