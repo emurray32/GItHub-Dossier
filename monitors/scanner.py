@@ -712,6 +712,39 @@ def _calculate_intent_score(scan_results: dict) -> int:
         return min(base_score + bonus, Config.GOLDILOCKS_SCORES.get('preparing_max', 100))
 
     # ============================================================
+    # MEGA-CORP HEURISTIC: Detect high-maturity orgs without Preparing signals
+    # ============================================================
+    # Large engineering orgs (Airbnb, Uber, Facebook, etc.) often use custom/internal
+    # i18n solutions that won't appear in our standard library scans. If they have
+    # significant GitHub presence but no Preparing signals, they've likely already
+    # launched with proprietary tooling.
+    total_stars = scan_results.get('total_stars', 0)
+    public_repos = scan_results.get('org_public_repos', 0)
+
+    if total_stars > 5000 or public_repos > 100:
+        # High-maturity org with no Preparing signals = Already Launched
+        scan_results['goldilocks_status'] = 'launched'
+        scan_results['lead_status'] = Config.LEAD_STATUS_LABELS.get('launched', 'LOW PRIORITY')
+        scan_results['mega_corp_heuristic'] = True
+        scan_results['mega_corp_evidence'] = 'High-maturity engineering org (likely custom/internal i18n)'
+
+        # Add a synthetic signal to explain the classification
+        mega_corp_signal = {
+            'Company': scan_results.get('company_name', 'Unknown'),
+            'Signal': 'Mega-Corp Heuristic',
+            'Evidence': f'High-maturity engineering org (likely custom/internal i18n). Stars: {total_stars:,}, Repos: {public_repos}',
+            'Link': scan_results.get('org_url', ''),
+            'priority': 'LOW',
+            'type': 'mega_corp_launched',
+            'goldilocks_status': 'launched',
+            'total_stars': total_stars,
+            'public_repos': public_repos,
+        }
+        signals.append(mega_corp_signal)
+
+        return Config.GOLDILOCKS_SCORES.get('launched', 10)
+
+    # ============================================================
     # Check for THINKING status
     # ============================================================
     rfc_count = summary.get('rfc_discussion', {}).get('count', 0)
