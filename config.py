@@ -103,6 +103,16 @@ class Config:
         # Note: 'uppy' is checked separately for i18n/locale properties
     ]
 
+    CMS_I18N_LIBS = [
+        'gatsby-plugin-i18n',
+        '@sanity/document-internationalization',
+        'sanity-plugin-intl-input',
+        'strapi-plugin-i18n',
+        'contentful-resolve-response',
+        '@storyblok/js',
+        'netlify-cms-widget-i18n',
+    ]
+
     # Uppy requires special handling - only counts if i18n/locale config is present
     UPPY_LIBRARY = 'uppy'
     UPPY_I18N_INDICATORS = ['locale', 'i18n', 'locales', 'strings']

@@ -552,7 +552,6 @@ def _scan_dependency_injection(org: str, repo: str, company: str) -> Generator[t
 
                     found_libs = []
                     bdr_explanations = []
-
                     # Check for our 4 target SMOKING GUN libraries
                     for lib in Config.SMOKING_GUN_LIBS:
                         # Match as dependency name (with quotes for JSON)
@@ -568,6 +567,25 @@ def _scan_dependency_injection(org: str, repo: str, company: str) -> Generator[t
                                 found_libs.append(f"{Config.UPPY_LIBRARY} (with {indicator} config)")
                                 bdr_explanations.append(Config.BDR_TRANSLATIONS.get('uppy', 'Uppy with i18n'))
                                 break
+
+                    for lib in Config.CMS_I18N_LIBS:
+                        if f'"{lib}"' in content_lower or f"'{lib}'" in content_lower:
+                            signal = {
+                                'Company': company,
+                                'Signal': 'CMS Internationalization',
+                                'Evidence': (
+                                    "Found CMS Localization tool "
+                                    f"'{lib}' - Preparing content strategy for internationalization."
+                                ),
+                                'Link': file_url,
+                                'priority': 'MEDIUM',
+                                'type': 'cms_config',
+                                'repo': repo,
+                                'file': dep_file,
+                                'library': lib,
+                                'goldilocks_status': 'preparing',
+                            }
+                            yield (f"🧭 CMS I18N: {lib} in {dep_file}", signal)
 
                     if found_libs:
                         # This is the GOLDILOCKS ZONE - Library found + NO locale folders (or source-only)!
