@@ -87,12 +87,22 @@ class Config:
         'babel-plugin-react-intl',   # React string extraction - infrastructure setup
         'react-i18next',             # React i18n framework - preparing for translations
         'formatjs',                  # ICU message formatting - building the foundation
+        'try-pseudo-localization',   # Pseudo-localization for UI layout testing
+        'react-pseudo',              # Pseudo-localization for React
+        'i18next-pseudo',            # Pseudo-localization for i18next
         # Note: 'uppy' is checked separately for i18n/locale properties
     ]
 
     # Uppy requires special handling - only counts if i18n/locale config is present
     UPPY_LIBRARY = 'uppy'
     UPPY_I18N_INDICATORS = ['locale', 'i18n', 'locales', 'strings']
+
+    # Pseudo-localization config patterns
+    PSEUDO_CONFIG_PATTERNS = [
+        'pseudo: true',
+        'pseudoLocale',
+        'pseudoLocalize',
+    ]
 
     # ============================================================
     # EXCLUSION FOLDERS - DISQUALIFIES "GOLDILOCKS ZONE" STATUS
