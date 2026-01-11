@@ -6,6 +6,8 @@ Includes AI-powered Universal Discovery Engine for any industry.
 """
 import json
 import requests
+import threading
+from itertools import cycle
 from typing import Optional, Generator, List, Dict
 from config import Config
 
@@ -16,14 +18,66 @@ except ImportError:
     GENAI_AVAILABLE = False
 
 
+# Thread-safe token rotation using round-robin strategy
+class TokenRotator:
+    """Thread-safe token rotator using round-robin selection."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._tokens = Config.GITHUB_TOKENS or []
+        self._cycle = cycle(self._tokens) if self._tokens else None
+
+    def get_token(self) -> Optional[str]:
+        """
+        Get the next token in round-robin order.
+
+        Thread-safe: uses a lock to ensure consistent rotation
+        across multiple threads.
+
+        Returns:
+            Next token string, or None if no tokens configured.
+        """
+        if not self._cycle:
+            return None
+
+        with self._lock:
+            return next(self._cycle)
+
+    def reload_tokens(self):
+        """Reload tokens from Config (useful if tokens change at runtime)."""
+        with self._lock:
+            self._tokens = Config.GITHUB_TOKENS or []
+            self._cycle = cycle(self._tokens) if self._tokens else None
+
+
+# Global token rotator instance
+_token_rotator = TokenRotator()
+
+
 def get_github_headers() -> dict:
-    """Get headers for GitHub API requests."""
+    """
+    Get headers for GitHub API requests with token rotation.
+
+    Uses round-robin selection from GITHUB_TOKENS if available,
+    otherwise falls back to the single GITHUB_TOKEN for backward
+    compatibility.
+
+    Thread-safe: can be called from multiple threads simultaneously.
+    """
     headers = {
         'Accept': 'application/vnd.github.v3+json',
         'User-Agent': 'Lead-Machine/1.0'
     }
-    if Config.GITHUB_TOKEN:
+
+    # Try to get a token from the rotator (uses GITHUB_TOKENS if available)
+    token = _token_rotator.get_token()
+
+    if token:
+        headers['Authorization'] = f'token {token}'
+    elif Config.GITHUB_TOKEN:
+        # Fallback to single token if rotator has no tokens
         headers['Authorization'] = f'token {Config.GITHUB_TOKEN}'
+
     return headers
 
 
