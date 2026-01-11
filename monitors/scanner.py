@@ -552,6 +552,7 @@ def _scan_dependency_injection(org: str, repo: str, company: str) -> Generator[t
 
                     found_libs = []
                     bdr_explanations = []
+                    found_linter_libs = []
 
                     # Check for our 4 target SMOKING GUN libraries
                     for lib in Config.SMOKING_GUN_LIBS:
@@ -568,6 +569,10 @@ def _scan_dependency_injection(org: str, repo: str, company: str) -> Generator[t
                                 found_libs.append(f"{Config.UPPY_LIBRARY} (with {indicator} config)")
                                 bdr_explanations.append(Config.BDR_TRANSLATIONS.get('uppy', 'Uppy with i18n'))
                                 break
+
+                    for lib in Config.LINTER_LIBRARIES:
+                        if f'"{lib}"' in content_lower or f"'{lib}'" in content_lower:
+                            found_linter_libs.append(lib)
 
                     if found_libs:
                         # This is the GOLDILOCKS ZONE - Library found + NO locale folders (or source-only)!
@@ -598,6 +603,25 @@ def _scan_dependency_injection(org: str, repo: str, company: str) -> Generator[t
                         }
 
                         yield (f"🎯 GOLDILOCKS ZONE: {', '.join(found_libs)} in {dep_file} - NO TRANSLATIONS YET!", signal)
+
+                    for lib in found_linter_libs:
+                        signal = {
+                            'Company': company,
+                            'Signal': 'Linter Config',
+                            'Evidence': (
+                                f"Found Code Cleaning tool '{lib}' - Team is scrubbing hardcoded strings to "
+                                "prepare for i18n."
+                            ),
+                            'Link': file_url,
+                            'priority': 'MEDIUM',
+                            'type': 'linter_config',
+                            'repo': repo,
+                            'file': dep_file,
+                            'library_found': lib,
+                            'goldilocks_status': 'preparing',
+                        }
+
+                        yield (f"🧹 CODE CLEANING: {lib} found in {dep_file}", signal)
 
                 except Exception:
                     pass
