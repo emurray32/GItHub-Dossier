@@ -229,9 +229,15 @@ def calculate_tier_from_scan(scan_data: dict) -> tuple[int, str]:
     locale_folders_found = False
     dependency_hits = signal_summary.get('dependency_injection', {}).get('hits', [])
     for hit in dependency_hits:
-        if isinstance(hit, dict) and hit.get('has_locale_folders'):
-            locale_folders_found = True
-            break
+        if isinstance(hit, dict):
+            # Check both possible keys - 'locale_folders_found' (list) or 'has_locale_folders' (bool)
+            if hit.get('locale_folders_found') or hit.get('has_locale_folders'):
+                locale_folders_found = True
+                break
+            # Also check if the signal type indicates already launched
+            if hit.get('type') == 'already_launched':
+                locale_folders_found = True
+                break
 
     # Also check goldilocks_status for launched indicator
     goldilocks_status = scan_data.get('goldilocks_status', 'none')
