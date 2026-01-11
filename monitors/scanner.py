@@ -414,6 +414,9 @@ def _scan_dependency_injection(org: str, repo: str, company: str) -> Generator[t
     Yields:
         Tuples of (log_message, signal_object)
     """
+    for log_msg, signal in _scan_pseudo_localization_configs(org, repo, company):
+        yield (log_msg, signal)
+
     # ============================================================
     # NEGATIVE CHECK: Verify NO exclusion folders exist
     # ============================================================
@@ -504,6 +507,58 @@ def _scan_dependency_injection(org: str, repo: str, company: str) -> Generator[t
 
                 except Exception:
                     pass
+
+        except requests.RequestException:
+            continue
+
+
+def _scan_pseudo_localization_configs(org: str, repo: str, company: str) -> Generator[tuple, None, None]:
+    """
+    Scan config files for pseudo-localization patterns.
+    """
+    config_files = ['next.config.js', 'nuxt.config.js', 'i18n.config.js']
+
+    for config_file in config_files:
+        try:
+            url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}/contents/{config_file}"
+            response = requests.get(
+                url,
+                headers=get_github_headers(),
+                timeout=15
+            )
+
+            if response.status_code != 200:
+                continue
+
+            file_data = response.json()
+            content_b64 = file_data.get('content', '')
+            file_url = file_data.get('html_url')
+
+            if not content_b64:
+                continue
+
+            try:
+                content = base64.b64decode(content_b64).decode('utf-8')
+            except Exception:
+                continue
+
+            content_lower = content.lower()
+
+            for pattern in Config.PSEUDO_CONFIG_PATTERNS:
+                pattern_lower = pattern.lower()
+                if pattern_lower in content_lower:
+                    signal = {
+                        'Company': company,
+                        'Signal': 'Pseudo-Localization',
+                        'Evidence': f"Found pseudo-localization config '{pattern}' in {config_file} - Testing layout for i18n.",
+                        'Link': file_url,
+                        'priority': 'HIGH',
+                        'type': 'pseudo_localization',
+                        'repo': repo,
+                        'file': config_file,
+                        'pattern': pattern,
+                    }
+                    yield (f"🔎 PSEUDO-LOCALIZATION: {pattern} found in {config_file}", signal)
 
         except requests.RequestException:
             continue
