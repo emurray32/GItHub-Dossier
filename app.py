@@ -8,7 +8,7 @@ import time
 import os
 import threading
 import queue
-from datetime import datetime
+from datetime import datetime, timedelta
 from flask import Flask, render_template, Response, request, jsonify, redirect, url_for, stream_with_context, send_file
 from config import Config
 from database import (
@@ -26,6 +26,89 @@ from pdf_generator import generate_report_pdf
 
 app = Flask(__name__)
 app.config.from_object(Config)
+
+WEBHOOK_SETTINGS_PATH = os.path.join(os.path.dirname(__file__), 'data', 'webhook_settings.json')
+
+
+def load_webhook_settings() -> dict:
+    """Load webhook settings from disk."""
+    if os.path.exists(WEBHOOK_SETTINGS_PATH):
+        with open(WEBHOOK_SETTINGS_PATH, 'r', encoding='utf-8') as handle:
+            return json.load(handle)
+    return {'url': '', 'total_sent': 0}
+
+
+def save_webhook_settings(settings: dict) -> None:
+    """Persist webhook settings to disk."""
+    os.makedirs(os.path.dirname(WEBHOOK_SETTINGS_PATH), exist_ok=True)
+    with open(WEBHOOK_SETTINGS_PATH, 'w', encoding='utf-8') as handle:
+        json.dump(settings, handle, indent=2, sort_keys=True)
+
+
+def get_report_counts_by_day(days: int = 7) -> tuple[list, list]:
+    """Get scan counts for the last N days."""
+    start_date = datetime.utcnow().date() - timedelta(days=days - 1)
+    date_labels = [(start_date + timedelta(days=offset)) for offset in range(days)]
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        '''
+        SELECT date(created_at) AS day, COUNT(*) AS count
+        FROM reports
+        WHERE date(created_at) >= date('now', ?)
+        GROUP BY date(created_at)
+        ''',
+        (f'-{days - 1} days',)
+    )
+    rows = cursor.fetchall()
+    conn.close()
+
+    counts_by_day = {row['day']: row['count'] for row in rows}
+    labels = [label.strftime('%b %d') for label in date_labels]
+    counts = [counts_by_day.get(label.isoformat(), 0) for label in date_labels]
+    return labels, counts
+
+
+def get_reports_today_count() -> int:
+    """Get the number of reports created today."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        '''
+        SELECT COUNT(*) AS count
+        FROM reports
+        WHERE date(created_at) = date('now')
+        '''
+    )
+    row = cursor.fetchone()
+    conn.close()
+    return row['count'] if row else 0
+
+
+def get_recent_webhook_activity(limit: int = 5) -> list[dict]:
+    """Return recent scan activity formatted for the webhook log."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        '''
+        SELECT company_name, created_at
+        FROM reports
+        ORDER BY datetime(created_at) DESC
+        LIMIT ?
+        ''',
+        (limit,)
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    return [
+        {
+            'time': row['created_at'],
+            'company': row['company_name'],
+            'status': 'Sent'
+        }
+        for row in rows
+    ]
 
 # =============================================================================
 # JOB QUEUE SYSTEM - Prevents SQLite 'Database Locked' errors
@@ -373,6 +456,27 @@ def history():
     return render_template('history.html', reports=reports)
 
 
+@app.route('/settings')
+def settings():
+    """Render the settings and system health dashboard."""
+    webhook_settings = load_webhook_settings()
+    api_calls_today = get_reports_today_count()
+    scans_today = api_calls_today
+    chart_labels, chart_data = get_report_counts_by_day(7)
+    recent_activity = get_recent_webhook_activity(5)
+
+    return render_template(
+        'settings.html',
+        webhook_url=webhook_settings.get('url', ''),
+        api_calls_today=api_calls_today,
+        scans_today=scans_today,
+        total_webhooks_sent=webhook_settings.get('total_sent', 0),
+        chart_labels=chart_labels,
+        chart_data=chart_data,
+        recent_activity=recent_activity
+    )
+
+
 @app.route('/accounts')
 def accounts():
     """View monitored accounts dashboard."""
@@ -394,6 +498,22 @@ def api_delete_account(account_id: int):
     if not deleted:
         return jsonify({'error': 'Account not found'}), 404
     return jsonify({'status': 'success'})
+
+
+@app.route('/api/webhook', methods=['POST'])
+def api_save_webhook():
+    """Save webhook settings."""
+    payload = request.get_json(silent=True) or {}
+    url = payload.get('url', '').strip()
+    if not url:
+        return jsonify({'success': False, 'error': 'Webhook URL is required.'}), 400
+
+    webhook_settings = load_webhook_settings()
+    webhook_settings['url'] = url
+    webhook_settings['updated_at'] = datetime.utcnow().isoformat()
+    save_webhook_settings(webhook_settings)
+
+    return jsonify({'success': True, 'url': url})
 
 
 @app.route('/grow')
