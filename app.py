@@ -44,6 +44,8 @@ def perform_background_scan(company_name: str):
     import sqlite3
     from config import Config as AppConfig
 
+    print(f"[WORKER] Starting background scan for: {company_name}")
+
     try:
         start_time = time.time()
         scan_data = None
@@ -55,6 +57,7 @@ def perform_background_scan(company_name: str):
             if 'data: ERROR:' in message:
                 error_msg = message.split('data: ERROR:', 1)[1].strip()
                 error_msg = error_msg.replace('\n', '').strip()
+                print(f"[WORKER] Scan error for {company_name}: {error_msg}")
                 # Create fresh connection for this thread
                 mark_account_as_invalid(company_name, error_msg)
                 return
@@ -66,8 +69,11 @@ def perform_background_scan(company_name: str):
                 scan_data = json.loads(json_str)
 
         if not scan_data:
+            print(f"[WORKER] No scan data generated for: {company_name}")
             mark_account_as_invalid(company_name, 'No scan data generated')
             return
+
+        print(f"[WORKER] Scan complete for {company_name}, generating AI analysis...")
 
         # Phase 2: Generate AI analysis (silent)
         try:
@@ -77,7 +83,8 @@ def perform_background_scan(company_name: str):
                     if json_str.startswith('data: '):
                         json_str = json_str[6:]
                     analysis_data = json.loads(json_str)
-        except Exception:
+        except Exception as e:
+            print(f"[WORKER] AI analysis failed for {company_name}: {str(e)}")
             analysis_data = {'error': 'Analysis failed'}
 
         # Phase 3: Save report to database (uses fresh connection internally)
@@ -90,17 +97,23 @@ def perform_background_scan(company_name: str):
                 ai_analysis=analysis_data or {},
                 scan_duration=duration
             )
-        except Exception:
+            print(f"[WORKER] Report saved for {company_name} (ID: {report_id})")
+        except Exception as e:
+            print(f"[WORKER] Failed to save report for {company_name}: {str(e)}")
             return
 
         # Phase 4: Update monitored account status and tier
         try:
-            update_account_status(scan_data, report_id)
-        except Exception:
-            pass
+            result = update_account_status(scan_data, report_id)
+            tier_name = result.get('tier_name', 'Unknown')
+            print(f"[WORKER] Account status updated for {company_name}: Tier {result.get('tier')} ({tier_name})")
+        except Exception as e:
+            print(f"[WORKER] Failed to update account status for {company_name}: {str(e)}")
 
-    except Exception:
-        pass  # Silent failure in background
+        print(f"[WORKER] Completed scan for {company_name} in {duration:.1f}s")
+
+    except Exception as e:
+        print(f"[WORKER] Background scan failed for {company_name}: {str(e)}")
 
 
 def scan_worker():
@@ -110,14 +123,18 @@ def scan_worker():
     Runs as a daemon thread - pulls company names from the queue
     and processes them one at a time to prevent database conflicts.
     """
+    print("[WORKER] Scan worker thread started")
     while True:
         try:
             company_name = scan_queue.get()
             if company_name is None:  # Shutdown signal
+                print("[WORKER] Received shutdown signal")
                 break
+            queue_size = scan_queue.qsize()
+            print(f"[WORKER] Processing: {company_name} (queue size: {queue_size})")
             perform_background_scan(company_name)
-        except Exception:
-            pass  # Keep worker alive even on errors
+        except Exception as e:
+            print(f"[WORKER] Error in worker loop: {str(e)}")
         finally:
             scan_queue.task_done()
 
