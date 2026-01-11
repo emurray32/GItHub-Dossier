@@ -201,6 +201,31 @@ def deep_scan_generator(company_name: str) -> Generator[str, None, None]:
     # Update dep_count to include mobile signals
     dep_count = scan_results['signal_summary']['dependency_injection']['count']
 
+    # Phase 4c: Framework Configuration Scan (Preparing Phase)
+    yield _sse_log("")
+    yield _sse_log("PHASE 4c: Framework Configuration Scan")
+    yield _sse_log("-" * 40)
+    yield _sse_log("Checking for i18n routing config without translations...")
+
+    for idx, repo in enumerate(repos_to_scan[:5], 1):  # Top 5 repos
+        repo_name = repo.get('name')
+        yield _sse_log(f"  [{idx}/5] Scanning framework configs in: {repo_name}")
+
+        for log_msg, signal in _scan_framework_configs(org_login, repo_name, company_name):
+            if log_msg:
+                yield _sse_log(f"    {log_msg}")
+            if signal:
+                scan_results['signals'].append(signal)
+                scan_results['signal_summary']['dependency_injection']['hits'].append(signal)
+                scan_results['signal_summary']['dependency_injection']['count'] += 1
+                yield _sse_signal(signal)
+
+    framework_count = scan_results['signal_summary']['dependency_injection']['count'] - dep_count
+    yield _sse_log(f"✓ Framework Configuration scan complete: {framework_count} signals")
+
+    # Update dep_count to include framework config signals
+    dep_count = scan_results['signal_summary']['dependency_injection']['count']
+
     # Phase 5: Signal 3 - Ghost Branch Scan (Active Phase)
     yield _sse_log("")
     yield _sse_log("PHASE 5: Ghost Branch Scan (Active Phase)")
@@ -849,6 +874,141 @@ def _scan_mobile_architecture(org: str, repo: str, company: str) -> Generator[tu
 
     except requests.RequestException as e:
         yield (f"Android scan error: {str(e)}", None)
+
+
+def _scan_framework_configs(org: str, repo: str, company: str) -> Generator[tuple, None, None]:
+    """
+    Scan framework configuration files for i18n routing configuration.
+
+    Detects when developers have enabled i18n routing in their framework config
+    before adding translation files - a key "Preparing" phase signal.
+
+    Target files: next.config.js, nuxt.config.js/ts, remix.config.js, angular.json
+    Logic: Look for active i18n configuration blocks while ignoring comments.
+    Gap Requirement: Only signal if locale folders don't exist.
+
+    Yields:
+        Tuples of (log_message, signal_object)
+    """
+    # ============================================================
+    # NEGATIVE CHECK: Verify NO locale folders exist
+    # ============================================================
+    locale_exists = _check_locale_folders_exist(org, repo)
+
+    if locale_exists:
+        yield ("Framework config scan skipped - locale folders already exist", None)
+        return
+
+    # ============================================================
+    # POSITIVE CHECK: Scan framework config files for i18n patterns
+    # ============================================================
+    # Patterns to detect active i18n configuration
+    i18n_patterns = [
+        # Next.js / general JS configs
+        r'i18n\s*:\s*\{',           # i18n: {
+        r"i18n\s*:\s*\[",           # i18n: [
+        # Nuxt.js module
+        r"modules\s*:\s*\[[^\]]*['\"]@nuxtjs/i18n['\"]",  # modules: ['@nuxtjs/i18n']
+        r"modules\s*:\s*\[[^\]]*['\"]nuxt-i18n['\"]",     # modules: ['nuxt-i18n']
+        # JSON format (angular.json)
+        r'"i18n"\s*:\s*\{',          # "i18n": {
+        # Remix i18n
+        r'i18next',                  # i18next references in config
+    ]
+
+    for config_file in Config.FRAMEWORK_CONFIG_FILES:
+        try:
+            url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}/contents/{config_file}"
+            response = requests.get(
+                url,
+                headers=get_github_headers(),
+                timeout=15
+            )
+
+            if response.status_code != 200:
+                continue
+
+            file_data = response.json()
+            content_b64 = file_data.get('content', '')
+            file_url = file_data.get('html_url')
+
+            if not content_b64:
+                continue
+
+            try:
+                content = base64.b64decode(content_b64).decode('utf-8')
+            except Exception:
+                continue
+
+            # Remove comments before checking for patterns
+            cleaned_content = _strip_comments(content)
+
+            # Check for i18n configuration patterns
+            for pattern in i18n_patterns:
+                if re.search(pattern, cleaned_content, re.IGNORECASE):
+                    signal = {
+                        'Company': company,
+                        'Signal': 'Framework Config',
+                        'Evidence': f"Found active i18n configuration in {config_file} - Routing is enabled but translations are missing.",
+                        'Link': file_url,
+                        'priority': 'HIGH',
+                        'type': 'framework_config',
+                        'repo': repo,
+                        'file': config_file,
+                        'pattern_matched': pattern,
+                        'goldilocks_status': 'preparing',
+                        'gap_verified': True,
+                        'bdr_summary': f'i18n routing enabled in {config_file}, no translations yet',
+                    }
+                    yield (f"🔧 FRAMEWORK CONFIG: i18n routing found in {config_file}", signal)
+                    break  # Only one signal per file
+
+        except requests.RequestException:
+            continue
+
+
+def _strip_comments(content: str) -> str:
+    """
+    Remove JavaScript/TypeScript comments from content.
+
+    Strips:
+    - Single-line comments (// ...)
+    - Multi-line block comments (/* ... */)
+
+    Args:
+        content: The file content to clean
+
+    Returns:
+        Content with comments removed
+    """
+    # Remove multi-line block comments (/* ... */) - non-greedy match
+    content = re.sub(r'/\*[\s\S]*?\*/', '', content)
+
+    # Remove single-line comments (// ...) but preserve URLs (http://, https://)
+    # Split by lines to handle single-line comments properly
+    lines = content.split('\n')
+    cleaned_lines = []
+
+    for line in lines:
+        # Find // that's not part of http:// or https://
+        # Simple approach: remove everything after // unless preceded by :
+        result = []
+        i = 0
+        while i < len(line):
+            if i < len(line) - 1 and line[i:i+2] == '//':
+                # Check if this is part of a URL (preceded by :)
+                if i > 0 and line[i-1] == ':':
+                    result.append(line[i])
+                    i += 1
+                else:
+                    # This is a comment - skip rest of line
+                    break
+            else:
+                result.append(line[i])
+                i += 1
+        cleaned_lines.append(''.join(result))
+
+    return '\n'.join(cleaned_lines)
 
 
 def _check_locale_folders_exist_detailed(org: str, repo: str) -> tuple:

@@ -124,6 +124,16 @@ class Config:
         'pseudoLocalize',
     ]
 
+    # Framework configuration files that may contain i18n routing config
+    FRAMEWORK_CONFIG_FILES = [
+        'next.config.js',
+        'next.config.mjs',
+        'nuxt.config.js',
+        'nuxt.config.ts',
+        'remix.config.js',
+        'angular.json',
+    ]
+
     # ============================================================
     # EXCLUSION FOLDERS - DISQUALIFIES "GOLDILOCKS ZONE" STATUS
     # ============================================================
