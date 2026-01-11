@@ -34,14 +34,15 @@
     .accounts-table-container {
         background: var(--bg-secondary);
         border-radius: 12px;
-        overflow: hidden;
+        overflow-x: auto;
         border: 1px solid var(--border-color);
     }
 
     .accounts-table {
-        width: 100%;
+        width: max-content;
+        min-width: 100%;
         border-collapse: collapse;
-        font-size: 0.9rem;
+        font-size: 0.85rem;
     }
 
     .accounts-table thead {
@@ -49,7 +50,7 @@
     }
 
     .accounts-table th {
-        padding: 0.875rem 1rem;
+        padding: 0.6rem 0.75rem;
         text-align: left;
         font-weight: 600;
         color: var(--text-secondary);
@@ -80,7 +81,7 @@
     }
 
     .accounts-table td {
-        padding: 0.875rem 1rem;
+        padding: 0.6rem 0.75rem;
         border-bottom: 1px solid var(--border-color);
         vertical-align: middle;
     }
@@ -297,13 +298,14 @@
     .last-check-cell {
         font-size: 0.85rem;
         color: var(--text-secondary);
+        white-space: nowrap;
     }
 
     .scanned-time {
         color: var(--text-primary);
         font-weight: 600;
         display: block;
-        margin-bottom: 0.25rem;
+        margin-bottom: 0.15rem;
     }
 
     .scanned-time.never-scanned {
@@ -321,6 +323,7 @@
     .tier-change-time {
         font-size: 0.75rem;
         color: var(--text-muted);
+        display: block;
     }
 
     /* Smart action buttons */
@@ -410,17 +413,14 @@
 
     /* Evidence cell */
     .evidence-cell {
-        max-width: 300px;
         font-size: 0.85rem;
         color: var(--text-secondary);
         line-height: 1.4;
+        white-space: nowrap;
     }
 
     .evidence-text {
-        display: -webkit-box;
-        -webkit-line-clamp: 2;
-        -webkit-box-orient: vertical;
-        overflow: hidden;
+        white-space: nowrap;
     }
 
     /* Actions cell */
@@ -789,8 +789,7 @@
                     </td>
                     <td class="last-check-cell">
                         {% if account.last_scanned_at %}
-                            <strong class="scanned-time" data-timestamp="{{ account.last_scanned_at }}">Scanned: calculating...</strong>
-                            <br>
+                            <strong class="scanned-time" data-timestamp="{{ account.last_scanned_at }}">Scanned: --</strong>
                             {% if account.status_changed_at %}
                                 {% set change_date = account.status_changed_at %}
                                 {% if 'T' in change_date %}
@@ -844,24 +843,14 @@
 // Time Utilities
 // =============================================================================
 
-function timeAgo(timestamp) {
-    if (!timestamp) return 'Never';
-
-    const now = new Date();
+function formatShortDate(timestamp) {
+    if (!timestamp) return '--';
     const scanned = new Date(timestamp);
-    const diffMs = now - scanned;
-    const diffSeconds = Math.floor(diffMs / 1000);
-    const diffMinutes = Math.floor(diffSeconds / 60);
-    const diffHours = Math.floor(diffMinutes / 60);
-    const diffDays = Math.floor(diffHours / 24);
-
-    if (diffSeconds < 60) return 'Just now';
-    if (diffMinutes < 60) return `${diffMinutes} minute${diffMinutes !== 1 ? 's' : ''} ago`;
-    if (diffHours < 24) return `${diffHours} hour${diffHours !== 1 ? 's' : ''} ago`;
-    if (diffDays === 1) return 'Yesterday';
-    if (diffDays < 7) return `${diffDays} days ago`;
-    if (diffDays < 30) return `${Math.floor(diffDays / 7)} week${Math.floor(diffDays / 7) !== 1 ? 's' : ''} ago`;
-    return `${Math.floor(diffDays / 30)} month${Math.floor(diffDays / 30) !== 1 ? 's' : ''} ago`;
+    if (Number.isNaN(scanned.getTime())) return '--';
+    const month = scanned.getMonth() + 1;
+    const day = scanned.getDate();
+    const year = String(scanned.getFullYear() % 100).padStart(2, '0');
+    return `${month}-${day}-${year}`;
 }
 
 function getHoursSinceScanned(timestamp) {
@@ -883,12 +872,12 @@ function getDaysSinceScanned(timestamp) {
 // =============================================================================
 
 function initializeUI() {
-    // Update all "Scanned: X ago" timestamps
+    // Update all "Scanned: date" timestamps
     document.querySelectorAll('.scanned-time[data-timestamp]').forEach(el => {
         const timestamp = el.dataset.timestamp;
         if (timestamp) {
-            const ago = timeAgo(timestamp);
-            el.textContent = `Scanned: ${ago}`;
+            const formattedDate = formatShortDate(timestamp);
+            el.textContent = `Scanned: ${formattedDate}`;
 
             // Add visual class based on freshness
             const hours = getHoursSinceScanned(timestamp);
