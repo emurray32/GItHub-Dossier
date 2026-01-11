@@ -841,36 +841,8 @@ function initializeUI() {
         }
     });
 
-    // Update smart action buttons
-    document.querySelectorAll('.btn-action-smart').forEach(btn => {
-        const row = btn.closest('tr');
-        const lastScanned = row.dataset.lastScanned;
-        const tier = parseInt(row.dataset.tier, 10);
-
-        // Skip Tier 4 (handled separately)
-        if (tier === 4) return;
-
-        const hours = getHoursSinceScanned(lastScanned);
-        const days = getDaysSinceScanned(lastScanned);
-
-        if (!lastScanned || hours === Infinity) {
-            // Never scanned
-            btn.textContent = '▶ Start Scan';
-            btn.classList.add('btn-refresh-needed');
-        } else if (hours < 24) {
-            // Scanned < 24h ago - grey "Scanned" button
-            btn.textContent = '✓ Scanned';
-            btn.classList.add('btn-scanned');
-            btn.disabled = true;
-        } else if (days > 7) {
-            // Scanned > 7 days ago - blue "Refresh" button
-            btn.textContent = '⚡ Refresh';
-            btn.classList.add('btn-refresh-needed');
-        } else {
-            // Default: standard "Rescan" button
-            btn.textContent = 'Rescan';
-        }
-    });
+    // All action buttons are always enabled with "Rescan" text
+    // The button state is set in the HTML template, no dynamic changes needed
 }
 
 // Initialize on page load
@@ -1029,8 +1001,7 @@ async function triggerRescan(buttonEl, companyName) {
         // Reset button after 2 seconds
         setTimeout(() => {
             buttonEl.disabled = false;
-            buttonEl.textContent = '✓ Scanned';
-            buttonEl.classList.add('btn-scanned');
+            buttonEl.textContent = 'Rescan';
             buttonEl.style.background = '';
         }, 2000);
 
