@@ -59,6 +59,11 @@ class Config:
     # Database
     DATABASE_PATH = os.path.join(os.path.dirname(__file__), 'data', 'lead_machine.db')
 
+    # Webhook Configuration
+    # URL to POST lead notifications when tier changes to Thinking (1) or Preparing (2)
+    # Useful for Zapier, Salesforce, or other integrations
+    WEBHOOK_URL = os.getenv('WEBHOOK_URL')
+
     # Scan Configuration
     MAX_REPOS_TO_SCAN = 50  # Top N most active repos
 

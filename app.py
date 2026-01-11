@@ -8,6 +8,7 @@ import time
 import os
 import threading
 import queue
+import requests
 from datetime import datetime
 from flask import Flask, render_template, Response, request, jsonify, redirect, url_for, stream_with_context, send_file
 from config import Config
@@ -26,6 +27,53 @@ from pdf_generator import generate_report_pdf
 
 app = Flask(__name__)
 app.config.from_object(Config)
+
+
+# =============================================================================
+# WEBHOOK NOTIFICATIONS - Push leads to Zapier/Salesforce
+# =============================================================================
+
+def trigger_webhook(payload: dict) -> None:
+    """
+    Send a webhook notification asynchronously.
+
+    This function runs in a background thread to avoid blocking the UI.
+    Sends a POST request to Config.WEBHOOK_URL with lead data.
+
+    Args:
+        payload: Dictionary containing:
+            - company: Company name
+            - tier: New tier number (1=Thinking, 2=Preparing)
+            - tier_name: Human-readable tier name
+            - signal: The evidence string
+            - timestamp: ISO format timestamp
+    """
+    webhook_url = Config.WEBHOOK_URL
+    if not webhook_url:
+        print("[WEBHOOK] No WEBHOOK_URL configured, skipping notification")
+        return
+
+    def send_webhook():
+        try:
+            response = requests.post(
+                webhook_url,
+                json=payload,
+                headers={'Content-Type': 'application/json'},
+                timeout=10
+            )
+            if response.status_code >= 200 and response.status_code < 300:
+                print(f"[WEBHOOK] Success: {payload.get('company')} -> {webhook_url} (status: {response.status_code})")
+            else:
+                print(f"[WEBHOOK] Failed: {payload.get('company')} -> {webhook_url} (status: {response.status_code})")
+        except requests.exceptions.Timeout:
+            print(f"[WEBHOOK] Timeout: {payload.get('company')} -> {webhook_url}")
+        except requests.exceptions.RequestException as e:
+            print(f"[WEBHOOK] Error: {payload.get('company')} -> {str(e)}")
+
+    # Run in background thread to avoid blocking
+    webhook_thread = threading.Thread(target=send_webhook, daemon=True, name="WebhookSender")
+    webhook_thread.start()
+
 
 # =============================================================================
 # JOB QUEUE SYSTEM - Prevents SQLite 'Database Locked' errors
@@ -110,6 +158,18 @@ def perform_background_scan(company_name: str):
             result = update_account_status(scan_data, report_id)
             tier_name = result.get('tier_name', 'Unknown')
             print(f"[WORKER] Account status updated for {company_name}: Tier {result.get('tier')} ({tier_name})")
+
+            # Phase 5: Trigger webhook if tier changed to Thinking or Preparing
+            if result.get('webhook_event'):
+                webhook_payload = {
+                    'company': company_name,
+                    'tier': result.get('tier'),
+                    'tier_name': tier_name,
+                    'signal': result.get('evidence', ''),
+                    'timestamp': datetime.now().isoformat()
+                }
+                trigger_webhook(webhook_payload)
+                print(f"[WORKER] Webhook triggered for {company_name} (Tier {result.get('tier')})")
         except Exception as e:
             print(f"[WORKER] Failed to update account status for {company_name}: {str(e)}")
 
@@ -277,6 +337,18 @@ def stream_scan(company: str):
 
             if account_result.get('tier_changed'):
                 yield f"data: LOG:Tier changed! Evidence: {account_result.get('evidence', 'N/A')}\n\n"
+
+            # Phase 3.6: Trigger webhook if tier changed to Thinking or Preparing
+            if account_result.get('webhook_event'):
+                webhook_payload = {
+                    'company': company,
+                    'tier': account_result.get('tier'),
+                    'tier_name': tier_name,
+                    'signal': account_result.get('evidence', ''),
+                    'timestamp': datetime.now().isoformat()
+                }
+                trigger_webhook(webhook_payload)
+                yield f"data: LOG:Webhook notification sent for {tier_name} lead\n\n"
 
         except Exception as e:
             yield f"data: LOG:Warning: Could not update account status: {str(e)}\n\n"
