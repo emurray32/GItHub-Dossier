@@ -839,16 +839,66 @@ _app_initialized = False
 
 @app.before_request
 def initialize_on_first_request():
-    """Ensure worker thread is running on first request."""
+    """
+    Ensure worker thread is running and auto-scan pending accounts on first request.
+
+    This provides resilience against app restarts - any accounts that were imported
+    but never scanned (e.g., due to queue loss on restart) will be automatically
+    queued for scanning.
+    """
     global _app_initialized
     if not _app_initialized:
         print("[APP] First request - ensuring worker is running...")
         ensure_worker_running()
+
+        # Auto-scan any accounts that were imported but never scanned
+        # This handles cases where the app restarted after import but before scan
+        _auto_scan_pending_accounts()
+
         _app_initialized = True
+
+
+def _auto_scan_pending_accounts():
+    """
+    Automatically queue scans for accounts that were imported but never scanned.
+
+    This is called on app startup to ensure imported accounts get scanned
+    even if the app was restarted before their initial scan completed.
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Find accounts that have never been scanned
+        cursor.execute('''
+            SELECT company_name FROM monitored_accounts
+            WHERE last_scanned_at IS NULL
+        ''')
+
+        pending_accounts = [row[0] for row in cursor.fetchall()]
+        conn.close()
+
+        if pending_accounts:
+            print(f"[APP] Found {len(pending_accounts)} accounts pending initial scan")
+            for company_name in pending_accounts:
+                scan_queue.put(company_name)
+            print(f"[APP] Auto-queued {len(pending_accounts)} pending accounts for scan")
+        else:
+            print("[APP] No pending accounts to scan")
+
+    except Exception as e:
+        print(f"[APP] Error auto-scanning pending accounts: {str(e)}")
 
 
 if __name__ == '__main__':
     # Start worker when running directly
     print("[APP] Starting application...")
     start_scan_worker()
+
+    # Auto-scan any pending accounts on direct startup
+    _auto_scan_pending_accounts()
+
+    # Mark as initialized to prevent duplicate auto-scan on first request
+    _app_initialized = True
+
     app.run(debug=Config.DEBUG, host='0.0.0.0', port=5000, threaded=True)
