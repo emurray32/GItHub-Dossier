@@ -530,6 +530,26 @@ def get_account_by_company(company_name: str) -> Optional[dict]:
     return None
 
 
+def get_account_by_company_case_insensitive(company_name: str) -> Optional[dict]:
+    """Get a single account by company name, ignoring case."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        'SELECT * FROM monitored_accounts WHERE LOWER(company_name) = LOWER(?)',
+        (company_name,)
+    )
+    row = cursor.fetchone()
+    conn.close()
+
+    if row:
+        account = dict(row)
+        tier = account.get('current_tier', 0)
+        account['tier_config'] = TIER_CONFIG.get(tier, TIER_CONFIG[TIER_TRACKING])
+        return account
+    return None
+
+
 def delete_account(account_id: int) -> bool:
     """Delete a monitored account."""
     conn = get_db_connection()
