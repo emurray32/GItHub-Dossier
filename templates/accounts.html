@@ -61,6 +61,20 @@
         position: relative;
     }
 
+    .accounts-table th.select-col,
+    .accounts-table td.select-col {
+        width: 40px;
+        text-align: center;
+        padding: 0.6rem 0.4rem;
+    }
+
+    .select-account-checkbox {
+        width: 16px;
+        height: 16px;
+        cursor: pointer;
+        accent-color: var(--accent-color);
+    }
+
     .accounts-table th.sortable {
         cursor: pointer;
         user-select: none;
@@ -626,6 +640,68 @@
         opacity: 0.7;
     }
 
+    .bulk-command-bar {
+        position: fixed;
+        left: 50%;
+        bottom: 24px;
+        transform: translateX(-50%);
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        padding: 0.75rem 1rem;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+        z-index: 1200;
+        opacity: 1;
+        transition: opacity var(--transition-fast), transform var(--transition-fast);
+    }
+
+    .bulk-command-bar.hidden {
+        opacity: 0;
+        pointer-events: none;
+        transform: translate(-50%, 10px);
+    }
+
+    .bulk-command-count {
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+
+    .bulk-command-actions {
+        display: flex;
+        gap: 0.5rem;
+    }
+
+    .bulk-command-actions .btn-action-smart,
+    .bulk-command-actions .btn-rescan {
+        padding: 0.45rem 0.9rem;
+    }
+
+    .btn-danger {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+        padding: 0.45rem 0.9rem;
+        background: #ef4444;
+        color: white;
+        border: none;
+        border-radius: 6px;
+        font-size: 0.8rem;
+        cursor: pointer;
+        transition: background var(--transition-fast);
+    }
+
+    .btn-danger:hover:not(:disabled) {
+        background: #dc2626;
+    }
+
+    .btn-danger:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+
     @media (max-width: 768px) {
         .accounts-header {
             flex-direction: column;
@@ -652,6 +728,23 @@
 
         .tier-legend {
             gap: 1rem;
+        }
+
+        .bulk-command-bar {
+            width: calc(100% - 2rem);
+            flex-direction: column;
+            align-items: flex-start;
+            left: 1rem;
+            transform: translateX(0);
+        }
+
+        .bulk-command-bar.hidden {
+            transform: translate(0, 10px);
+        }
+
+        .bulk-command-actions {
+            width: 100%;
+            flex-wrap: wrap;
         }
     }
 </style>
@@ -737,6 +830,9 @@
         <table class="accounts-table">
             <thead>
                 <tr>
+                    <th class="select-col">
+                        <input type="checkbox" id="select-all-accounts" class="select-account-checkbox" aria-label="Select all accounts">
+                    </th>
                     <th class="sortable" data-sort-key="company">Company <span class="sort-indicator">↕</span></th>
                     <th class="sortable" data-sort-key="github_org">GitHub Org <span class="sort-indicator">↕</span></th>
                     <th class="sortable" data-sort-key="tier">Tier <span class="sort-indicator">↕</span></th>
@@ -748,6 +844,9 @@
             <tbody>
                 {% for account in accounts %}
                 <tr class="tier-row-{{ account.current_tier }}" data-account-id="{{ account.id }}" data-company="{{ account.company_name }}" data-tier="{{ account.current_tier }}" data-last-scanned="{{ account.last_scanned_at or '' }}" data-status-changed="{{ account.status_changed_at or '' }}">
+                    <td class="select-col">
+                        <input type="checkbox" class="select-account-checkbox row-select" data-account-id="{{ account.id }}" aria-label="Select {{ account.company_name }}">
+                    </td>
                     <td class="company-cell">
                         {% if account.latest_report_id %}
                         <a href="{{ url_for('view_report', report_id=account.latest_report_id) }}">
@@ -830,6 +929,20 @@
             </tbody>
         </table>
     </div>
+    <div class="bulk-command-bar hidden" id="bulk-command-bar">
+        <span class="bulk-command-count" id="bulk-selection-count">0 accounts selected</span>
+        <div class="bulk-command-actions">
+            <button type="button" class="btn-action-smart" id="bulk-rescan-btn" onclick="bulkRescan()">
+                Rescan Selected
+            </button>
+            <button type="button" class="btn-rescan" id="bulk-export-btn" onclick="exportCSV()">
+                Export CSV
+            </button>
+            <button type="button" class="btn-danger" id="bulk-delete-btn" onclick="bulkDeleteSelected()">
+                Delete Selected
+            </button>
+        </div>
+    </div>
     {% else %}
     <div class="empty-state">
         <p>No monitored accounts yet. Run a scan to start tracking companies!</p>
@@ -891,6 +1004,8 @@ function initializeUI() {
 
     // All action buttons are always enabled with "Rescan" text
     // The button state is set in the HTML template, no dynamic changes needed
+
+    initializeBulkSelection();
 }
 
 // =============================================================================
@@ -996,6 +1111,149 @@ document.addEventListener('DOMContentLoaded', () => {
         th.addEventListener('click', () => sortTableBy(th.dataset.sortKey));
     });
 });
+
+// =============================================================================
+// Bulk Actions
+// =============================================================================
+
+function initializeBulkSelection() {
+    const selectAll = document.querySelector('#select-all-accounts');
+    const rowCheckboxes = document.querySelectorAll('.row-select');
+
+    if (!selectAll || rowCheckboxes.length === 0) return;
+
+    selectAll.addEventListener('change', () => {
+        rowCheckboxes.forEach(cb => {
+            cb.checked = selectAll.checked;
+        });
+        updateBulkSelectionState();
+    });
+
+    rowCheckboxes.forEach(cb => {
+        cb.addEventListener('change', () => {
+            if (!cb.checked) {
+                selectAll.checked = false;
+            } else if (Array.from(rowCheckboxes).every(input => input.checked)) {
+                selectAll.checked = true;
+            }
+            updateBulkSelectionState();
+        });
+    });
+
+    updateBulkSelectionState();
+}
+
+function getSelectedRows() {
+    return Array.from(document.querySelectorAll('.row-select:checked'))
+        .map(cb => cb.closest('tr'))
+        .filter(Boolean);
+}
+
+function updateBulkSelectionState() {
+    const selectedRows = getSelectedRows();
+    const count = selectedRows.length;
+    const bar = document.querySelector('#bulk-command-bar');
+    const countLabel = document.querySelector('#bulk-selection-count');
+    const rescanBtn = document.querySelector('#bulk-rescan-btn');
+    const exportBtn = document.querySelector('#bulk-export-btn');
+    const deleteBtn = document.querySelector('#bulk-delete-btn');
+
+    if (countLabel) {
+        countLabel.textContent = `${count} account${count === 1 ? '' : 's'} selected`;
+    }
+
+    if (rescanBtn) rescanBtn.disabled = count === 0;
+    if (exportBtn) exportBtn.disabled = count === 0;
+    if (deleteBtn) deleteBtn.disabled = count === 0;
+
+    if (bar) {
+        bar.classList.toggle('hidden', count === 0);
+    }
+}
+
+async function bulkRescan() {
+    const selectedRows = getSelectedRows();
+    if (selectedRows.length === 0) return;
+
+    for (const row of selectedRows) {
+        const companyName = row.dataset.company;
+        if (!companyName) continue;
+        try {
+            await fetch(`/api/rescan/${encodeURIComponent(companyName)}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            });
+        } catch (error) {
+            console.error('Bulk rescan error:', error);
+        }
+    }
+
+    showNotification(`Queued rescan for ${selectedRows.length} account(s).`, 'info');
+}
+
+function exportCSV() {
+    const selectedRows = getSelectedRows();
+    if (selectedRows.length === 0) return;
+
+    const header = ['Company', 'GitHub Org', 'Tier', 'Last Check', 'Evidence'];
+    const csvRows = [header];
+
+    selectedRows.forEach(row => {
+        const company = row.querySelector('.company-cell')?.textContent.trim() || '';
+        const orgCell = row.querySelector('.github-org-cell');
+        const org = orgCell?.dataset.org || orgCell?.textContent.trim() || '';
+        const tier = row.querySelector('.tier-badge')?.textContent.trim() || '';
+        const lastCheck = row.querySelector('.last-check-cell')?.textContent.replace(/\s+/g, ' ').trim() || '';
+        const evidence = row.querySelector('.evidence-text')?.textContent.trim() || '';
+        csvRows.push([company, org, tier, lastCheck, evidence]);
+    });
+
+    const csvContent = csvRows
+        .map(row => row.map(value => `"${String(value).replace(/"/g, '""')}"`).join(','))
+        .join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'selected-accounts.csv';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+}
+
+async function bulkDeleteSelected() {
+    const selectedRows = getSelectedRows();
+    if (selectedRows.length === 0) return;
+
+    if (!confirm(`Delete ${selectedRows.length} selected account${selectedRows.length === 1 ? '' : 's'}? This cannot be undone.`)) {
+        return;
+    }
+
+    for (const row of selectedRows) {
+        const accountId = row.dataset.accountId;
+        const company = row.dataset.company || 'this account';
+        if (!accountId) continue;
+        try {
+            const response = await fetch(`/api/accounts/${accountId}`, { method: 'DELETE' });
+            if (!response.ok) {
+                const data = await response.json();
+                throw new Error(data.error || 'Failed to remove account.');
+            }
+            row.remove();
+        } catch (error) {
+            showNotification(`Failed to remove ${company}: ${error.message}`, 'warning');
+        }
+    }
+
+    const selectAll = document.querySelector('#select-all-accounts');
+    if (selectAll) selectAll.checked = false;
+    updateBulkSelectionState();
+    showNotification('Selected accounts removed.', 'success');
+}
 
 // =============================================================================
 // GitHub Org Edit Functions
