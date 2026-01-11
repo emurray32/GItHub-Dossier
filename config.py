@@ -21,6 +21,37 @@ class Config:
     GITHUB_TOKEN = os.getenv('GITHUB_TOKEN')
     GITHUB_API_BASE = 'https://api.github.com'
 
+    # Multiple tokens for rotation (comma-separated in environment variable)
+    # If GITHUB_TOKENS is set, it takes precedence over GITHUB_TOKEN for rotation
+    # Maintains backward compatibility: if only GITHUB_TOKEN is set, it will be used
+    @staticmethod
+    def get_github_tokens() -> list:
+        """
+        Load GitHub tokens from environment variables.
+
+        Priority:
+        1. GITHUB_TOKENS (comma-separated list)
+        2. GITHUB_TOKEN (single token, for backward compatibility)
+
+        Returns:
+            List of tokens, or empty list if none configured.
+        """
+        tokens_str = os.getenv('GITHUB_TOKENS', '')
+        if tokens_str:
+            # Parse comma-separated tokens, strip whitespace, filter empty
+            tokens = [t.strip() for t in tokens_str.split(',') if t.strip()]
+            if tokens:
+                return tokens
+
+        # Fall back to single token for backward compatibility
+        single_token = os.getenv('GITHUB_TOKEN')
+        if single_token:
+            return [single_token]
+
+        return []
+
+    GITHUB_TOKENS = get_github_tokens.__func__(None)  # Initialize at class load time
+
     # Gemini AI
     GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
     GEMINI_MODEL = 'gemini-2.5-flash'
