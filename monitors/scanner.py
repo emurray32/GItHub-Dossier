@@ -508,6 +508,48 @@ def _scan_dependency_injection(org: str, repo: str, company: str) -> Generator[t
                     content = base64.b64decode(content_b64).decode('utf-8')
                     content_lower = content.lower()
 
+                    if dep_file == 'package.json':
+                        try:
+                            package_json = json.loads(content)
+                        except json.JSONDecodeError:
+                            package_json = {}
+
+                        scripts = package_json.get('scripts', {})
+                        if isinstance(scripts, dict):
+                            for script_name, script_command in scripts.items():
+                                script_name_text = str(script_name)
+                                script_command_text = str(script_command)
+                                script_name_lower = script_name_text.lower()
+                                script_command_lower = script_command_text.lower()
+
+                                matched_keyword = next(
+                                    (
+                                        keyword for keyword in Config.I18N_SCRIPT_KEYWORDS
+                                        if keyword in script_name_lower or keyword in script_command_lower
+                                    ),
+                                    None
+                                )
+
+                                if matched_keyword:
+                                    signal = {
+                                        'Company': company,
+                                        'Signal': 'NPM Script',
+                                        'Evidence': (
+                                            f"Found automation script '{script_name_text}' in package.json - "
+                                            "Team is building translation pipeline."
+                                        ),
+                                        'Link': file_url,
+                                        'priority': 'MEDIUM',
+                                        'type': 'npm_script',
+                                        'repo': repo,
+                                        'file': dep_file,
+                                        'script_name': script_name_text,
+                                        'script_command': script_command_text,
+                                        'keyword_matched': matched_keyword,
+                                        'goldilocks_status': 'preparing',
+                                    }
+                                    yield (f"🧰 NPM SCRIPT: {script_name_text} in package.json", signal)
+
                     found_libs = []
                     bdr_explanations = []
 
