@@ -437,6 +437,10 @@ def update_account_status(scan_data: dict, report_id: Optional[int] = None) -> d
 
     tier_config = TIER_CONFIG.get(new_tier, TIER_CONFIG[TIER_TRACKING])
 
+    # Determine if a webhook event should be triggered
+    # Webhook fires when tier changes to Thinking (1) or Preparing (2)
+    webhook_event = tier_changed and new_tier in (TIER_THINKING, TIER_PREPARING)
+
     return {
         'account_id': account_id,
         'company_name': company_name,
@@ -445,7 +449,8 @@ def update_account_status(scan_data: dict, report_id: Optional[int] = None) -> d
         'tier_status': tier_config['status'],
         'tier_changed': tier_changed,
         'evidence': evidence_summary,
-        'report_id': report_id
+        'report_id': report_id,
+        'webhook_event': webhook_event
     }
 
 
