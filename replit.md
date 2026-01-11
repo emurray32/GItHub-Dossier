@@ -44,4 +44,9 @@ python app.py
 - **AI**: Google Gemini API
 
 ## Recent Changes
+- 2026-01-11: Added Settings & Status backend (webhook configuration, usage stats tracking, webhook logs)
+  - New tables: system_settings, system_stats, webhook_logs
+  - New API routes: GET/POST /api/settings, GET /api/stats, GET /api/webhook-logs
+  - Scanner now tracks scans_run and api_calls_estimated per day
+  - Webhooks are logged with success/fail status
 - 2026-01-07: Initial Replit environment setup
