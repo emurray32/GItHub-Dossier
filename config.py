@@ -75,6 +75,16 @@ class Config:
         'mix.exs',
     ]
 
+    I18N_SCRIPT_KEYWORDS = [
+        'extract-i18n',
+        'extract-intl',
+        'compile-locales',
+        'sync-translations',
+        'update-strings',
+        'i18next-scanner',
+        'lingui extract',
+    ]
+
     # ============================================================
     # GOLDILOCKS ZONE DETECTION
     # ============================================================
