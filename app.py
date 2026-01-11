@@ -32,6 +32,8 @@ app.config.from_object(Config)
 
 # Single job queue for all background scans
 scan_queue = queue.Queue()
+_scan_worker_thread = None
+_worker_lock = threading.Lock()
 
 
 def perform_background_scan(company_name: str):
@@ -141,13 +143,30 @@ def scan_worker():
 
 def start_scan_worker():
     """Start the background scan worker thread."""
-    worker_thread = threading.Thread(target=scan_worker, daemon=True)
-    worker_thread.start()
-    return worker_thread
+    global _scan_worker_thread
+    with _worker_lock:
+        # Check if worker already exists and is alive
+        if _scan_worker_thread is not None and _scan_worker_thread.is_alive():
+            print("[WORKER] Worker thread already running")
+            return _scan_worker_thread
+
+        print("[WORKER] Starting new scan worker thread...")
+        _scan_worker_thread = threading.Thread(target=scan_worker, daemon=True, name="ScanWorker")
+        _scan_worker_thread.start()
+        print(f"[WORKER] Worker thread started (alive: {_scan_worker_thread.is_alive()})")
+        return _scan_worker_thread
 
 
-# Start the worker thread at module load
-_scan_worker_thread = start_scan_worker()
+def ensure_worker_running():
+    """Ensure the worker thread is running, restart if necessary."""
+    global _scan_worker_thread
+    with _worker_lock:
+        if _scan_worker_thread is None or not _scan_worker_thread.is_alive():
+            print("[WORKER] Worker thread not running, starting...")
+            _scan_worker_thread = threading.Thread(target=scan_worker, daemon=True, name="ScanWorker")
+            _scan_worker_thread.start()
+            print(f"[WORKER] Worker thread restarted (alive: {_scan_worker_thread.is_alive()})")
+        return _scan_worker_thread.is_alive()
 
 
 def spawn_background_scan(company_name: str):
@@ -160,7 +179,10 @@ def spawn_background_scan(company_name: str):
     The scan will run asynchronously without blocking the API response.
     The account tier is automatically updated with the scan results.
     """
+    # Ensure worker is running before queuing
+    ensure_worker_running()
     scan_queue.put(company_name)
+    print(f"[QUEUE] Added {company_name} to scan queue (size: {scan_queue.qsize()})")
 
 
 @app.route('/')
@@ -611,8 +633,10 @@ def api_rescan(company_name: str):
     Returns:
         JSON with queued status. The UI should refresh to see updated results.
     """
-    # Queue the scan job
+    # Ensure worker is running and queue the scan job
+    worker_alive = ensure_worker_running()
     scan_queue.put(company_name)
+    print(f"[QUEUE] Rescan queued for {company_name} (worker_alive: {worker_alive}, queue_size: {scan_queue.qsize()})")
 
     # Get current account info for response
     account = get_account_by_company(company_name)
@@ -624,6 +648,7 @@ def api_rescan(company_name: str):
             'company': company_name,
             'message': 'Scan queued successfully',
             'queue_size': scan_queue.qsize(),
+            'worker_alive': worker_alive,
             'current_tier': tier,
             'tier_name': tier_config['name'],
             'tier_emoji': tier_config['emoji']
@@ -633,7 +658,8 @@ def api_rescan(company_name: str):
         'status': 'queued',
         'company': company_name,
         'message': 'Scan queued successfully',
-        'queue_size': scan_queue.qsize()
+        'queue_size': scan_queue.qsize(),
+        'worker_alive': worker_alive
     })
 
 
@@ -650,6 +676,9 @@ def api_scan_pending():
     Returns:
         JSON with count of scans queued.
     """
+    # Ensure worker is running before queuing
+    worker_alive = ensure_worker_running()
+
     conn = get_db_connection()
     cursor = conn.cursor()
 
@@ -669,11 +698,14 @@ def api_scan_pending():
         scan_queue.put(company_name)
         queued_count += 1
 
+    print(f"[QUEUE] Queued {queued_count} pending accounts (worker_alive: {worker_alive})")
+
     return jsonify({
         'status': 'success',
         'queued': queued_count,
         'accounts': pending_accounts,
-        'queue_size': scan_queue.qsize()
+        'queue_size': scan_queue.qsize(),
+        'worker_alive': worker_alive
     })
 
 
@@ -691,6 +723,9 @@ def api_refresh_pipeline():
     Returns:
         JSON with count of accounts queued for refresh.
     """
+    # Ensure worker is running before queuing
+    worker_alive = ensure_worker_running()
+
     # Get all refreshable accounts
     refreshable = get_refreshable_accounts()
 
@@ -704,11 +739,14 @@ def api_refresh_pipeline():
             queued_count += 1
             queued_companies.append(company_name)
 
+    print(f"[QUEUE] Queued {queued_count} accounts for refresh (worker_alive: {worker_alive})")
+
     return jsonify({
         'status': 'success',
         'queued': queued_count,
         'accounts': queued_companies,
-        'queue_size': scan_queue.qsize()
+        'queue_size': scan_queue.qsize(),
+        'worker_alive': worker_alive
     })
 
 
@@ -720,9 +758,32 @@ def api_queue_status():
     Returns:
         JSON with queue size and status.
     """
+    global _scan_worker_thread
+    worker_alive = _scan_worker_thread is not None and _scan_worker_thread.is_alive()
+
     return jsonify({
         'queue_size': scan_queue.qsize(),
-        'worker_alive': _scan_worker_thread.is_alive()
+        'worker_alive': worker_alive,
+        'worker_name': _scan_worker_thread.name if _scan_worker_thread else None
+    })
+
+
+@app.route('/api/worker-restart', methods=['POST'])
+def api_worker_restart():
+    """
+    Manually restart the scan worker thread.
+
+    Use this if scans are stuck in pending state.
+
+    Returns:
+        JSON with worker status after restart.
+    """
+    worker_alive = ensure_worker_running()
+    return jsonify({
+        'status': 'success',
+        'worker_alive': worker_alive,
+        'queue_size': scan_queue.qsize(),
+        'message': 'Worker thread started' if worker_alive else 'Failed to start worker'
     })
 
 
@@ -740,5 +801,25 @@ def internal_error(e):
     return render_template('error.html', message=f'Internal server error: {error_msg}'), 500
 
 
+# =============================================================================
+# App Startup - Ensure worker is running
+# =============================================================================
+
+# Use a flag to track if we've initialized on first request
+_app_initialized = False
+
+@app.before_request
+def initialize_on_first_request():
+    """Ensure worker thread is running on first request."""
+    global _app_initialized
+    if not _app_initialized:
+        print("[APP] First request - ensuring worker is running...")
+        ensure_worker_running()
+        _app_initialized = True
+
+
 if __name__ == '__main__':
+    # Start worker when running directly
+    print("[APP] Starting application...")
+    start_scan_worker()
     app.run(debug=Config.DEBUG, host='0.0.0.0', port=5000, threaded=True)
