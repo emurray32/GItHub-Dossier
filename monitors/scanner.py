@@ -553,6 +553,7 @@ def _scan_dependency_injection(org: str, repo: str, company: str) -> Generator[t
                     found_libs = []
                     bdr_explanations = []
                     found_linter_libs = []
+                    found_cms_i18n_libs = []
 
                     # Check for our 4 target SMOKING GUN libraries
                     for lib in Config.SMOKING_GUN_LIBS:
@@ -573,6 +574,10 @@ def _scan_dependency_injection(org: str, repo: str, company: str) -> Generator[t
                     for lib in Config.LINTER_LIBRARIES:
                         if f'"{lib}"' in content_lower or f"'{lib}'" in content_lower:
                             found_linter_libs.append(lib)
+
+                    for lib in Config.CMS_I18N_LIBS:
+                        if f'"{lib}"' in content_lower or f"'{lib}'" in content_lower:
+                            found_cms_i18n_libs.append(lib)
 
                     if found_libs:
                         # This is the GOLDILOCKS ZONE - Library found + NO locale folders (or source-only)!
@@ -622,6 +627,25 @@ def _scan_dependency_injection(org: str, repo: str, company: str) -> Generator[t
                         }
 
                         yield (f"🧹 CODE CLEANING: {lib} found in {dep_file}", signal)
+
+                    for lib in found_cms_i18n_libs:
+                        signal = {
+                            'Company': company,
+                            'Signal': 'CMS Localization',
+                            'Evidence': (
+                                f"Found CMS Localization tool '{lib}' - Preparing content strategy for "
+                                "internationalization."
+                            ),
+                            'Link': file_url,
+                            'priority': 'MEDIUM',
+                            'type': 'cms_config',
+                            'repo': repo,
+                            'file': dep_file,
+                            'library_found': lib,
+                            'goldilocks_status': 'preparing',
+                        }
+
+                        yield (f"🌐 CMS LOCALIZATION: {lib} found in {dep_file}", signal)
 
                 except Exception:
                     pass
