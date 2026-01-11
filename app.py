@@ -4,10 +4,10 @@ Lead Machine - Deep-Dive Research Engine
 A Flask application for analyzing GitHub organizations for localization signals.
 """
 import json
-import time
 import os
-import threading
 import queue
+import threading
+import time
 from datetime import datetime, timedelta
 from flask import Flask, render_template, Response, request, jsonify, redirect, url_for, stream_with_context, send_file
 from config import Config
