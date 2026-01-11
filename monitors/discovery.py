@@ -318,12 +318,15 @@ def search_github_orgs(keyword: str, limit: int = 20) -> list:
 
         results = []
         for item in data.get('items', [])[:limit]:
+            login = item.get('login', '')
+            details = _get_org_details(login)
+            source = details or item
             results.append({
-                'login': item.get('login', ''),
-                'avatar_url': item.get('avatar_url', ''),
-                'description': item.get('bio', ''),
-                'html_url': item.get('html_url', ''),
-                'public_repos': item.get('public_repos', 0)
+                'login': source.get('login', login),
+                'avatar_url': source.get('avatar_url', ''),
+                'description': source.get('description') or source.get('bio', ''),
+                'html_url': source.get('html_url', ''),
+                'public_repos': source.get('public_repos', 0)
             })
 
         return results
