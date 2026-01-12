@@ -361,6 +361,13 @@ a:hover {
     font-size: 1.25rem;
 }
 
+.feature-icon-svg {
+    width: 20px;
+    height: 20px;
+    color: var(--accent-color);
+    flex-shrink: 0;
+}
+
 /* Recent Section */
 .recent-section {
     padding: 3rem var(--container-padding);

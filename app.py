@@ -355,8 +355,7 @@ def stream_scan(company: str):
             account_result = update_account_status(scan_data, report_id)
             tier_name = account_result.get('tier_name', 'Unknown')
             tier_status = account_result.get('tier_status', '')
-            tier_emoji = TIER_CONFIG.get(account_result.get('tier', 0), {}).get('emoji', '')
-            yield f"data: LOG:Account status updated: {tier_emoji} {tier_name} ({tier_status})\n\n"
+            yield f"data: LOG:Account status updated: {tier_name} ({tier_status})\n\n"
 
             if account_result.get('tier_changed'):
                 yield f"data: LOG:Tier changed! Evidence: {account_result.get('evidence', 'N/A')}\n\n"
@@ -1195,4 +1194,4 @@ if __name__ == '__main__':
     # Mark as initialized to prevent duplicate auto-scan on first request
     _app_initialized = True
 
-    app.run(debug=Config.DEBUG, host='0.0.0.0', port=5001, threaded=True)
+    app.run(debug=Config.DEBUG, host='0.0.0.0', port=5000, threaded=True)
