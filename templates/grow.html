@@ -830,6 +830,17 @@
     // Initialize on page load
     document.addEventListener('DOMContentLoaded', function() {
         setDiscoveryMode('ai');
+
+        const textarea = document.querySelector('.companies-textarea');
+        if (textarea) {
+            const resizeTextarea = () => {
+                textarea.style.height = 'auto';
+                textarea.style.height = `${textarea.scrollHeight}px`;
+            };
+
+            textarea.addEventListener('input', resizeTextarea);
+            resizeTextarea();
+        }
     });
 </script>
 {% endblock %}
