@@ -50,7 +50,7 @@ class Config:
 
         return []
 
-    GITHUB_TOKENS = get_github_tokens.__func__(None)  # Initialize at class load time
+    GITHUB_TOKENS = get_github_tokens.__func__()  # Initialize at class load time
 
     # Gemini AI
     GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')

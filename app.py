@@ -84,6 +84,11 @@ scan_queue = queue.Queue()
 _scan_worker_thread = None
 _worker_lock = threading.Lock()
 
+# Global state for UI tracking
+# Note: This is in-memory only. Restarts clear this state.
+CURRENT_SCAN_INFO = {'company': None, 'start_time': None}
+QUEUED_COMPANIES = set()
+
 
 def perform_background_scan(company_name: str):
     """
@@ -98,6 +103,12 @@ def perform_background_scan(company_name: str):
     print(f"[WORKER] Starting background scan for: {company_name}")
 
     try:
+        # Update global state
+        CURRENT_SCAN_INFO['company'] = company_name
+        CURRENT_SCAN_INFO['start_time'] = time.time()
+        if company_name in QUEUED_COMPANIES:
+            QUEUED_COMPANIES.remove(company_name)
+
         start_time = time.time()
         scan_data = None
         analysis_data = None
@@ -177,6 +188,11 @@ def perform_background_scan(company_name: str):
 
     except Exception as e:
         print(f"[WORKER] Background scan failed for {company_name}: {str(e)}")
+    finally:
+        # Reset global state
+        if CURRENT_SCAN_INFO['company'] == company_name:
+            CURRENT_SCAN_INFO['company'] = None
+            CURRENT_SCAN_INFO['start_time'] = None
 
 
 def scan_worker():
@@ -243,6 +259,7 @@ def spawn_background_scan(company_name: str):
     # Ensure worker is running before queuing
     ensure_worker_running()
     scan_queue.put(company_name)
+    QUEUED_COMPANIES.add(company_name)
     print(f"[QUEUE] Added {company_name} to scan queue (size: {scan_queue.qsize()})")
 
 
@@ -454,8 +471,21 @@ def accounts():
 
 @app.route('/api/accounts')
 def api_accounts():
-    """API endpoint to get all monitored accounts."""
+    """API endpoint to get all monitored accounts with live scan status."""
     all_accounts = get_all_accounts()
+    
+    # Inject live scan status
+    for account in all_accounts:
+        company = account.get('company_name')
+        
+        if company == CURRENT_SCAN_INFO['company']:
+            account['scan_status'] = 'processing'
+            account['scan_started_at'] = CURRENT_SCAN_INFO['start_time']
+        elif company in QUEUED_COMPANIES:
+            account['scan_status'] = 'queued'
+        else:
+            account['scan_status'] = 'idle'
+            
     return jsonify(all_accounts)
 
 
@@ -738,6 +768,7 @@ def api_rescan(company_name: str):
     # Ensure worker is running and queue the scan job
     worker_alive = ensure_worker_running()
     scan_queue.put(company_name)
+    QUEUED_COMPANIES.add(company_name)
     print(f"[QUEUE] Rescan queued for {company_name} (worker_alive: {worker_alive}, queue_size: {scan_queue.qsize()})")
 
     # Get current account info for response
@@ -797,6 +828,7 @@ def api_scan_pending():
     queued_count = 0
     for company_name in pending_accounts:
         scan_queue.put(company_name)
+        QUEUED_COMPANIES.add(company_name)
         queued_count += 1
 
     print(f"[QUEUE] Queued {queued_count} pending accounts (worker_alive: {worker_alive})")

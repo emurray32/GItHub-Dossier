@@ -552,7 +552,9 @@
     }
 
     @keyframes spin {
-        to { transform: rotate(360deg); }
+        to {
+            transform: rotate(360deg);
+        }
     }
 
     .btn-view-report {
@@ -619,11 +621,25 @@
         border-radius: 50%;
     }
 
-    .legend-dot-0 { background: #64748b; }
-    .legend-dot-1 { background: #f59e0b; }
-    .legend-dot-2 { background: #22c55e; }
-    .legend-dot-3 { background: #ef4444; }
-    .legend-dot-4 { background: #4b5563; }
+    .legend-dot-0 {
+        background: #64748b;
+    }
+
+    .legend-dot-1 {
+        background: #f59e0b;
+    }
+
+    .legend-dot-2 {
+        background: #22c55e;
+    }
+
+    .legend-dot-3 {
+        background: #ef4444;
+    }
+
+    .legend-dot-4 {
+        background: #4b5563;
+    }
 
     /* Invalid/disabled button for Tier 4 */
     .btn-invalid {
@@ -761,7 +777,8 @@
             <div class="accounts-stats">
                 {% set tier_counts = {'0': 0, '1': 0, '2': 0, '3': 0, '4': 0} %}
                 {% for account in accounts %}
-                    {% set _ = tier_counts.update({account.current_tier|string: tier_counts.get(account.current_tier|string, 0) + 1}) %}
+                {% set _ = tier_counts.update({account.current_tier|string: tier_counts.get(account.current_tier|string,
+                0) + 1}) %}
                 {% endfor %}
                 <div class="stat-badge">
                     <span class="tier-badge tier-badge-2">{{ tier_config[2].emoji }}</span>
@@ -831,21 +848,26 @@
             <thead>
                 <tr>
                     <th class="select-col">
-                        <input type="checkbox" id="select-all-accounts" class="select-account-checkbox" aria-label="Select all accounts">
+                        <input type="checkbox" id="select-all-accounts" class="select-account-checkbox"
+                            aria-label="Select all accounts">
                     </th>
                     <th class="sortable" data-sort-key="company">Company <span class="sort-indicator">↕</span></th>
-                    <th class="sortable" data-sort-key="github_org">GitHub Org <span class="sort-indicator">↕</span></th>
+                    <th class="sortable" data-sort-key="github_org">GitHub Org <span class="sort-indicator">↕</span>
+                    </th>
                     <th class="sortable" data-sort-key="tier">Tier <span class="sort-indicator">↕</span></th>
-                    <th class="sortable" data-sort-key="last_scanned">Last Check <span class="sort-indicator">↕</span></th>
+                    <th class="sortable" data-sort-key="last_scanned">Last Check <span class="sort-indicator">↕</span>
+                    </th>
                     <th class="sortable" data-sort-key="evidence">Evidence <span class="sort-indicator">↕</span></th>
                     <th>Actions</th>
                 </tr>
             </thead>
             <tbody>
                 {% for account in accounts %}
-                <tr class="tier-row-{{ account.current_tier }}" data-account-id="{{ account.id }}" data-company="{{ account.company_name }}" data-tier="{{ account.current_tier }}" data-last-scanned="{{ account.last_scanned_at or '' }}" data-status-changed="{{ account.status_changed_at or '' }}">
+                <tr class="tier-row-{{ account.current_tier }}" id="row-{{ account.id }}"
+                    data-company="{{ account.company_name }}" data-status="idle">
                     <td class="select-col">
-                        <input type="checkbox" class="select-account-checkbox row-select" data-account-id="{{ account.id }}" aria-label="Select {{ account.company_name }}">
+                        <input type="checkbox" class="select-account-checkbox row-select"
+                            data-account-id="{{ account.id }}" aria-label="Select {{ account.company_name }}">
                     </td>
                     <td class="company-cell">
                         {% if account.latest_report_id %}
@@ -856,49 +878,67 @@
                         {{ account.company_name }}
                         {% endif %}
                     </td>
-                    <td class="github-org-cell" data-company="{{ account.company_name|e }}" data-org="{{ account.github_org|default('', true)|e }}">
+                    <td class="github-org-cell" data-company="{{ account.company_name|e }}"
+                        data-org="{{ account.github_org|default('', true)|e }}">
                         <span class="org-display">
                             {% if account.github_org %}
-                            <a href="https://github.com/{{ account.github_org }}" target="_blank" rel="noopener" class="github-org-link" title="View on GitHub">
+                            <a href="https://github.com/{{ account.github_org }}" target="_blank" rel="noopener"
+                                class="github-org-link" title="View on GitHub">
                                 <svg viewBox="0 0 16 16" fill="currentColor">
-                                    <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+                                    <path
+                                        d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" />
                                 </svg>
                                 @{{ account.github_org }}
                             </a>
-                            <button type="button" class="github-org-edit" onclick="showOrgEdit(this)" title="Edit GitHub org">
+                            <button type="button" class="github-org-edit" onclick="showOrgEdit(this)"
+                                title="Edit GitHub org">
                                 Edit
                             </button>
                             {% else %}
                             <span class="org-not-found">Not found</span>
-                            <button type="button" class="github-org-edit" onclick="showOrgEdit(this)" title="Set GitHub org">
+                            <button type="button" class="github-org-edit" onclick="showOrgEdit(this)"
+                                title="Set GitHub org">
                                 Set
                             </button>
                             {% endif %}
                         </span>
                         <span class="github-org-input-container">
-                            <input type="text" class="github-org-input" placeholder="org-name" value="{{ account.github_org or '' }}">
+                            <input type="text" class="github-org-input" placeholder="org-name"
+                                value="{{ account.github_org or '' }}">
                             <button type="button" class="btn-save-org" onclick="saveOrgEdit(this)">Save</button>
                             <button type="button" class="btn-cancel-org" onclick="cancelOrgEdit(this)">Cancel</button>
                         </span>
                     </td>
                     <td>
                         <span class="tier-badge tier-badge-{{ account.current_tier }}">
-                            {{ account.tier_config.emoji }} Tier {{ account.current_tier }} - {{ account.tier_config.name }}
+                            {{ account.tier_config.emoji }} Tier {{ account.current_tier }} - {{
+                            account.tier_config.name }}
                         </span>
                     </td>
                     <td class="last-check-cell">
-                        {% if account.last_scanned_at %}
-                            <strong class="scanned-time" data-timestamp="{{ account.last_scanned_at }}">Scanned: --</strong>
-                            {% if account.status_changed_at %}
+                        <div class="status-container">
+                            <span class="scanned-time {% if not account.last_scanned_at %}never-scanned{% endif %}">
+                                {% if account.last_scanned_at %}
+                                <strong class="scanned-time" data-timestamp="{{ account.last_scanned_at }}">Scanned:
+                                    --</strong>
+                                {% else %}
+                                Never
+                                {% endif %}
+                            </span>
+                            {% if account.last_scanned_at %}
+                            <span class="tier-change-time">
+                                {% if account.status_changed_at %}
                                 {% set change_date = account.status_changed_at %}
                                 {% if 'T' in change_date %}
-                                    {% set change_date = change_date.split('T')[0] %}
+                                {% set change_date = change_date.split('T')[0] %}
                                 {% endif %}
-                                <span class="tier-change-time">Tier changed: {{ change_date }}</span>
+                                Tier changed: {{ change_date }}
+                                {% else %}
+                                {{ account.last_scanned_at[11:16] }}
+                                {% endif %}
+                            </span>
                             {% endif %}
-                        {% else %}
-                            <strong class="scanned-time never-scanned">Never scanned</strong>
-                        {% endif %}
+                        </div>
                     </td>
                     <td class="evidence-cell">
                         <span class="evidence-text" title="{{ account.evidence_summary or 'No evidence recorded' }}">
@@ -907,7 +947,8 @@
                     </td>
                     <td class="actions-cell">
                         {% if account.latest_report_id %}
-                        <a href="{{ url_for('view_report', report_id=account.latest_report_id) }}" class="btn-view-report">
+                        <a href="{{ url_for('view_report', report_id=account.latest_report_id) }}"
+                            class="btn-view-report">
                             View
                         </a>
                         {% endif %}
@@ -916,11 +957,13 @@
                             🚫 Invalid
                         </button>
                         {% else %}
-                        <button type="button" class="btn-action-smart" data-company="{{ account.company_name }}" onclick="triggerRescan(this, '{{ account.company_name }}')">
+                        <button type="button" class="btn-action-smart" data-company="{{ account.company_name }}"
+                            onclick="triggerRescan(this, '{{ account.company_name }}')">
                             Rescan
                         </button>
                         {% endif %}
-                        <button type="button" class="btn-delete-account" data-company="{{ account.company_name }}" onclick="removeAccount(this)">
+                        <button type="button" class="btn-delete-account" data-company="{{ account.company_name }}"
+                            onclick="removeAccount(this)">
                             Remove
                         </button>
                     </td>
@@ -952,702 +995,702 @@
 </div>
 
 <script>
-// =============================================================================
-// Time Utilities
-// =============================================================================
+    // =============================================================================
+    // Time Utilities
+    // =============================================================================
 
-function formatShortDate(timestamp) {
-    if (!timestamp) return '--';
-    const scanned = new Date(timestamp);
-    if (Number.isNaN(scanned.getTime())) return '--';
-    const month = scanned.getMonth() + 1;
-    const day = scanned.getDate();
-    const year = String(scanned.getFullYear() % 100).padStart(2, '0');
-    return `${month}-${day}-${year}`;
-}
+    function formatShortDate(timestamp) {
+        if (!timestamp) return '--';
+        const scanned = new Date(timestamp);
+        if (Number.isNaN(scanned.getTime())) return '--';
+        const month = scanned.getMonth() + 1;
+        const day = scanned.getDate();
+        const year = String(scanned.getFullYear() % 100).padStart(2, '0');
+        return `${month}-${day}-${year}`;
+    }
 
-function getHoursSinceScanned(timestamp) {
-    if (!timestamp) return Infinity;
-    const now = new Date();
-    const scanned = new Date(timestamp);
-    return (now - scanned) / (1000 * 60 * 60);
-}
+    function getHoursSinceScanned(timestamp) {
+        if (!timestamp) return Infinity;
+        const now = new Date();
+        const scanned = new Date(timestamp);
+        return (now - scanned) / (1000 * 60 * 60);
+    }
 
-function getDaysSinceScanned(timestamp) {
-    if (!timestamp) return Infinity;
-    const now = new Date();
-    const scanned = new Date(timestamp);
-    return (now - scanned) / (1000 * 60 * 60 * 24);
-}
+    function getDaysSinceScanned(timestamp) {
+        if (!timestamp) return Infinity;
+        const now = new Date();
+        const scanned = new Date(timestamp);
+        return (now - scanned) / (1000 * 60 * 60 * 24);
+    }
 
-// =============================================================================
-// UI Initialization
-// =============================================================================
+    // =============================================================================
+    // UI Initialization
+    // =============================================================================
 
-function initializeUI() {
-    // Update all "Scanned: date" timestamps
-    document.querySelectorAll('.scanned-time[data-timestamp]').forEach(el => {
-        const timestamp = el.dataset.timestamp;
-        if (timestamp) {
-            const formattedDate = formatShortDate(timestamp);
-            el.textContent = `Scanned: ${formattedDate}`;
+    function initializeUI() {
+        // Update all "Scanned: date" timestamps
+        document.querySelectorAll('.scanned-time[data-timestamp]').forEach(el => {
+            const timestamp = el.dataset.timestamp;
+            if (timestamp) {
+                const formattedDate = formatShortDate(timestamp);
+                el.textContent = `Scanned: ${formattedDate}`;
 
-            // Add visual class based on freshness
-            const hours = getHoursSinceScanned(timestamp);
-            if (hours < 24) {
-                el.classList.add('recent');
-            } else if (hours > 24 * 7) {
-                el.classList.add('stale');
+                // Add visual class based on freshness
+                const hours = getHoursSinceScanned(timestamp);
+                if (hours < 24) {
+                    el.classList.add('recent');
+                } else if (hours > 24 * 7) {
+                    el.classList.add('stale');
+                }
             }
-        }
-    });
-
-    // All action buttons are always enabled with "Rescan" text
-    // The button state is set in the HTML template, no dynamic changes needed
-
-    initializeBulkSelection();
-}
-
-// =============================================================================
-// Sorting
-// =============================================================================
-
-let activeSort = { key: null, direction: 'asc' };
-
-function getSortValue(row, key) {
-    if (key === 'company') {
-        return (row.dataset.company || '').toLowerCase();
-    }
-    if (key === 'github_org') {
-        const orgCell = row.querySelector('.github-org-cell');
-        return (orgCell?.dataset.org || '').toLowerCase();
-    }
-    if (key === 'tier') {
-        return parseInt(row.dataset.tier || '0', 10);
-    }
-    if (key === 'last_scanned') {
-        return row.dataset.lastScanned ? new Date(row.dataset.lastScanned).getTime() : 0;
-    }
-    if (key === 'evidence') {
-        const evidence = row.querySelector('.evidence-text');
-        return (evidence?.textContent || '').toLowerCase();
-    }
-    return '';
-}
-
-function sortTableBy(key) {
-    const tbody = document.querySelector('.accounts-table tbody');
-    if (!tbody) return;
-
-    if (activeSort.key === key) {
-        activeSort.direction = activeSort.direction === 'asc' ? 'desc' : 'asc';
-    } else {
-        activeSort = { key, direction: 'asc' };
-    }
-
-    const rows = Array.from(tbody.querySelectorAll('tr'));
-    rows.sort((a, b) => {
-        const valueA = getSortValue(a, key);
-        const valueB = getSortValue(b, key);
-        if (valueA < valueB) return activeSort.direction === 'asc' ? -1 : 1;
-        if (valueA > valueB) return activeSort.direction === 'asc' ? 1 : -1;
-        return 0;
-    });
-
-    rows.forEach(row => tbody.appendChild(row));
-
-    document.querySelectorAll('.accounts-table th.sortable').forEach(th => {
-        const indicator = th.querySelector('.sort-indicator');
-        if (!indicator) return;
-        if (th.dataset.sortKey === key) {
-            indicator.textContent = activeSort.direction === 'asc' ? '↑' : '↓';
-            indicator.classList.add('active');
-        } else {
-            indicator.textContent = '↕';
-            indicator.classList.remove('active');
-        }
-    });
-}
-
-// =============================================================================
-// Manual Removal
-// =============================================================================
-
-async function removeAccount(button) {
-    const row = button.closest('tr');
-    const company = row?.dataset.company || 'this account';
-    const accountId = row?.dataset.accountId;
-    if (!accountId) {
-        showNotification('Could not identify the selected account.', 'error');
-        return;
-    }
-
-    if (!confirm(`Remove ${company} from monitored accounts? This cannot be undone.`)) {
-        return;
-    }
-
-    button.disabled = true;
-    button.textContent = 'Removing...';
-
-    try {
-        const response = await fetch(`/api/accounts/${accountId}`, { method: 'DELETE' });
-        const data = await response.json();
-        if (!response.ok) {
-            throw new Error(data.error || 'Failed to remove account.');
-        }
-        row.remove();
-        showNotification(`${company} removed from monitored accounts.`, 'success');
-    } catch (error) {
-        showNotification(error.message || 'Failed to remove account.', 'error');
-        button.disabled = false;
-        button.textContent = 'Remove';
-    }
-}
-
-// Initialize on page load
-document.addEventListener('DOMContentLoaded', () => {
-    initializeUI();
-    document.querySelectorAll('.accounts-table th.sortable').forEach(th => {
-        th.addEventListener('click', () => sortTableBy(th.dataset.sortKey));
-    });
-});
-
-// =============================================================================
-// Bulk Actions
-// =============================================================================
-
-function initializeBulkSelection() {
-    const selectAll = document.querySelector('#select-all-accounts');
-    const rowCheckboxes = document.querySelectorAll('.row-select');
-
-    if (!selectAll || rowCheckboxes.length === 0) return;
-
-    selectAll.addEventListener('change', () => {
-        rowCheckboxes.forEach(cb => {
-            cb.checked = selectAll.checked;
         });
-        updateBulkSelectionState();
+
+        // All action buttons are always enabled with "Rescan" text
+        // The button state is set in the HTML template, no dynamic changes needed
+
+        initializeBulkSelection();
+    }
+
+    // =============================================================================
+    // Sorting
+    // =============================================================================
+
+    let activeSort = { key: null, direction: 'asc' };
+
+    function getSortValue(row, key) {
+        if (key === 'company') {
+            return (row.dataset.company || '').toLowerCase();
+        }
+        if (key === 'github_org') {
+            const orgCell = row.querySelector('.github-org-cell');
+            return (orgCell?.dataset.org || '').toLowerCase();
+        }
+        if (key === 'tier') {
+            return parseInt(row.dataset.tier || '0', 10);
+        }
+        if (key === 'last_scanned') {
+            return row.dataset.lastScanned ? new Date(row.dataset.lastScanned).getTime() : 0;
+        }
+        if (key === 'evidence') {
+            const evidence = row.querySelector('.evidence-text');
+            return (evidence?.textContent || '').toLowerCase();
+        }
+        return '';
+    }
+
+    function sortTableBy(key) {
+        const tbody = document.querySelector('.accounts-table tbody');
+        if (!tbody) return;
+
+        if (activeSort.key === key) {
+            activeSort.direction = activeSort.direction === 'asc' ? 'desc' : 'asc';
+        } else {
+            activeSort = { key, direction: 'asc' };
+        }
+
+        const rows = Array.from(tbody.querySelectorAll('tr'));
+        rows.sort((a, b) => {
+            const valueA = getSortValue(a, key);
+            const valueB = getSortValue(b, key);
+            if (valueA < valueB) return activeSort.direction === 'asc' ? -1 : 1;
+            if (valueA > valueB) return activeSort.direction === 'asc' ? 1 : -1;
+            return 0;
+        });
+
+        rows.forEach(row => tbody.appendChild(row));
+
+        document.querySelectorAll('.accounts-table th.sortable').forEach(th => {
+            const indicator = th.querySelector('.sort-indicator');
+            if (!indicator) return;
+            if (th.dataset.sortKey === key) {
+                indicator.textContent = activeSort.direction === 'asc' ? '↑' : '↓';
+                indicator.classList.add('active');
+            } else {
+                indicator.textContent = '↕';
+                indicator.classList.remove('active');
+            }
+        });
+    }
+
+    // =============================================================================
+    // Manual Removal
+    // =============================================================================
+
+    async function removeAccount(button) {
+        const row = button.closest('tr');
+        const company = row?.dataset.company || 'this account';
+        const accountId = row?.dataset.accountId;
+        if (!accountId) {
+            showNotification('Could not identify the selected account.', 'error');
+            return;
+        }
+
+        if (!confirm(`Remove ${company} from monitored accounts? This cannot be undone.`)) {
+            return;
+        }
+
+        button.disabled = true;
+        button.textContent = 'Removing...';
+
+        try {
+            const response = await fetch(`/api/accounts/${accountId}`, { method: 'DELETE' });
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.error || 'Failed to remove account.');
+            }
+            row.remove();
+            showNotification(`${company} removed from monitored accounts.`, 'success');
+        } catch (error) {
+            showNotification(error.message || 'Failed to remove account.', 'error');
+            button.disabled = false;
+            button.textContent = 'Remove';
+        }
+    }
+
+    // Initialize on page load
+    document.addEventListener('DOMContentLoaded', () => {
+        initializeUI();
+        document.querySelectorAll('.accounts-table th.sortable').forEach(th => {
+            th.addEventListener('click', () => sortTableBy(th.dataset.sortKey));
+        });
     });
 
-    rowCheckboxes.forEach(cb => {
-        cb.addEventListener('change', () => {
-            if (!cb.checked) {
-                selectAll.checked = false;
-            } else if (Array.from(rowCheckboxes).every(input => input.checked)) {
-                selectAll.checked = true;
-            }
+    // =============================================================================
+    // Bulk Actions
+    // =============================================================================
+
+    function initializeBulkSelection() {
+        const selectAll = document.querySelector('#select-all-accounts');
+        const rowCheckboxes = document.querySelectorAll('.row-select');
+
+        if (!selectAll || rowCheckboxes.length === 0) return;
+
+        selectAll.addEventListener('change', () => {
+            rowCheckboxes.forEach(cb => {
+                cb.checked = selectAll.checked;
+            });
             updateBulkSelectionState();
         });
-    });
 
-    updateBulkSelectionState();
-}
+        rowCheckboxes.forEach(cb => {
+            cb.addEventListener('change', () => {
+                if (!cb.checked) {
+                    selectAll.checked = false;
+                } else if (Array.from(rowCheckboxes).every(input => input.checked)) {
+                    selectAll.checked = true;
+                }
+                updateBulkSelectionState();
+            });
+        });
 
-function getSelectedRows() {
-    return Array.from(document.querySelectorAll('.row-select:checked'))
-        .map(cb => cb.closest('tr'))
-        .filter(Boolean);
-}
-
-function updateBulkSelectionState() {
-    const selectedRows = getSelectedRows();
-    const count = selectedRows.length;
-    const bar = document.querySelector('#bulk-command-bar');
-    const countLabel = document.querySelector('#bulk-selection-count');
-    const rescanBtn = document.querySelector('#bulk-rescan-btn');
-    const exportBtn = document.querySelector('#bulk-export-btn');
-    const deleteBtn = document.querySelector('#bulk-delete-btn');
-
-    if (countLabel) {
-        countLabel.textContent = `${count} account${count === 1 ? '' : 's'} selected`;
+        updateBulkSelectionState();
     }
 
-    if (rescanBtn) rescanBtn.disabled = count === 0;
-    if (exportBtn) exportBtn.disabled = count === 0;
-    if (deleteBtn) deleteBtn.disabled = count === 0;
-
-    if (bar) {
-        bar.classList.toggle('hidden', count === 0);
+    function getSelectedRows() {
+        return Array.from(document.querySelectorAll('.row-select:checked'))
+            .map(cb => cb.closest('tr'))
+            .filter(Boolean);
     }
-}
 
-async function bulkRescan() {
-    const selectedRows = getSelectedRows();
-    if (selectedRows.length === 0) return;
+    function updateBulkSelectionState() {
+        const selectedRows = getSelectedRows();
+        const count = selectedRows.length;
+        const bar = document.querySelector('#bulk-command-bar');
+        const countLabel = document.querySelector('#bulk-selection-count');
+        const rescanBtn = document.querySelector('#bulk-rescan-btn');
+        const exportBtn = document.querySelector('#bulk-export-btn');
+        const deleteBtn = document.querySelector('#bulk-delete-btn');
 
-    for (const row of selectedRows) {
-        const companyName = row.dataset.company;
-        if (!companyName) continue;
+        if (countLabel) {
+            countLabel.textContent = `${count} account${count === 1 ? '' : 's'} selected`;
+        }
+
+        if (rescanBtn) rescanBtn.disabled = count === 0;
+        if (exportBtn) exportBtn.disabled = count === 0;
+        if (deleteBtn) deleteBtn.disabled = count === 0;
+
+        if (bar) {
+            bar.classList.toggle('hidden', count === 0);
+        }
+    }
+
+    async function bulkRescan() {
+        const selectedRows = getSelectedRows();
+        if (selectedRows.length === 0) return;
+
+        for (const row of selectedRows) {
+            const companyName = row.dataset.company;
+            if (!companyName) continue;
+            try {
+                await fetch(`/api/rescan/${encodeURIComponent(companyName)}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                });
+            } catch (error) {
+                console.error('Bulk rescan error:', error);
+            }
+        }
+
+        showNotification(`Queued rescan for ${selectedRows.length} account(s).`, 'info');
+    }
+
+    function exportCSV() {
+        const selectedRows = getSelectedRows();
+        if (selectedRows.length === 0) return;
+
+        const header = ['Company', 'GitHub Org', 'Tier', 'Last Check', 'Evidence'];
+        const csvRows = [header];
+
+        selectedRows.forEach(row => {
+            const company = row.querySelector('.company-cell')?.textContent.trim() || '';
+            const orgCell = row.querySelector('.github-org-cell');
+            const org = orgCell?.dataset.org || orgCell?.textContent.trim() || '';
+            const tier = row.querySelector('.tier-badge')?.textContent.trim() || '';
+            const lastCheck = row.querySelector('.last-check-cell')?.textContent.replace(/\s+/g, ' ').trim() || '';
+            const evidence = row.querySelector('.evidence-text')?.textContent.trim() || '';
+            csvRows.push([company, org, tier, lastCheck, evidence]);
+        });
+
+        const csvContent = csvRows
+            .map(row => row.map(value => `"${String(value).replace(/"/g, '""')}"`).join(','))
+            .join('\n');
+
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'selected-accounts.csv';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    }
+
+    async function bulkDeleteSelected() {
+        const selectedRows = getSelectedRows();
+        if (selectedRows.length === 0) return;
+
+        if (!confirm(`Delete ${selectedRows.length} selected account${selectedRows.length === 1 ? '' : 's'}? This cannot be undone.`)) {
+            return;
+        }
+
+        for (const row of selectedRows) {
+            const accountId = row.dataset.accountId;
+            const company = row.dataset.company || 'this account';
+            if (!accountId) continue;
+            try {
+                const response = await fetch(`/api/accounts/${accountId}`, { method: 'DELETE' });
+                if (!response.ok) {
+                    const data = await response.json();
+                    throw new Error(data.error || 'Failed to remove account.');
+                }
+                row.remove();
+            } catch (error) {
+                showNotification(`Failed to remove ${company}: ${error.message}`, 'warning');
+            }
+        }
+
+        const selectAll = document.querySelector('#select-all-accounts');
+        if (selectAll) selectAll.checked = false;
+        updateBulkSelectionState();
+        showNotification('Selected accounts removed.', 'success');
+    }
+
+    // =============================================================================
+    // GitHub Org Edit Functions
+    // =============================================================================
+
+    function showOrgEdit(buttonEl) {
+        const cell = buttonEl.closest('.github-org-cell');
+        const orgDisplay = cell.querySelector('.org-display');
+        const inputContainer = cell.querySelector('.github-org-input-container');
+        const input = cell.querySelector('.github-org-input');
+        const currentOrg = cell.dataset.org || '';
+
+        orgDisplay.classList.add('hidden');
+        inputContainer.classList.add('active');
+        input.value = currentOrg;
+        input.focus();
+    }
+
+    function cancelOrgEdit(buttonEl) {
+        const cell = buttonEl.closest('.github-org-cell');
+        const orgDisplay = cell.querySelector('.org-display');
+        const inputContainer = cell.querySelector('.github-org-input-container');
+
+        inputContainer.classList.remove('active');
+        orgDisplay.classList.remove('hidden');
+    }
+
+    async function saveOrgEdit(buttonEl) {
+        const cell = buttonEl.closest('.github-org-cell');
+        const companyName = cell.dataset.company;
+        const input = cell.querySelector('.github-org-input');
+        const newOrg = input.value.trim();
+
+        if (!newOrg) {
+            alert('Please enter a GitHub organization name');
+            return;
+        }
+
+        buttonEl.disabled = true;
+        buttonEl.textContent = 'Saving...';
+
         try {
-            await fetch(`/api/rescan/${encodeURIComponent(companyName)}`, {
+            const response = await fetch('/api/update-org', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    company_name: companyName,
+                    github_org: newOrg
+                })
+            });
+
+            const data = await response.json();
+
+            if (!response.ok || data.status !== 'success') {
+                throw new Error(data.message || 'Failed to update org');
+            }
+
+            // Reload page to show updated org
+            location.reload();
+
+        } catch (error) {
+            console.error('Update org error:', error);
+            alert('Failed to update GitHub org: ' + error.message);
+            buttonEl.disabled = false;
+            buttonEl.textContent = 'Save';
+        }
+    }
+
+    // =============================================================================
+    // Scan Functions
+    // =============================================================================
+
+    async function triggerRescan(buttonEl, companyName) {
+        // Don't trigger if already scanned recently
+        if (buttonEl.classList.contains('btn-scanned')) {
+            return;
+        }
+
+        // Disable button and show scanning state
+        buttonEl.disabled = true;
+        buttonEl.classList.add('scanning');
+        const originalText = buttonEl.textContent;
+        buttonEl.textContent = 'Queuing...';
+
+        try {
+            const response = await fetch(`/api/rescan/${encodeURIComponent(companyName)}`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
             });
-        } catch (error) {
-            console.error('Bulk rescan error:', error);
-        }
-    }
 
-    showNotification(`Queued rescan for ${selectedRows.length} account(s).`, 'info');
-}
+            const data = await response.json();
 
-function exportCSV() {
-    const selectedRows = getSelectedRows();
-    if (selectedRows.length === 0) return;
-
-    const header = ['Company', 'GitHub Org', 'Tier', 'Last Check', 'Evidence'];
-    const csvRows = [header];
-
-    selectedRows.forEach(row => {
-        const company = row.querySelector('.company-cell')?.textContent.trim() || '';
-        const orgCell = row.querySelector('.github-org-cell');
-        const org = orgCell?.dataset.org || orgCell?.textContent.trim() || '';
-        const tier = row.querySelector('.tier-badge')?.textContent.trim() || '';
-        const lastCheck = row.querySelector('.last-check-cell')?.textContent.replace(/\s+/g, ' ').trim() || '';
-        const evidence = row.querySelector('.evidence-text')?.textContent.trim() || '';
-        csvRows.push([company, org, tier, lastCheck, evidence]);
-    });
-
-    const csvContent = csvRows
-        .map(row => row.map(value => `"${String(value).replace(/"/g, '""')}"`).join(','))
-        .join('\n');
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'selected-accounts.csv';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-}
-
-async function bulkDeleteSelected() {
-    const selectedRows = getSelectedRows();
-    if (selectedRows.length === 0) return;
-
-    if (!confirm(`Delete ${selectedRows.length} selected account${selectedRows.length === 1 ? '' : 's'}? This cannot be undone.`)) {
-        return;
-    }
-
-    for (const row of selectedRows) {
-        const accountId = row.dataset.accountId;
-        const company = row.dataset.company || 'this account';
-        if (!accountId) continue;
-        try {
-            const response = await fetch(`/api/accounts/${accountId}`, { method: 'DELETE' });
             if (!response.ok) {
-                const data = await response.json();
-                throw new Error(data.error || 'Failed to remove account.');
+                throw new Error(data.message || 'Rescan failed');
             }
-            row.remove();
-        } catch (error) {
-            showNotification(`Failed to remove ${company}: ${error.message}`, 'warning');
-        }
-    }
 
-    const selectAll = document.querySelector('#select-all-accounts');
-    if (selectAll) selectAll.checked = false;
-    updateBulkSelectionState();
-    showNotification('Selected accounts removed.', 'success');
-}
+            // Handle queued response (new queue-based system)
+            if (data.status === 'queued') {
+                buttonEl.classList.remove('scanning');
+                buttonEl.textContent = `✓ Queued (#${data.queue_size})`;
+                buttonEl.style.background = '#22c55e';
 
-// =============================================================================
-// GitHub Org Edit Functions
-// =============================================================================
+                // Show info message
+                const row = buttonEl.closest('tr');
+                const lastCheckCell = row.querySelector('.last-check-cell');
+                if (lastCheckCell) {
+                    const scanTime = lastCheckCell.querySelector('.scanned-time');
+                    if (scanTime) {
+                        scanTime.textContent = 'Scan queued...';
+                        scanTime.classList.remove('recent', 'stale');
+                    }
+                }
 
-function showOrgEdit(buttonEl) {
-    const cell = buttonEl.closest('.github-org-cell');
-    const orgDisplay = cell.querySelector('.org-display');
-    const inputContainer = cell.querySelector('.github-org-input-container');
-    const input = cell.querySelector('.github-org-input');
-    const currentOrg = cell.dataset.org || '';
+                // Start auto-refresh to show results when complete
+                startAutoRefresh(data.queue_size || 1);
 
-    orgDisplay.classList.add('hidden');
-    inputContainer.classList.add('active');
-    input.value = currentOrg;
-    input.focus();
-}
+                // Reset button after 3 seconds
+                setTimeout(() => {
+                    buttonEl.disabled = false;
+                    buttonEl.textContent = '⏳ Pending';
+                    buttonEl.style.background = '#6b7280';
+                }, 3000);
 
-function cancelOrgEdit(buttonEl) {
-    const cell = buttonEl.closest('.github-org-cell');
-    const orgDisplay = cell.querySelector('.org-display');
-    const inputContainer = cell.querySelector('.github-org-input-container');
+                return;
+            }
 
-    inputContainer.classList.remove('active');
-    orgDisplay.classList.remove('hidden');
-}
+            // Legacy: Handle immediate success response (if any)
+            const row = buttonEl.closest('tr');
+            if (!row) throw new Error('Could not find table row');
 
-async function saveOrgEdit(buttonEl) {
-    const cell = buttonEl.closest('.github-org-cell');
-    const companyName = cell.dataset.company;
-    const input = cell.querySelector('.github-org-input');
-    const newOrg = input.value.trim();
+            // Update tier badge
+            const tierBadge = row.querySelector('.tier-badge');
+            if (tierBadge && data.new_tier !== undefined) {
+                const newTierClass = `tier-badge-${data.new_tier}`;
+                tierBadge.className = `tier-badge ${newTierClass}`;
+                tierBadge.innerHTML = `${data.tier_emoji} ${data.tier_name}`;
+            }
 
-    if (!newOrg) {
-        alert('Please enter a GitHub organization name');
-        return;
-    }
+            // Update evidence text
+            const evidenceText = row.querySelector('.evidence-text');
+            if (evidenceText && data.evidence) {
+                evidenceText.textContent = data.evidence;
+                evidenceText.title = data.evidence;
+            }
 
-    buttonEl.disabled = true;
-    buttonEl.textContent = 'Saving...';
-
-    try {
-        const response = await fetch('/api/update-org', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                company_name: companyName,
-                github_org: newOrg
-            })
-        });
-
-        const data = await response.json();
-
-        if (!response.ok || data.status !== 'success') {
-            throw new Error(data.message || 'Failed to update org');
-        }
-
-        // Reload page to show updated org
-        location.reload();
-
-    } catch (error) {
-        console.error('Update org error:', error);
-        alert('Failed to update GitHub org: ' + error.message);
-        buttonEl.disabled = false;
-        buttonEl.textContent = 'Save';
-    }
-}
-
-// =============================================================================
-// Scan Functions
-// =============================================================================
-
-async function triggerRescan(buttonEl, companyName) {
-    // Don't trigger if already scanned recently
-    if (buttonEl.classList.contains('btn-scanned')) {
-        return;
-    }
-
-    // Disable button and show scanning state
-    buttonEl.disabled = true;
-    buttonEl.classList.add('scanning');
-    const originalText = buttonEl.textContent;
-    buttonEl.textContent = 'Queuing...';
-
-    try {
-        const response = await fetch(`/api/rescan/${encodeURIComponent(companyName)}`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-        });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-            throw new Error(data.message || 'Rescan failed');
-        }
-
-        // Handle queued response (new queue-based system)
-        if (data.status === 'queued') {
+            // Update button to show completion
             buttonEl.classList.remove('scanning');
-            buttonEl.textContent = `✓ Queued (#${data.queue_size})`;
+            buttonEl.textContent = '✓ Done';
             buttonEl.style.background = '#22c55e';
 
-            // Show info message
-            const row = buttonEl.closest('tr');
-            const lastCheckCell = row.querySelector('.last-check-cell');
-            if (lastCheckCell) {
-                const scanTime = lastCheckCell.querySelector('.scanned-time');
-                if (scanTime) {
-                    scanTime.textContent = 'Scan queued...';
-                    scanTime.classList.remove('recent', 'stale');
-                }
+            // Reset button after 2 seconds
+            setTimeout(() => {
+                buttonEl.disabled = false;
+                buttonEl.textContent = 'Rescan';
+                buttonEl.style.background = '';
+            }, 2000);
+
+        } catch (error) {
+            console.error('Rescan error:', error);
+
+            // Show error state
+            buttonEl.classList.remove('scanning');
+            buttonEl.textContent = '✗ Error';
+            buttonEl.style.background = '#ef4444';
+
+            // Reset after 3 seconds
+            setTimeout(() => {
+                buttonEl.disabled = false;
+                buttonEl.textContent = originalText;
+                buttonEl.style.background = '';
+            }, 3000);
+        }
+    }
+
+    async function scanPending() {
+        const buttonEl = document.querySelector('.btn-start-scan');
+        if (!buttonEl) return;
+
+        // Disable button and show scanning state
+        buttonEl.disabled = true;
+        buttonEl.classList.add('scanning');
+        const originalText = buttonEl.textContent;
+        buttonEl.textContent = 'Queuing...';
+
+        try {
+            const response = await fetch('/api/scan-pending', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            });
+
+            const data = await response.json();
+
+            if (!response.ok || data.status !== 'success') {
+                throw new Error(data.message || 'Scan pending failed');
             }
 
-            // Start auto-refresh to show results when complete
-            startAutoRefresh(data.queue_size || 1);
+            // Show success state
+            buttonEl.classList.remove('scanning');
+            const queuedCount = data.queued || 0;
+            buttonEl.textContent = `✓ Queued ${queuedCount}`;
+            buttonEl.style.background = '#22c55e';
+
+            // Update buttons for pending accounts
+            if (data.accounts && data.accounts.length > 0) {
+                data.accounts.forEach(companyName => {
+                    const row = document.querySelector(`tr[data-company="${companyName}"]`);
+                    if (row) {
+                        const btn = row.querySelector('.btn-action-smart');
+                        if (btn) {
+                            btn.textContent = '⏳ Pending';
+                            btn.style.background = '#6b7280';
+                            btn.disabled = true;
+                        }
+                    }
+                });
+
+                // Start auto-refresh if scans were queued
+                if (queuedCount > 0) {
+                    startAutoRefresh(queuedCount);
+                }
+            }
 
             // Reset button after 3 seconds
             setTimeout(() => {
                 buttonEl.disabled = false;
-                buttonEl.textContent = '⏳ Pending';
-                buttonEl.style.background = '#6b7280';
+                buttonEl.textContent = originalText;
+                buttonEl.style.background = '';
             }, 3000);
 
-            return;
+        } catch (error) {
+            console.error('Scan pending error:', error);
+
+            // Show error state
+            buttonEl.classList.remove('scanning');
+            buttonEl.textContent = '✗ Error';
+            buttonEl.style.background = '#ef4444';
+
+            // Reset after 3 seconds
+            setTimeout(() => {
+                buttonEl.disabled = false;
+                buttonEl.textContent = originalText;
+                buttonEl.style.background = '';
+            }, 3000);
         }
-
-        // Legacy: Handle immediate success response (if any)
-        const row = buttonEl.closest('tr');
-        if (!row) throw new Error('Could not find table row');
-
-        // Update tier badge
-        const tierBadge = row.querySelector('.tier-badge');
-        if (tierBadge && data.new_tier !== undefined) {
-            const newTierClass = `tier-badge-${data.new_tier}`;
-            tierBadge.className = `tier-badge ${newTierClass}`;
-            tierBadge.innerHTML = `${data.tier_emoji} ${data.tier_name}`;
-        }
-
-        // Update evidence text
-        const evidenceText = row.querySelector('.evidence-text');
-        if (evidenceText && data.evidence) {
-            evidenceText.textContent = data.evidence;
-            evidenceText.title = data.evidence;
-        }
-
-        // Update button to show completion
-        buttonEl.classList.remove('scanning');
-        buttonEl.textContent = '✓ Done';
-        buttonEl.style.background = '#22c55e';
-
-        // Reset button after 2 seconds
-        setTimeout(() => {
-            buttonEl.disabled = false;
-            buttonEl.textContent = 'Rescan';
-            buttonEl.style.background = '';
-        }, 2000);
-
-    } catch (error) {
-        console.error('Rescan error:', error);
-
-        // Show error state
-        buttonEl.classList.remove('scanning');
-        buttonEl.textContent = '✗ Error';
-        buttonEl.style.background = '#ef4444';
-
-        // Reset after 3 seconds
-        setTimeout(() => {
-            buttonEl.disabled = false;
-            buttonEl.textContent = originalText;
-            buttonEl.style.background = '';
-        }, 3000);
-    }
-}
-
-async function scanPending() {
-    const buttonEl = document.querySelector('.btn-start-scan');
-    if (!buttonEl) return;
-
-    // Disable button and show scanning state
-    buttonEl.disabled = true;
-    buttonEl.classList.add('scanning');
-    const originalText = buttonEl.textContent;
-    buttonEl.textContent = 'Queuing...';
-
-    try {
-        const response = await fetch('/api/scan-pending', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-        });
-
-        const data = await response.json();
-
-        if (!response.ok || data.status !== 'success') {
-            throw new Error(data.message || 'Scan pending failed');
-        }
-
-        // Show success state
-        buttonEl.classList.remove('scanning');
-        const queuedCount = data.queued || 0;
-        buttonEl.textContent = `✓ Queued ${queuedCount}`;
-        buttonEl.style.background = '#22c55e';
-
-        // Update buttons for pending accounts
-        if (data.accounts && data.accounts.length > 0) {
-            data.accounts.forEach(companyName => {
-                const row = document.querySelector(`tr[data-company="${companyName}"]`);
-                if (row) {
-                    const btn = row.querySelector('.btn-action-smart');
-                    if (btn) {
-                        btn.textContent = '⏳ Pending';
-                        btn.style.background = '#6b7280';
-                        btn.disabled = true;
-                    }
-                }
-            });
-
-            // Start auto-refresh if scans were queued
-            if (queuedCount > 0) {
-                startAutoRefresh(queuedCount);
-            }
-        }
-
-        // Reset button after 3 seconds
-        setTimeout(() => {
-            buttonEl.disabled = false;
-            buttonEl.textContent = originalText;
-            buttonEl.style.background = '';
-        }, 3000);
-
-    } catch (error) {
-        console.error('Scan pending error:', error);
-
-        // Show error state
-        buttonEl.classList.remove('scanning');
-        buttonEl.textContent = '✗ Error';
-        buttonEl.style.background = '#ef4444';
-
-        // Reset after 3 seconds
-        setTimeout(() => {
-            buttonEl.disabled = false;
-            buttonEl.textContent = originalText;
-            buttonEl.style.background = '';
-        }, 3000);
-    }
-}
-
-async function refreshPipeline() {
-    const buttonEl = document.querySelector('.btn-refresh-pipeline');
-    if (!buttonEl) return;
-
-    // Disable button and show scanning state
-    buttonEl.disabled = true;
-    buttonEl.classList.add('scanning');
-    const originalText = buttonEl.textContent;
-    buttonEl.textContent = 'Refreshing...';
-
-    try {
-        const response = await fetch('/api/refresh-pipeline', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-        });
-
-        const data = await response.json();
-
-        if (!response.ok || data.status !== 'success') {
-            throw new Error(data.message || 'Refresh failed');
-        }
-
-        // Show success state
-        buttonEl.classList.remove('scanning');
-        const queuedCount = data.queued || 0;
-        buttonEl.textContent = `✓ Queued ${queuedCount} account${queuedCount !== 1 ? 's' : ''}`;
-        buttonEl.style.background = '#22c55e';
-
-        // Update any refresh-needed buttons to show pending
-        if (data.accounts && data.accounts.length > 0) {
-            data.accounts.forEach(companyName => {
-                const row = document.querySelector(`tr[data-company="${companyName}"]`);
-                if (row) {
-                    const btn = row.querySelector('.btn-action-smart');
-                    if (btn && !btn.classList.contains('btn-scanned')) {
-                        btn.textContent = '⏳ Pending';
-                        btn.classList.remove('btn-refresh-needed');
-                        btn.style.background = '#6b7280';
-                        btn.disabled = true;
-                    }
-                }
-            });
-
-            // Start auto-refresh if scans were queued
-            if (queuedCount > 0) {
-                startAutoRefresh(queuedCount);
-            }
-        }
-
-        // Reset button after 3 seconds
-        setTimeout(() => {
-            buttonEl.disabled = false;
-            buttonEl.textContent = originalText;
-            buttonEl.style.background = '';
-        }, 3000);
-
-    } catch (error) {
-        console.error('Refresh pipeline error:', error);
-
-        // Show error state
-        buttonEl.classList.remove('scanning');
-        buttonEl.textContent = '✗ Error';
-        buttonEl.style.background = '#ef4444';
-
-        // Reset after 3 seconds
-        setTimeout(() => {
-            buttonEl.disabled = false;
-            buttonEl.textContent = originalText;
-            buttonEl.style.background = '';
-        }, 3000);
-    }
-}
-
-// =============================================================================
-// Auto-Refresh Functions - Poll queue status and refresh when complete
-// =============================================================================
-
-let autoRefreshInterval = null;
-let autoRefreshAttempts = 0;
-const MAX_AUTO_REFRESH_ATTEMPTS = 60; // Max 5 minutes of polling (5s intervals)
-
-function startAutoRefresh(expectedScans) {
-    if (autoRefreshInterval) {
-        clearInterval(autoRefreshInterval);
     }
 
-    autoRefreshAttempts = 0;
-    console.log(`[AUTO-REFRESH] Starting auto-refresh, waiting for ${expectedScans} scans to complete...`);
+    async function refreshPipeline() {
+        const buttonEl = document.querySelector('.btn-refresh-pipeline');
+        if (!buttonEl) return;
 
-    // Show notification
-    showNotification(`Scanning ${expectedScans} account(s)... Page will refresh when complete.`, 'info');
-
-    autoRefreshInterval = setInterval(async () => {
-        autoRefreshAttempts++;
-
-        if (autoRefreshAttempts > MAX_AUTO_REFRESH_ATTEMPTS) {
-            console.log('[AUTO-REFRESH] Max attempts reached, stopping auto-refresh');
-            clearInterval(autoRefreshInterval);
-            autoRefreshInterval = null;
-            showNotification('Scans taking longer than expected. Please refresh manually.', 'warning');
-            return;
-        }
+        // Disable button and show scanning state
+        buttonEl.disabled = true;
+        buttonEl.classList.add('scanning');
+        const originalText = buttonEl.textContent;
+        buttonEl.textContent = 'Refreshing...';
 
         try {
-            const response = await fetch('/api/queue-status');
+            const response = await fetch('/api/refresh-pipeline', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            });
+
             const data = await response.json();
 
-            console.log(`[AUTO-REFRESH] Queue status: size=${data.queue_size}, worker=${data.worker_alive}`);
+            if (!response.ok || data.status !== 'success') {
+                throw new Error(data.message || 'Refresh failed');
+            }
 
-            // If queue is empty, all scans are complete
-            if (data.queue_size === 0) {
-                console.log('[AUTO-REFRESH] Queue empty, refreshing page...');
+            // Show success state
+            buttonEl.classList.remove('scanning');
+            const queuedCount = data.queued || 0;
+            buttonEl.textContent = `✓ Queued ${queuedCount} account${queuedCount !== 1 ? 's' : ''}`;
+            buttonEl.style.background = '#22c55e';
+
+            // Update any refresh-needed buttons to show pending
+            if (data.accounts && data.accounts.length > 0) {
+                data.accounts.forEach(companyName => {
+                    const row = document.querySelector(`tr[data-company="${companyName}"]`);
+                    if (row) {
+                        const btn = row.querySelector('.btn-action-smart');
+                        if (btn && !btn.classList.contains('btn-scanned')) {
+                            btn.textContent = '⏳ Pending';
+                            btn.classList.remove('btn-refresh-needed');
+                            btn.style.background = '#6b7280';
+                            btn.disabled = true;
+                        }
+                    }
+                });
+
+                // Start auto-refresh if scans were queued
+                if (queuedCount > 0) {
+                    startAutoRefresh(queuedCount);
+                }
+            }
+
+            // Reset button after 3 seconds
+            setTimeout(() => {
+                buttonEl.disabled = false;
+                buttonEl.textContent = originalText;
+                buttonEl.style.background = '';
+            }, 3000);
+
+        } catch (error) {
+            console.error('Refresh pipeline error:', error);
+
+            // Show error state
+            buttonEl.classList.remove('scanning');
+            buttonEl.textContent = '✗ Error';
+            buttonEl.style.background = '#ef4444';
+
+            // Reset after 3 seconds
+            setTimeout(() => {
+                buttonEl.disabled = false;
+                buttonEl.textContent = originalText;
+                buttonEl.style.background = '';
+            }, 3000);
+        }
+    }
+
+    // =============================================================================
+    // Auto-Refresh Functions - Poll queue status and refresh when complete
+    // =============================================================================
+
+    let autoRefreshInterval = null;
+    let autoRefreshAttempts = 0;
+    const MAX_AUTO_REFRESH_ATTEMPTS = 60; // Max 5 minutes of polling (5s intervals)
+
+    function startAutoRefresh(expectedScans) {
+        if (autoRefreshInterval) {
+            clearInterval(autoRefreshInterval);
+        }
+
+        autoRefreshAttempts = 0;
+        console.log(`[AUTO-REFRESH] Starting auto-refresh, waiting for ${expectedScans} scans to complete...`);
+
+        // Show notification
+        showNotification(`Scanning ${expectedScans} account(s)... Page will refresh when complete.`, 'info');
+
+        autoRefreshInterval = setInterval(async () => {
+            autoRefreshAttempts++;
+
+            if (autoRefreshAttempts > MAX_AUTO_REFRESH_ATTEMPTS) {
+                console.log('[AUTO-REFRESH] Max attempts reached, stopping auto-refresh');
                 clearInterval(autoRefreshInterval);
                 autoRefreshInterval = null;
-                showNotification('Scans complete! Refreshing...', 'success');
-                setTimeout(() => location.reload(), 1000);
+                showNotification('Scans taking longer than expected. Please refresh manually.', 'warning');
+                return;
             }
-        } catch (error) {
-            console.error('[AUTO-REFRESH] Error checking queue status:', error);
-        }
-    }, 5000); // Check every 5 seconds
-}
 
-function showNotification(message, type = 'info') {
-    // Remove any existing notification
-    const existing = document.querySelector('.scan-notification');
-    if (existing) existing.remove();
+            try {
+                const response = await fetch('/api/queue-status');
+                const data = await response.json();
 
-    const notification = document.createElement('div');
-    notification.className = `scan-notification scan-notification-${type}`;
-    notification.innerHTML = `
+                console.log(`[AUTO-REFRESH] Queue status: size=${data.queue_size}, worker=${data.worker_alive}`);
+
+                // If queue is empty, all scans are complete
+                if (data.queue_size === 0) {
+                    console.log('[AUTO-REFRESH] Queue empty, refreshing page...');
+                    clearInterval(autoRefreshInterval);
+                    autoRefreshInterval = null;
+                    showNotification('Scans complete! Refreshing...', 'success');
+                    setTimeout(() => location.reload(), 1000);
+                }
+            } catch (error) {
+                console.error('[AUTO-REFRESH] Error checking queue status:', error);
+            }
+        }, 5000); // Check every 5 seconds
+    }
+
+    function showNotification(message, type = 'info') {
+        // Remove any existing notification
+        const existing = document.querySelector('.scan-notification');
+        if (existing) existing.remove();
+
+        const notification = document.createElement('div');
+        notification.className = `scan-notification scan-notification-${type}`;
+        notification.innerHTML = `
         <span>${message}</span>
         <button onclick="this.parentElement.remove()">×</button>
     `;
 
-    // Add styles if not already present
-    if (!document.querySelector('#notification-styles')) {
-        const styles = document.createElement('style');
-        styles.id = 'notification-styles';
-        styles.textContent = `
+        // Add styles if not already present
+        if (!document.querySelector('#notification-styles')) {
+            const styles = document.createElement('style');
+            styles.id = 'notification-styles';
+            styles.textContent = `
             .scan-notification {
                 position: fixed;
                 top: 20px;
@@ -1694,15 +1737,133 @@ function showNotification(message, type = 'info') {
                 }
             }
         `;
-        document.head.appendChild(styles);
+            document.head.appendChild(styles);
+        }
+
+        document.body.appendChild(notification);
+
+        // Auto-remove after 10 seconds (unless it's a success that triggers reload)
+        if (type !== 'success') {
+            setTimeout(() => notification.remove(), 10000);
+        }
+    }
+</script>
+
+    // Live Status Polling
+    function updateRowStatuses() {
+        if (document.hidden) return; // Don't poll if tab is hidden
+
+        fetch('/api/accounts')
+            .then(response => response.json())
+            .then(accounts => {
+                accounts.forEach(account => {
+                    const row = document.getElementById(`row-${account.id}`);
+                    if (!row) return;
+
+                    const statusCell = row.querySelector('.last-check-cell');
+                    if (!statusCell) return;
+
+                    // Update data-status
+                    const currentStatus = row.getAttribute('data-status');
+                    const newStatus = account.scan_status || 'idle';
+                    
+                    // Only update if status changed or if currently processing (to update timer)
+                    if (currentStatus !== newStatus || newStatus === 'processing') {
+                        row.setAttribute('data-status', newStatus);
+                        
+                        let content = '';
+                        
+                        if (newStatus === 'queued') {
+                            content = `
+                                <div class="status-container">
+                                    <span class="scanned-time" style="color: var(--text-muted);">⏳ Queued</span>
+                                </div>
+                            `;
+                            statusCell.classList.remove('status-cell-active');
+                        } 
+                        else if (newStatus === 'processing') {
+                            const startTime = account.scan_started_at || Date.now() / 1000;
+                            const elapsed = Math.floor(Date.now() / 1000 - startTime);
+                            
+                            content = `
+                                <div class="status-container">
+                                    <span class="scanned-time" style="color: var(--accent-color);">🔄 Scanning...</span>
+                                    <span class="tier-change-time">${elapsed}s</span>
+                                </div>
+                                <div class="progress-line"></div>
+                            `;
+                            statusCell.classList.add('status-cell-active');
+                        } 
+                        else {
+                            if (currentStatus === 'processing' || currentStatus === 'queued') {
+                                // Transition from processing to idle -> scan complete
+                                const dateStr = account.last_scanned_at ? account.last_scanned_at.substring(0, 10) : 'Just now';
+                                const timeStr = account.last_scanned_at ? account.last_scanned_at.substring(11, 16) : '';
+                                
+                                content = `
+                                    <div class="status-container">
+                                        <span class="scanned-time" style="color: var(--success-color);">
+                                            ✓ Scanned: ${dateStr}
+                                        </span>
+                                        <span class="tier-change-time">${timeStr}</span>
+                                    </div>
+                                `;
+                            } else {
+                                // Standard idle display
+                                statusCell.classList.remove('status-cell-active');
+                                const dateStr = account.last_scanned_at ? account.last_scanned_at.substring(0, 10) : 'Never';
+                                
+                                let subText = '';
+                                if (account.status_changed_at) {
+                                     let changeDate = account.status_changed_at;
+                                     if (changeDate.includes('T')) changeDate = changeDate.split('T')[0];
+                                     subText = `Tier changed: ${changeDate}`;
+                                } else if (account.last_scanned_at) {
+                                     subText = account.last_scanned_at.substring(11, 16);
+                                }
+                                
+                                const timeClass = !account.last_scanned_at ? 'never-scanned' : '';
+                                let label = account.last_scanned_at ? 'Scanned:' : '';
+                                if (!account.last_scanned_at) label = '';
+
+                                content = `
+                                    <div class="status-container">
+                                        <span class="scanned-time ${timeClass}">
+                                            ${label} ${dateStr}
+                                        </span>
+                                        <span class="tier-change-time">${subText}</span>
+                                    </div>
+                                `;
+                            }
+                        }
+                        
+                        statusCell.innerHTML = content;
+                        
+                        // Disable/Enable buttons based on status
+                        const actionBtn = row.querySelector('.btn-rescan') || row.querySelector('.btn-start-scan');
+                        if (actionBtn) {
+                            if (newStatus !== 'idle') {
+                                actionBtn.disabled = true;
+                                actionBtn.style.opacity = '0.5';
+                                actionBtn.style.cursor = 'not-allowed';
+                                actionBtn.classList.add('scanning');
+                            } else {
+                                actionBtn.disabled = false;
+                                actionBtn.style.opacity = '1';
+                                actionBtn.style.cursor = 'pointer';
+                                actionBtn.classList.remove('scanning');
+                            }
+                        }
+                    }
+                });
+            })
+            .catch(err => console.error('Error polling statuses:', err));
     }
 
-    document.body.appendChild(notification);
-
-    // Auto-remove after 10 seconds (unless it's a success that triggers reload)
-    if (type !== 'success') {
-        setTimeout(() => notification.remove(), 10000);
-    }
-}
+    // Poll every 3 seconds
+    setInterval(updateRowStatuses, 3000);
+    
+    // Initial call
+    document.addEventListener('DOMContentLoaded', updateRowStatuses);
 </script>
 {% endblock %}
