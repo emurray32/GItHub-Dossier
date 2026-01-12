@@ -1142,6 +1142,91 @@ def api_webhook_logs():
     })
 
 
+@app.route('/api/export_csv')
+def api_export_csv():
+    """
+    Server-side CSV export for all monitored accounts.
+
+    Streams CSV generation to prevent timeouts on large datasets (5,000+ records).
+    Uses Flask's stream_with_context for efficient memory usage.
+
+    Returns:
+        Streaming CSV response with all account data.
+    """
+    import csv
+    import io
+
+    def generate_csv():
+        """Generator function that yields CSV rows."""
+        # Create a StringIO buffer for CSV writing
+        buffer = io.StringIO()
+        writer = csv.writer(buffer)
+
+        # Write CSV header
+        writer.writerow(['Company', 'GitHub Org', 'Tier', 'Tier Name', 'Last Scanned', 'Status Changed', 'Evidence'])
+        yield buffer.getvalue()
+        buffer.seek(0)
+        buffer.truncate(0)
+
+        # Fetch all accounts in batches to avoid memory issues
+        page = 1
+        limit = 100  # Process 100 accounts at a time
+
+        while True:
+            result = get_all_accounts(page=page, limit=limit)
+            accounts = result['accounts']
+
+            if not accounts:
+                break
+
+            # Write each account as a CSV row
+            for account in accounts:
+                tier = account.get('current_tier', 0)
+                tier_config = account.get('tier_config', {})
+                tier_name = tier_config.get('name', 'Unknown')
+
+                # Format timestamps
+                last_scanned = account.get('last_scanned_at', 'Never')
+                if last_scanned and last_scanned != 'Never':
+                    # Extract just the date part (YYYY-MM-DD)
+                    last_scanned = last_scanned.split('T')[0] if 'T' in last_scanned else last_scanned
+
+                status_changed = account.get('status_changed_at', '')
+                if status_changed:
+                    status_changed = status_changed.split('T')[0] if 'T' in status_changed else status_changed
+
+                writer.writerow([
+                    account.get('company_name', ''),
+                    account.get('github_org', ''),
+                    f'Tier {tier}',
+                    tier_name,
+                    last_scanned,
+                    status_changed,
+                    account.get('evidence_summary', '')
+                ])
+
+                yield buffer.getvalue()
+                buffer.seek(0)
+                buffer.truncate(0)
+
+            # Move to next page
+            page += 1
+
+            # Stop if we've processed all pages
+            if page > result['total_pages']:
+                break
+
+    # Return streaming response
+    return Response(
+        stream_with_context(generate_csv()),
+        mimetype='text/csv',
+        headers={
+            'Content-Disposition': 'attachment; filename=monitored_accounts.csv',
+            'Cache-Control': 'no-cache'
+        }
+    )
+
+
 if __name__ == '__main__':
     # Initialize when running directly
     print("[APP] Starting application...")

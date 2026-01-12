@@ -61,7 +61,8 @@ def init_db() -> None:
             next_scan_due TIMESTAMP,
             scan_status TEXT DEFAULT 'idle',
             scan_progress TEXT,
-            scan_start_time TIMESTAMP
+            scan_start_time TIMESTAMP,
+            status TEXT DEFAULT 'active'
         )
     ''')
 
@@ -76,6 +77,10 @@ def init_db() -> None:
         pass  # Column already exists
     try:
         cursor.execute('ALTER TABLE monitored_accounts ADD COLUMN scan_start_time TIMESTAMP')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+    try:
+        cursor.execute('ALTER TABLE monitored_accounts ADD COLUMN status TEXT DEFAULT "active"')
     except sqlite3.OperationalError:
         pass  # Column already exists
 
@@ -640,12 +645,15 @@ def add_account_to_tier_0(company_name: str, github_org: str) -> dict:
     Used by the Grow pipeline for bulk imports. If account already exists,
     updates the github_org and timestamps.
 
+    IMPORTANT: If the account is blacklisted, returns an error to prevent
+    re-importing 'zombie leads'.
+
     Args:
         company_name: The company name.
         github_org: The GitHub organization login.
 
     Returns:
-        Dictionary with account creation/update result.
+        Dictionary with account creation/update result, or error if blacklisted.
     """
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -661,6 +669,16 @@ def add_account_to_tier_0(company_name: str, github_org: str) -> dict:
     existing = cursor.fetchone()
 
     if existing:
+        # Check if account is blacklisted
+        existing_status = existing.get('status', 'active')
+        if existing_status == 'blacklisted':
+            conn.close()
+            return {
+                'error': 'Account is blacklisted',
+                'company_name': company_name,
+                'message': f'{company_name} was previously removed and cannot be re-added'
+            }
+
         # Update existing account - don't change last_scanned_at
         cursor.execute('''
             UPDATE monitored_accounts
@@ -675,10 +693,10 @@ def add_account_to_tier_0(company_name: str, github_org: str) -> dict:
         cursor.execute('''
             INSERT INTO monitored_accounts (
                 company_name, github_org, current_tier, last_scanned_at,
-                status_changed_at, evidence_summary, next_scan_due
-            ) VALUES (?, ?, ?, NULL, ?, ?, ?)
+                status_changed_at, evidence_summary, next_scan_due, status
+            ) VALUES (?, ?, ?, NULL, ?, ?, ?, ?)
         ''', (company_name, github_org, TIER_TRACKING, now,
-              "Added via Grow pipeline", next_scan_iso))
+              "Added via Grow pipeline", next_scan_iso, 'active'))
         account_id = cursor.lastrowid
 
     conn.commit()
@@ -702,6 +720,8 @@ def get_all_accounts(page: int = 1, limit: int = 50, tier_filter: Optional[int] 
 
     Sort order: Tier 2 (Preparing) first, then Tier 1, Tier 0, Tier 3 (dimmed), and Tier 4 (invalid) last.
 
+    Filters out blacklisted accounts by default to prevent clutter.
+
     Args:
         page: Page number (1-indexed, default 1)
         limit: Number of accounts per page (default 50)
@@ -717,12 +737,14 @@ def get_all_accounts(page: int = 1, limit: int = 50, tier_filter: Optional[int] 
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Get total count
-    count_query = 'SELECT COUNT(*) as total FROM monitored_accounts'
-    count_params = []
+    # Build WHERE clause for count query (exclude blacklisted accounts)
+    count_query = 'SELECT COUNT(*) as total FROM monitored_accounts WHERE (status != ? OR status IS NULL)'
+    count_params = ['blacklisted']
+
     if tier_filter is not None:
-        count_query += ' WHERE current_tier = ?'
+        count_query += ' AND current_tier = ?'
         count_params.append(tier_filter)
+
     cursor.execute(count_query, count_params)
     total_items = cursor.fetchone()['total']
 
@@ -732,16 +754,20 @@ def get_all_accounts(page: int = 1, limit: int = 50, tier_filter: Optional[int] 
     offset = (current_page - 1) * limit
 
     # Custom sort: Tier 2 first (priority 1), Tier 1 (priority 2), Tier 0 (priority 3), Tier 3 (priority 4), Tier 4 last (priority 5)
+    # Filter out blacklisted accounts and optionally filter by tier
     select_query = '''
         SELECT
             ma.*,
             (SELECT r.id FROM reports r WHERE r.company_name = ma.company_name ORDER BY r.created_at DESC LIMIT 1) as latest_report_id
         FROM monitored_accounts ma
+        WHERE (ma.status != ? OR ma.status IS NULL)
     '''
-    select_params = []
+    select_params = ['blacklisted']
+
     if tier_filter is not None:
-        select_query += ' WHERE ma.current_tier = ?'
+        select_query += ' AND ma.current_tier = ?'
         select_params.append(tier_filter)
+
     select_query += '''
         ORDER BY
             CASE ma.current_tier
@@ -832,17 +858,27 @@ def get_account_by_company_case_insensitive(company_name: str) -> Optional[dict]
 
 
 def delete_account(account_id: int) -> bool:
-    """Delete a monitored account."""
+    """
+    Blacklist a monitored account instead of deleting it.
+
+    This prevents the scanner from re-importing the company ('zombie leads').
+    Sets status='blacklisted' to mark the account as removed.
+    """
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    cursor.execute('DELETE FROM monitored_accounts WHERE id = ?', (account_id,))
-    deleted = cursor.rowcount > 0
+    cursor.execute('''
+        UPDATE monitored_accounts
+        SET status = 'blacklisted',
+            status_changed_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+    ''', (account_id,))
+    updated = cursor.rowcount > 0
 
     conn.commit()
     conn.close()
 
-    return deleted
+    return updated
 
 
 def mark_account_as_invalid(company_name: str, reason: str) -> dict:

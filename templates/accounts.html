@@ -1103,6 +1103,9 @@
                 <button type="button" class="btn-refresh-pipeline" onclick="refreshPipeline()">
                     🔄 Refresh Pipeline
                 </button>
+                <a href="/api/export_csv" class="btn-refresh-pipeline" style="background: #10b981; margin-left: 0.5rem; text-decoration: none;">
+                    📊 Export All CSV
+                </a>
             </div>
         </div>
     </header>
@@ -1327,7 +1330,7 @@
                 Rescan Selected
             </button>
             <button type="button" class="btn-rescan" id="bulk-export-btn" onclick="exportCSV()">
-                Export CSV
+                Export Selected
             </button>
             <button type="button" class="btn-danger" id="bulk-delete-btn" onclick="bulkDeleteSelected()">
                 Delete Selected
