@@ -44,6 +44,12 @@ python app.py
 - **AI**: Google Gemini API
 
 ## Recent Changes
+- 2026-01-12: Comprehensive UI redesign to professional light theme
+  - Removed all emojis from templates and backend logs
+  - Replaced emoji icons with SVG icons on homepage feature list
+  - Inverted console log output to dark background for terminal-like appearance
+  - Clean tier badges remain functional (badge-tier_class pattern)
+  - Fixed app port configuration to 5000
 - 2026-01-11: Added Settings & Status backend (webhook configuration, usage stats tracking, webhook logs)
   - New tables: system_settings, system_stats, webhook_logs
   - New API routes: GET/POST /api/settings, GET /api/stats, GET /api/webhook-logs
