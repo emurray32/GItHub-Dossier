@@ -20,6 +20,26 @@
         gap: 1rem;
     }
 
+    .tier-filter {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .tier-filter label {
+        font-size: 0.85rem;
+        color: var(--text-secondary);
+    }
+
+    .tier-filter select {
+        padding: 0.4rem 0.6rem;
+        border-radius: 6px;
+        border: 1px solid var(--border-color);
+        background: var(--bg-secondary);
+        color: var(--text-primary);
+        font-size: 0.85rem;
+    }
+
     .stat-badge {
         display: flex;
         align-items: center;
@@ -866,6 +886,18 @@
                 <p class="subtitle">Track companies through their localization journey</p>
             </div>
             <div class="accounts-stats">
+                <div class="tier-filter">
+                    <label for="tier-filter-select">Tier</label>
+                    <select id="tier-filter-select"
+                        onchange="window.location.href = `?page=1&limit=50&tier=${this.value}`;">
+                        <option value="" {% if current_tier_filter is none %}selected{% endif %}>All Tiers</option>
+                        <option value="2" {% if current_tier_filter == 2 %}selected{% endif %}>Tier 2 (Preparing)</option>
+                        <option value="1" {% if current_tier_filter == 1 %}selected{% endif %}>Tier 1 (Thinking)</option>
+                        <option value="0" {% if current_tier_filter == 0 %}selected{% endif %}>Tier 0 (Tracking)</option>
+                        <option value="3" {% if current_tier_filter == 3 %}selected{% endif %}>Tier 3 (Launched)</option>
+                        <option value="4" {% if current_tier_filter == 4 %}selected{% endif %}>Tier 4 (Not Found)</option>
+                    </select>
+                </div>
                 {% set tier_counts = {'0': 0, '1': 0, '2': 0, '3': 0, '4': 0} %}
                 {% for account in accounts %}
                 {% set _ = tier_counts.update({account.current_tier|string: tier_counts.get(account.current_tier|string,

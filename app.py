@@ -472,9 +472,10 @@ def accounts():
     """View monitored accounts dashboard."""
     page = request.args.get('page', 1, type=int)
     limit = request.args.get('limit', 50, type=int)
+    tier = request.args.get('tier', type=int)
 
     # Get paginated accounts
-    result = get_all_accounts(page=page, limit=limit)
+    result = get_all_accounts(page=page, limit=limit, tier_filter=tier)
 
     return render_template(
         'accounts.html',
@@ -483,6 +484,7 @@ def accounts():
         total_pages=result['total_pages'],
         current_page=result['current_page'],
         limit=result['limit'],
+        current_tier_filter=tier,
         tier_config=TIER_CONFIG
     )
 
