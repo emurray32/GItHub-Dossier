@@ -21,7 +21,8 @@ from database import (
     get_stats_last_n_days, log_webhook, get_recent_webhook_logs,
     set_scan_status, get_scan_status, get_queued_and_processing_accounts,
     clear_stale_scan_statuses, reset_all_scan_statuses,
-    SCAN_STATUS_IDLE, SCAN_STATUS_QUEUED, SCAN_STATUS_PROCESSING
+    SCAN_STATUS_IDLE, SCAN_STATUS_QUEUED, SCAN_STATUS_PROCESSING,
+    save_signals
 )
 from monitors.scanner import deep_scan_generator
 from monitors.discovery import search_github_orgs, resolve_org_fast, discover_companies_via_ai
@@ -200,6 +201,15 @@ def perform_background_scan(company_name: str):
             print(f"[WORKER] Failed to save report for {company_name}: {str(e)}")
             return
 
+        # Phase 3b: Save signals detected during the scan
+        try:
+            signals = scan_data.get('signals', [])
+            if signals:
+                signals_count = save_signals(report_id, company_name, signals)
+                print(f"[WORKER] Saved {signals_count} signals for {company_name}")
+        except Exception as e:
+            print(f"[WORKER] Failed to save signals for {company_name}: {str(e)}")
+
         # Phase 4: Update monitored account status and tier
         try:
             result = update_account_status(scan_data, report_id)
@@ -325,6 +335,16 @@ def stream_scan(company: str):
         except Exception as e:
             yield f"data: LOG:Warning: Could not save report: {str(e)}\n\n"
             report_id = None
+
+        # Phase 3b: Save signals detected during the scan
+        if report_id:
+            try:
+                signals = scan_data.get('signals', [])
+                if signals:
+                    signals_count = save_signals(report_id, company, signals)
+                    yield f"data: LOG:Saved {signals_count} signals to database\n\n"
+            except Exception as e:
+                yield f"data: LOG:Warning: Could not save signals: {str(e)}\n\n"
 
         # Phase 3.5: Update monitored account status
         try:
