@@ -1565,7 +1565,7 @@
                     <td colspan="7">No accounts match your filters.</td>
                 </tr>
                 {% for account in accounts %}
-                <tr class="tier-row-{{ account.current_tier }}" id="row-{{ account.id }}"
+                <tr id="row-{{ account.id }}"
                     data-company="{{ account.company_name }}" data-account-id="{{ account.id }}"
                     data-tier="{{ account.current_tier }}" data-last-scanned="{{ account.last_scanned_at or '' }}"
                     data-status="idle">
@@ -2471,7 +2471,7 @@
                 // Reset button after 3 seconds
                 setTimeout(() => {
                     buttonEl.disabled = false;
-                    buttonEl.textContent = '⏳ Pending';
+                    buttonEl.textContent = 'Pending';
                     buttonEl.style.background = '#6b7280';
                 }, 3000);
 
@@ -2487,7 +2487,7 @@
             if (tierBadge && data.new_tier !== undefined) {
                 const newTierClass = `tier-badge-${data.new_tier}`;
                 tierBadge.className = `tier-badge ${newTierClass}`;
-                tierBadge.innerHTML = `${data.tier_emoji} ${data.tier_name}`;
+                tierBadge.textContent = data.tier_name;
             }
 
             // Update evidence text
