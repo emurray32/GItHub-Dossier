@@ -426,7 +426,9 @@ def calculate_tier_from_scan(scan_data: dict) -> tuple[int, str]:
     1. Tier 3 (Launched) - Locale folders exist = Too Late
     2. Tier 2 (Preparing) - i18n libraries WITHOUT locale folders = Hot Lead
     3. Tier 1 (Thinking) - RFCs or Ghost Branches = Warm Lead
-    4. Tier 0 vs Tier 4 Split - Based on star count (>1000 = Greenfield, <1000 = Disqualified)
+    4. Tier 0 vs Tier 4 Split - Based on repos scanned:
+       - repos_scanned > 0 → Tier 0 (Tracking) - Monitor for future changes
+       - repos_scanned == 0 → Tier 4 (Disqualified) - Empty org or no access
 
     Returns:
         Tuple of (tier_number, evidence_summary)
@@ -525,14 +527,17 @@ def calculate_tier_from_scan(scan_data: dict) -> tuple[int, str]:
         return TIER_THINKING, "; ".join(evidence_parts)
 
     # =========================================================================
-    # TIER 0 vs TIER 4: No signals found - Split based on star count
+    # TIER 0 vs TIER 4: No signals found - Split based on repos scanned
     # =========================================================================
-    if total_stars > 1000:
-        # Major open source project with zero localization = Greenfield opportunity
-        return TIER_TRACKING, f"⭐ GREENFIELD: Major Open Source Project ({total_stars:,} stars) with ZERO localization."
+    # Get repos_scanned count - if we scanned valid repos, track the account
+    repos_scanned = len(scan_data.get('repos_scanned', []))
+
+    if repos_scanned > 0:
+        # We scanned valid repos but found no i18n signals - track for future changes
+        return TIER_TRACKING, "No active signals detected. Monitoring for future changes."
     else:
-        # Low star count with no signals = Likely private codebase, disqualify
-        return TIER_INVALID, "🚫 DISQUALIFIED: No public code signals found (Main codebase likely private)."
+        # No repos were scanned (empty org or no access) - disqualify
+        return TIER_INVALID, "🚫 DISQUALIFIED: No repositories available to scan (Empty org or no public repos)."
 
 
 def update_account_status(scan_data: dict, report_id: Optional[int] = None) -> dict:
