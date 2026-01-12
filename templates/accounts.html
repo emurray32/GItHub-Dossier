@@ -2680,10 +2680,11 @@
     }
 
     function populateQueueModal() {
-        fetch('/api/accounts')
+        fetch('/api/accounts?limit=1000')
             .then(response => response.json())
-            .then(accounts => {
-                // Separate queued and processing accounts
+            .then(data => {
+                // Separate queued and processing accounts from the paginated response
+                const accounts = data.accounts || [];
                 const queuedAccounts = accounts.filter(a => a.scan_status === 'queued');
                 const processingAccounts = accounts.filter(a => a.scan_status === 'processing');
 
