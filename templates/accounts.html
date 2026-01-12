@@ -82,7 +82,9 @@
         font-size: 0.75rem;
         letter-spacing: 0.5px;
         border-bottom: 1px solid var(--border-color);
-        position: relative;
+        position: sticky;
+        top: 0;
+        z-index: 3;
     }
 
     .accounts-table th.select-col,
@@ -140,6 +142,16 @@
 
     .accounts-table tbody tr:last-child td {
         border-bottom: none;
+    }
+
+    .accounts-table .table-empty-row td {
+        text-align: center;
+        padding: 2rem 1rem;
+        color: var(--text-secondary);
+    }
+
+    .accounts-table .table-empty-row.hidden {
+        display: none;
     }
 
     /* Tier-specific row styling */
@@ -224,8 +236,66 @@
 
     .table-controls {
         display: flex;
-        justify-content: flex-end;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
         margin-bottom: 0.75rem;
+    }
+
+    .table-controls-left {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+    }
+
+    .accounts-search {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.4rem 0.6rem;
+        border-radius: 6px;
+        border: 1px solid var(--border-color);
+        background: var(--bg-secondary);
+        color: var(--text-primary);
+    }
+
+    .accounts-search input {
+        border: none;
+        background: transparent;
+        color: inherit;
+        font-size: 0.85rem;
+        min-width: 220px;
+    }
+
+    .accounts-search input:focus {
+        outline: none;
+    }
+
+    .filter-select {
+        padding: 0.4rem 0.6rem;
+        border-radius: 6px;
+        border: 1px solid var(--border-color);
+        background: var(--bg-secondary);
+        color: var(--text-primary);
+        font-size: 0.8rem;
+    }
+
+    .btn-clear-filters {
+        padding: 0.4rem 0.6rem;
+        border-radius: 6px;
+        border: 1px solid var(--border-color);
+        background: transparent;
+        color: var(--text-secondary);
+        font-size: 0.75rem;
+        cursor: pointer;
+        transition: all var(--transition-fast);
+    }
+
+    .btn-clear-filters:hover {
+        background: var(--bg-tertiary);
+        color: var(--text-primary);
+        border-color: var(--text-muted);
     }
 
     .btn-compact-toggle {
@@ -1245,6 +1315,15 @@
             gap: 1rem;
         }
 
+        .table-controls {
+            flex-direction: column;
+            align-items: flex-start;
+        }
+
+        .accounts-search input {
+            min-width: 160px;
+        }
+
         .queue-modal-content {
             width: 95%;
             max-height: 90vh;
@@ -1348,6 +1427,20 @@
 
     {% if accounts %}
     <div class="table-controls">
+        <div class="table-controls-left">
+            <label class="accounts-search" for="account-search-input">
+                🔍
+                <input type="text" id="account-search-input" placeholder="Search company or org..." autocomplete="off">
+            </label>
+            <select id="status-filter" class="filter-select" aria-label="Filter by scan status">
+                <option value="all">All statuses</option>
+                <option value="idle">Idle</option>
+                <option value="queued">Queued</option>
+                <option value="processing">Processing</option>
+                <option value="stuck">Stuck</option>
+            </select>
+            <button type="button" class="btn-clear-filters" id="clear-filters-btn">Clear filters</button>
+        </div>
         <button type="button" class="btn-compact-toggle" id="compact-toggle" onclick="toggleTableDensity()"
             aria-pressed="false">
             Compact Mode
@@ -1372,9 +1465,16 @@
                 </tr>
             </thead>
             <tbody>
+                <tr class="table-empty-row hidden" id="accounts-empty-row">
+                    <td colspan="7">No accounts match your filters.</td>
+                </tr>
                 {% for account in accounts %}
                 <tr class="tier-row-{{ account.current_tier }}" id="row-{{ account.id }}"
-                    data-company="{{ account.company_name }}" data-status="idle">
+                    data-company="{{ account.company_name }}"
+                    data-account-id="{{ account.id }}"
+                    data-tier="{{ account.current_tier }}"
+                    data-last-scanned="{{ account.last_scanned_at or '' }}"
+                    data-status="idle">
                     <td class="select-col">
                         <input type="checkbox" class="select-account-checkbox row-select"
                             data-account-id="{{ account.id }}" aria-label="Select {{ account.company_name }}">
@@ -1731,6 +1831,63 @@
         // The button state is set in the HTML template, no dynamic changes needed
 
         initializeBulkSelection();
+        initializeFilters();
+    }
+
+    function initializeFilters() {
+        const searchInput = document.getElementById('account-search-input');
+        const statusFilter = document.getElementById('status-filter');
+        const clearButton = document.getElementById('clear-filters-btn');
+        if (!searchInput || !statusFilter || !clearButton) return;
+
+        let debounceTimer = null;
+
+        const handleFilterChange = () => {
+            if (debounceTimer) {
+                clearTimeout(debounceTimer);
+            }
+            debounceTimer = setTimeout(applyTableFilters, 150);
+        };
+
+        searchInput.addEventListener('input', handleFilterChange);
+        statusFilter.addEventListener('change', applyTableFilters);
+        clearButton.addEventListener('click', () => {
+            searchInput.value = '';
+            statusFilter.value = 'all';
+            applyTableFilters();
+        });
+
+        applyTableFilters();
+    }
+
+    function applyTableFilters() {
+        const searchInput = document.getElementById('account-search-input');
+        const statusFilter = document.getElementById('status-filter');
+        const emptyRow = document.getElementById('accounts-empty-row');
+        const rows = Array.from(document.querySelectorAll('.accounts-table tbody tr'))
+            .filter(row => !row.classList.contains('table-empty-row'));
+
+        const searchValue = (searchInput?.value || '').trim().toLowerCase();
+        const statusValue = statusFilter?.value || 'all';
+
+        let visibleCount = 0;
+
+        rows.forEach(row => {
+            const company = (row.dataset.company || '').toLowerCase();
+            const org = (row.querySelector('.github-org-cell')?.dataset.org || '').toLowerCase();
+            const status = row.dataset.status || 'idle';
+
+            const matchesSearch = !searchValue || company.includes(searchValue) || org.includes(searchValue);
+            const matchesStatus = statusValue === 'all' || status === statusValue;
+
+            const isVisible = matchesSearch && matchesStatus;
+            row.style.display = isVisible ? '' : 'none';
+            if (isVisible) visibleCount += 1;
+        });
+
+        if (emptyRow) {
+            emptyRow.classList.toggle('hidden', visibleCount > 0);
+        }
     }
 
     function toggleTableDensity() {
@@ -1827,7 +1984,10 @@
         }
 
         const rows = Array.from(tbody.querySelectorAll('tr'));
-        rows.sort((a, b) => {
+        const sortableRows = rows.filter(row => !row.classList.contains('table-empty-row'));
+        const emptyRow = rows.find(row => row.classList.contains('table-empty-row'));
+
+        sortableRows.sort((a, b) => {
             const valueA = getSortValue(a, key);
             const valueB = getSortValue(b, key);
             if (valueA < valueB) return activeSort.direction === 'asc' ? -1 : 1;
@@ -1835,7 +1995,8 @@
             return 0;
         });
 
-        rows.forEach(row => tbody.appendChild(row));
+        sortableRows.forEach(row => tbody.appendChild(row));
+        if (emptyRow) tbody.appendChild(emptyRow);
 
         document.querySelectorAll('.accounts-table th.sortable').forEach(th => {
             const indicator = th.querySelector('.sort-indicator');
@@ -1894,7 +2055,7 @@
         });
     });
 
-    setInterval(updateDashboardStats, 3000);
+    setInterval(updateDashboardStats, 8000);
 
     // =============================================================================
     // Bulk Actions
@@ -2526,12 +2687,16 @@
                         }
                     }
                 });
+
+                if (typeof applyTableFilters === 'function') {
+                    applyTableFilters();
+                }
             })
             .catch(err => console.error('Error polling statuses:', err));
     }
 
-    // Poll every 3 seconds
-    setInterval(updateRowStatuses, 3000);
+    // Poll every 6 seconds
+    setInterval(updateRowStatuses, 6000);
 
     // Initial call
     document.addEventListener('DOMContentLoaded', updateRowStatuses);
