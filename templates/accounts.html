@@ -772,6 +772,15 @@
         align-items: center;
     }
 
+    .pagination-limit-select {
+        padding: 0.45rem 0.75rem;
+        background: var(--bg-tertiary);
+        color: var(--text-primary);
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        font-size: 0.875rem;
+    }
+
     .pagination-btn {
         display: inline-flex;
         align-items: center;
@@ -1089,6 +1098,13 @@
                 Showing {{ ((current_page - 1) * limit) + 1 }}-{{ [current_page * limit, total_items]|min }} of {{ total_items }} accounts
             </div>
             <div class="pagination-controls">
+                <select id="limit-select" onchange="changeLimit(this.value)" class="pagination-limit-select"
+                    aria-label="Rows per page">
+                    <option value="25" {% if limit == 25 %}selected{% endif %}>25 rows</option>
+                    <option value="50" {% if limit == 50 %}selected{% endif %}>50 rows</option>
+                    <option value="100" {% if limit == 100 %}selected{% endif %}>100 rows</option>
+                    <option value="250" {% if limit == 250 %}selected{% endif %}>250 rows</option>
+                </select>
                 <a href="{{ url_for('accounts', page=current_page - 1, limit=limit) }}"
                    class="pagination-btn"
                    {% if current_page <= 1 %}disabled{% endif %}
@@ -1151,6 +1167,13 @@
         const frame = document.getElementById('report-frame');
         drawer.classList.remove('drawer-open');
         frame.src = '';
+    }
+
+    function changeLimit(newLimit) {
+        const params = new URLSearchParams(window.location.search);
+        params.set('limit', newLimit);
+        params.set('page', 1);
+        window.location.search = params.toString();
     }
 
     function formatShortDate(timestamp) {
