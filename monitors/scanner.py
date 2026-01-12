@@ -1285,39 +1285,6 @@ def _calculate_intent_score(scan_results: dict) -> int:
     signals = scan_results.get('signals', [])
 
     # ============================================================
-    # Check for LAUNCHED status (disqualifying condition)
-    # ============================================================
-    already_launched_signals = [s for s in signals if s.get('type') == 'already_launched']
-    if already_launched_signals:
-        # They have locale folders - TOO LATE
-        scan_results['goldilocks_status'] = 'launched'
-        scan_results['lead_status'] = Config.LEAD_STATUS_LABELS.get('launched', 'LOW PRIORITY')
-        return Config.GOLDILOCKS_SCORES.get('launched', 10)
-
-    # ============================================================
-    # Check for PREPARING status (Goldilocks Zone!)
-    # ============================================================
-    dep_hits = summary.get('dependency_injection', {}).get('hits', [])
-    goldilocks_hits = [h for h in dep_hits if h.get('goldilocks_status') == 'preparing' or h.get('gap_verified')]
-
-    if goldilocks_hits:
-        # This is the GOLDILOCKS ZONE!
-        # Library found + No locale folders = PERFECT TIMING
-        scan_results['goldilocks_status'] = 'preparing'
-        scan_results['lead_status'] = Config.LEAD_STATUS_LABELS.get('preparing', 'HOT LEAD')
-
-        # Score based on number of libraries found (90-100 range)
-        base_score = Config.GOLDILOCKS_SCORES.get('preparing_min', 90)
-        bonus = min(len(goldilocks_hits) * 5, 10)  # Up to +10 bonus
-
-        # Add bonus for ghost branches (active work)
-        ghost_count = summary.get('ghost_branch', {}).get('count', 0)
-        if ghost_count > 0:
-            bonus = 10  # Max bonus if actively working on it
-
-        return min(base_score + bonus, Config.GOLDILOCKS_SCORES.get('preparing_max', 100))
-
-    # ============================================================
     # MEGA-CORP HEURISTIC: Detect high-maturity orgs without Preparing signals
     # ============================================================
     # Large engineering orgs (Airbnb, Uber, Facebook, etc.) often use custom/internal
@@ -1349,6 +1316,39 @@ def _calculate_intent_score(scan_results: dict) -> int:
         signals.append(mega_corp_signal)
 
         return Config.GOLDILOCKS_SCORES.get('launched', 10)
+
+    # ============================================================
+    # Check for LAUNCHED status (disqualifying condition)
+    # ============================================================
+    already_launched_signals = [s for s in signals if s.get('type') == 'already_launched']
+    if already_launched_signals:
+        # They have locale folders - TOO LATE
+        scan_results['goldilocks_status'] = 'launched'
+        scan_results['lead_status'] = Config.LEAD_STATUS_LABELS.get('launched', 'LOW PRIORITY')
+        return Config.GOLDILOCKS_SCORES.get('launched', 10)
+
+    # ============================================================
+    # Check for PREPARING status (Goldilocks Zone!)
+    # ============================================================
+    dep_hits = summary.get('dependency_injection', {}).get('hits', [])
+    goldilocks_hits = [h for h in dep_hits if h.get('goldilocks_status') == 'preparing' or h.get('gap_verified')]
+
+    if goldilocks_hits:
+        # This is the GOLDILOCKS ZONE!
+        # Library found + No locale folders = PERFECT TIMING
+        scan_results['goldilocks_status'] = 'preparing'
+        scan_results['lead_status'] = Config.LEAD_STATUS_LABELS.get('preparing', 'HOT LEAD')
+
+        # Score based on number of libraries found (90-100 range)
+        base_score = Config.GOLDILOCKS_SCORES.get('preparing_min', 90)
+        bonus = min(len(goldilocks_hits) * 5, 10)  # Up to +10 bonus
+
+        # Add bonus for ghost branches (active work)
+        ghost_count = summary.get('ghost_branch', {}).get('count', 0)
+        if ghost_count > 0:
+            bonus = 10  # Max bonus if actively working on it
+
+        return min(base_score + bonus, Config.GOLDILOCKS_SCORES.get('preparing_max', 100))
 
     # ============================================================
     # Check for THINKING status
