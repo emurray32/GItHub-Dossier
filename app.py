@@ -20,7 +20,7 @@ from database import (
     get_db_connection, get_setting, set_setting, increment_daily_stat,
     get_stats_last_n_days, log_webhook, get_recent_webhook_logs,
     set_scan_status, get_scan_status, get_queued_and_processing_accounts,
-    clear_stale_scan_statuses, reset_all_scan_statuses,
+    clear_stale_scan_statuses, reset_all_scan_statuses, batch_set_scan_status_queued,
     SCAN_STATUS_IDLE, SCAN_STATUS_QUEUED, SCAN_STATUS_PROCESSING,
     save_signals
 )
@@ -627,8 +627,8 @@ def api_import():
             "batch_id": timestamp
         }
 
-    After adding each company to the database, spawns a background scan
-    thread so the company data is analyzed automatically.
+    After adding companies to the database, batch-queues them for scanning.
+    This is optimized for bulk imports - all accounts are queued at once.
     """
     data = request.get_json() or {}
     companies = data.get('companies', [])
@@ -644,6 +644,7 @@ def api_import():
     skipped = []
     results = []
 
+    # Phase 1: Resolve and add all companies to database (no scanning yet)
     for company_name in companies:
         company_name = company_name.strip()
         if not company_name:
@@ -673,9 +674,6 @@ def api_import():
                     'github_org': github_org,
                     'status': 'added'
                 })
-
-                # Spawn background scan immediately after adding to DB
-                spawn_background_scan(company_name)
             else:
                 failed.append(company_name)
                 results.append({
@@ -690,6 +688,18 @@ def api_import():
                 'github_org': None,
                 'status': f'error: {str(e)}'
             })
+
+    # Phase 2: Batch update all added accounts to 'queued' status at once
+    # This makes the queue populate instantly rather than trickling in
+    if added:
+        batch_set_scan_status_queued(added)
+        print(f"[IMPORT] Batch queued {len(added)} accounts")
+
+        # Phase 3: Submit all to executor for background scanning
+        executor = get_executor()
+        for company_name in added:
+            executor.submit(perform_background_scan, company_name)
+            print(f"[EXECUTOR] Submitted scan for {company_name}")
 
     return jsonify({
         'added': added,
