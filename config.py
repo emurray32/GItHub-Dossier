@@ -66,6 +66,8 @@ class Config:
 
     # Scan Configuration
     MAX_REPOS_TO_SCAN = 50  # Top N most active repos
+    REPO_INACTIVITY_DAYS = 730  # Skip repos not pushed in this many days (2 years)
+    REPO_INACTIVITY_FALLBACK = 10  # If all repos filtered, take top N anyway
 
     # Priority keywords for repo selection
     PRIORITY_KEYWORDS = [

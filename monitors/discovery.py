@@ -258,9 +258,10 @@ def get_organization_repos(org_login: str) -> Generator[str, None, list]:
     yield f"Fetching repositories for {org_login}..."
 
     all_repos = []
+    all_repos_unfiltered = []  # Keep track of all repos before activity filter
     page = 1
     per_page = 100
-    cutoff_date = datetime.now(timezone.utc) - timedelta(days=365)
+    cutoff_date = datetime.now(timezone.utc) - timedelta(days=Config.REPO_INACTIVITY_DAYS)
 
     while True:
         try:
@@ -287,9 +288,12 @@ def get_organization_repos(org_login: str) -> Generator[str, None, list]:
 
             # Filter out archived repos and inactive repos
             active_repos = []
+            non_archived_repos = []
             for repo in repos:
                 if repo.get('archived', False):
                     continue
+
+                non_archived_repos.append(repo)
 
                 pushed_at = repo.get('pushed_at')
                 if pushed_at:
@@ -305,6 +309,7 @@ def get_organization_repos(org_login: str) -> Generator[str, None, list]:
 
                 active_repos.append(repo)
             all_repos.extend(active_repos)
+            all_repos_unfiltered.extend(non_archived_repos)
 
             yield f"Fetched page {page}: {len(active_repos)} active repos (total: {len(all_repos)})"
 
@@ -321,6 +326,14 @@ def get_organization_repos(org_login: str) -> Generator[str, None, list]:
         except requests.RequestException as e:
             yield f"Error fetching repos (page {page}): {str(e)}"
             break
+
+    # Fallback: if all repos were filtered out due to inactivity, use top N most recent
+    if not all_repos and all_repos_unfiltered:
+        fallback_count = min(Config.REPO_INACTIVITY_FALLBACK, len(all_repos_unfiltered))
+        yield f"All repos inactive for >{Config.REPO_INACTIVITY_DAYS} days. Using top {fallback_count} most recent repos."
+        # Sort by pushed_at descending and take top N
+        all_repos_unfiltered.sort(key=lambda r: r.get('pushed_at', ''), reverse=True)
+        all_repos = all_repos_unfiltered[:fallback_count]
 
     # Sort and prioritize repos
     prioritized = _prioritize_repos(all_repos)
