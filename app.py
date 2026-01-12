@@ -150,7 +150,9 @@ def perform_background_scan(company_name: str):
         analysis_data = None
 
         # Phase 1: Run the deep scan (silent)
-        for message in deep_scan_generator(company_name):
+        account = get_account_by_company_case_insensitive(company_name)
+        last_scanned_at = account.get('last_scanned_at') if account else None
+        for message in deep_scan_generator(company_name, last_scanned_at):
             # Check for scan errors - mark as invalid and exit
             if 'data: ERROR:' in message:
                 error_msg = message.split('data: ERROR:', 1)[1].strip()
@@ -283,7 +285,9 @@ def stream_scan(company: str):
 
         # Phase 1: Run the deep scan
         try:
-            for message in deep_scan_generator(company):
+            account = get_account_by_company_case_insensitive(company)
+            last_scanned_at = account.get('last_scanned_at') if account else None
+            for message in deep_scan_generator(company, last_scanned_at):
                 yield message
 
                 # Check if this is the scan complete message

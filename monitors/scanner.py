@@ -51,7 +51,36 @@ def make_github_request(url: str, params: Optional[dict] = None, timeout: int = 
     return response
 
 
-def deep_scan_generator(company_name: str) -> Generator[str, None, None]:
+def _parse_timestamp(timestamp: Optional[object]) -> Optional[datetime]:
+    if not timestamp:
+        return None
+    if isinstance(timestamp, datetime):
+        return timestamp
+    if isinstance(timestamp, str):
+        normalized = timestamp
+        if normalized.endswith('Z'):
+            normalized = normalized.replace('Z', '+00:00')
+        try:
+            return datetime.fromisoformat(normalized)
+        except ValueError:
+            return None
+    return None
+
+
+def _format_request_exception(error: requests.RequestException) -> str:
+    response = getattr(error, 'response', None)
+    if response is None:
+        return str(error)
+
+    status_code = response.status_code
+    if status_code == 429:
+        reason = 'Rate Limit'
+    else:
+        reason = response.reason or 'Request Failed'
+    return f"Error: {status_code} {reason}"
+
+
+def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[object] = None) -> Generator[str, None, None]:
     """
     Perform a 3-Signal Intent Scan of a company's GitHub presence.
 
@@ -62,6 +91,7 @@ def deep_scan_generator(company_name: str) -> Generator[str, None, None]:
 
     Args:
         company_name: The company name to scan.
+        last_scanned_timestamp: Optional timestamp of the last scan to skip unchanged repos.
 
     Yields:
         SSE-formatted strings for streaming response.
@@ -126,6 +156,24 @@ def deep_scan_generator(company_name: str) -> Generator[str, None, None]:
 
     # Select top repos for deep scan
     repos_to_scan = repos[:Config.MAX_REPOS_TO_SCAN]
+    last_scanned_at = _parse_timestamp(last_scanned_timestamp)
+
+    if last_scanned_at:
+        filtered_repos = []
+        for repo in repos_to_scan:
+            repo_name = repo.get('name')
+            pushed_at = _parse_timestamp(repo.get('pushed_at'))
+            if pushed_at:
+                if pushed_at.tzinfo and last_scanned_at.tzinfo is None:
+                    last_scanned_at = last_scanned_at.replace(tzinfo=timezone.utc)
+                elif last_scanned_at.tzinfo and pushed_at.tzinfo is None:
+                    pushed_at = pushed_at.replace(tzinfo=last_scanned_at.tzinfo)
+                if pushed_at <= last_scanned_at:
+                    yield _sse_log(f"Skipping unchanged repo {repo_name}...")
+                    continue
+            filtered_repos.append(repo)
+        repos_to_scan = filtered_repos
+
     yield _sse_log(f"✓ Selected {len(repos_to_scan)} repositories for intent scan")
 
     # Initialize scan results with 3-Signal structure
@@ -415,7 +463,8 @@ def _scan_rfc_discussion(org: str, repo: str, company: str) -> Generator[tuple, 
                     yield (f"{priority_label}: Issue #{issue_number} - {title[:40]}...", signal)
 
     except requests.RequestException as e:
-        yield (f"Error scanning issues: {str(e)}", None)
+        error_detail = _format_request_exception(e)
+        yield (f"Error scanning issues: {error_detail}", None)
 
     # Scan Discussions (if available via GraphQL - simplified to REST search)
     try:
@@ -884,7 +933,8 @@ def _scan_mobile_architecture(org: str, repo: str, company: str) -> Generator[tu
                 yield (f"📱 iOS: Found {other_lproj_count} translation .lproj folders - Already localized", None)
 
     except requests.RequestException as e:
-        yield (f"iOS scan error: {str(e)}", None)
+        error_detail = _format_request_exception(e)
+        yield (f"iOS scan error: {error_detail}", None)
 
     # ============================================================
     # ANDROID DETECTION: strings.xml without translations
@@ -937,7 +987,8 @@ def _scan_mobile_architecture(org: str, repo: str, company: str) -> Generator[tu
                 yield (f"📱 Android: Found {values_folder_count} translation values-* folders - Already localized", None)
 
     except requests.RequestException as e:
-        yield (f"Android scan error: {str(e)}", None)
+        error_detail = _format_request_exception(e)
+        yield (f"Android scan error: {error_detail}", None)
 
 
 def _scan_framework_configs(org: str, repo: str, company: str) -> Generator[tuple, None, None]:
@@ -1233,7 +1284,8 @@ def _scan_ghost_branches(org: str, repo: str, company: str) -> Generator[tuple, 
                         break  # Only match once per branch
 
     except requests.RequestException as e:
-        yield (f"Error scanning branches: {str(e)}", None)
+        error_detail = _format_request_exception(e)
+        yield (f"Error scanning branches: {error_detail}", None)
 
     # Scan unmerged PRs
     try:
@@ -1284,7 +1336,8 @@ def _scan_ghost_branches(org: str, repo: str, company: str) -> Generator[tuple, 
                         break  # Only match once per PR
 
     except requests.RequestException as e:
-        yield (f"Error scanning PRs: {str(e)}", None)
+        error_detail = _format_request_exception(e)
+        yield (f"Error scanning PRs: {error_detail}", None)
 
 
 def _parse_github_datetime(value: Optional[str]) -> Optional[datetime]:
