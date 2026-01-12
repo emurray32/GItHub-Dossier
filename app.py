@@ -7,7 +7,7 @@ import json
 import time
 import os
 import threading
-import queue
+from concurrent.futures import ThreadPoolExecutor
 import requests
 from datetime import datetime
 from flask import Flask, render_template, Response, request, jsonify, redirect, url_for, stream_with_context, send_file
@@ -18,7 +18,11 @@ from database import (
     get_account_by_company, get_account_by_company_case_insensitive,
     mark_account_as_invalid, get_refreshable_accounts, delete_account,
     get_db_connection, get_setting, set_setting, increment_daily_stat,
-    get_stats_last_n_days, log_webhook, get_recent_webhook_logs
+    get_stats_last_n_days, log_webhook, get_recent_webhook_logs,
+    set_scan_status, get_scan_status, get_queued_and_processing_accounts,
+    clear_stale_scan_statuses, reset_all_scan_statuses,
+    SCAN_STATUS_IDLE, SCAN_STATUS_QUEUED, SCAN_STATUS_PROCESSING,
+    save_signals
 )
 from monitors.scanner import deep_scan_generator
 from monitors.discovery import search_github_orgs, resolve_org_fast, discover_companies_via_ai
@@ -97,18 +101,32 @@ def trigger_webhook(event_type: str, company_data: dict) -> None:
 
 
 # =============================================================================
-# JOB QUEUE SYSTEM - Prevents SQLite 'Database Locked' errors
+# THREAD POOL EXECUTOR - Concurrent scan processing with DB-backed state
 # =============================================================================
 
-# Single job queue for all background scans
-scan_queue = queue.Queue()
-_scan_worker_thread = None
-_worker_lock = threading.Lock()
+# Configurable number of workers (default 5)
+MAX_SCAN_WORKERS = int(os.environ.get('SCAN_WORKERS', 5))
 
-# Global state for UI tracking
-# Note: This is in-memory only. Restarts clear this state.
-CURRENT_SCAN_INFO = {'company': None, 'start_time': None}
-QUEUED_COMPANIES = set()
+# Thread pool executor for concurrent scans
+_executor = None
+_executor_lock = threading.Lock()
+
+
+def get_executor() -> ThreadPoolExecutor:
+    """
+    Get or create the thread pool executor.
+
+    The executor is created lazily and reused across requests.
+    """
+    global _executor
+    with _executor_lock:
+        if _executor is None:
+            _executor = ThreadPoolExecutor(
+                max_workers=MAX_SCAN_WORKERS,
+                thread_name_prefix="ScanWorker"
+            )
+            print(f"[EXECUTOR] Created ThreadPoolExecutor with {MAX_SCAN_WORKERS} workers")
+        return _executor
 
 
 def perform_background_scan(company_name: str):
@@ -117,18 +135,15 @@ def perform_background_scan(company_name: str):
 
     CRITICAL: This function creates its own database connection for thread safety.
     SQLite requires each thread to have its own connection.
-    """
-    import sqlite3
-    from config import Config as AppConfig
 
+    Updates the database scan_status at start ('processing') and end ('idle').
+    Handles all exceptions to ensure status is always reset.
+    """
     print(f"[WORKER] Starting background scan for: {company_name}")
 
     try:
-        # Update global state
-        CURRENT_SCAN_INFO['company'] = company_name
-        CURRENT_SCAN_INFO['start_time'] = time.time()
-        if company_name in QUEUED_COMPANIES:
-            QUEUED_COMPANIES.remove(company_name)
+        # Update database status to 'processing'
+        set_scan_status(company_name, SCAN_STATUS_PROCESSING, 'Starting scan...')
 
         start_time = time.time()
         scan_data = None
@@ -141,7 +156,6 @@ def perform_background_scan(company_name: str):
                 error_msg = message.split('data: ERROR:', 1)[1].strip()
                 error_msg = error_msg.replace('\n', '').strip()
                 print(f"[WORKER] Scan error for {company_name}: {error_msg}")
-                # Create fresh connection for this thread
                 mark_account_as_invalid(company_name, error_msg)
                 return
 
@@ -157,6 +171,7 @@ def perform_background_scan(company_name: str):
             return
 
         print(f"[WORKER] Scan complete for {company_name}, generating AI analysis...")
+        set_scan_status(company_name, SCAN_STATUS_PROCESSING, 'Generating AI analysis...')
 
         # Phase 2: Generate AI analysis (silent)
         try:
@@ -171,6 +186,7 @@ def perform_background_scan(company_name: str):
             analysis_data = {'error': 'Analysis failed'}
 
         # Phase 3: Save report to database (uses fresh connection internally)
+        set_scan_status(company_name, SCAN_STATUS_PROCESSING, 'Saving report...')
         duration = time.time() - start_time
         try:
             report_id = save_report(
@@ -184,6 +200,15 @@ def perform_background_scan(company_name: str):
         except Exception as e:
             print(f"[WORKER] Failed to save report for {company_name}: {str(e)}")
             return
+
+        # Phase 3b: Save signals detected during the scan
+        try:
+            signals = scan_data.get('signals', [])
+            if signals:
+                signals_count = save_signals(report_id, company_name, signals)
+                print(f"[WORKER] Saved {signals_count} signals for {company_name}")
+        except Exception as e:
+            print(f"[WORKER] Failed to save signals for {company_name}: {str(e)}")
 
         # Phase 4: Update monitored account status and tier
         try:
@@ -209,78 +234,25 @@ def perform_background_scan(company_name: str):
     except Exception as e:
         print(f"[WORKER] Background scan failed for {company_name}: {str(e)}")
     finally:
-        # Reset global state
-        if CURRENT_SCAN_INFO['company'] == company_name:
-            CURRENT_SCAN_INFO['company'] = None
-            CURRENT_SCAN_INFO['start_time'] = None
-
-
-def scan_worker():
-    """
-    Single worker thread that processes scan jobs from the queue.
-
-    Runs as a daemon thread - pulls company names from the queue
-    and processes them one at a time to prevent database conflicts.
-    """
-    print("[WORKER] Scan worker thread started")
-    while True:
-        try:
-            company_name = scan_queue.get()
-            if company_name is None:  # Shutdown signal
-                print("[WORKER] Received shutdown signal")
-                break
-            queue_size = scan_queue.qsize()
-            print(f"[WORKER] Processing: {company_name} (queue size: {queue_size})")
-            perform_background_scan(company_name)
-        except Exception as e:
-            print(f"[WORKER] Error in worker loop: {str(e)}")
-        finally:
-            scan_queue.task_done()
-
-
-def start_scan_worker():
-    """Start the background scan worker thread."""
-    global _scan_worker_thread
-    with _worker_lock:
-        # Check if worker already exists and is alive
-        if _scan_worker_thread is not None and _scan_worker_thread.is_alive():
-            print("[WORKER] Worker thread already running")
-            return _scan_worker_thread
-
-        print("[WORKER] Starting new scan worker thread...")
-        _scan_worker_thread = threading.Thread(target=scan_worker, daemon=True, name="ScanWorker")
-        _scan_worker_thread.start()
-        print(f"[WORKER] Worker thread started (alive: {_scan_worker_thread.is_alive()})")
-        return _scan_worker_thread
-
-
-def ensure_worker_running():
-    """Ensure the worker thread is running, restart if necessary."""
-    global _scan_worker_thread
-    with _worker_lock:
-        if _scan_worker_thread is None or not _scan_worker_thread.is_alive():
-            print("[WORKER] Worker thread not running, starting...")
-            _scan_worker_thread = threading.Thread(target=scan_worker, daemon=True, name="ScanWorker")
-            _scan_worker_thread.start()
-            print(f"[WORKER] Worker thread restarted (alive: {_scan_worker_thread.is_alive()})")
-        return _scan_worker_thread.is_alive()
+        # ALWAYS reset scan status to idle when done (success or failure)
+        set_scan_status(company_name, SCAN_STATUS_IDLE)
 
 
 def spawn_background_scan(company_name: str):
     """
-    Queue a company for background scanning.
-
-    Instead of spawning a new thread (which causes SQLite 'database locked' errors),
-    this adds the company to the single-worker job queue.
+    Submit a company for background scanning using the thread pool.
 
     The scan will run asynchronously without blocking the API response.
     The account tier is automatically updated with the scan results.
+    Scan status is tracked in the database, not in memory.
     """
-    # Ensure worker is running before queuing
-    ensure_worker_running()
-    scan_queue.put(company_name)
-    QUEUED_COMPANIES.add(company_name)
-    print(f"[QUEUE] Added {company_name} to scan queue (size: {scan_queue.qsize()})")
+    # Mark as queued in database before submitting to executor
+    set_scan_status(company_name, SCAN_STATUS_QUEUED)
+
+    # Submit to thread pool
+    executor = get_executor()
+    future = executor.submit(perform_background_scan, company_name)
+    print(f"[EXECUTOR] Submitted scan for {company_name}")
 
 
 @app.route('/')
@@ -363,6 +335,16 @@ def stream_scan(company: str):
         except Exception as e:
             yield f"data: LOG:Warning: Could not save report: {str(e)}\n\n"
             report_id = None
+
+        # Phase 3b: Save signals detected during the scan
+        if report_id:
+            try:
+                signals = scan_data.get('signals', [])
+                if signals:
+                    signals_count = save_signals(report_id, company, signals)
+                    yield f"data: LOG:Saved {signals_count} signals to database\n\n"
+            except Exception as e:
+                yield f"data: LOG:Warning: Could not save signals: {str(e)}\n\n"
 
         # Phase 3.5: Update monitored account status
         try:
@@ -510,17 +492,15 @@ def api_accounts():
     # Get paginated accounts
     result = get_all_accounts(page=page, limit=limit)
 
-    # Inject live scan status
+    # Scan status is now stored in the database (scan_status, scan_start_time columns)
+    # The get_all_accounts() query already includes these fields
+    # Just ensure default values are set for display
     for account in result['accounts']:
-        company = account.get('company_name')
-
-        if company == CURRENT_SCAN_INFO['company']:
-            account['scan_status'] = 'processing'
-            account['scan_started_at'] = CURRENT_SCAN_INFO['start_time']
-        elif company in QUEUED_COMPANIES:
-            account['scan_status'] = 'queued'
-        else:
-            account['scan_status'] = 'idle'
+        if not account.get('scan_status'):
+            account['scan_status'] = SCAN_STATUS_IDLE
+        # Map scan_start_time to scan_started_at for API compatibility
+        if account.get('scan_start_time'):
+            account['scan_started_at'] = account['scan_start_time']
 
     return jsonify({
         'accounts': result['accounts'],
@@ -802,19 +782,29 @@ def api_rescan(company_name: str):
     Queue a rescan for a company.
 
     Instead of running synchronously (which blocks and can cause database locks),
-    this queues the scan job and returns immediately.
+    this submits the scan job to the thread pool and returns immediately.
 
     Returns:
         JSON with queued status. The UI should refresh to see updated results.
     """
-    # Ensure worker is running and queue the scan job
-    worker_alive = ensure_worker_running()
-    scan_queue.put(company_name)
-    QUEUED_COMPANIES.add(company_name)
-    print(f"[QUEUE] Rescan queued for {company_name} (worker_alive: {worker_alive}, queue_size: {scan_queue.qsize()})")
+    # Check if already scanning
+    current_status = get_scan_status(company_name)
+    if current_status and current_status.get('scan_status') in (SCAN_STATUS_QUEUED, SCAN_STATUS_PROCESSING):
+        return jsonify({
+            'status': current_status.get('scan_status'),
+            'company': company_name,
+            'message': f'Scan already {current_status.get("scan_status")}'
+        })
+
+    # Submit to thread pool (this also sets status to 'queued' in DB)
+    spawn_background_scan(company_name)
+    print(f"[EXECUTOR] Rescan submitted for {company_name}")
 
     # Get current account info for response
     account = get_account_by_company(company_name)
+    active_jobs = get_queued_and_processing_accounts()
+    queue_size = len(active_jobs.get('queued', [])) + len(active_jobs.get('processing', []))
+
     if account:
         tier = account.get('current_tier', 0)
         tier_config = TIER_CONFIG.get(tier, TIER_CONFIG[0])
@@ -822,8 +812,7 @@ def api_rescan(company_name: str):
             'status': 'queued',
             'company': company_name,
             'message': 'Scan queued successfully',
-            'queue_size': scan_queue.qsize(),
-            'worker_alive': worker_alive,
+            'active_jobs': queue_size,
             'current_tier': tier,
             'tier_name': tier_config['name'],
             'tier_emoji': tier_config['emoji']
@@ -833,8 +822,7 @@ def api_rescan(company_name: str):
         'status': 'queued',
         'company': company_name,
         'message': 'Scan queued successfully',
-        'queue_size': scan_queue.qsize(),
-        'worker_alive': worker_alive
+        'active_jobs': queue_size
     })
 
 
@@ -846,41 +834,43 @@ def api_scan_pending():
     Logic: Query monitored_accounts for all records where last_scanned_at
     is NULL or equal to created_at (meaning never scanned).
 
-    Action: Add them all to the scan queue.
+    Action: Submit them all to the thread pool.
 
     Returns:
         JSON with count of scans queued.
     """
-    # Ensure worker is running before queuing
-    worker_alive = ensure_worker_running()
-
     conn = get_db_connection()
     cursor = conn.cursor()
 
     # Find accounts that have never been scanned (last_scanned_at is NULL)
+    # and are not currently being scanned
     cursor.execute('''
         SELECT company_name FROM monitored_accounts
         WHERE last_scanned_at IS NULL
-    ''')
+          AND (scan_status IS NULL OR scan_status = ?)
+    ''', (SCAN_STATUS_IDLE,))
 
     pending_accounts = [row[0] for row in cursor.fetchall()]
     conn.close()
 
-    # Queue scans for each pending account
+    # Submit scans for each pending account
     queued_count = 0
     for company_name in pending_accounts:
-        scan_queue.put(company_name)
-        QUEUED_COMPANIES.add(company_name)
+        spawn_background_scan(company_name)
         queued_count += 1
 
-    print(f"[QUEUE] Queued {queued_count} pending accounts (worker_alive: {worker_alive})")
+    print(f"[EXECUTOR] Submitted {queued_count} pending accounts for scanning")
+
+    # Get current active job count
+    active_jobs = get_queued_and_processing_accounts()
+    total_active = len(active_jobs.get('queued', [])) + len(active_jobs.get('processing', []))
 
     return jsonify({
         'status': 'success',
         'queued': queued_count,
         'accounts': pending_accounts,
-        'queue_size': scan_queue.qsize(),
-        'worker_alive': worker_alive
+        'active_jobs': total_active,
+        'max_workers': MAX_SCAN_WORKERS
     })
 
 
@@ -894,34 +884,42 @@ def api_refresh_pipeline():
     - last_scanned_at < 7 days ago OR IS NULL
 
     Excludes Tier 3 (Launched) and Tier 4 (Invalid) accounts.
+    Also excludes accounts currently being scanned.
 
     Returns:
         JSON with count of accounts queued for refresh.
     """
-    # Ensure worker is running before queuing
-    worker_alive = ensure_worker_running()
-
     # Get all refreshable accounts
     refreshable = get_refreshable_accounts()
 
-    # Queue each account for scanning
+    # Submit each account for scanning (skip if already scanning)
     queued_count = 0
     queued_companies = []
     for account in refreshable:
         company_name = account.get('company_name')
+        scan_status = account.get('scan_status')
+
+        # Skip if already queued or processing
+        if scan_status in (SCAN_STATUS_QUEUED, SCAN_STATUS_PROCESSING):
+            continue
+
         if company_name:
-            scan_queue.put(company_name)
+            spawn_background_scan(company_name)
             queued_count += 1
             queued_companies.append(company_name)
 
-    print(f"[QUEUE] Queued {queued_count} accounts for refresh (worker_alive: {worker_alive})")
+    print(f"[EXECUTOR] Submitted {queued_count} accounts for refresh")
+
+    # Get current active job count
+    active_jobs = get_queued_and_processing_accounts()
+    total_active = len(active_jobs.get('queued', [])) + len(active_jobs.get('processing', []))
 
     return jsonify({
         'status': 'success',
         'queued': queued_count,
         'accounts': queued_companies,
-        'queue_size': scan_queue.qsize(),
-        'worker_alive': worker_alive
+        'active_jobs': total_active,
+        'max_workers': MAX_SCAN_WORKERS
     })
 
 
@@ -931,34 +929,49 @@ def api_queue_status():
     Get the current status of the scan queue.
 
     Returns:
-        JSON with queue size and status.
+        JSON with active job counts and executor status.
     """
-    global _scan_worker_thread
-    worker_alive = _scan_worker_thread is not None and _scan_worker_thread.is_alive()
+    active_jobs = get_queued_and_processing_accounts()
+    queued = active_jobs.get('queued', [])
+    processing = active_jobs.get('processing', [])
 
     return jsonify({
-        'queue_size': scan_queue.qsize(),
-        'worker_alive': worker_alive,
-        'worker_name': _scan_worker_thread.name if _scan_worker_thread else None
+        'queued_count': len(queued),
+        'processing_count': len(processing),
+        'queued_companies': queued,
+        'processing_companies': [p['company_name'] for p in processing],
+        'max_workers': MAX_SCAN_WORKERS,
+        'executor_active': _executor is not None
     })
 
 
 @app.route('/api/worker-restart', methods=['POST'])
 def api_worker_restart():
     """
-    Manually restart the scan worker thread.
+    Clear stale scan statuses and ensure the executor is ready.
 
-    Use this if scans are stuck in pending state.
+    Use this if scans are stuck in processing/queued state.
+    Clears any jobs stuck for more than 30 minutes.
 
     Returns:
-        JSON with worker status after restart.
+        JSON with status after cleanup.
     """
-    worker_alive = ensure_worker_running()
+    # Clear stale scan statuses (jobs stuck for > 30 minutes)
+    stale_cleared = clear_stale_scan_statuses(timeout_minutes=30)
+
+    # Ensure executor is created
+    get_executor()
+
+    # Get current status
+    active_jobs = get_queued_and_processing_accounts()
+    total_active = len(active_jobs.get('queued', [])) + len(active_jobs.get('processing', []))
+
     return jsonify({
         'status': 'success',
-        'worker_alive': worker_alive,
-        'queue_size': scan_queue.qsize(),
-        'message': 'Worker thread started' if worker_alive else 'Failed to start worker'
+        'stale_jobs_cleared': stale_cleared,
+        'active_jobs': total_active,
+        'max_workers': MAX_SCAN_WORKERS,
+        'message': f'Cleared {stale_cleared} stale jobs, executor ready with {MAX_SCAN_WORKERS} workers'
     })
 
 
@@ -977,7 +990,7 @@ def internal_error(e):
 
 
 # =============================================================================
-# App Startup - Ensure worker is running
+# App Startup - Initialize executor and reset stale statuses
 # =============================================================================
 
 # Use a flag to track if we've initialized on first request
@@ -986,19 +999,25 @@ _app_initialized = False
 @app.before_request
 def initialize_on_first_request():
     """
-    Ensure worker thread is running and auto-scan pending accounts on first request.
+    Initialize the thread pool executor and reset stale scan statuses on first request.
 
-    This provides resilience against app restarts - any accounts that were imported
-    but never scanned (e.g., due to queue loss on restart) will be automatically
-    queued for scanning.
+    This provides resilience against app restarts:
+    - Resets any scan statuses that were stuck in 'queued' or 'processing'
+    - Auto-scans any accounts that were imported but never scanned
     """
     global _app_initialized
     if not _app_initialized:
-        print("[APP] First request - ensuring worker is running...")
-        ensure_worker_running()
+        print("[APP] First request - initializing executor and cleaning up...")
+
+        # Reset any stale scan statuses from previous run
+        reset_count = reset_all_scan_statuses()
+        if reset_count > 0:
+            print(f"[APP] Reset {reset_count} stale scan statuses from previous run")
+
+        # Initialize the executor
+        get_executor()
 
         # Auto-scan any accounts that were imported but never scanned
-        # This handles cases where the app restarted after import but before scan
         _auto_scan_pending_accounts()
 
         _app_initialized = True
@@ -1027,8 +1046,8 @@ def _auto_scan_pending_accounts():
         if pending_accounts:
             print(f"[APP] Found {len(pending_accounts)} accounts pending initial scan")
             for company_name in pending_accounts:
-                scan_queue.put(company_name)
-            print(f"[APP] Auto-queued {len(pending_accounts)} pending accounts for scan")
+                spawn_background_scan(company_name)
+            print(f"[APP] Auto-submitted {len(pending_accounts)} pending accounts for scan")
         else:
             print("[APP] No pending accounts to scan")
 
@@ -1113,9 +1132,17 @@ def api_webhook_logs():
 
 
 if __name__ == '__main__':
-    # Start worker when running directly
+    # Initialize when running directly
     print("[APP] Starting application...")
-    start_scan_worker()
+    print(f"[APP] ThreadPoolExecutor configured with {MAX_SCAN_WORKERS} workers")
+
+    # Reset any stale scan statuses from previous run
+    reset_count = reset_all_scan_statuses()
+    if reset_count > 0:
+        print(f"[APP] Reset {reset_count} stale scan statuses from previous run")
+
+    # Initialize the executor
+    get_executor()
 
     # Auto-scan any pending accounts on direct startup
     _auto_scan_pending_accounts()

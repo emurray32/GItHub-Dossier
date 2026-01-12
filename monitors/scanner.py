@@ -14,11 +14,41 @@ import json
 import re
 import requests
 import base64
+import time
 from datetime import datetime, timedelta
 from typing import Generator, Optional, List, Dict
 from config import Config
 from .discovery import get_github_headers, discover_organization, get_organization_repos
 from database import increment_daily_stat
+
+
+def make_github_request(url: str, params: Optional[dict] = None, timeout: int = 30) -> requests.Response:
+    response = requests.get(
+        url,
+        headers=get_github_headers(),
+        params=params,
+        timeout=timeout,
+    )
+
+    remaining_header = response.headers.get("X-RateLimit-Remaining")
+    if remaining_header is not None:
+        try:
+            remaining = int(remaining_header)
+        except ValueError:
+            remaining = None
+
+        if remaining is not None and remaining < 10:
+            reset_header = response.headers.get("X-RateLimit-Reset", "0")
+            try:
+                reset_time = int(reset_header)
+            except ValueError:
+                reset_time = 0
+            sleep_for = max(reset_time - int(time.time()), 0)
+            print(f"Warning: GitHub API rate limit low ({remaining} remaining). Sleeping {sleep_for} seconds.")
+            if sleep_for > 0:
+                time.sleep(sleep_for)
+
+    return response
 
 
 def deep_scan_generator(company_name: str) -> Generator[str, None, None]:
@@ -333,12 +363,7 @@ def _scan_rfc_discussion(org: str, repo: str, company: str) -> Generator[tuple, 
             'direction': 'desc'
         }
 
-        response = requests.get(
-            url,
-            headers=get_github_headers(),
-            params=params,
-            timeout=30
-        )
+        response = make_github_request(url, params=params, timeout=30)
 
         if response.status_code == 200:
             issues = response.json()
@@ -404,12 +429,7 @@ def _scan_rfc_discussion(org: str, repo: str, company: str) -> Generator[tuple, 
                 'order': 'desc'
             }
 
-            response = requests.get(
-                search_url,
-                headers=get_github_headers(),
-                params=params,
-                timeout=15
-            )
+            response = make_github_request(search_url, params=params, timeout=15)
 
             if response.status_code == 200:
                 results = response.json().get('items', [])
@@ -525,11 +545,7 @@ def _scan_dependency_injection(org: str, repo: str, company: str) -> Generator[t
     for dep_file in Config.DEPENDENCY_INJECTION_FILES:
         try:
             url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}/contents/{dep_file}"
-            response = requests.get(
-                url,
-                headers=get_github_headers(),
-                timeout=15
-            )
+            response = make_github_request(url, timeout=15)
 
             if response.status_code != 200:
                 continue
@@ -698,11 +714,7 @@ def _scan_pseudo_localization_configs(org: str, repo: str, company: str) -> Gene
     for config_file in config_files:
         try:
             url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}/contents/{config_file}"
-            response = requests.get(
-                url,
-                headers=get_github_headers(),
-                timeout=15
-            )
+            response = make_github_request(url, timeout=15)
 
             if response.status_code != 200:
                 continue
@@ -772,11 +784,7 @@ def _scan_mobile_architecture(org: str, repo: str, company: str) -> Generator[tu
             'per_page': 5
         }
 
-        response = requests.get(
-            search_url,
-            headers=get_github_headers(),
-            timeout=15
-        )
+        response = make_github_request(search_url, params=params, timeout=15)
 
         base_lproj_found = False
         base_lproj_parent = None
@@ -806,11 +814,7 @@ def _scan_mobile_architecture(org: str, repo: str, company: str) -> Generator[tu
                 'per_page': 50
             }
 
-            lproj_response = requests.get(
-                lproj_search_url,
-                headers=get_github_headers(),
-                timeout=15
-            )
+            lproj_response = make_github_request(lproj_search_url, params=lproj_params, timeout=15)
 
             if lproj_response.status_code == 200:
                 lproj_results = lproj_response.json().get('items', [])
@@ -857,11 +861,7 @@ def _scan_mobile_architecture(org: str, repo: str, company: str) -> Generator[tu
     try:
         # Check if res/values/strings.xml exists
         url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}/contents/{strings_xml_path}"
-        response = requests.get(
-            url,
-            headers=get_github_headers(),
-            timeout=15
-        )
+        response = make_github_request(url, timeout=15)
 
         if response.status_code == 200:
             yield (f"📱 Android: Found {strings_xml_path}", None)
@@ -871,11 +871,7 @@ def _scan_mobile_architecture(org: str, repo: str, company: str) -> Generator[tu
 
             # Get contents of res/ folder to check for values-* folders
             res_url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}/contents/res"
-            res_response = requests.get(
-                res_url,
-                headers=get_github_headers(),
-                timeout=15
-            )
+            res_response = make_github_request(res_url, timeout=15)
 
             if res_response.status_code == 200:
                 res_contents = res_response.json()
@@ -953,11 +949,7 @@ def _scan_framework_configs(org: str, repo: str, company: str) -> Generator[tupl
     for config_file in Config.FRAMEWORK_CONFIG_FILES:
         try:
             url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}/contents/{config_file}"
-            response = requests.get(
-                url,
-                headers=get_github_headers(),
-                timeout=15
-            )
+            response = make_github_request(url, timeout=15)
 
             if response.status_code != 200:
                 continue
@@ -1065,11 +1057,7 @@ def _check_locale_folders_exist_detailed(org: str, repo: str) -> tuple:
     for path in Config.EXCLUSION_FOLDERS:
         try:
             url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}/contents/{path}"
-            response = requests.get(
-                url,
-                headers=get_github_headers(),
-                timeout=10
-            )
+            response = make_github_request(url, timeout=10)
             if response.status_code == 200:
                 found_folders.append(path)
 
@@ -1148,11 +1136,7 @@ def _check_locale_folders_exist(org: str, repo: str) -> bool:
     for path in locale_paths:
         try:
             url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}/contents/{path}"
-            response = requests.get(
-                url,
-                headers=get_github_headers(),
-                timeout=10
-            )
+            response = make_github_request(url, timeout=10)
             if response.status_code == 200:
                 return True
         except requests.RequestException:
@@ -1178,12 +1162,7 @@ def _scan_ghost_branches(org: str, repo: str, company: str) -> Generator[tuple, 
         url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}/branches"
         params = {'per_page': 100}
 
-        response = requests.get(
-            url,
-            headers=get_github_headers(),
-            params=params,
-            timeout=30
-        )
+        response = make_github_request(url, params=params, timeout=30)
 
         if response.status_code == 200:
             branches = response.json()
@@ -1224,12 +1203,7 @@ def _scan_ghost_branches(org: str, repo: str, company: str) -> Generator[tuple, 
             'direction': 'desc'
         }
 
-        response = requests.get(
-            url,
-            headers=get_github_headers(),
-            params=params,
-            timeout=30
-        )
+        response = make_github_request(url, params=params, timeout=30)
 
         if response.status_code == 200:
             prs = response.json()

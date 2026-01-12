@@ -58,9 +58,26 @@ def init_db() -> None:
             last_scanned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             status_changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             evidence_summary TEXT,
-            next_scan_due TIMESTAMP
+            next_scan_due TIMESTAMP,
+            scan_status TEXT DEFAULT 'idle',
+            scan_progress TEXT,
+            scan_start_time TIMESTAMP
         )
     ''')
+
+    # Migrate existing tables: add scan_status columns if they don't exist
+    try:
+        cursor.execute('ALTER TABLE monitored_accounts ADD COLUMN scan_status TEXT DEFAULT "idle"')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+    try:
+        cursor.execute('ALTER TABLE monitored_accounts ADD COLUMN scan_progress TEXT')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+    try:
+        cursor.execute('ALTER TABLE monitored_accounts ADD COLUMN scan_start_time TIMESTAMP')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
 
     cursor.execute('''
         CREATE INDEX IF NOT EXISTS idx_accounts_tier
@@ -104,6 +121,35 @@ def init_db() -> None:
     cursor.execute('''
         CREATE INDEX IF NOT EXISTS idx_webhook_logs_timestamp
         ON webhook_logs(timestamp DESC)
+    ''')
+
+    # Scan Signals table - stores individual signals detected during scans
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS scan_signals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            report_id INTEGER NOT NULL,
+            company_name TEXT NOT NULL,
+            signal_type TEXT NOT NULL,
+            description TEXT,
+            file_path TEXT,
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (report_id) REFERENCES reports(id)
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_scan_signals_report
+        ON scan_signals(report_id)
+    ''')
+
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_scan_signals_company
+        ON scan_signals(company_name)
+    ''')
+
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_scan_signals_timestamp
+        ON scan_signals(timestamp DESC)
     ''')
 
     conn.commit()
@@ -158,17 +204,116 @@ def save_report(
 
 
 def get_report(report_id: int) -> Optional[dict]:
-    """Retrieve a report by ID."""
+    """Retrieve a report by ID, including associated signals."""
     conn = get_db_connection()
     cursor = conn.cursor()
 
     cursor.execute('SELECT * FROM reports WHERE id = ?', (report_id,))
     row = cursor.fetchone()
-    conn.close()
 
     if row:
-        return _row_to_dict(row)
+        report = _row_to_dict(row)
+
+        # Fetch associated signals for this report
+        cursor.execute('''
+            SELECT id, signal_type, description, file_path, timestamp
+            FROM scan_signals
+            WHERE report_id = ?
+            ORDER BY timestamp DESC
+        ''', (report_id,))
+
+        signal_rows = cursor.fetchall()
+        report['signals'] = [dict(sig_row) for sig_row in signal_rows]
+
+        conn.close()
+        return report
+
+    conn.close()
     return None
+
+
+def save_signals(report_id: int, company_name: str, signals: list) -> int:
+    """
+    Save signals detected during a scan to the database.
+
+    Args:
+        report_id: The ID of the associated report.
+        company_name: The company name being scanned.
+        signals: List of signal dictionaries from scan results.
+
+    Returns:
+        The count of signals saved.
+    """
+    if not signals:
+        return 0
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    saved_count = 0
+
+    for signal in signals:
+        try:
+            # Extract relevant fields from signal dict
+            signal_type = signal.get('type', signal.get('Signal', 'unknown'))
+            # Use 'Evidence' field as description, falling back to 'Signal' field
+            description = signal.get('Evidence', signal.get('Signal', ''))
+            # Use 'Link' or 'file' as file_path
+            file_path = signal.get('Link', signal.get('file', signal.get('repo', '')))
+
+            cursor.execute('''
+                INSERT INTO scan_signals (
+                    report_id, company_name, signal_type, description, file_path
+                ) VALUES (?, ?, ?, ?, ?)
+            ''', (report_id, company_name, signal_type, description, file_path))
+
+            saved_count += 1
+        except Exception as e:
+            # Log error but continue processing other signals
+            print(f"Error saving signal: {str(e)}")
+            continue
+
+    conn.commit()
+    conn.close()
+
+    return saved_count
+
+
+def get_signals_for_report(report_id: int) -> list:
+    """Retrieve all signals for a specific report."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT id, signal_type, description, file_path, timestamp
+        FROM scan_signals
+        WHERE report_id = ?
+        ORDER BY timestamp DESC
+    ''', (report_id,))
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    return [dict(row) for row in rows]
+
+
+def get_signals_by_company(company_name: str, limit: int = 100) -> list:
+    """Retrieve recent signals for a company across all reports."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT id, report_id, signal_type, description, file_path, timestamp
+        FROM scan_signals
+        WHERE company_name = ?
+        ORDER BY timestamp DESC
+        LIMIT ?
+    ''', (company_name, limit))
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    return [dict(row) for row in rows]
 
 
 def get_recent_reports(limit: int = 20) -> list:
@@ -931,6 +1076,176 @@ def get_recent_webhook_logs(limit: int = 50) -> list:
     conn.close()
     
     return [dict(row) for row in rows]
+
+
+# =============================================================================
+# SCAN STATUS FUNCTIONS - For tracking concurrent scan jobs
+# =============================================================================
+
+# Valid scan statuses
+SCAN_STATUS_IDLE = 'idle'
+SCAN_STATUS_QUEUED = 'queued'
+SCAN_STATUS_PROCESSING = 'processing'
+
+
+def set_scan_status(company_name: str, status: str, progress: str = None) -> bool:
+    """
+    Update the scan status for a company.
+
+    Args:
+        company_name: The company name to update.
+        status: One of 'idle', 'queued', 'processing'.
+        progress: Optional progress message.
+
+    Returns:
+        True if the update was successful, False otherwise.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    now = datetime.now().isoformat() if status == SCAN_STATUS_PROCESSING else None
+
+    if status == SCAN_STATUS_PROCESSING:
+        cursor.execute('''
+            UPDATE monitored_accounts
+            SET scan_status = ?, scan_progress = ?, scan_start_time = ?
+            WHERE company_name = ?
+        ''', (status, progress, now, company_name))
+    elif status == SCAN_STATUS_IDLE:
+        cursor.execute('''
+            UPDATE monitored_accounts
+            SET scan_status = ?, scan_progress = NULL, scan_start_time = NULL
+            WHERE company_name = ?
+        ''', (status, company_name))
+    else:
+        cursor.execute('''
+            UPDATE monitored_accounts
+            SET scan_status = ?, scan_progress = ?
+            WHERE company_name = ?
+        ''', (status, progress, company_name))
+
+    updated = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+
+    return updated
+
+
+def get_scan_status(company_name: str) -> Optional[dict]:
+    """
+    Get the current scan status for a company.
+
+    Args:
+        company_name: The company name to check.
+
+    Returns:
+        Dictionary with scan_status, scan_progress, scan_start_time or None.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT scan_status, scan_progress, scan_start_time
+        FROM monitored_accounts
+        WHERE company_name = ?
+    ''', (company_name,))
+
+    row = cursor.fetchone()
+    conn.close()
+
+    if row:
+        return {
+            'scan_status': row['scan_status'] or SCAN_STATUS_IDLE,
+            'scan_progress': row['scan_progress'],
+            'scan_start_time': row['scan_start_time']
+        }
+    return None
+
+
+def get_queued_and_processing_accounts() -> dict:
+    """
+    Get all accounts that are currently queued or processing.
+
+    Returns:
+        Dictionary with 'queued' and 'processing' lists of company names.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT company_name, scan_status, scan_start_time
+        FROM monitored_accounts
+        WHERE scan_status IN (?, ?)
+    ''', (SCAN_STATUS_QUEUED, SCAN_STATUS_PROCESSING))
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    result = {'queued': [], 'processing': []}
+    for row in rows:
+        if row['scan_status'] == SCAN_STATUS_QUEUED:
+            result['queued'].append(row['company_name'])
+        else:
+            result['processing'].append({
+                'company_name': row['company_name'],
+                'scan_start_time': row['scan_start_time']
+            })
+
+    return result
+
+
+def clear_stale_scan_statuses(timeout_minutes: int = 30) -> int:
+    """
+    Clear scan statuses that have been stuck in 'processing' or 'queued' state.
+
+    This is a recovery mechanism for when scans fail without proper cleanup.
+
+    Args:
+        timeout_minutes: Minutes after which a scan is considered stale.
+
+    Returns:
+        Number of accounts reset.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Reset processing scans that have been running too long
+    cursor.execute('''
+        UPDATE monitored_accounts
+        SET scan_status = ?, scan_progress = NULL, scan_start_time = NULL
+        WHERE scan_status = ?
+          AND scan_start_time < datetime('now', ?)
+    ''', (SCAN_STATUS_IDLE, SCAN_STATUS_PROCESSING, f'-{timeout_minutes} minutes'))
+
+    reset_count = cursor.rowcount
+
+    conn.commit()
+    conn.close()
+
+    return reset_count
+
+
+def reset_all_scan_statuses() -> int:
+    """
+    Reset all scan statuses to idle. Used on app startup.
+
+    Returns:
+        Number of accounts reset.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        UPDATE monitored_accounts
+        SET scan_status = ?, scan_progress = NULL, scan_start_time = NULL
+        WHERE scan_status != ?
+    ''', (SCAN_STATUS_IDLE, SCAN_STATUS_IDLE))
+
+    reset_count = cursor.rowcount
+    conn.commit()
+    conn.close()
+
+    return reset_count
 
 
 # Initialize database on module import
