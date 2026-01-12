@@ -1166,18 +1166,34 @@ def _check_locale_folders_exist_detailed(org: str, repo: str) -> tuple:
     typically test fixtures, not production translation files.
     """
     # Directories to ignore when searching for locale folders
-    # Test fixtures and dependency directories should not count as "launched"
+    # Test fixtures, documentation, examples, and dependency directories should not count as "launched"
     IGNORED_PARENT_DIRS = [
         'node_modules', 'vendor', 'test', 'tests', 'fixtures',
-        '__tests__', '__mocks__', 'spec', 'e2e', 'cypress'
+        '__tests__', '__mocks__', 'spec', 'e2e', 'cypress',
+        'examples', 'example', 'demo', 'demos', 'sample', 'samples',
+        'docs', 'documentation', 'site', 'website', 'temp', 'tmp',
+        'dist', 'build', 'out'
     ]
 
     def _is_in_ignored_directory(path: str) -> bool:
-        """Check if a path is inside an ignored directory."""
-        path_parts = path.lower().split('/')
+        """Check if a path is inside an ignored directory or a third-party library."""
+        path_lower = path.lower()
+        path_parts = path_lower.split('/')
+        
+        # 1. Check for standard ignored directories
         for part in path_parts[:-1]:  # Check all parent directories
             if part in IGNORED_PARENT_DIRS:
                 return True
+                
+        # 2. Check for third-party library patterns in monorepos (e.g., packages/@uppy/locales)
+        # Often these are tagged with '@' for scoped packages or are in a 'vendor' like structure
+        for i, part in enumerate(path_parts):
+            if part.startswith('@') and i > 0 and path_parts[i-1] == 'packages':
+                # This is likely a third-party or scoped package in a monorepo
+                # We should be cautious, but if the folder is 'locales' inside a scoped package,
+                # it's usually the library's own translations, not the main app's.
+                return True
+
         return False
 
     found_folders = []
