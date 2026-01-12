@@ -472,6 +472,27 @@ a:hover {
     display: none !important;
 }
 
+/* Live Status Styling */
+.status-cell-active {
+    position: relative;
+    overflow: hidden;
+}
+
+.progress-line {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    height: 3px;
+    background: linear-gradient(90deg, transparent, var(--accent-color), transparent);
+    width: 50%;
+    animation: shimmer 1.5s infinite linear;
+}
+
+@keyframes shimmer {
+    0% { transform: translateX(-150%); }
+    100% { transform: translateX(250%); }
+}
+
 /* Responsive */
 @media (max-width: 768px) {
     :root {
