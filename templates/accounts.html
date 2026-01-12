@@ -1094,10 +1094,10 @@
                     </td>
                     <td class="actions-cell">
                         {% if account.latest_report_id %}
-                        <a href="{{ url_for('view_report', report_id=account.latest_report_id) }}"
-                            class="btn-view-report">
+                        <button type="button" class="btn-view-report"
+                            onclick="openReport('{{ url_for('view_report', report_id=account.latest_report_id) }}')">
                             View
-                        </a>
+                        </button>
                         {% endif %}
                         {% if account.current_tier == 4 %}
                         <button type="button" class="btn-invalid" disabled>
@@ -1163,10 +1163,29 @@
     {% endif %}
 </div>
 
+<div id="report-drawer">
+    <button type="button" class="drawer-close" onclick="closeDrawer()" aria-label="Close report drawer">×</button>
+    <iframe id="report-frame" width="100%" height="100%"></iframe>
+</div>
+
 <script>
     // =============================================================================
     // Time Utilities
     // =============================================================================
+
+    function openReport(url) {
+        const drawer = document.getElementById('report-drawer');
+        const frame = document.getElementById('report-frame');
+        frame.src = url;
+        drawer.classList.add('drawer-open');
+    }
+
+    function closeDrawer() {
+        const drawer = document.getElementById('report-drawer');
+        const frame = document.getElementById('report-frame');
+        drawer.classList.remove('drawer-open');
+        frame.src = '';
+    }
 
     function formatShortDate(timestamp) {
         if (!timestamp) return '--';
