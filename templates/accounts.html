@@ -2728,7 +2728,10 @@
                     let elapsed = 0;
                     let isStuck = false;
                     if (newStatus === 'processing' && account.scan_started_at) {
-                        elapsed = Math.floor(Date.now() / 1000 - account.scan_started_at);
+                        const startTime = typeof account.scan_started_at === 'string'
+                            ? Date.parse(account.scan_started_at) / 1000
+                            : account.scan_started_at;
+                        elapsed = Math.floor(Date.now() / 1000 - startTime);
                         isStuck = elapsed >= TIMEOUT_DANGER_SECONDS;
                     }
 
@@ -3043,8 +3046,11 @@
                     processingList.innerHTML = '<div class="queue-empty">No accounts currently processing</div>';
                 } else {
                     processingList.innerHTML = processingAccounts.map((account, idx) => {
-                        const elapsed = account.scan_started_at
-                            ? Math.floor(Date.now() / 1000 - account.scan_started_at)
+                        const startTime = typeof account.scan_started_at === 'string'
+                            ? Date.parse(account.scan_started_at) / 1000
+                            : account.scan_started_at;
+                        const elapsed = startTime
+                            ? Math.floor(Date.now() / 1000 - startTime)
                             : 0;
                         const elapsedStr = formatQueueElapsedTime(elapsed);
                         const elapsedClass = getQueueItemElapsedClass(elapsed);

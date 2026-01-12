@@ -22,7 +22,7 @@ from database import (
     set_scan_status, get_scan_status, get_queued_and_processing_accounts,
     clear_stale_scan_statuses, reset_all_scan_statuses, batch_set_scan_status_queued,
     SCAN_STATUS_IDLE, SCAN_STATUS_QUEUED, SCAN_STATUS_PROCESSING,
-    save_signals
+    save_signals, cleanup_duplicate_accounts
 )
 from monitors.scanner import deep_scan_generator
 from monitors.discovery import search_github_orgs, resolve_org_fast, discover_companies_via_ai
@@ -1179,6 +1179,12 @@ if __name__ == '__main__':
     reset_count = reset_all_scan_statuses()
     if reset_count > 0:
         print(f"[APP] Reset {reset_count} stale scan statuses from previous run")
+
+    # Cleanup any duplicate accounts
+    cleanup_result = cleanup_duplicate_accounts()
+    removed_count = cleanup_result.get('deleted', 0)
+    if removed_count > 0:
+        print(f"[APP] Removed {removed_count} duplicate accounts")
 
     # Initialize the executor
     get_executor()

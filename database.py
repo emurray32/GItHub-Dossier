@@ -155,6 +155,101 @@ def init_db() -> None:
     conn.commit()
     conn.close()
 
+    # Run duplicate cleanup on initialization
+    cleanup_duplicate_accounts()
+
+
+def cleanup_duplicate_accounts() -> dict:
+    """
+    Remove duplicate accounts based on both Company Name and GitHub Organization.
+    Keeps the 'best' account: Highest Tier > Most Recent Scan > Newest ID.
+    
+    Returns:
+        Dictionary with cleanup results: {deleted: int, kept: int, groups: list}
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    deleted_count = 0
+    kept_count = 0
+    groups_cleaned = []
+
+    try:
+        # Step 1: Find duplicates by Company Name (case-insensitive)
+        cursor.execute('''
+            SELECT LOWER(company_name) as normalized_name, COUNT(*) as count
+            FROM monitored_accounts
+            GROUP BY LOWER(company_name)
+            HAVING count > 1
+        ''')
+        name_duplicates = cursor.fetchall()
+        
+        for row in name_duplicates:
+            name = row['normalized_name']
+            
+            cursor.execute('''
+                SELECT * FROM monitored_accounts 
+                WHERE LOWER(company_name) = ?
+                ORDER BY current_tier DESC, last_scanned_at DESC, id DESC
+            ''', (name,))
+            
+            accounts = cursor.fetchall()
+            if len(accounts) > 1:
+                keep_id = accounts[0]['id']
+                remove_ids = [acc['id'] for acc in accounts[1:]]
+                
+                placeholders = ','.join('?' * len(remove_ids))
+                cursor.execute(f'DELETE FROM monitored_accounts WHERE id IN ({placeholders})', remove_ids)
+                
+                deleted_count += len(remove_ids)
+                kept_count += 1
+                groups_cleaned.append({'name': name, 'type': 'name', 'kept_id': keep_id, 'removed_count': len(remove_ids)})
+
+        # Step 2: Find duplicates by GitHub Org (case-insensitive)
+        cursor.execute('''
+            SELECT github_org, COUNT(*) as count
+            FROM monitored_accounts
+            WHERE github_org IS NOT NULL AND github_org != ''
+            GROUP BY LOWER(github_org)
+            HAVING count > 1
+        ''')
+        org_duplicates = cursor.fetchall()
+        
+        for row in org_duplicates:
+            org = row['github_org']
+            
+            cursor.execute('''
+                SELECT * FROM monitored_accounts 
+                WHERE LOWER(github_org) = LOWER(?)
+                ORDER BY current_tier DESC, last_scanned_at DESC, id DESC
+            ''', (org,))
+            
+            accounts = cursor.fetchall()
+            if len(accounts) > 1:
+                keep_id = accounts[0]['id']
+                # Filter out accounts that might have already been deleted in Step 1
+                # (though usually they would have been deleted already if they shared a name)
+                remove_ids = [acc['id'] for acc in accounts[1:]]
+                
+                placeholders = ','.join('?' * len(remove_ids))
+                cursor.execute(f'DELETE FROM monitored_accounts WHERE id IN ({placeholders})', remove_ids)
+                
+                deleted_count += len(remove_ids)
+                kept_count += 1
+                groups_cleaned.append({'org': org, 'type': 'org', 'kept_id': keep_id, 'removed_count': len(remove_ids)})
+                
+        conn.commit()
+    except Exception as e:
+        print(f"[CLEANUP] Error removing duplicates: {e}")
+        conn.rollback()
+    finally:
+        conn.close()
+        
+    return {
+        'deleted': deleted_count,
+        'kept': kept_count,
+        'groups': groups_cleaned
+    }
+
 
 def save_report(
     company_name: str,
@@ -679,12 +774,24 @@ def add_account_to_tier_0(company_name: str, github_org: str) -> dict:
     next_scan = next_scan.replace(day=next_scan.day + 7) if next_scan.day <= 24 else next_scan.replace(month=next_scan.month + 1, day=1)
     next_scan_iso = next_scan.isoformat()
 
-    # Check if account exists (case-insensitive)
+    # Check if account exists by COMPANY NAME (case-insensitive)
     cursor.execute(
         'SELECT * FROM monitored_accounts WHERE LOWER(company_name) = ?',
         (company_name_normalized,)
     )
-    existing = cursor.fetchone()
+    existing_by_name = cursor.fetchone()
+
+    # Check if account exists by GITHUB ORG (case-insensitive)
+    existing_by_org = None
+    if github_org:
+        cursor.execute(
+            'SELECT * FROM monitored_accounts WHERE LOWER(github_org) = ?',
+            (github_org.lower(),)
+        )
+        existing_by_org = cursor.fetchone()
+
+    # Determine which account to use (prioritize existing record)
+    existing = existing_by_name or existing_by_org
 
     if existing:
         # Update existing account - don't change last_scanned_at
@@ -692,9 +799,13 @@ def add_account_to_tier_0(company_name: str, github_org: str) -> dict:
             UPDATE monitored_accounts
             SET github_org = ?,
                 next_scan_due = ?
-            WHERE LOWER(company_name) = ?
-        ''', (github_org, next_scan_iso, company_name_normalized))
+            WHERE id = ?
+        ''', (github_org, next_scan_iso, existing['id']))
         account_id = existing['id']
+        
+        # If we matched by org but name is different, we might want to log it or update name,
+        # but changing name could be risky if unique constraint on name validation fails.
+        # We'll just update the org / timestamps on the existing record.
     else:
         # Create new account at Tier 0 (use normalized name)
         # Note: last_scanned_at is NULL until a scan actually completes
@@ -714,9 +825,9 @@ def add_account_to_tier_0(company_name: str, github_org: str) -> dict:
 
     return {
         'account_id': account_id,
-        'company_name': company_name_normalized,
+        'company_name': existing['company_name'] if existing else company_name_normalized,
         'github_org': github_org,
-        'tier': TIER_TRACKING,
+        'tier': existing['current_tier'] if existing else TIER_TRACKING,
         'tier_name': tier_config['name'],
         'tier_status': tier_config['status']
     }
@@ -1339,89 +1450,7 @@ def batch_set_scan_status_queued(company_names: list) -> int:
     return updated_count
 
 
-def cleanup_duplicate_accounts() -> dict:
-    """
-    Clean up duplicate accounts caused by case-sensitivity issues.
-
-    This function:
-    1. Finds all accounts that have duplicates (case-insensitive)
-    2. For each group, keeps the one with the most recent scan
-    3. Deletes the older duplicates
-
-    Returns:
-        Dictionary with cleanup results: {deleted: int, kept: int, groups: list}
-    """
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
-    # Find all duplicate groups (case-insensitive)
-    cursor.execute('''
-        SELECT LOWER(company_name) as normalized_name, COUNT(*) as count
-        FROM monitored_accounts
-        GROUP BY LOWER(company_name)
-        HAVING COUNT(*) > 1
-    ''')
-
-    duplicate_groups = cursor.fetchall()
-
-    if not duplicate_groups:
-        conn.close()
-        return {'deleted': 0, 'kept': 0, 'groups': []}
-
-    deleted_count = 0
-    kept_count = 0
-    groups_cleaned = []
-
-    for group in duplicate_groups:
-        normalized_name = group['normalized_name']
-
-        # Get all accounts in this group, sorted by last_scanned_at (most recent first)
-        cursor.execute('''
-            SELECT id, company_name, current_tier, last_scanned_at
-            FROM monitored_accounts
-            WHERE LOWER(company_name) = ?
-            ORDER BY
-                CASE WHEN last_scanned_at IS NULL THEN 1 ELSE 0 END,
-                last_scanned_at DESC,
-                id DESC
-        ''', (normalized_name,))
-
-        accounts = cursor.fetchall()
-
-        if len(accounts) < 2:
-            continue
-
-        # Keep the first one (most recent scan), delete the rest
-        keep_account = accounts[0]
-        delete_accounts = accounts[1:]
-
-        # Update the kept account to use normalized name
-        cursor.execute('''
-            UPDATE monitored_accounts
-            SET company_name = ?
-            WHERE id = ?
-        ''', (normalized_name, keep_account['id']))
-
-        # Delete duplicates
-        for dup in delete_accounts:
-            cursor.execute('DELETE FROM monitored_accounts WHERE id = ?', (dup['id'],))
-            deleted_count += 1
-
-        kept_count += 1
-        groups_cleaned.append({
-            'name': normalized_name,
-            'kept_id': keep_account['id'],
-            'deleted_ids': [d['id'] for d in delete_accounts]
-        })
-
-    conn.commit()
-    conn.close()
-
-    return {
-        'deleted': deleted_count,
-        'kept': kept_count,
-        'groups': groups_cleaned
-    }
+# Duplicate cleanup check complete
 
 
 # Initialize database on module import
