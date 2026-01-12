@@ -782,6 +782,12 @@
         padding: 1.5rem;
     }
 
+    .email-edit-hint {
+        font-size: 0.8125rem;
+        color: var(--text-secondary);
+        margin-bottom: 0.75rem;
+    }
+
     .email-subject {
         font-weight: 600;
         margin-bottom: 1rem;
@@ -799,12 +805,36 @@
         margin-bottom: 0.25rem;
     }
 
+    .email-edit-field {
+        width: 100%;
+        border: none;
+        background: transparent;
+        color: var(--text-primary);
+        font: inherit;
+        outline: none;
+    }
+
+    .email-edit-field:focus {
+        box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-color) 50%, transparent);
+        border-radius: 4px;
+    }
+
+    .email-subject-input {
+        font-weight: 600;
+    }
+
     .email-body {
         line-height: 1.8;
         padding: 1rem;
         background: var(--bg-tertiary);
         border-radius: 6px;
         white-space: pre-line;
+    }
+
+    .email-body-textarea {
+        min-height: 180px;
+        resize: none;
+        line-height: 1.8;
     }
 
     .email-body-label {
@@ -1138,13 +1168,17 @@
             </button>
         </div>
         <div class="email-draft-content">
+            <div class="email-edit-hint">Edit before copying.</div>
             <div class="email-subject">
                 <span class="email-subject-label">Subject Line</span>
-                <span id="emailSubject">{{ report.ai_analysis.email_draft.subject }}</span>
+                <input id="emailSubject" class="email-edit-field email-subject-input" type="text"
+                    value="{{ report.ai_analysis.email_draft.subject }}">
             </div>
             <div>
                 <span class="email-body-label">Email Body</span>
-                <div class="email-body" id="emailBody">{{ report.ai_analysis.email_draft.body }}</div>
+                <div class="email-body">
+                    <textarea id="emailBody" class="email-edit-field email-body-textarea">{{ report.ai_analysis.email_draft.body }}</textarea>
+                </div>
             </div>
         </div>
     </div>
@@ -1419,8 +1453,8 @@
 
 <script>
 function copyEmailDraft(button) {
-    const subject = document.getElementById('emailSubject').textContent;
-    const body = document.getElementById('emailBody').textContent;
+    const subject = document.getElementById('emailSubject').value;
+    const body = document.getElementById('emailBody').value;
 
     const emailText = `Subject: ${subject}\n\n${body}`;
 
@@ -1441,5 +1475,18 @@ function copyEmailDraft(button) {
         alert('Failed to copy email. Please select and copy manually.');
     });
 }
+
+function autoResizeEmailBody(textarea) {
+    textarea.style.height = 'auto';
+    textarea.style.height = `${textarea.scrollHeight}px`;
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const textarea = document.getElementById('emailBody');
+    if (textarea) {
+        autoResizeEmailBody(textarea);
+        textarea.addEventListener('input', () => autoResizeEmailBody(textarea));
+    }
+});
 </script>
 {% endblock %}
