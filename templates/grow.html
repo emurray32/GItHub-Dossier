@@ -783,6 +783,15 @@
                         addConsoleEntry(`✗ ${result.company} (${result.status})`, 'error');
                     }
                 });
+
+                // Redirect to accounts page with batch_id to highlight new imports
+                if (data.batch_id) {
+                    addConsoleEntry('', 'info');
+                    addConsoleEntry('Redirecting to results...', 'info');
+                    setTimeout(() => {
+                        window.location.href = `/accounts?highlight_batch=${data.batch_id}`;
+                    }, 2000);
+                }
             } else {
                 addConsoleEntry(`Error: ${data.error}`, 'error');
             }
