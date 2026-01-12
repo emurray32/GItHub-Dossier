@@ -497,10 +497,10 @@ a:hover {
 }
 
 .evidence-cell {
-    max-width: 300px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    min-width: 350px;
+    max-width: 500px;
+    white-space: normal;
+    word-wrap: break-word;
 }
 
 .company-cell {
