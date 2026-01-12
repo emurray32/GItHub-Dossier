@@ -272,7 +272,7 @@ def generate_report_pdf(report, output_path):
             if sig.get('type') == 'commit_message': content = sig.get('message', '')
             elif sig.get('type') == 'pull_request': content = f"PR #{sig.get('number')}: {sig.get('title')}"
             elif sig.get('type') == 'file_change': content = sig.get('file', '')
-            elif sig.get('type') == 'frustration_signal': content = f"😤 {sig.get('message', '')}"
+            elif sig.get('type') == 'frustration_signal': content = f"{sig.get('message', '')}"
             
             # Truncate content for PDF table
             if len(content) > 85: content = content[:82] + "..."

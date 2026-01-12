@@ -98,7 +98,7 @@ def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[obje
     """
     start_time = datetime.now()
 
-    yield _sse_log(f"🔍 Starting 3-Signal Intent Scan: {company_name}")
+    yield _sse_log(f"Starting 3-Signal Intent Scan: {company_name}")
     yield _sse_log("=" * 60)
     yield _sse_log("Target: Pre-launch internationalization signals")
     yield _sse_log("")
@@ -128,7 +128,7 @@ def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[obje
     org_login = org_data.get('login')
     org_name = org_data.get('name') or org_login
 
-    yield _sse_log(f"✓ Organization confirmed: {org_name} (@{org_login})")
+    yield _sse_log(f"Organization confirmed: {org_name} (@{org_login})")
     yield _sse_log(f"  Public repos: {org_data.get('public_repos', 'N/A')}")
 
     # Phase 2: Fetch Repositories
@@ -153,7 +153,7 @@ def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[obje
     if not repos:
         # Don't abort - continue with empty repos so tier calculation can properly classify
         # This is NOT an error - the org exists but has no public repos (or all filtered)
-        yield _sse_log("⚠️ No active repositories found. Organization may have private repos only.")
+        yield _sse_log("No active repositories found. Organization may have private repos only.")
         repos = []  # Continue with empty list
 
     # Select top repos for deep scan
@@ -183,7 +183,7 @@ def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[obje
             yield _sse_log("All repos unchanged since last scan, using original repo list for tier calculation")
             repos_to_scan = original_repos_to_scan
 
-    yield _sse_log(f"✓ Selected {len(repos_to_scan)} repositories for intent scan")
+    yield _sse_log(f"Selected {len(repos_to_scan)} repositories for intent scan")
 
     # Initialize scan results with 3-Signal structure
     scan_results = {
@@ -240,7 +240,7 @@ def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[obje
 
     rfc_count = scan_results['signal_summary']['rfc_discussion']['count']
     high_priority = scan_results['signal_summary']['rfc_discussion']['high_priority_count']
-    yield _sse_log(f"✓ RFC & Discussion scan complete: {rfc_count} signals ({high_priority} HIGH priority)")
+    yield _sse_log(f"RFC & Discussion scan complete: {rfc_count} signals ({high_priority} HIGH priority)")
 
     # Phase 4: Signal 2 - Dependency Injection Scan (Preparing Phase)
     yield _sse_log("")
@@ -262,7 +262,7 @@ def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[obje
                 yield _sse_signal(signal)
 
     dep_count = scan_results['signal_summary']['dependency_injection']['count']
-    yield _sse_log(f"✓ Dependency Injection scan complete: {dep_count} signals")
+    yield _sse_log(f"Dependency Injection scan complete: {dep_count} signals")
 
     # Phase 4b: Mobile Architecture Scan (iOS & Android Goldilocks)
     yield _sse_log("")
@@ -284,7 +284,7 @@ def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[obje
                 yield _sse_signal(signal)
 
     mobile_count = scan_results['signal_summary']['dependency_injection']['count'] - dep_count
-    yield _sse_log(f"✓ Mobile Architecture scan complete: {mobile_count} signals")
+    yield _sse_log(f"Mobile Architecture scan complete: {mobile_count} signals")
 
     # Update dep_count to include mobile signals
     dep_count = scan_results['signal_summary']['dependency_injection']['count']
@@ -309,7 +309,7 @@ def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[obje
                 yield _sse_signal(signal)
 
     framework_count = scan_results['signal_summary']['dependency_injection']['count'] - dep_count
-    yield _sse_log(f"✓ Framework Configuration scan complete: {framework_count} signals")
+    yield _sse_log(f"Framework Configuration scan complete: {framework_count} signals")
 
     # Update dep_count to include framework config signals
     dep_count = scan_results['signal_summary']['dependency_injection']['count']
@@ -334,7 +334,7 @@ def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[obje
                 yield _sse_signal(signal)
 
     ghost_count = scan_results['signal_summary']['ghost_branch']['count']
-    yield _sse_log(f"✓ Ghost Branch scan complete: {ghost_count} signals")
+    yield _sse_log(f"Ghost Branch scan complete: {ghost_count} signals")
 
     # Store repo metadata
     for repo in repos_to_scan:
@@ -363,22 +363,22 @@ def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[obje
     scan_results['scan_duration_seconds'] = duration
 
     total_signals = len(scan_results['signals'])
-    yield _sse_log(f"📊 Total Signals Detected: {total_signals}")
+    yield _sse_log(f"Total Signals Detected: {total_signals}")
     yield _sse_log(f"   • RFC & Discussion: {rfc_count} ({high_priority} HIGH)")
     yield _sse_log(f"   • Dependency Injection: {dep_count}")
     yield _sse_log(f"   • Ghost Branches: {ghost_count}")
-    yield _sse_log(f"📊 Intent Score: {scan_results['intent_score']}/100")
-    yield _sse_log(f"📊 Scan Duration: {duration:.1f}s")
+    yield _sse_log(f"Intent Score: {scan_results['intent_score']}/100")
+    yield _sse_log(f"Scan Duration: {duration:.1f}s")
 
     if total_signals > 0:
         yield _sse_log("")
-        yield _sse_log("🎯 INTENT DETECTED: Company is in Thinking/Preparing phase!")
+        yield _sse_log("INTENT DETECTED: Company is in Thinking/Preparing phase!")
     else:
         yield _sse_log("")
         yield _sse_log("⚪ No pre-launch signals detected.")
 
     yield _sse_log("")
-    yield _sse_log("🤖 Generating AI Sales Intelligence...")
+    yield _sse_log("Generating AI Sales Intelligence...")
 
     # Track stats - increment scans_run and estimate API calls
     try:
@@ -468,7 +468,7 @@ def _scan_rfc_discussion(org: str, repo: str, company: str) -> Generator[tuple, 
                         'created_at': issue.get('created_at'),
                     }
 
-                    priority_label = "🔴 HIGH" if is_high_priority else "🟡 MEDIUM"
+                    priority_label = "HIGH" if is_high_priority else "MEDIUM"
                     yield (f"{priority_label}: Issue #{issue_number} - {title[:40]}...", signal)
 
     except requests.RequestException as e:
@@ -525,7 +525,7 @@ def _scan_rfc_discussion(org: str, repo: str, company: str) -> Generator[tuple, 
                             'created_at': created_at,
                         }
 
-                        priority_label = "🔴 HIGH" if is_high_priority else "🟡 MEDIUM"
+                        priority_label = "HIGH" if is_high_priority else "MEDIUM"
                         yield (f"{priority_label}: Discussion - {title[:40]}...", signal)
 
     except requests.RequestException:
@@ -575,11 +575,11 @@ def _scan_dependency_injection(org: str, repo: str, company: str) -> Generator[t
             folders_str = ', '.join(found_folders)
 
             source_only_evidence = f"Found locale folder ({folders_str}) but it only contains source files ({files_str}) - Infrastructure ready, waiting for translation."
-            yield (f"✅ GOLDILOCKS: {folders_str} contains only source files ({files_str}) - Still a valid lead!", None)
+            yield (f"GOLDILOCKS: {folders_str} contains only source files ({files_str}) - Still a valid lead!", None)
             # Continue to positive check - don't return!
         else:
             # Company has ALREADY LAUNCHED - mark as "Too Late"
-            yield (f"⚠️ DISQUALIFIED: Found locale folders ({', '.join(found_folders)}) - Already Launched", None)
+            yield (f"DISQUALIFIED: Found locale folders ({', '.join(found_folders)}) - Already Launched", None)
 
             # Still emit a signal but mark it as "launched" status
             signal = {
@@ -594,7 +594,7 @@ def _scan_dependency_injection(org: str, repo: str, company: str) -> Generator[t
                 'goldilocks_status': 'launched',
                 'bdr_summary': Config.BDR_TRANSLATIONS.get('locale_folder_exists', 'Already has translations'),
             }
-            yield (f"📉 LOW PRIORITY: {repo} already has locale folders", signal)
+            yield (f"LOW PRIORITY: {repo} already has locale folders", signal)
             return
 
     # ============================================================
@@ -642,7 +642,7 @@ def _scan_dependency_injection(org: str, repo: str, company: str) -> Generator[t
         if not package_json_paths:
             package_json_paths = ['package.json']
         elif len(package_json_paths) >= max_package_files:
-            yield (f"⚠️ Limiting package.json scan to {max_package_files} files", None)
+            yield (f"Limiting package.json scan to {max_package_files} files", None)
     except requests.RequestException:
         package_json_paths = ['package.json']
 
@@ -708,7 +708,7 @@ def _scan_dependency_injection(org: str, repo: str, company: str) -> Generator[t
                                             'keyword_matched': matched_keyword,
                                             'goldilocks_status': 'preparing',
                                         }
-                                        yield (f"🧰 NPM SCRIPT: {script_name_text} in {dep_path}", signal)
+                                        yield (f"NPM SCRIPT: {script_name_text} in {dep_path}", signal)
 
                         found_libs = []
                         bdr_explanations = []
@@ -743,11 +743,11 @@ def _scan_dependency_injection(org: str, repo: str, company: str) -> Generator[t
                             # This is the GOLDILOCKS ZONE - Library found + NO locale folders (or source-only)!
                             if source_only_evidence:
                                 # Source-only case: folder exists but only has source files
-                                evidence = f"🎯 GOLDILOCKS ZONE: Found {', '.join(found_libs)} in {dep_path}. {source_only_evidence}"
+                                evidence = f"GOLDILOCKS ZONE: Found {', '.join(found_libs)} in {dep_path}. {source_only_evidence}"
                                 gap_explanation = Config.BDR_TRANSLATIONS.get('locale_folder_source_only', 'Infrastructure ready, only source files')
                             else:
                                 # No folder case: no locale folders at all
-                                evidence = f"🎯 GOLDILOCKS ZONE: Found {', '.join(found_libs)} in {dep_path} but NO locale folders exist!"
+                                evidence = f"GOLDILOCKS ZONE: Found {', '.join(found_libs)} in {dep_path} but NO locale folders exist!"
                                 gap_explanation = Config.BDR_TRANSLATIONS.get('locale_folder_missing', 'Infrastructure ready, no translations')
 
                             signal = {
@@ -767,7 +767,7 @@ def _scan_dependency_injection(org: str, repo: str, company: str) -> Generator[t
                                 'bdr_gap_explanation': gap_explanation,
                             }
 
-                            yield (f"🎯 GOLDILOCKS ZONE: {', '.join(found_libs)} in {dep_path} - NO TRANSLATIONS YET!", signal)
+                            yield (f"GOLDILOCKS ZONE: {', '.join(found_libs)} in {dep_path} - NO TRANSLATIONS YET!", signal)
 
                         for lib in found_linter_libs:
                             signal = {
@@ -786,7 +786,7 @@ def _scan_dependency_injection(org: str, repo: str, company: str) -> Generator[t
                                 'goldilocks_status': 'preparing',
                             }
 
-                            yield (f"🧹 CODE CLEANING: {lib} found in {dep_path}", signal)
+                            yield (f"CODE CLEANING: {lib} found in {dep_path}", signal)
 
                         for lib in found_cms_i18n_libs:
                             signal = {
@@ -805,7 +805,7 @@ def _scan_dependency_injection(org: str, repo: str, company: str) -> Generator[t
                                 'goldilocks_status': 'preparing',
                             }
 
-                            yield (f"🌐 CMS LOCALIZATION: {lib} found in {dep_path}", signal)
+                            yield (f"CMS LOCALIZATION: {lib} found in {dep_path}", signal)
 
                     except Exception:
                         pass
@@ -856,7 +856,7 @@ def _scan_pseudo_localization_configs(org: str, repo: str, company: str) -> Gene
                         'file': config_file,
                         'pattern': pattern,
                     }
-                    yield (f"🔎 PSEUDO-LOCALIZATION: {pattern} found in {config_file}", signal)
+                    yield (f"PSEUDO-LOCALIZATION: {pattern} found in {config_file}", signal)
 
         except requests.RequestException:
             continue
@@ -913,7 +913,7 @@ def _scan_mobile_architecture(org: str, repo: str, company: str) -> Generator[tu
                     break
 
         if base_lproj_found:
-            yield (f"📱 iOS: Found Base.lproj folder", None)
+            yield (f"iOS: Found Base.lproj folder", None)
 
             # Search for other .lproj folders (translations)
             other_lproj_count = 0
@@ -944,7 +944,7 @@ def _scan_mobile_architecture(org: str, repo: str, company: str) -> Generator[tu
                 signal = {
                     'Company': company,
                     'Signal': 'Mobile Architecture (iOS)',
-                    'Evidence': f"🎯 iOS GOLDILOCKS: Base.lproj exists but NO other .lproj folders found - iOS app ready for localization!",
+                    'Evidence': f"iOS GOLDILOCKS: Base.lproj exists but NO other .lproj folders found - iOS app ready for localization!",
                     'Link': f"https://github.com/{org}/{repo}",
                     'priority': 'CRITICAL',
                     'type': 'mobile_architecture',
@@ -954,9 +954,9 @@ def _scan_mobile_architecture(org: str, repo: str, company: str) -> Generator[tu
                     'gap_verified': True,
                     'bdr_summary': 'iOS Base Architecture ready, no translations',
                 }
-                yield (f"🎯 iOS GOLDILOCKS: Base.lproj found, no translations yet!", signal)
+                yield (f"iOS GOLDILOCKS: Base.lproj found, no translations yet!", signal)
             else:
-                yield (f"📱 iOS: Found {other_lproj_count} translation .lproj folders - Already localized", None)
+                yield (f"iOS: Found {other_lproj_count} translation .lproj folders - Already localized", None)
 
     except requests.RequestException as e:
         error_detail = _format_request_exception(e)
@@ -974,7 +974,7 @@ def _scan_mobile_architecture(org: str, repo: str, company: str) -> Generator[tu
         response = make_github_request(url, timeout=15)
 
         if response.status_code == 200:
-            yield (f"📱 Android: Found {strings_xml_path}", None)
+            yield (f"Android: Found {strings_xml_path}", None)
 
             # Search for values-XX folders (language variants)
             values_folder_count = 0
@@ -998,7 +998,7 @@ def _scan_mobile_architecture(org: str, repo: str, company: str) -> Generator[tu
                 signal = {
                     'Company': company,
                     'Signal': 'Mobile Architecture (Android)',
-                    'Evidence': f"🎯 Android GOLDILOCKS: res/values/strings.xml exists but NO values-* folders found - Android app ready for localization!",
+                    'Evidence': f"Android GOLDILOCKS: res/values/strings.xml exists but NO values-* folders found - Android app ready for localization!",
                     'Link': f"https://github.com/{org}/{repo}",
                     'priority': 'CRITICAL',
                     'type': 'mobile_architecture',
@@ -1008,9 +1008,9 @@ def _scan_mobile_architecture(org: str, repo: str, company: str) -> Generator[tu
                     'gap_verified': True,
                     'bdr_summary': 'Android Strings architecture ready, no translations',
                 }
-                yield (f"🎯 Android GOLDILOCKS: strings.xml found, no translations yet!", signal)
+                yield (f"Android GOLDILOCKS: strings.xml found, no translations yet!", signal)
             else:
-                yield (f"📱 Android: Found {values_folder_count} translation values-* folders - Already localized", None)
+                yield (f"Android: Found {values_folder_count} translation values-* folders - Already localized", None)
 
     except requests.RequestException as e:
         error_detail = _format_request_exception(e)
@@ -1097,7 +1097,7 @@ def _scan_framework_configs(org: str, repo: str, company: str) -> Generator[tupl
                         'gap_verified': True,
                         'bdr_summary': f'i18n routing enabled in {config_file}, no translations yet',
                     }
-                    yield (f"🔧 FRAMEWORK CONFIG: i18n routing found in {config_file}", signal)
+                    yield (f"FRAMEWORK CONFIG: i18n routing found in {config_file}", signal)
                     break  # Only one signal per file
 
         except requests.RequestException:
@@ -1391,7 +1391,7 @@ def _scan_ghost_branches(org: str, repo: str, company: str) -> Generator[tuple, 
                             'pattern_matched': pattern,
                         }
 
-                        yield (f"👻 GHOST BRANCH: {branch.get('name')}", signal)
+                        yield (f"GHOST BRANCH: {branch.get('name')}", signal)
                         break  # Only match once per branch
 
     except requests.RequestException as e:
@@ -1443,7 +1443,7 @@ def _scan_ghost_branches(org: str, repo: str, company: str) -> Generator[tuple, 
                             'created_at': pr.get('created_at'),
                         }
 
-                        yield (f"👻 UNMERGED PR: #{pr_number} - {pr.get('title')[:40]}...", signal)
+                        yield (f"UNMERGED PR: #{pr_number} - {pr.get('title')[:40]}...", signal)
                         break  # Only match once per PR
 
     except requests.RequestException as e:

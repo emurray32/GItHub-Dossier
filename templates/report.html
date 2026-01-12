@@ -45,11 +45,12 @@
     }
 
     .stat-card {
-        background: var(--bg-secondary);
+        background: var(--bg-primary);
         border: 1px solid var(--border-color);
         border-radius: 8px;
         padding: 1.5rem;
         text-align: center;
+        box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05);
     }
 
     .stat-value {
@@ -77,21 +78,25 @@
     }
 
     .executive-summary {
-        background: linear-gradient(135deg, var(--accent-color) 0%, var(--accent-secondary) 100%);
-        color: white;
+        background: var(--bg-primary);
+        color: var(--text-primary);
         padding: 2rem;
         border-radius: 12px;
         font-size: 1.125rem;
         line-height: 1.6;
         margin-bottom: 2rem;
+        border: 1px solid var(--border-color);
+        border-left: 4px solid var(--accent-color);
+        box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05);
     }
 
     .reachout-summary {
-        background: var(--bg-secondary);
+        background: var(--bg-primary);
         border: 1px solid var(--border-color);
         border-radius: 12px;
         padding: 1.5rem;
         margin-bottom: 2rem;
+        box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05);
     }
 
     .reachout-title {
@@ -196,11 +201,12 @@
     }
 
     .finding-item {
-        background: var(--bg-secondary);
+        background: var(--bg-primary);
         border: 1px solid var(--border-color);
         border-radius: 8px;
         padding: 1rem;
         margin-bottom: 0.75rem;
+        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
     }
 
     .finding-header {
@@ -281,7 +287,7 @@
     }
 
     .forensic-card {
-        background: var(--bg-secondary);
+        background: var(--bg-primary);
         border: 1px solid var(--border-color);
         border-left: 4px solid var(--accent-secondary);
         border-radius: 0 8px 8px 0;
@@ -297,7 +303,7 @@
     }
 
     .compliance-card {
-        background: var(--bg-secondary);
+        background: var(--bg-primary);
         border: 1px solid var(--border-color);
         padding: 1rem;
         border-radius: 8px;
@@ -307,7 +313,7 @@
     }
 
     .prospect-card {
-        background: var(--bg-secondary);
+        background: var(--bg-primary);
         border: 1px solid var(--border-color);
         border-radius: 12px;
         padding: 1.5rem;
@@ -315,6 +321,7 @@
         display: grid;
         grid-template-columns: 80px 1fr;
         gap: 1.5rem;
+        box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
     }
 
     .prospect-avatar {
@@ -344,7 +351,7 @@
     }
 
     .strategy-box {
-        background: #3b82f61a;
+        background: var(--bg-secondary);
         border-left: 3px solid var(--accent-color);
         padding: 0.75rem 1rem;
         border-radius: 0 4px 4px 0;
@@ -357,12 +364,14 @@
     }
 
     .narrative-box {
-        background: var(--bg-secondary);
+        background: var(--bg-primary);
         border-left: 4px solid var(--accent-color);
         padding: 1.5rem;
         border-radius: 0 8px 8px 0;
         line-height: 1.8;
         white-space: pre-line;
+        border: 1px solid var(--border-color);
+        box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
     }
 
     .timeline-list {
@@ -406,7 +415,7 @@
     }
 
     .contact-card {
-        background: var(--bg-secondary);
+        background: var(--bg-primary);
         border: 1px solid var(--border-color);
         border-radius: 8px;
         padding: 1rem;
@@ -424,11 +433,12 @@
     }
 
     .conversation-item {
-        background: var(--bg-secondary);
+        background: var(--bg-primary);
         border-radius: 8px;
         padding: 1rem;
         margin-bottom: 0.75rem;
         line-height: 1.6;
+        border: 1px solid var(--border-color);
     }
 
     .suggestions-grid {
@@ -438,13 +448,14 @@
     }
 
     .suggestion-card {
-        background: var(--bg-secondary);
+        background: var(--bg-primary);
         border: 1px solid var(--border-color);
         border-radius: 12px;
         padding: 1rem 1.25rem;
         display: flex;
         flex-direction: column;
         gap: 0.75rem;
+        box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
     }
 
     .suggestion-row {
@@ -482,6 +493,17 @@
         gap: 0.75rem;
     }
 
+    .risk-item::before,
+    .next-step-item::before {
+        content: "";
+        width: 6px;
+        height: 6px;
+        border-radius: 999px;
+        margin-top: 0.4rem;
+        background: currentColor;
+        flex-shrink: 0;
+    }
+
     .risk-item {
         background: #fef2f2;
         color: #991b1b;
@@ -497,7 +519,7 @@
     }
 
     .signal-card {
-        background: var(--bg-secondary);
+        background: var(--bg-primary);
         border: 1px solid var(--border-color);
         border-radius: 8px;
         padding: 1rem;
@@ -547,18 +569,24 @@
         color: white;
         border: none;
         padding: 1rem;
-        border-radius: 50%;
+        border-radius: 12px;
         cursor: pointer;
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
     }
 
+    .print-button svg {
+        width: 20px;
+        height: 20px;
+    }
+
     /* Confidence Score */
     .confidence-score-section {
-        background: var(--bg-secondary);
+        background: var(--bg-primary);
         border: 1px solid var(--border-color);
         border-radius: 12px;
         padding: 1.5rem;
         margin-bottom: 2rem;
+        box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05);
     }
 
     .confidence-header {
@@ -624,19 +652,28 @@
         text-align: left;
         font-weight: 700;
         display: flex;
-        align-items: center;
+        align-items: flex-start;
         gap: 1.5rem;
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-left: 6px solid var(--border-color);
+        box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05);
     }
 
     .goldilocks-preparing {
-        background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
-        color: white;
-        border: 3px solid #15803d;
+        border-left-color: #16a34a;
     }
 
-    .status-icon {
-        font-size: 3rem;
-        line-height: 1;
+    .goldilocks-thinking {
+        border-left-color: #d97706;
+    }
+
+    .goldilocks-launched {
+        border-left-color: #6b7280;
+    }
+
+    .goldilocks-none {
+        border-left-color: #cbd5e1;
     }
 
     .status-content {
@@ -644,34 +681,24 @@
     }
 
     .status-title {
-        font-size: 2rem;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
+        font-size: 1.5rem;
+        color: var(--text-primary);
+        margin: 0.5rem 0 0.25rem;
+        letter-spacing: 0.04em;
+    }
+
+    .status-subtitle {
+        font-size: 0.9rem;
+        color: var(--text-secondary);
+        font-weight: 600;
     }
 
     .status-points {
         margin: 0.5rem 0 0 1.25rem;
         padding: 0;
         font-size: 1rem;
-        font-weight: 600;
-    }
-
-    .goldilocks-thinking {
-        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-        color: white;
-        border: 3px solid #b45309;
-    }
-
-    .goldilocks-launched {
-        background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
-        color: white;
-        border: 3px solid #374151;
-    }
-
-    .goldilocks-none {
-        background: var(--bg-secondary);
+        font-weight: 500;
         color: var(--text-secondary);
-        border: 2px dashed var(--border-color);
     }
 
     /* BDR-Friendly Highlight Boxes */
@@ -734,20 +761,22 @@
 
     /* Email Draft Section */
     .email-draft-section {
-        background: var(--bg-secondary);
+        background: var(--bg-primary);
         border: 1px solid var(--border-color);
         border-radius: 12px;
         overflow: hidden;
         margin-bottom: 2rem;
+        box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05);
     }
 
     .email-draft-header {
-        background: linear-gradient(135deg, var(--accent-color) 0%, var(--accent-secondary) 100%);
-        color: white;
+        background: var(--bg-secondary);
+        color: var(--text-primary);
         padding: 1rem 1.5rem;
         display: flex;
         justify-content: space-between;
         align-items: center;
+        border-bottom: 1px solid var(--border-color);
     }
 
     .email-draft-header h3 {
@@ -756,9 +785,9 @@
     }
 
     .copy-email-btn {
-        background: white;
-        color: var(--accent-color);
-        border: none;
+        background: var(--bg-primary);
+        color: var(--text-primary);
+        border: 1px solid var(--border-color);
         padding: 0.5rem 1rem;
         border-radius: 6px;
         font-weight: 600;
@@ -774,8 +803,31 @@
     }
 
     .copy-email-btn.copied {
-        background: #22c55e;
-        color: white;
+        background: #dcfce7;
+        color: #166534;
+        border-color: #bbf7d0;
+    }
+
+    .copy-icon {
+        display: inline-flex;
+        align-items: center;
+    }
+
+    .copy-icon svg {
+        width: 16px;
+        height: 16px;
+    }
+
+    .copy-icon--success {
+        display: none;
+    }
+
+    .copy-email-btn.copied .copy-icon--default {
+        display: none;
+    }
+
+    .copy-email-btn.copied .copy-icon--success {
+        display: inline-flex;
     }
 
     .email-draft-content {
@@ -792,9 +844,10 @@
         font-weight: 600;
         margin-bottom: 1rem;
         padding: 0.75rem 1rem;
-        background: var(--bg-tertiary);
+        background: var(--bg-primary);
         border-radius: 6px;
         border-left: 3px solid var(--accent-color);
+        border: 1px solid var(--border-color);
     }
 
     .email-subject-label {
@@ -826,9 +879,10 @@
     .email-body {
         line-height: 1.8;
         padding: 1rem;
-        background: var(--bg-tertiary);
+        background: var(--bg-primary);
         border-radius: 6px;
         white-space: pre-line;
+        border: 1px solid var(--border-color);
     }
 
     .email-body-textarea {
@@ -886,9 +940,10 @@
 
     {% if goldilocks_status == 'preparing' %}
     <div class="goldilocks-banner goldilocks-preparing">
-        <div class="status-icon">🎯</div>
         <div class="status-content">
-            <div class="status-title">CALL NOW</div>
+            <span class="badge badge-success">Preparing</span>
+            <div class="status-title">Call Now</div>
+            <div class="status-subtitle">Goldilocks signal detected</div>
             <ul class="status-points">
                 <li>Infrastructure is ready, but no translation files exist yet.</li>
             </ul>
@@ -896,9 +951,10 @@
     </div>
     {% elif goldilocks_status == 'thinking' %}
     <div class="goldilocks-banner goldilocks-thinking">
-        <div class="status-icon">💭</div>
         <div class="status-content">
-            <div class="status-title">WARM LEAD</div>
+            <span class="badge badge-warning">Thinking</span>
+            <div class="status-title">Warm Lead</div>
+            <div class="status-subtitle">Early momentum</div>
             <ul class="status-points">
                 <li>They are discussing i18n but have not started building.</li>
             </ul>
@@ -906,9 +962,10 @@
     </div>
     {% elif goldilocks_status == 'launched' %}
     <div class="goldilocks-banner goldilocks-launched">
-        <div class="status-icon">⚠️</div>
         <div class="status-content">
-            <div class="status-title">TOO LATE</div>
+            <span class="badge badge-neutral">Launched</span>
+            <div class="status-title">Too Late</div>
+            <div class="status-subtitle">Localization is already live</div>
             <ul class="status-points">
                 <li>Translation files already exist, so localization is live.</li>
             </ul>
@@ -916,9 +973,10 @@
     </div>
     {% else %}
     <div class="goldilocks-banner goldilocks-none">
-        <div class="status-icon">❄️</div>
         <div class="status-content">
-            <div class="status-title">COLD LEAD</div>
+            <span class="badge badge-neutral">No Signals</span>
+            <div class="status-title">Cold Lead</div>
+            <div class="status-subtitle">Keep monitoring</div>
             <ul class="status-points">
                 <li>No significant i18n signals detected.</li>
             </ul>
@@ -1027,20 +1085,20 @@
             <p style="margin: 0 0 0.75rem 0;">
                 <strong>Goldilocks Status:</strong>
                 {% if goldilocks_status == 'preparing' %}
-                <span class="maturity-badge" style="background: #22c55e; color: white;">
-                    🎯 PREPARING - CALL NOW
+                <span class="badge badge-success">
+                    Preparing - Call Now
                 </span>
                 {% elif goldilocks_status == 'thinking' %}
-                <span class="maturity-badge" style="background: #f59e0b; color: white;">
-                    💭 THINKING - WARM LEAD
+                <span class="badge badge-warning">
+                    Thinking - Warm Lead
                 </span>
                 {% elif goldilocks_status == 'launched' %}
-                <span class="maturity-badge" style="background: #6b7280; color: white;">
-                    ⚠️ LAUNCHED - TOO LATE
+                <span class="badge badge-neutral">
+                    Launched - Too Late
                 </span>
                 {% else %}
-                <span class="maturity-badge" style="background: #d1d5db; color: #374151;">
-                    ❄️ NO SIGNALS
+                <span class="badge badge-neutral">
+                    No Signals
                 </span>
                 {% endif %}
             </p>
@@ -1163,7 +1221,19 @@
         <div class="email-draft-header">
             <h3>Ready-to-Send Cold Email</h3>
             <button class="copy-email-btn" onclick="copyEmailDraft(this)" id="copyEmailBtn">
-                <span>📋</span>
+                <span class="copy-icon copy-icon--default" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="9" y="9" width="13" height="13" rx="2"></rect>
+                        <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"></path>
+                    </svg>
+                </span>
+                <span class="copy-icon copy-icon--success" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M20 6L9 17l-5-5"></path>
+                    </svg>
+                </span>
                 <span class="btn-text">Copy Email</span>
             </button>
         </div>
@@ -1196,7 +1266,6 @@
             <li class="finding-item {% if finding.significance == 'critical' %}critical-finding{% elif finding.significance == 'low' %}low-priority-finding{% endif %}">
                 <div class="finding-header">
                     <span class="finding-text">
-                        {% if finding.significance == 'critical' %}🎯 {% endif %}
                         <strong>{{ finding.finding }}</strong>
                     </span>
                     <span class="finding-significance significance-{{ finding.significance }}">
@@ -1391,7 +1460,6 @@
         <ul class="risk-list">
             {% for risk in report.ai_analysis.risk_factors %}
             <li class="risk-item">
-                <span>&#x26A0;</span>
                 <span>{{ risk }}</span>
             </li>
             {% endfor %}
@@ -1406,7 +1474,6 @@
         <ul class="next-steps-list">
             {% for step in report.ai_analysis.next_steps %}
             <li class="next-step-item">
-                <span>&#x2713;</span>
                 <span>{{ step }}</span>
             </li>
             {% endfor %}
@@ -1448,7 +1515,12 @@
 </div>
 
 <button class="print-button" onclick="window.print()" title="Print Report">
-    &#x1F5A8;
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M6 9V2h12v7"></path>
+        <path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"></path>
+        <path d="M6 14h12v8H6z"></path>
+    </svg>
 </button>
 
 <script>
@@ -1462,13 +1534,11 @@ function copyEmailDraft(button) {
         // Update button state
         button.classList.add('copied');
         button.querySelector('.btn-text').textContent = 'Copied!';
-        button.querySelector('span:first-child').textContent = '✓';
 
         // Reset after 2 seconds
         setTimeout(() => {
             button.classList.remove('copied');
             button.querySelector('.btn-text').textContent = 'Copy Email';
-            button.querySelector('span:first-child').textContent = '📋';
         }, 2000);
     }).catch(err => {
         console.error('Failed to copy:', err);
