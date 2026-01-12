@@ -996,6 +996,281 @@
         color: var(--text-primary);
     }
 
+    /* Queue/Processing Modal */
+    .queue-modal {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 2000;
+    }
+
+    .queue-modal.open {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .queue-modal-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+    }
+
+    .queue-modal-content {
+        position: relative;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        max-width: 700px;
+        width: 90%;
+        max-height: 80vh;
+        display: flex;
+        flex-direction: column;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+        animation: modalSlideIn 0.3s ease;
+    }
+
+    @keyframes modalSlideIn {
+        from {
+            transform: scale(0.95);
+            opacity: 0;
+        }
+        to {
+            transform: scale(1);
+            opacity: 1;
+        }
+    }
+
+    .queue-modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1.5rem;
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    .queue-modal-header h2 {
+        margin: 0;
+        font-size: 1.25rem;
+        color: var(--text-primary);
+    }
+
+    .queue-modal-close {
+        background: transparent;
+        border: none;
+        color: var(--text-secondary);
+        font-size: 1.5rem;
+        cursor: pointer;
+        padding: 0;
+        width: 32px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 6px;
+        transition: all var(--transition-fast);
+    }
+
+    .queue-modal-close:hover {
+        background: var(--bg-tertiary);
+        color: var(--text-primary);
+    }
+
+    .queue-modal-tabs {
+        display: flex;
+        gap: 0.5rem;
+        padding: 0 1rem;
+        border-bottom: 1px solid var(--border-color);
+        background: var(--bg-tertiary);
+    }
+
+    .queue-tab-btn {
+        background: transparent;
+        border: none;
+        border-bottom: 2px solid transparent;
+        color: var(--text-secondary);
+        padding: 0.75rem 1rem;
+        cursor: pointer;
+        font-size: 0.875rem;
+        font-weight: 500;
+        transition: all var(--transition-fast);
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .queue-tab-btn:hover {
+        color: var(--text-primary);
+    }
+
+    .queue-tab-btn.active {
+        color: var(--accent-color);
+        border-bottom-color: var(--accent-color);
+    }
+
+    .queue-count {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(99, 102, 241, 0.15);
+        color: var(--accent-color);
+        border-radius: 12px;
+        width: 24px;
+        height: 24px;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+
+    .queue-modal-body {
+        flex: 1;
+        overflow-y: auto;
+        padding: 1rem;
+    }
+
+    .queue-tab-content {
+        display: none;
+    }
+
+    .queue-tab-content.active {
+        display: block;
+    }
+
+    .queue-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+    }
+
+    .queue-empty {
+        text-align: center;
+        padding: 2rem 1rem;
+        color: var(--text-secondary);
+        font-style: italic;
+    }
+
+    .queue-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1rem;
+        background: var(--bg-tertiary);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        transition: all var(--transition-fast);
+    }
+
+    .queue-item:hover {
+        background: var(--bg-secondary);
+        border-color: var(--accent-color);
+    }
+
+    .queue-item-info {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+        flex: 1;
+    }
+
+    .queue-item-name {
+        font-weight: 600;
+        color: var(--text-primary);
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .queue-item-meta {
+        font-size: 0.8rem;
+        color: var(--text-muted);
+        display: flex;
+        gap: 1rem;
+    }
+
+    .queue-item-meta-item {
+        display: flex;
+        align-items: center;
+        gap: 0.25rem;
+    }
+
+    .queue-position-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(245, 158, 11, 0.15);
+        color: #fbbf24;
+        border-radius: 4px;
+        padding: 0.2rem 0.5rem;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+
+    .queue-elapsed-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(99, 102, 241, 0.15);
+        color: #818cf8;
+        border-radius: 4px;
+        padding: 0.2rem 0.5rem;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+
+    .queue-elapsed-badge.warning {
+        background: rgba(245, 158, 11, 0.15);
+        color: #fbbf24;
+    }
+
+    .queue-elapsed-badge.danger {
+        background: rgba(239, 68, 68, 0.15);
+        color: #f87171;
+    }
+
+    .queue-item-action {
+        display: flex;
+        gap: 0.5rem;
+    }
+
+    .queue-item-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+        padding: 0.35rem 0.65rem;
+        background: var(--accent-color);
+        color: white;
+        border: none;
+        border-radius: 6px;
+        font-size: 0.75rem;
+        cursor: pointer;
+        transition: all var(--transition-fast);
+    }
+
+    .queue-item-btn:hover {
+        background: var(--accent-hover);
+    }
+
+    .queue-item-btn:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+
+    /* Make dashboard badges clickable */
+    .stat-badge[role="button"] {
+        cursor: pointer;
+        transition: all var(--transition-fast);
+    }
+
+    .stat-badge[role="button"]:hover {
+        background: var(--bg-tertiary);
+        border-color: var(--accent-color);
+    }
+
     @media (max-width: 768px) {
         .accounts-header {
             flex-direction: column;
@@ -1040,6 +1315,11 @@
         .pagination-container {
             flex-direction: column;
             gap: 1rem;
+        }
+
+        .queue-modal-content {
+            width: 95%;
+            max-height: 90vh;
         }
     }
 </style>
@@ -1345,6 +1625,37 @@
 <div id="report-drawer">
     <button type="button" class="drawer-close" onclick="closeDrawer()" aria-label="Close report drawer">×</button>
     <iframe id="report-frame" width="100%" height="100%"></iframe>
+</div>
+
+<!-- Queue/Processing Status Modal -->
+<div id="queue-modal" class="queue-modal">
+    <div class="queue-modal-overlay" onclick="closeQueueModal()"></div>
+    <div class="queue-modal-content">
+        <div class="queue-modal-header">
+            <h2 id="queue-modal-title">Scan Queue</h2>
+            <button type="button" class="queue-modal-close" onclick="closeQueueModal()" aria-label="Close modal">×</button>
+        </div>
+        <div class="queue-modal-tabs">
+            <button type="button" class="queue-tab-btn active" data-tab="processing" onclick="switchQueueTab('processing')">
+                🔄 Processing <span class="queue-count" id="processing-count">0</span>
+            </button>
+            <button type="button" class="queue-tab-btn" data-tab="queued" onclick="switchQueueTab('queued')">
+                ⏳ Queued <span class="queue-count" id="queued-count">0</span>
+            </button>
+        </div>
+        <div class="queue-modal-body">
+            <div id="processing-tab" class="queue-tab-content active">
+                <div id="processing-list" class="queue-list">
+                    <div class="queue-empty">No accounts currently processing</div>
+                </div>
+            </div>
+            <div id="queued-tab" class="queue-tab-content">
+                <div id="queued-list" class="queue-list">
+                    <div class="queue-empty">No accounts in queue</div>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 
 <script>
@@ -2312,11 +2623,11 @@
                             const queuePos = queuePositions[account.id] || '?';
                             content = `
                                 <div class="status-container">
-                                    <span class="status-badge status-badge-queued">
+                                    <span class="status-badge status-badge-queued" style="cursor: pointer;" onclick="openQueueModal()" title="Click to view queue details">
                                         ${statusIcons.queued}
                                         <span>In Queue</span>
                                     </span>
-                                    <span class="queue-position">#${queuePos} in queue</span>
+                                    <span class="queue-position">#${queuePos} in queue • Click to view</span>
                                 </div>
                             `;
                             statusCell.classList.remove('status-cell-active');
@@ -2334,11 +2645,11 @@
                                 // Show stuck/timeout state
                                 content = `
                                     <div class="status-container">
-                                        <span class="status-badge status-badge-stuck">
+                                        <span class="status-badge status-badge-stuck" style="cursor: pointer;" onclick="openQueueModal()" title="Click to view processing details">
                                             ${statusIcons.stuck}
-                                            <span>May Be Stuck</span>
+                                            <span>⚠️ May Be Stuck</span>
                                         </span>
-                                        <span class="${elapsedClass}">${formatElapsedTime(elapsed)}</span>
+                                        <span class="${elapsedClass}">${formatElapsedTime(elapsed)} • Click for help</span>
                                     </div>
                                     <div class="progress-line-stuck"></div>
                                 `;
@@ -2346,11 +2657,11 @@
                                 // Normal processing state
                                 content = `
                                     <div class="status-container">
-                                        <span class="status-badge status-badge-processing">
+                                        <span class="status-badge status-badge-processing" style="cursor: pointer;" onclick="openQueueModal()" title="Click to view processing details">
                                             ${statusIcons.processing}
                                             <span>Scanning</span>
                                         </span>
-                                        <span class="${elapsedClass}">${formatElapsedTime(elapsed)}</span>
+                                        <span class="${elapsedClass}">${formatElapsedTime(elapsed)} • Click to view</span>
                                     </div>
                                     <div class="progress-line"></div>
                                 `;
@@ -2522,5 +2833,198 @@
 
     // Run highlight on page load
     document.addEventListener('DOMContentLoaded', highlightBatchOnLoad);
+</script>
+
+<script>
+    // =============================================================================
+    // Queue/Processing Modal Functions
+    // =============================================================================
+
+    const TIMEOUT_WARNING = 180;  // 3 minutes
+    const TIMEOUT_DANGER = 300;   // 5 minutes
+
+    function openQueueModal() {
+        const modal = document.getElementById('queue-modal');
+        if (modal) {
+            modal.classList.add('open');
+            populateQueueModal();
+            // Keep updating while modal is open
+            const updateInterval = setInterval(() => {
+                if (!document.getElementById('queue-modal').classList.contains('open')) {
+                    clearInterval(updateInterval);
+                } else {
+                    populateQueueModal();
+                }
+            }, 2000);
+        }
+    }
+
+    function closeQueueModal() {
+        const modal = document.getElementById('queue-modal');
+        if (modal) {
+            modal.classList.remove('open');
+        }
+    }
+
+    function switchQueueTab(tabName) {
+        // Update active tab button
+        document.querySelectorAll('.queue-tab-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.tab === tabName);
+        });
+
+        // Update active tab content
+        document.querySelectorAll('.queue-tab-content').forEach(content => {
+            content.classList.remove('active');
+        });
+        const activeContent = document.getElementById(`${tabName}-tab`);
+        if (activeContent) {
+            activeContent.classList.add('active');
+        }
+    }
+
+    function formatQueueElapsedTime(seconds) {
+        if (seconds < 60) {
+            return `${seconds}s`;
+        } else if (seconds < 3600) {
+            const mins = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            return `${mins}m ${secs}s`;
+        } else {
+            const hrs = Math.floor(seconds / 3600);
+            const mins = Math.floor((seconds % 3600) / 60);
+            return `${hrs}h ${mins}m`;
+        }
+    }
+
+    function getQueueItemElapsedClass(elapsed) {
+        if (elapsed >= TIMEOUT_DANGER) {
+            return 'queue-elapsed-badge danger';
+        } else if (elapsed >= TIMEOUT_WARNING) {
+            return 'queue-elapsed-badge warning';
+        }
+        return 'queue-elapsed-badge';
+    }
+
+    function populateQueueModal() {
+        fetch('/api/accounts')
+            .then(response => response.json())
+            .then(accounts => {
+                // Separate queued and processing accounts
+                const queuedAccounts = accounts.filter(a => a.scan_status === 'queued');
+                const processingAccounts = accounts.filter(a => a.scan_status === 'processing');
+
+                // Update counts
+                document.getElementById('processing-count').textContent = processingAccounts.length;
+                document.getElementById('queued-count').textContent = queuedAccounts.length;
+
+                // Populate processing list
+                const processingList = document.getElementById('processing-list');
+                if (processingAccounts.length === 0) {
+                    processingList.innerHTML = '<div class="queue-empty">No accounts currently processing</div>';
+                } else {
+                    processingList.innerHTML = processingAccounts.map((account, idx) => {
+                        const elapsed = account.scan_started_at
+                            ? Math.floor(Date.now() / 1000 - account.scan_started_at)
+                            : 0;
+                        const elapsedStr = formatQueueElapsedTime(elapsed);
+                        const elapsedClass = getQueueItemElapsedClass(elapsed);
+                        const isStuck = elapsed >= TIMEOUT_DANGER;
+                        const hasReport = account.latest_report_id;
+                        const reportUrl = hasReport ? `/reports/${account.latest_report_id}` : '#';
+
+                        return `
+                            <div class="queue-item">
+                                <div class="queue-item-info">
+                                    <div class="queue-item-name">
+                                        ${isStuck ? '⚠️' : '🔄'} ${account.company_name}
+                                    </div>
+                                    <div class="queue-item-meta">
+                                        <span class="queue-item-meta-item">
+                                            <span class="${elapsedClass}">
+                                                ${isStuck ? '🕐 Timeout' : '⏱️'} ${elapsedStr}
+                                            </span>
+                                        </span>
+                                        ${account.scan_progress ? `<span class="queue-item-meta-item" style="color: var(--text-secondary);">${account.scan_progress}</span>` : ''}
+                                    </div>
+                                </div>
+                                <div class="queue-item-action">
+                                    <button type="button" class="queue-item-btn" onclick="openReport('${reportUrl}')" ${!hasReport ? 'disabled' : ''}>
+                                        View Report
+                                    </button>
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                }
+
+                // Populate queued list
+                const queuedList = document.getElementById('queued-list');
+                if (queuedAccounts.length === 0) {
+                    queuedList.innerHTML = '<div class="queue-empty">No accounts in queue</div>';
+                } else {
+                    queuedList.innerHTML = queuedAccounts.map((account, idx) => {
+                        const hasReport = account.latest_report_id;
+                        const reportUrl = hasReport ? `/reports/${account.latest_report_id}` : '#';
+
+                        return `
+                            <div class="queue-item">
+                                <div class="queue-item-info">
+                                    <div class="queue-item-name">
+                                        ⏳ ${account.company_name}
+                                    </div>
+                                    <div class="queue-item-meta">
+                                        <span class="queue-item-meta-item">
+                                            <span class="queue-position-badge">#${idx + 1} in queue</span>
+                                        </span>
+                                    </div>
+                                </div>
+                                <div class="queue-item-action">
+                                    <button type="button" class="queue-item-btn" onclick="openReport('${reportUrl}')" ${!hasReport ? 'disabled' : ''}>
+                                        View Report
+                                    </button>
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                }
+            })
+            .catch(err => console.error('Error populating queue modal:', err));
+    }
+
+    // Make dashboard badges clickable
+    function initializeQueueBadges() {
+        const queueBadge = document.querySelector('.stat-badge:has(#dashboard-queue-size)');
+        const processingBadge = document.querySelector('.stat-badge:has(#dashboard-processing-count)');
+
+        if (queueBadge) {
+            queueBadge.setAttribute('role', 'button');
+            queueBadge.onclick = openQueueModal;
+        }
+
+        if (processingBadge) {
+            processingBadge.setAttribute('role', 'button');
+            processingBadge.onclick = openQueueModal;
+        }
+    }
+
+    // Initialize on page load
+    document.addEventListener('DOMContentLoaded', () => {
+        initializeQueueBadges();
+    });
+
+    // Close modal when clicking outside
+    document.addEventListener('click', (e) => {
+        const modal = document.getElementById('queue-modal');
+        if (modal && e.target === document.querySelector('.queue-modal-overlay')) {
+            closeQueueModal();
+        }
+    });
+
+    // Close modal with Escape key
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            closeQueueModal();
+        }
+    });
 </script>
 {% endblock %}
