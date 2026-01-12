@@ -63,7 +63,7 @@ def generate_analysis(scan_data: dict) -> Generator[str, None, dict]:
 
         analysis = _parse_gemini_response(response.text, scan_data)
 
-        yield _sse_log("✅ AI Sales Intelligence Complete")
+        yield _sse_log("AI Sales Intelligence Complete")
         yield _sse_data('ANALYSIS_COMPLETE', analysis)
 
         return analysis

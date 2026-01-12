@@ -33,8 +33,8 @@
         padding: 0.4rem 0.6rem;
         border-radius: 6px;
         border: 1px solid var(--border-color);
-        background: var(--bg-secondary);
-        color: var(--text-muted);
+        background: var(--bg-primary);
+        color: var(--text-secondary);
         font-size: 0.75rem;
         cursor: pointer;
         display: inline-flex;
@@ -45,12 +45,12 @@
     }
 
     .tier-filter-btn:hover {
-        border-color: var(--text-muted);
-        color: var(--text-secondary);
+        border-color: var(--accent-color);
+        color: var(--text-primary);
     }
 
     .tier-filter-btn.active {
-        background: rgba(99, 102, 241, 0.15);
+        background: rgba(0, 181, 173, 0.12);
         border-color: var(--accent-color);
         color: var(--accent-color);
         font-weight: 500;
@@ -65,7 +65,7 @@
         width: 100%;
         padding: 0.5rem 0.75rem;
         padding-left: 2rem;
-        background: var(--bg-secondary);
+        background: var(--bg-primary);
         border: 1px solid var(--border-color);
         border-radius: 8px;
         color: var(--text-primary);
@@ -94,9 +94,11 @@
         align-items: center;
         gap: 0.5rem;
         padding: 0.5rem 1rem;
-        background: var(--bg-secondary);
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
         border-radius: 8px;
         font-size: 0.875rem;
+        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
     }
 
     .stat-badge .count {
@@ -105,10 +107,11 @@
     }
 
     .accounts-table-container {
-        background: var(--bg-secondary);
+        background: var(--bg-primary);
         border-radius: 12px;
         overflow-x: auto;
         border: 1px solid var(--border-color);
+        box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
     }
 
     .accounts-table {
@@ -119,16 +122,16 @@
     }
 
     .accounts-table thead {
-        background: var(--bg-tertiary);
+        background: #f8fafc;
     }
 
     .accounts-table th {
-        padding: 0.6rem 0.75rem;
+        padding: 0.75rem 1rem;
         text-align: left;
-        font-weight: 600;
-        color: var(--text-secondary);
+        font-weight: 700;
+        color: #64748b;
         text-transform: uppercase;
-        font-size: 0.75rem;
+        font-size: 0.72rem;
         letter-spacing: 0.5px;
         border-bottom: 1px solid var(--border-color);
         position: sticky;
@@ -170,7 +173,7 @@
     }
 
     .accounts-table td {
-        padding: 0.6rem 0.75rem;
+        padding: 0.75rem 1rem;
         border-bottom: 1px solid var(--border-color);
         vertical-align: middle;
     }
@@ -186,7 +189,7 @@
     }
 
     .accounts-table tbody tr:hover {
-        background: var(--bg-tertiary);
+        background: #f8fafc;
     }
 
     .accounts-table tbody tr:last-child td {
@@ -201,33 +204,6 @@
 
     .accounts-table .table-empty-row.hidden {
         display: none;
-    }
-
-    /* Tier-specific row styling */
-    .tier-row-3 {
-        opacity: 0.6;
-        background: rgba(239, 68, 68, 0.05);
-    }
-
-    .tier-row-3:hover {
-        opacity: 0.8;
-    }
-
-    .tier-row-4 {
-        opacity: 0.5;
-        background: #1a1a1a;
-    }
-
-    .tier-row-4:hover {
-        opacity: 0.65;
-    }
-
-    .tier-row-2 {
-        background: rgba(34, 197, 94, 0.08);
-    }
-
-    .tier-row-1 {
-        background: rgba(245, 158, 11, 0.05);
     }
 
     /* Company cell */
@@ -305,8 +281,14 @@
         padding: 0.4rem 0.6rem;
         border-radius: 6px;
         border: 1px solid var(--border-color);
-        background: var(--bg-secondary);
+        background: var(--bg-primary);
         color: var(--text-primary);
+    }
+
+    .inline-icon {
+        width: 16px;
+        height: 16px;
+        color: var(--text-muted);
     }
 
     .accounts-search input {
@@ -325,7 +307,7 @@
         padding: 0.4rem 0.6rem;
         border-radius: 6px;
         border: 1px solid var(--border-color);
-        background: var(--bg-secondary);
+        background: var(--bg-primary);
         color: var(--text-primary);
         font-size: 0.8rem;
     }
@@ -354,7 +336,7 @@
         padding: 0.4rem 0.75rem;
         border-radius: 6px;
         border: 1px solid var(--border-color);
-        background: var(--bg-secondary);
+        background: var(--bg-primary);
         color: var(--text-secondary);
         font-size: 0.8rem;
         cursor: pointer;
@@ -381,12 +363,12 @@
         padding: 0.25rem 0.5rem;
         border-radius: 4px;
         transition: all var(--transition-fast);
-        background: rgba(255, 255, 255, 0.05);
+        background: var(--bg-secondary);
     }
 
     .github-org-link:hover {
         color: var(--accent-color);
-        background: rgba(99, 102, 241, 0.15);
+        background: rgba(0, 181, 173, 0.12);
     }
 
     .github-org-link svg {
@@ -493,35 +475,40 @@
         align-items: center;
         gap: 0.4rem;
         padding: 0.35rem 0.75rem;
-        border-radius: 20px;
-        font-size: 0.8rem;
+        border-radius: 999px;
+        font-size: 0.78rem;
         font-weight: 500;
         white-space: nowrap;
     }
 
     .tier-badge-0 {
-        background: rgba(100, 116, 139, 0.2);
-        color: #94a3b8;
+        background: #f1f5f9;
+        color: #64748b;
+        border: 1px solid #e2e8f0;
     }
 
     .tier-badge-1 {
-        background: rgba(245, 158, 11, 0.2);
-        color: #fbbf24;
+        background: #fef3c7;
+        color: #92400e;
+        border: 1px solid #fde68a;
     }
 
     .tier-badge-2 {
-        background: rgba(34, 197, 94, 0.2);
-        color: #4ade80;
+        background: #dcfce7;
+        color: #166534;
+        border: 1px solid #bbf7d0;
     }
 
     .tier-badge-3 {
-        background: rgba(239, 68, 68, 0.2);
-        color: #f87171;
+        background: #fee2e2;
+        color: #991b1b;
+        border: 1px solid #fecaca;
     }
 
     .tier-badge-4 {
-        background: rgba(75, 75, 75, 0.3);
-        color: #6b7280;
+        background: #f8fafc;
+        color: #64748b;
+        border: 1px solid #e2e8f0;
     }
 
     /* Last Scanned cell */
@@ -539,15 +526,15 @@
     }
 
     .scanned-time.never-scanned {
-        color: #f59e0b;
+        color: #d97706;
     }
 
     .scanned-time.recent {
-        color: #22c55e;
+        color: #16a34a;
     }
 
     .scanned-time.stale {
-        color: #f59e0b;
+        color: #d97706;
     }
 
     .tier-change-time {
@@ -572,21 +559,21 @@
     }
 
     .status-badge-queued {
-        background: rgba(245, 158, 11, 0.15);
-        color: #fbbf24;
-        border: 1px solid rgba(245, 158, 11, 0.3);
+        background: #fef3c7;
+        color: #92400e;
+        border: 1px solid #fde68a;
     }
 
     .status-badge-processing {
-        background: rgba(99, 102, 241, 0.15);
-        color: #818cf8;
-        border: 1px solid rgba(99, 102, 241, 0.3);
+        background: rgba(0, 181, 173, 0.12);
+        color: var(--accent-color);
+        border: 1px solid rgba(0, 181, 173, 0.35);
     }
 
     .status-badge-stuck {
-        background: rgba(239, 68, 68, 0.15);
-        color: #f87171;
-        border: 1px solid rgba(239, 68, 68, 0.4);
+        background: #fee2e2;
+        color: #991b1b;
+        border: 1px solid #fecaca;
         animation: pulse-warning 2s ease-in-out infinite;
     }
 
@@ -799,11 +786,11 @@
     }
 
     .btn-action-smart.btn-refresh-needed {
-        background: #3b82f6;
+        background: var(--accent-color);
     }
 
     .btn-action-smart.btn-refresh-needed:hover:not(:disabled) {
-        background: #2563eb;
+        background: var(--accent-hover);
     }
 
     .btn-delete-account {
@@ -812,9 +799,9 @@
         gap: 0.3rem;
         padding: 0.4rem 0.75rem;
         margin-left: 0.4rem;
-        background: rgba(239, 68, 68, 0.15);
-        color: #fca5a5;
-        border: 1px solid rgba(239, 68, 68, 0.3);
+        background: #fee2e2;
+        color: #991b1b;
+        border: 1px solid #fecaca;
         border-radius: 6px;
         font-size: 0.8rem;
         text-decoration: none;
@@ -823,8 +810,8 @@
     }
 
     .btn-delete-account:hover:not(:disabled) {
-        background: rgba(239, 68, 68, 0.25);
-        color: #fecaca;
+        background: #fecaca;
+        color: #7f1d1d;
     }
 
     .btn-delete-account:disabled {
@@ -946,9 +933,9 @@
         align-items: center;
         gap: 0.3rem;
         padding: 0.4rem 0.75rem;
-        background: #374151;
-        color: #6b7280;
-        border: 1px solid #4b5563;
+        background: #f1f5f9;
+        color: #64748b;
+        border: 1px solid #e2e8f0;
         border-radius: 6px;
         font-size: 0.8rem;
         cursor: not-allowed;
@@ -960,14 +947,14 @@
         left: 50%;
         bottom: 24px;
         transform: translateX(-50%);
-        background: var(--bg-secondary);
+        background: var(--bg-primary);
         border: 1px solid var(--border-color);
         border-radius: 12px;
         padding: 0.75rem 1rem;
         display: flex;
         align-items: center;
         gap: 0.75rem;
-        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+        box-shadow: 0 12px 30px rgba(15, 23, 42, 0.12);
         z-index: 1200;
         opacity: 1;
         transition: opacity var(--transition-fast), transform var(--transition-fast);
@@ -1023,7 +1010,7 @@
         justify-content: space-between;
         align-items: center;
         padding: 1rem;
-        background: var(--bg-secondary);
+        background: var(--bg-primary);
         border-top: 1px solid var(--border-color);
         border-radius: 0 0 12px 12px;
     }
@@ -1041,7 +1028,7 @@
 
     .pagination-limit-select {
         padding: 0.45rem 0.75rem;
-        background: var(--bg-tertiary);
+        background: var(--bg-primary);
         color: var(--text-primary);
         border: 1px solid var(--border-color);
         border-radius: 6px;
@@ -1053,7 +1040,7 @@
         align-items: center;
         gap: 0.3rem;
         padding: 0.5rem 1rem;
-        background: var(--bg-tertiary);
+        background: var(--bg-primary);
         color: var(--text-primary);
         border: 1px solid var(--border-color);
         border-radius: 6px;
@@ -1076,7 +1063,7 @@
 
     .pagination-page-display {
         padding: 0.5rem 1rem;
-        background: var(--bg-tertiary);
+        background: var(--bg-primary);
         border: 1px solid var(--border-color);
         border-radius: 6px;
         font-size: 0.875rem;
@@ -1112,7 +1099,7 @@
 
     .queue-modal-content {
         position: relative;
-        background: var(--bg-secondary);
+        background: var(--bg-primary);
         border: 1px solid var(--border-color);
         border-radius: 12px;
         max-width: 700px;
@@ -1120,7 +1107,7 @@
         max-height: 80vh;
         display: flex;
         flex-direction: column;
-        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+        box-shadow: 0 20px 60px rgba(15, 23, 42, 0.2);
         animation: modalSlideIn 0.3s ease;
     }
 
@@ -1176,7 +1163,7 @@
         gap: 0.5rem;
         padding: 0 1rem;
         border-bottom: 1px solid var(--border-color);
-        background: var(--bg-tertiary);
+        background: var(--bg-secondary);
     }
 
     .queue-tab-btn {
@@ -1207,7 +1194,7 @@
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        background: rgba(99, 102, 241, 0.15);
+        background: rgba(0, 181, 173, 0.12);
         color: var(--accent-color);
         border-radius: 12px;
         width: 24px;
@@ -1248,14 +1235,14 @@
         justify-content: space-between;
         align-items: center;
         padding: 1rem;
-        background: var(--bg-tertiary);
+        background: var(--bg-secondary);
         border: 1px solid var(--border-color);
         border-radius: 8px;
         transition: all var(--transition-fast);
     }
 
     .queue-item:hover {
-        background: var(--bg-secondary);
+        background: var(--bg-primary);
         border-color: var(--accent-color);
     }
 
@@ -1291,8 +1278,8 @@
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        background: rgba(245, 158, 11, 0.15);
-        color: #fbbf24;
+        background: #fef3c7;
+        color: #92400e;
         border-radius: 4px;
         padding: 0.2rem 0.5rem;
         font-size: 0.75rem;
@@ -1303,8 +1290,8 @@
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        background: rgba(99, 102, 241, 0.15);
-        color: #818cf8;
+        background: rgba(0, 181, 173, 0.12);
+        color: var(--accent-color);
         border-radius: 4px;
         padding: 0.2rem 0.5rem;
         font-size: 0.75rem;
@@ -1312,13 +1299,13 @@
     }
 
     .queue-elapsed-badge.warning {
-        background: rgba(245, 158, 11, 0.15);
-        color: #fbbf24;
+        background: #fef3c7;
+        color: #92400e;
     }
 
     .queue-elapsed-badge.danger {
-        background: rgba(239, 68, 68, 0.15);
-        color: #f87171;
+        background: #fee2e2;
+        color: #991b1b;
     }
 
     .queue-item-action {
@@ -1454,7 +1441,7 @@
                     <button
                         class="tier-filter-btn {% if current_tier_filter and tier_id in current_tier_filter %}active{% endif %}"
                         onclick="toggleTierFilter({{ tier_id }})">
-                        {{ config.emoji }} {{ config.name }}
+                        {{ config.name }}
                     </button>
                     {% endfor %}
                 </div>
@@ -1464,26 +1451,26 @@
                 0) + 1}) %}
                 {% endfor %}
 
-                <div class="stat-badge" style="background: var(--bg-tertiary); border: 1px solid var(--border-color);">
-                    <span class="tier-badge" style="background: rgba(59, 130, 246, 0.2); color: #60a5fa;">📊</span>
+                <div class="stat-badge">
+                    <span class="badge badge-neutral">API</span>
                     <span class="count" id="dashboard-api-calls">--</span>
                     <span>API Calls</span>
                 </div>
 
-                <div class="stat-badge" style="background: var(--bg-tertiary); border: 1px solid var(--border-color);">
-                    <span class="tier-badge" style="background: rgba(245, 158, 11, 0.2); color: #fbbf24;">⏳</span>
+                <div class="stat-badge">
+                    <span class="badge badge-warning">Queue</span>
                     <span class="count" id="dashboard-queue-size">0</span>
                     <span>Queued</span>
                 </div>
 
-                <div class="stat-badge" style="background: var(--bg-tertiary); border: 1px solid var(--border-color);">
-                    <span class="tier-badge" style="background: rgba(99, 102, 241, 0.2); color: #818cf8;">🔄</span>
+                <div class="stat-badge">
+                    <span class="badge badge-primary">Live</span>
                     <span class="count" id="dashboard-processing-count">0</span>
                     <span>Processing</span>
                 </div>
 
                 <div class="stat-badge">
-                    <span class="tier-badge tier-badge-2">{{ tier_config[2].emoji }}</span>
+                    <span class="tier-badge tier-badge-2">Tier 2</span>
                     <span class="count">{{ tier_counts['2'] }}</span>
                     <span>Hot</span>
                 </div>
@@ -1531,10 +1518,14 @@
     </div>
 
     {% if accounts %}
-    <div class="table-controls">
-        <div class="table-controls-left">
+        <div class="table-controls">
+            <div class="table-controls-left">
             <label class="accounts-search" for="account-search-input">
-                🔍
+                <svg class="inline-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+                    stroke="currentColor" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
                 <input type="text" id="account-search-input" placeholder="Search company or org..." autocomplete="off">
             </label>
             <select id="status-filter" class="filter-select" aria-label="Filter by scan status">
@@ -1634,7 +1625,7 @@
                     </td>
                     <td>
                         <span class="tier-badge tier-badge-{{ account.current_tier }}">
-                            {{ account.tier_config.emoji }} Tier {{ account.current_tier }} - {{
+                            Tier {{ account.current_tier }} - {{
                             account.tier_config.name }}
                         </span>
                     </td>
@@ -1677,7 +1668,7 @@
                         {% endif %}
                         {% if account.current_tier == 4 %}
                         <button type="button" class="btn-invalid" disabled>
-                            🚫 Invalid
+                            Invalid
                         </button>
                         {% else %}
                         <button type="button" class="btn-action-smart" data-company="{{ account.company_name }}"
@@ -1761,10 +1752,10 @@
         <div class="queue-modal-tabs">
             <button type="button" class="queue-tab-btn active" data-tab="processing"
                 onclick="switchQueueTab('processing')">
-                🔄 Processing <span class="queue-count" id="processing-count">0</span>
+                Processing <span class="queue-count" id="processing-count">0</span>
             </button>
             <button type="button" class="queue-tab-btn" data-tab="queued" onclick="switchQueueTab('queued')">
-                ⏳ Queued <span class="queue-count" id="queued-count">0</span>
+                Queued <span class="queue-count" id="queued-count">0</span>
             </button>
         </div>
         <div class="queue-modal-body">
@@ -2077,7 +2068,7 @@
             }
 
             btn.classList.add('copied');
-            btn.innerHTML = '✓';
+            btn.innerHTML = 'Copied';
             setTimeout(() => {
                 btn.classList.remove('copied');
                 btn.innerHTML = originalHTML;
@@ -2460,7 +2451,7 @@
             // Handle queued response (new queue-based system)
             if (data.status === 'queued') {
                 buttonEl.classList.remove('scanning');
-                buttonEl.textContent = `✓ Queued`;
+                buttonEl.textContent = 'Queued';
                 buttonEl.style.background = '#22c55e';
 
                 // Show info message
@@ -2508,7 +2499,7 @@
 
             // Update button to show completion
             buttonEl.classList.remove('scanning');
-            buttonEl.textContent = '✓ Done';
+            buttonEl.textContent = 'Done';
             buttonEl.style.background = '#22c55e';
 
             // Reset button after 2 seconds
@@ -2523,7 +2514,7 @@
 
             // Show error state
             buttonEl.classList.remove('scanning');
-            buttonEl.textContent = '✗ Error';
+            buttonEl.textContent = 'Error';
             buttonEl.style.background = '#ef4444';
 
             // Reset after 3 seconds
@@ -2769,7 +2760,7 @@
                                     <div class="status-container">
                                         <span class="status-badge status-badge-stuck" style="cursor: pointer;" onclick="openQueueModal()" title="Click to view processing details">
                                             ${statusIcons.stuck}
-                                            <span>⚠️ May Be Stuck</span>
+                                            <span>May Be Stuck</span>
                                         </span>
                                         <span class="${elapsedClass}">${formatElapsedTime(elapsed)} • Click for help</span>
                                     </div>
@@ -2798,7 +2789,7 @@
                                 content = `
                                     <div class="status-container">
                                         <span class="scanned-time recent" style="color: var(--success-color);">
-                                            ✓ Scanned: ${relativeTime}
+                                            Scanned: ${relativeTime}
                                         </span>
                                     </div>
                                 `;
@@ -2945,7 +2936,7 @@
                     if (companyCell && !companyCell.querySelector('.batch-highlight-indicator')) {
                         const indicator = document.createElement('span');
                         indicator.className = 'batch-highlight-indicator';
-                        indicator.textContent = '✨ NEW';
+                        indicator.textContent = 'NEW';
                         companyCell.insertBefore(indicator, companyCell.firstChild);
                     }
                 }
@@ -3062,12 +3053,15 @@
                             <div class="queue-item">
                                 <div class="queue-item-info">
                                     <div class="queue-item-name">
-                                        ${isStuck ? '⚠️' : '🔄'} ${account.company_name}
+                                        <span class="badge ${isStuck ? 'badge-warning' : 'badge-primary'}">
+                                            ${isStuck ? 'Stuck' : 'Scanning'}
+                                        </span>
+                                        ${account.company_name}
                                     </div>
                                     <div class="queue-item-meta">
                                         <span class="queue-item-meta-item">
                                             <span class="${elapsedClass}">
-                                                ${isStuck ? '🕐 Timeout' : '⏱️'} ${elapsedStr}
+                                                ${isStuck ? 'Timeout' : 'Elapsed'} ${elapsedStr}
                                             </span>
                                         </span>
                                         ${account.scan_progress ? `<span class="queue-item-meta-item" style="color: var(--text-secondary);">${account.scan_progress}</span>` : ''}
@@ -3096,7 +3090,8 @@
                             <div class="queue-item">
                                 <div class="queue-item-info">
                                     <div class="queue-item-name">
-                                        ⏳ ${account.company_name}
+                                        <span class="badge badge-warning">Queued</span>
+                                        ${account.company_name}
                                     </div>
                                     <div class="queue-item-meta">
                                         <span class="queue-item-meta-item">

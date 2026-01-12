@@ -11,14 +11,18 @@
     <nav class="navbar">
         <div class="nav-container">
             <a href="{{ url_for('index') }}" class="nav-brand">
-                <span class="brand-icon">&#x1F50D;</span>
+                <svg class="brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <circle cx="11" cy="11" r="7"></circle>
+                    <line x1="16.65" y1="16.65" x2="21" y2="21"></line>
+                </svg>
                 Lead Machine
             </a>
             <div class="nav-links">
-                <a href="{{ url_for('index') }}">Search</a>
-                <a href="{{ url_for('grow') }}">Grow</a>
-                <a href="{{ url_for('accounts') }}">Accounts</a>
-                <a href="{{ url_for('history') }}">History</a>
+                <a href="{{ url_for('index') }}" class="{% if request.endpoint == 'index' %}active{% endif %}">Search</a>
+                <a href="{{ url_for('grow') }}" class="{% if request.endpoint == 'grow' %}active{% endif %}">Grow</a>
+                <a href="{{ url_for('accounts') }}" class="{% if request.endpoint == 'accounts' %}active{% endif %}">Accounts</a>
+                <a href="{{ url_for('history') }}" class="{% if request.endpoint == 'history' %}active{% endif %}">History</a>
             </div>
         </div>
     </nav>

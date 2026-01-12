@@ -477,11 +477,11 @@ TIER_LAUNCHED = 3    # Too Late - Already launched
 TIER_INVALID = 4     # Disqualified - GitHub org not found or no public repos
 
 TIER_CONFIG = {
-    TIER_TRACKING: {'name': 'Tracking', 'status': 'Cold', 'color': 'grey', 'emoji': '⚪'},
-    TIER_THINKING: {'name': 'Thinking', 'status': 'Warm', 'color': 'yellow', 'emoji': '🟡'},
-    TIER_PREPARING: {'name': 'Preparing', 'status': 'Hot Lead', 'color': 'green', 'emoji': '🟢'},
-    TIER_LAUNCHED: {'name': 'Launched', 'status': 'Too Late', 'color': 'red', 'emoji': '🔴'},
-    TIER_INVALID: {'name': 'Not Found', 'status': 'Disqualified', 'color': 'dark-grey', 'emoji': '🚫'},
+    TIER_TRACKING: {'name': 'Tracking', 'status': 'Cold', 'color': 'grey', 'emoji': ''},
+    TIER_THINKING: {'name': 'Thinking', 'status': 'Warm', 'color': 'yellow', 'emoji': ''},
+    TIER_PREPARING: {'name': 'Preparing', 'status': 'Hot Lead', 'color': 'green', 'emoji': ''},
+    TIER_LAUNCHED: {'name': 'Launched', 'status': 'Too Late', 'color': 'red', 'emoji': ''},
+    TIER_INVALID: {'name': 'Not Found', 'status': 'Disqualified', 'color': 'dark-grey', 'emoji': ''},
 }
 
 
@@ -561,7 +561,7 @@ def calculate_tier_from_scan(scan_data: dict) -> tuple[int, str]:
     # TIER 3: LAUNCHED - Locale folders detected (Too Late)
     # =========================================================================
     if locale_folders_found:
-        return TIER_LAUNCHED, "🚫 Too Late: Translation files already exist in codebase."
+        return TIER_LAUNCHED, "Too Late: Translation files already exist in codebase."
 
     # =========================================================================
     # TIER 2: PREPARING (GOLDILOCKS) - i18n libraries WITHOUT locale folders
@@ -592,9 +592,9 @@ def calculate_tier_from_scan(scan_data: dict) -> tuple[int, str]:
         if dep_names:
             # Convert first library to sales-friendly name
             sales_name = _convert_library_to_sales_name(dep_names[0])
-            evidence = f"🔥 INFRASTRUCTURE READY: Installed {sales_name} but NO translations found."
+            evidence = f"INFRASTRUCTURE READY: Installed {sales_name} but NO translations found."
         else:
-            evidence = "🔥 INFRASTRUCTURE READY: i18n library installed but NO translations found."
+            evidence = "INFRASTRUCTURE READY: i18n library installed but NO translations found."
         return TIER_PREPARING, evidence
 
     # =========================================================================
@@ -607,17 +607,17 @@ def calculate_tier_from_scan(scan_data: dict) -> tuple[int, str]:
             rfc_hits = signal_summary.get('rfc_discussion', {}).get('hits', [])
             if rfc_hits and isinstance(rfc_hits[0], dict):
                 title = rfc_hits[0].get('title', 'i18n discussion')[:50]
-                evidence_parts.append(f"💭 STRATEGY SIGNAL: {title}")
+                evidence_parts.append(f"STRATEGY SIGNAL: {title}")
             else:
-                evidence_parts.append(f"💭 STRATEGY SIGNAL: {rfc_count} i18n RFC/discussion(s)")
+                evidence_parts.append(f"STRATEGY SIGNAL: {rfc_count} i18n RFC/discussion(s)")
 
         if ghost_count > 0:
             ghost_hits = signal_summary.get('ghost_branch', {}).get('hits', [])
             if ghost_hits and isinstance(ghost_hits[0], dict):
                 branch_name = ghost_hits[0].get('name', ghost_hits[0].get('ref', 'i18n branch'))[:40]
-                evidence_parts.append(f"🛠️ ACTIVE BUILD: {branch_name}")
+                evidence_parts.append(f"ACTIVE BUILD: {branch_name}")
             else:
-                evidence_parts.append(f"🛠️ ACTIVE BUILD: {ghost_count} i18n branch(es)")
+                evidence_parts.append(f"ACTIVE BUILD: {ghost_count} i18n branch(es)")
 
         return TIER_THINKING, "; ".join(evidence_parts)
 
@@ -641,7 +641,7 @@ def calculate_tier_from_scan(scan_data: dict) -> tuple[int, str]:
             return TIER_TRACKING, "Organization found but no public repositories. Monitoring for future changes."
     else:
         # No org was found - this shouldn't happen if scan completed, but handle it
-        return TIER_INVALID, "🚫 DISQUALIFIED: Unable to complete scan (Organization not found or API error)."
+        return TIER_INVALID, "DISQUALIFIED: Unable to complete scan (Organization not found or API error)."
 
 
 def update_account_status(scan_data: dict, report_id: Optional[int] = None) -> dict:
