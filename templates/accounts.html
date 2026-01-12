@@ -2694,9 +2694,10 @@
     function updateRowStatuses() {
         if (document.hidden) return; // Don't poll if tab is hidden
 
-        fetch('/api/accounts')
+        fetch('/api/accounts?limit=1000')
             .then(response => response.json())
-            .then(accounts => {
+            .then(data => {
+                const accounts = data.accounts || [];
                 // Track queue position
                 const queuedAccounts = accounts.filter(a => a.scan_status === 'queued');
                 const queuePositions = {};
