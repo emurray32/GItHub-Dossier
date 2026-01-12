@@ -696,14 +696,35 @@ def add_account_to_tier_0(company_name: str, github_org: str) -> dict:
     }
 
 
-def get_all_accounts() -> list:
+def get_all_accounts(page: int = 1, limit: int = 50) -> dict:
     """
-    Get all monitored accounts, sorted by tier priority.
+    Get all monitored accounts with pagination, sorted by tier priority.
 
     Sort order: Tier 2 (Preparing) first, then Tier 1, Tier 0, Tier 3 (dimmed), and Tier 4 (invalid) last.
+
+    Args:
+        page: Page number (1-indexed, default 1)
+        limit: Number of accounts per page (default 50)
+
+    Returns:
+        Dictionary with:
+            - accounts: List of account dictionaries
+            - total_items: Total number of accounts
+            - total_pages: Total number of pages
+            - current_page: Current page number
+            - limit: Items per page
     """
     conn = get_db_connection()
     cursor = conn.cursor()
+
+    # Get total count
+    cursor.execute('SELECT COUNT(*) as total FROM monitored_accounts')
+    total_items = cursor.fetchone()['total']
+
+    # Calculate pagination
+    total_pages = (total_items + limit - 1) // limit  # Ceiling division
+    current_page = max(1, min(page, total_pages or 1))  # Clamp to valid range
+    offset = (current_page - 1) * limit
 
     # Custom sort: Tier 2 first (priority 1), Tier 1 (priority 2), Tier 0 (priority 3), Tier 3 (priority 4), Tier 4 last (priority 5)
     cursor.execute('''
@@ -721,7 +742,8 @@ def get_all_accounts() -> list:
                 ELSE 6
             END,
             ma.status_changed_at DESC
-    ''')
+        LIMIT ? OFFSET ?
+    ''', (limit, offset))
 
     rows = cursor.fetchall()
     conn.close()
@@ -733,7 +755,13 @@ def get_all_accounts() -> list:
         account['tier_config'] = TIER_CONFIG.get(tier, TIER_CONFIG[TIER_TRACKING])
         accounts.append(account)
 
-    return accounts
+    return {
+        'accounts': accounts,
+        'total_items': total_items,
+        'total_pages': total_pages,
+        'current_page': current_page,
+        'limit': limit
+    }
 
 
 def get_account(account_id: int) -> Optional[dict]:
