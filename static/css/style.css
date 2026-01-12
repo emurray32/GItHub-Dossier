@@ -628,3 +628,19 @@ a:hover {
         padding: 0;
     }
 }
+
+#report-drawer {
+    position: fixed;
+    top: 0;
+    right: -100%;
+    width: 50%;
+    height: 100vh;
+    background: white;
+    z-index: 2000;
+    transition: right 0.3s ease;
+    box-shadow: -5px 0 15px rgba(0, 0, 0, 0.2);
+}
+
+.drawer-open {
+    right: 0;
+}
