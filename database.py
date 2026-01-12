@@ -725,6 +725,7 @@ def get_all_accounts(page: int = 1, limit: int = 50, tier_filter: Optional[int] 
     Args:
         page: Page number (1-indexed, default 1)
         limit: Number of accounts per page (default 50)
+        tier_filter: Optional tier number to filter by (e.g., 0, 1, 2, 3, 4)
 
     Returns:
         Dictionary with:
