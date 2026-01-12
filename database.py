@@ -527,17 +527,26 @@ def calculate_tier_from_scan(scan_data: dict) -> tuple[int, str]:
         return TIER_THINKING, "; ".join(evidence_parts)
 
     # =========================================================================
-    # TIER 0 vs TIER 4: No signals found - Split based on repos scanned
+    # TIER 0 vs TIER 4: No signals found - Split based on repos scanned and org status
     # =========================================================================
-    # Get repos_scanned count - if we scanned valid repos, track the account
+    # Get repos_scanned count and check if org was found
     repos_scanned = len(scan_data.get('repos_scanned', []))
+    org_login = scan_data.get('org_login', '')
+    org_public_repos = scan_data.get('org_public_repos', 0)
 
     if repos_scanned > 0:
         # We scanned valid repos but found no i18n signals - track for future changes
         return TIER_TRACKING, "No active signals detected. Monitoring for future changes."
+    elif org_login:
+        # Org was found but no repos were scanned - still track it
+        # This could be due to: all private repos, all inactive repos, or repo fetch issues
+        if org_public_repos > 0:
+            return TIER_TRACKING, f"No active repositories to scan ({org_public_repos} public repos all inactive). Monitoring for future changes."
+        else:
+            return TIER_TRACKING, "Organization found but no public repositories. Monitoring for future changes."
     else:
-        # No repos were scanned (empty org or no access) - disqualify
-        return TIER_INVALID, "🚫 DISQUALIFIED: No repositories available to scan (Empty org or no public repos)."
+        # No org was found - this shouldn't happen if scan completed, but handle it
+        return TIER_INVALID, "🚫 DISQUALIFIED: Unable to complete scan (Organization not found or API error)."
 
 
 def update_account_status(scan_data: dict, report_id: Optional[int] = None) -> dict:
@@ -559,14 +568,20 @@ def update_account_status(scan_data: dict, report_id: Optional[int] = None) -> d
     if not company_name:
         return {'error': 'No company name in scan data'}
 
+    # Normalize company name to lowercase to prevent duplicates
+    company_name_normalized = company_name.lower().strip()
+
     # Calculate tier and evidence
     new_tier, evidence_summary = calculate_tier_from_scan(scan_data)
 
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Check if account exists
-    cursor.execute('SELECT * FROM monitored_accounts WHERE company_name = ?', (company_name,))
+    # Check if account exists (case-insensitive)
+    cursor.execute(
+        'SELECT * FROM monitored_accounts WHERE LOWER(company_name) = ?',
+        (company_name_normalized,)
+    )
     existing = cursor.fetchone()
 
     now = datetime.now().isoformat()
@@ -591,8 +606,8 @@ def update_account_status(scan_data: dict, report_id: Optional[int] = None) -> d
                     status_changed_at = ?,
                     evidence_summary = ?,
                     next_scan_due = ?
-                WHERE company_name = ?
-            ''', (github_org, new_tier, now, now, evidence_summary, next_scan_iso, company_name))
+                WHERE LOWER(company_name) = ?
+            ''', (github_org, new_tier, now, now, evidence_summary, next_scan_iso, company_name_normalized))
         else:
             # Same tier - only update scan timestamp, NOT status_changed_at
             cursor.execute('''
@@ -601,18 +616,18 @@ def update_account_status(scan_data: dict, report_id: Optional[int] = None) -> d
                     last_scanned_at = ?,
                     evidence_summary = ?,
                     next_scan_due = ?
-                WHERE company_name = ?
-            ''', (github_org, now, evidence_summary, next_scan_iso, company_name))
+                WHERE LOWER(company_name) = ?
+            ''', (github_org, now, evidence_summary, next_scan_iso, company_name_normalized))
 
         account_id = existing['id']
     else:
-        # New account - create record
+        # New account - create record (use normalized name)
         cursor.execute('''
             INSERT INTO monitored_accounts (
                 company_name, github_org, current_tier, last_scanned_at,
                 status_changed_at, evidence_summary, next_scan_due
             ) VALUES (?, ?, ?, ?, ?, ?, ?)
-        ''', (company_name, github_org, new_tier, now, now, evidence_summary, next_scan_iso))
+        ''', (company_name_normalized, github_org, new_tier, now, now, evidence_summary, next_scan_iso))
         account_id = cursor.lastrowid
         tier_changed = True  # New account is considered a "change"
 
@@ -627,7 +642,7 @@ def update_account_status(scan_data: dict, report_id: Optional[int] = None) -> d
 
     return {
         'account_id': account_id,
-        'company_name': company_name,
+        'company_name': company_name_normalized,
         'tier': new_tier,
         'tier_name': tier_config['name'],
         'tier_status': tier_config['status'],
@@ -652,6 +667,9 @@ def add_account_to_tier_0(company_name: str, github_org: str) -> dict:
     Returns:
         Dictionary with account creation/update result.
     """
+    # Normalize company name to lowercase to prevent duplicates
+    company_name_normalized = company_name.lower().strip()
+
     conn = get_db_connection()
     cursor = conn.cursor()
 
@@ -661,8 +679,11 @@ def add_account_to_tier_0(company_name: str, github_org: str) -> dict:
     next_scan = next_scan.replace(day=next_scan.day + 7) if next_scan.day <= 24 else next_scan.replace(month=next_scan.month + 1, day=1)
     next_scan_iso = next_scan.isoformat()
 
-    # Check if account exists
-    cursor.execute('SELECT * FROM monitored_accounts WHERE company_name = ?', (company_name,))
+    # Check if account exists (case-insensitive)
+    cursor.execute(
+        'SELECT * FROM monitored_accounts WHERE LOWER(company_name) = ?',
+        (company_name_normalized,)
+    )
     existing = cursor.fetchone()
 
     if existing:
@@ -671,18 +692,18 @@ def add_account_to_tier_0(company_name: str, github_org: str) -> dict:
             UPDATE monitored_accounts
             SET github_org = ?,
                 next_scan_due = ?
-            WHERE company_name = ?
-        ''', (github_org, next_scan_iso, company_name))
+            WHERE LOWER(company_name) = ?
+        ''', (github_org, next_scan_iso, company_name_normalized))
         account_id = existing['id']
     else:
-        # Create new account at Tier 0
+        # Create new account at Tier 0 (use normalized name)
         # Note: last_scanned_at is NULL until a scan actually completes
         cursor.execute('''
             INSERT INTO monitored_accounts (
                 company_name, github_org, current_tier, last_scanned_at,
                 status_changed_at, evidence_summary, next_scan_due
             ) VALUES (?, ?, ?, NULL, ?, ?, ?)
-        ''', (company_name, github_org, TIER_TRACKING, now,
+        ''', (company_name_normalized, github_org, TIER_TRACKING, now,
               "Added via Grow pipeline", next_scan_iso))
         account_id = cursor.lastrowid
 
@@ -693,7 +714,7 @@ def add_account_to_tier_0(company_name: str, github_org: str) -> dict:
 
     return {
         'account_id': account_id,
-        'company_name': company_name,
+        'company_name': company_name_normalized,
         'github_org': github_org,
         'tier': TIER_TRACKING,
         'tier_name': tier_config['name'],
@@ -868,13 +889,19 @@ def mark_account_as_invalid(company_name: str, reason: str) -> dict:
     Returns:
         Dictionary with the update result.
     """
+    # Normalize company name to lowercase to prevent duplicates
+    company_name_normalized = company_name.lower().strip()
+
     conn = get_db_connection()
     cursor = conn.cursor()
 
     now = datetime.now().isoformat()
 
-    # Check if account exists
-    cursor.execute('SELECT * FROM monitored_accounts WHERE company_name = ?', (company_name,))
+    # Check if account exists (case-insensitive)
+    cursor.execute(
+        'SELECT * FROM monitored_accounts WHERE LOWER(company_name) = ?',
+        (company_name_normalized,)
+    )
     existing = cursor.fetchone()
 
     if existing:
@@ -886,17 +913,17 @@ def mark_account_as_invalid(company_name: str, reason: str) -> dict:
                 status_changed_at = ?,
                 evidence_summary = ?,
                 next_scan_due = NULL
-            WHERE company_name = ?
-        ''', (TIER_INVALID, now, now, reason, company_name))
+            WHERE LOWER(company_name) = ?
+        ''', (TIER_INVALID, now, now, reason, company_name_normalized))
         account_id = existing['id']
     else:
-        # Create new account at Tier 4
+        # Create new account at Tier 4 (use normalized name)
         cursor.execute('''
             INSERT INTO monitored_accounts (
                 company_name, github_org, current_tier, last_scanned_at,
                 status_changed_at, evidence_summary, next_scan_due
             ) VALUES (?, ?, ?, ?, ?, ?, NULL)
-        ''', (company_name, '', TIER_INVALID, now, now, reason))
+        ''', (company_name_normalized, '', TIER_INVALID, now, now, reason))
         account_id = cursor.lastrowid
 
     conn.commit()
@@ -906,7 +933,7 @@ def mark_account_as_invalid(company_name: str, reason: str) -> dict:
 
     return {
         'account_id': account_id,
-        'company_name': company_name,
+        'company_name': company_name_normalized,
         'tier': TIER_INVALID,
         'tier_name': tier_config['name'],
         'tier_status': tier_config['status'],
@@ -1297,6 +1324,91 @@ def batch_set_scan_status_queued(company_names: list) -> int:
     conn.close()
 
     return updated_count
+
+
+def cleanup_duplicate_accounts() -> dict:
+    """
+    Clean up duplicate accounts caused by case-sensitivity issues.
+
+    This function:
+    1. Finds all accounts that have duplicates (case-insensitive)
+    2. For each group, keeps the one with the most recent scan
+    3. Deletes the older duplicates
+
+    Returns:
+        Dictionary with cleanup results: {deleted: int, kept: int, groups: list}
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Find all duplicate groups (case-insensitive)
+    cursor.execute('''
+        SELECT LOWER(company_name) as normalized_name, COUNT(*) as count
+        FROM monitored_accounts
+        GROUP BY LOWER(company_name)
+        HAVING COUNT(*) > 1
+    ''')
+
+    duplicate_groups = cursor.fetchall()
+
+    if not duplicate_groups:
+        conn.close()
+        return {'deleted': 0, 'kept': 0, 'groups': []}
+
+    deleted_count = 0
+    kept_count = 0
+    groups_cleaned = []
+
+    for group in duplicate_groups:
+        normalized_name = group['normalized_name']
+
+        # Get all accounts in this group, sorted by last_scanned_at (most recent first)
+        cursor.execute('''
+            SELECT id, company_name, current_tier, last_scanned_at
+            FROM monitored_accounts
+            WHERE LOWER(company_name) = ?
+            ORDER BY
+                CASE WHEN last_scanned_at IS NULL THEN 1 ELSE 0 END,
+                last_scanned_at DESC,
+                id DESC
+        ''', (normalized_name,))
+
+        accounts = cursor.fetchall()
+
+        if len(accounts) < 2:
+            continue
+
+        # Keep the first one (most recent scan), delete the rest
+        keep_account = accounts[0]
+        delete_accounts = accounts[1:]
+
+        # Update the kept account to use normalized name
+        cursor.execute('''
+            UPDATE monitored_accounts
+            SET company_name = ?
+            WHERE id = ?
+        ''', (normalized_name, keep_account['id']))
+
+        # Delete duplicates
+        for dup in delete_accounts:
+            cursor.execute('DELETE FROM monitored_accounts WHERE id = ?', (dup['id'],))
+            deleted_count += 1
+
+        kept_count += 1
+        groups_cleaned.append({
+            'name': normalized_name,
+            'kept_id': keep_account['id'],
+            'deleted_ids': [d['id'] for d in delete_accounts]
+        })
+
+    conn.commit()
+    conn.close()
+
+    return {
+        'deleted': deleted_count,
+        'kept': kept_count,
+        'groups': groups_cleaned
+    }
 
 
 # Initialize database on module import
