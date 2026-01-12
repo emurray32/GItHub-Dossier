@@ -437,6 +437,165 @@
         display: block;
     }
 
+    /* Status indicator styles */
+    .status-cell-active {
+        position: relative;
+    }
+
+    .status-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.35rem 0.65rem;
+        border-radius: 6px;
+        font-size: 0.8rem;
+        font-weight: 600;
+    }
+
+    .status-badge-queued {
+        background: rgba(245, 158, 11, 0.15);
+        color: #fbbf24;
+        border: 1px solid rgba(245, 158, 11, 0.3);
+    }
+
+    .status-badge-processing {
+        background: rgba(99, 102, 241, 0.15);
+        color: #818cf8;
+        border: 1px solid rgba(99, 102, 241, 0.3);
+    }
+
+    .status-badge-stuck {
+        background: rgba(239, 68, 68, 0.15);
+        color: #f87171;
+        border: 1px solid rgba(239, 68, 68, 0.4);
+        animation: pulse-warning 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse-warning {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.7; }
+    }
+
+    .status-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 16px;
+        height: 16px;
+    }
+
+    .status-icon-queued {
+        animation: pulse-queue 1.5s ease-in-out infinite;
+    }
+
+    @keyframes pulse-queue {
+        0%, 100% { opacity: 0.6; }
+        50% { opacity: 1; }
+    }
+
+    .status-icon-processing {
+        animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+    }
+
+    .status-icon-stuck {
+        animation: shake 0.5s ease-in-out infinite;
+    }
+
+    @keyframes shake {
+        0%, 100% { transform: translateX(0); }
+        25% { transform: translateX(-2px); }
+        75% { transform: translateX(2px); }
+    }
+
+    /* Progress bar for processing state */
+    .progress-line {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        height: 3px;
+        background: rgba(99, 102, 241, 0.2);
+        overflow: hidden;
+        border-radius: 0 0 4px 4px;
+    }
+
+    .progress-line::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        height: 100%;
+        width: 30%;
+        background: linear-gradient(90deg, transparent, var(--accent-color), transparent);
+        animation: progress-sweep 1.5s ease-in-out infinite;
+    }
+
+    @keyframes progress-sweep {
+        0% { left: -30%; }
+        100% { left: 100%; }
+    }
+
+    /* Progress bar for stuck state */
+    .progress-line-stuck {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        height: 3px;
+        background: rgba(239, 68, 68, 0.3);
+        border-radius: 0 0 4px 4px;
+    }
+
+    .progress-line-stuck::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        height: 100%;
+        width: 100%;
+        background: repeating-linear-gradient(
+            90deg,
+            rgba(239, 68, 68, 0.5) 0px,
+            rgba(239, 68, 68, 0.5) 8px,
+            transparent 8px,
+            transparent 16px
+        );
+        animation: stripes-move 1s linear infinite;
+    }
+
+    @keyframes stripes-move {
+        0% { background-position: 0 0; }
+        100% { background-position: 16px 0; }
+    }
+
+    /* Elapsed time styling */
+    .elapsed-time {
+        font-size: 0.7rem;
+        color: var(--text-muted);
+        margin-left: 0.25rem;
+    }
+
+    .elapsed-time-warning {
+        color: #fbbf24;
+    }
+
+    .elapsed-time-danger {
+        color: #f87171;
+        font-weight: 600;
+    }
+
+    /* Queue position indicator */
+    .queue-position {
+        font-size: 0.65rem;
+        color: var(--text-muted);
+        margin-top: 0.15rem;
+    }
+
     /* Smart action buttons */
     .btn-action-smart {
         display: inline-flex;
@@ -920,9 +1079,15 @@
                 </div>
 
                 <div class="stat-badge" style="background: var(--bg-tertiary); border: 1px solid var(--border-color);">
-                    <span class="tier-badge" style="background: rgba(168, 85, 247, 0.2); color: #c084fc;">⏳</span>
+                    <span class="tier-badge" style="background: rgba(245, 158, 11, 0.2); color: #fbbf24;">⏳</span>
                     <span class="count" id="dashboard-queue-size">0</span>
                     <span>Queued</span>
+                </div>
+
+                <div class="stat-badge" style="background: var(--bg-tertiary); border: 1px solid var(--border-color);">
+                    <span class="tier-badge" style="background: rgba(99, 102, 241, 0.2); color: #818cf8;">🔄</span>
+                    <span class="count" id="dashboard-processing-count">0</span>
+                    <span>Processing</span>
                 </div>
 
                 <div class="stat-badge">
@@ -1242,13 +1407,27 @@
         fetch('/api/queue-status')
             .then(response => response.json())
             .then(data => {
+                // Update queued count
                 const queueEl = document.getElementById('dashboard-queue-size');
                 if (queueEl) {
-                    queueEl.textContent = data.queue_size;
-                    if (data.queue_size > 0) {
-                        queueEl.style.color = 'var(--accent-color)';
+                    const queuedCount = data.queued_count || 0;
+                    queueEl.textContent = queuedCount;
+                    if (queuedCount > 0) {
+                        queueEl.style.color = '#fbbf24';  // Yellow/amber for queued
                     } else {
                         queueEl.style.color = 'inherit';
+                    }
+                }
+
+                // Update processing count
+                const processingEl = document.getElementById('dashboard-processing-count');
+                if (processingEl) {
+                    const processingCount = data.processing_count || 0;
+                    processingEl.textContent = processingCount;
+                    if (processingCount > 0) {
+                        processingEl.style.color = '#818cf8';  // Purple for processing
+                    } else {
+                        processingEl.style.color = 'inherit';
                     }
                 }
             })
@@ -1704,7 +1883,7 @@
             // Handle queued response (new queue-based system)
             if (data.status === 'queued') {
                 buttonEl.classList.remove('scanning');
-                buttonEl.textContent = `✓ Queued (#${data.queue_size})`;
+                buttonEl.textContent = `✓ Queued`;
                 buttonEl.style.background = '#22c55e';
 
                 // Show info message
@@ -1719,7 +1898,7 @@
                 }
 
                 // Start auto-refresh to show results when complete
-                startAutoRefresh(data.queue_size || 1);
+                startAutoRefresh(data.active_jobs || 1);
 
                 // Reset button after 3 seconds
                 setTimeout(() => {
@@ -1962,11 +2141,12 @@
                 const response = await fetch('/api/queue-status');
                 const data = await response.json();
 
-                console.log(`[AUTO-REFRESH] Queue status: size=${data.queue_size}, worker=${data.worker_alive}`);
+                const totalActive = (data.queued_count || 0) + (data.processing_count || 0);
+                console.log(`[AUTO-REFRESH] Queue status: queued=${data.queued_count}, processing=${data.processing_count}`);
 
-                // If queue is empty, all scans are complete
-                if (data.queue_size === 0) {
-                    console.log('[AUTO-REFRESH] Queue empty, refreshing page...');
+                // If queue is empty and nothing processing, all scans are complete
+                if (totalActive === 0) {
+                    console.log('[AUTO-REFRESH] All scans complete, refreshing page...');
                     clearInterval(autoRefreshInterval);
                     autoRefreshInterval = null;
                     showNotification('Scans complete! Refreshing...', 'success');
@@ -2054,6 +2234,41 @@
 </script>
 
 <script>
+    // Constants for timeout detection
+    const TIMEOUT_WARNING_SECONDS = 180;  // 3 minutes - show warning
+    const TIMEOUT_DANGER_SECONDS = 300;   // 5 minutes - likely stuck/timed out
+
+    // Helper to format elapsed time nicely
+    function formatElapsedTime(seconds) {
+        if (seconds < 60) {
+            return `${seconds}s`;
+        } else if (seconds < 3600) {
+            const mins = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            return `${mins}m ${secs}s`;
+        } else {
+            const hrs = Math.floor(seconds / 3600);
+            const mins = Math.floor((seconds % 3600) / 60);
+            return `${hrs}h ${mins}m`;
+        }
+    }
+
+    // SVG icons for status badges
+    const statusIcons = {
+        queued: `<svg class="status-icon status-icon-queued" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="M12 6v6l4 2"/>
+        </svg>`,
+        processing: `<svg class="status-icon status-icon-processing" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 12a9 9 0 11-6.219-8.56"/>
+        </svg>`,
+        stuck: `<svg class="status-icon status-icon-stuck" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="12" y1="8" x2="12" y2="12"/>
+            <line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>`
+    };
+
     // Live Status Polling
     function updateRowStatuses() {
         if (document.hidden) return; // Don't poll if tab is hidden
@@ -2061,6 +2276,13 @@
         fetch('/api/accounts')
             .then(response => response.json())
             .then(accounts => {
+                // Track queue position
+                const queuedAccounts = accounts.filter(a => a.scan_status === 'queued');
+                const queuePositions = {};
+                queuedAccounts.forEach((account, idx) => {
+                    queuePositions[account.id] = idx + 1;
+                });
+
                 accounts.forEach(account => {
                     const row = document.getElementById(`row-${account.id}`);
                     if (!row) return;
@@ -2071,40 +2293,76 @@
                     // Update data-status
                     const currentStatus = row.getAttribute('data-status');
                     const newStatus = account.scan_status || 'idle';
-                    
+
+                    // Calculate elapsed time for processing accounts
+                    let elapsed = 0;
+                    let isStuck = false;
+                    if (newStatus === 'processing' && account.scan_started_at) {
+                        elapsed = Math.floor(Date.now() / 1000 - account.scan_started_at);
+                        isStuck = elapsed >= TIMEOUT_DANGER_SECONDS;
+                    }
+
                     // Only update if status changed or if currently processing (to update timer)
-                    if (currentStatus !== newStatus || newStatus === 'processing') {
-                        row.setAttribute('data-status', newStatus);
-                        
+                    if (currentStatus !== newStatus || newStatus === 'processing' || newStatus === 'queued') {
+                        row.setAttribute('data-status', isStuck ? 'stuck' : newStatus);
+
                         let content = '';
-                        
+
                         if (newStatus === 'queued') {
+                            const queuePos = queuePositions[account.id] || '?';
                             content = `
                                 <div class="status-container">
-                                    <span class="scanned-time" style="color: var(--text-muted);">⏳ Queued</span>
+                                    <span class="status-badge status-badge-queued">
+                                        ${statusIcons.queued}
+                                        <span>In Queue</span>
+                                    </span>
+                                    <span class="queue-position">#${queuePos} in queue</span>
                                 </div>
                             `;
                             statusCell.classList.remove('status-cell-active');
-                        } 
+                        }
                         else if (newStatus === 'processing') {
-                            const startTime = account.scan_started_at || Date.now() / 1000;
-                            const elapsed = Math.floor(Date.now() / 1000 - startTime);
-                            
-                            content = `
-                                <div class="status-container">
-                                    <span class="scanned-time" style="color: var(--accent-color);">🔄 Scanning...</span>
-                                    <span class="tier-change-time">${elapsed}s</span>
-                                </div>
-                                <div class="progress-line"></div>
-                            `;
+                            // Determine elapsed time styling
+                            let elapsedClass = 'elapsed-time';
+                            if (elapsed >= TIMEOUT_DANGER_SECONDS) {
+                                elapsedClass += ' elapsed-time-danger';
+                            } else if (elapsed >= TIMEOUT_WARNING_SECONDS) {
+                                elapsedClass += ' elapsed-time-warning';
+                            }
+
+                            if (isStuck) {
+                                // Show stuck/timeout state
+                                content = `
+                                    <div class="status-container">
+                                        <span class="status-badge status-badge-stuck">
+                                            ${statusIcons.stuck}
+                                            <span>May Be Stuck</span>
+                                        </span>
+                                        <span class="${elapsedClass}">${formatElapsedTime(elapsed)}</span>
+                                    </div>
+                                    <div class="progress-line-stuck"></div>
+                                `;
+                            } else {
+                                // Normal processing state
+                                content = `
+                                    <div class="status-container">
+                                        <span class="status-badge status-badge-processing">
+                                            ${statusIcons.processing}
+                                            <span>Scanning</span>
+                                        </span>
+                                        <span class="${elapsedClass}">${formatElapsedTime(elapsed)}</span>
+                                    </div>
+                                    <div class="progress-line"></div>
+                                `;
+                            }
                             statusCell.classList.add('status-cell-active');
-                        } 
+                        }
                         else {
-                            if (currentStatus === 'processing' || currentStatus === 'queued') {
+                            if (currentStatus === 'processing' || currentStatus === 'queued' || currentStatus === 'stuck') {
                                 // Transition from processing to idle -> scan complete
                                 const dateStr = account.last_scanned_at ? account.last_scanned_at.substring(0, 10) : 'Just now';
                                 const timeStr = account.last_scanned_at ? account.last_scanned_at.substring(11, 16) : '';
-                                
+
                                 content = `
                                     <div class="status-container">
                                         <span class="scanned-time" style="color: var(--success-color);">
@@ -2117,7 +2375,7 @@
                                 // Standard idle display
                                 statusCell.classList.remove('status-cell-active');
                                 const dateStr = account.last_scanned_at ? account.last_scanned_at.substring(0, 10) : 'Never';
-                                
+
                                 let subText = '';
                                 if (account.status_changed_at) {
                                      let changeDate = account.status_changed_at;
@@ -2126,7 +2384,7 @@
                                 } else if (account.last_scanned_at) {
                                      subText = account.last_scanned_at.substring(11, 16);
                                 }
-                                
+
                                 const timeClass = !account.last_scanned_at ? 'never-scanned' : '';
                                 let label = account.last_scanned_at ? 'Scanned:' : '';
                                 if (!account.last_scanned_at) label = '';
@@ -2141,9 +2399,9 @@
                                 `;
                             }
                         }
-                        
+
                         statusCell.innerHTML = content;
-                        
+
                         // Disable/Enable buttons based on status
                         const actionBtn = row.querySelector('.btn-rescan') || row.querySelector('.btn-start-scan');
                         if (actionBtn) {
@@ -2167,7 +2425,7 @@
 
     // Poll every 3 seconds
     setInterval(updateRowStatuses, 3000);
-    
+
     // Initial call
     document.addEventListener('DOMContentLoaded', updateRowStatuses);
 </script>
