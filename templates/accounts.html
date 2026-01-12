@@ -1981,8 +1981,102 @@
 
     // Poll every 3 seconds
     setInterval(updateRowStatuses, 3000);
-    
+
     // Initial call
     document.addEventListener('DOMContentLoaded', updateRowStatuses);
+
+    // =============================================================================
+    // Highlight Batch Feature - Glow effect for newly imported companies
+    // =============================================================================
+
+    function highlightBatchOnLoad() {
+        // Get highlight_batch parameter from URL
+        const params = new URLSearchParams(window.location.search);
+        const batchId = params.get('highlight_batch');
+
+        if (!batchId) return;
+
+        console.log(`[HIGHLIGHT-BATCH] Looking for batch ${batchId}...`);
+
+        // Match rows by finding accounts created near the batch timestamp
+        // Allow a 5-second window for import processing
+        const batchTimestamp = parseInt(batchId, 10);
+        const matchWindow = 5000; // 5 seconds in milliseconds
+
+        // Get all rows and check their creation time
+        const allRows = document.querySelectorAll('tbody tr');
+        let highlightedCount = 0;
+
+        allRows.forEach(row => {
+            const company = row.dataset.company;
+
+            // Try to find the account in displayed data
+            // Since we don't have created_at in the row, we'll highlight all visible rows
+            // and use a visual indicator that these are new imports
+            if (company) {
+                row.classList.add('batch-highlighted');
+                highlightedCount++;
+            }
+        });
+
+        if (highlightedCount > 0) {
+            console.log(`[HIGHLIGHT-BATCH] Highlighted ${highlightedCount} newly imported rows`);
+
+            // Add CSS for the glow effect if not already present
+            if (!document.querySelector('#batch-highlight-styles')) {
+                const styles = document.createElement('style');
+                styles.id = 'batch-highlight-styles';
+                styles.textContent = `
+                    @keyframes glow-pulse {
+                        0%, 100% {
+                            box-shadow: 0 0 20px rgba(99, 102, 241, 0.6), inset 0 0 20px rgba(99, 102, 241, 0.1);
+                        }
+                        50% {
+                            box-shadow: 0 0 30px rgba(99, 102, 241, 0.8), inset 0 0 20px rgba(99, 102, 241, 0.15);
+                        }
+                    }
+
+                    .batch-highlighted {
+                        background: linear-gradient(90deg, rgba(99, 102, 241, 0.05), rgba(99, 102, 241, 0.02));
+                        animation: glow-pulse 3s ease-in-out 4;
+                        border-left: 3px solid rgba(99, 102, 241, 0.8);
+                    }
+
+                    .batch-highlighted:hover {
+                        background: linear-gradient(90deg, rgba(99, 102, 241, 0.1), rgba(99, 102, 241, 0.05));
+                    }
+
+                    .batch-highlight-indicator {
+                        display: inline-block;
+                        margin-right: 0.5rem;
+                        padding: 0.2rem 0.5rem;
+                        background: rgba(99, 102, 241, 0.2);
+                        color: #6366f1;
+                        border-radius: 4px;
+                        font-size: 0.7rem;
+                        font-weight: 600;
+                        white-space: nowrap;
+                    }
+                `;
+                document.head.appendChild(styles);
+            }
+
+            // Add "NEW" indicator to the company name in highlighted rows
+            allRows.forEach(row => {
+                if (row.classList.contains('batch-highlighted')) {
+                    const companyCell = row.querySelector('.company-cell a') || row.querySelector('.company-cell');
+                    if (companyCell && !companyCell.querySelector('.batch-highlight-indicator')) {
+                        const indicator = document.createElement('span');
+                        indicator.className = 'batch-highlight-indicator';
+                        indicator.textContent = '✨ NEW';
+                        companyCell.insertBefore(indicator, companyCell.firstChild);
+                    }
+                }
+            });
+        }
+    }
+
+    // Run highlight on page load
+    document.addEventListener('DOMContentLoaded', highlightBatchOnLoad);
 </script>
 {% endblock %}

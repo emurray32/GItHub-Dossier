@@ -617,7 +617,8 @@ def api_import():
         JSON with: {
             "added": ["Shopify", ...],
             "failed": ["MomPop", ...],
-            "results": [{"company": "...", "github_org": "...", "status": "..."}]
+            "results": [{"company": "...", "github_org": "...", "status": "..."}],
+            "batch_id": timestamp
         }
 
     After adding each company to the database, spawns a background scan
@@ -628,6 +629,9 @@ def api_import():
 
     if not isinstance(companies, list) or not companies:
         return jsonify({'error': 'Invalid payload: expected {"companies": [...]}'}), 400
+
+    # Generate batch ID using current timestamp
+    batch_id = int(time.time())
 
     added = []
     failed = []
@@ -686,7 +690,8 @@ def api_import():
         'failed': failed,
         'skipped': skipped,
         'total_processed': len(companies),
-        'results': results
+        'results': results,
+        'batch_id': batch_id
     })
 
 
