@@ -79,7 +79,8 @@ class Config:
     # +1000 points if repo name contains any of these
     HIGH_VALUE_PATTERNS = [
         'web', 'app', 'frontend', 'mobile', 'ios', 'android',
-        'server', 'api', 'ui', 'client', 'monorepo'
+        'server', 'api', 'ui', 'client', 'monorepo',
+        'website', 'marketing', 'dashboard', 'console'
     ]
 
     # Low-value repository patterns (non-core repos to deprioritize)
@@ -156,6 +157,8 @@ class Config:
         'try-pseudo-localization',   # Pseudo-localization for UI layout testing
         'react-pseudo',              # Pseudo-localization for React
         'i18next-pseudo',            # Pseudo-localization for i18next
+        'i18n-js',                   # JavaScript i18n library - general purpose
+        'typesafe-i18n',             # TypeScript-first i18n library - type-safe translations
         # Note: 'uppy' is checked separately for i18n/locale properties
     ]
 

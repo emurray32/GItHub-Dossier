@@ -593,7 +593,10 @@ def _scan_dependency_injection(org: str, repo: str, company: str) -> Generator[t
     # ============================================================
     package_json_paths = []
     max_tree_entries = 2000
-    max_package_files = 20
+    max_package_files = 50  # Increased from 20 to better handle monorepos
+
+    # Priority directories for package.json files (core product code)
+    priority_prefixes = ['package.json', 'app/', 'apps/', 'web/', 'frontend/', 'src/']
 
     try:
         repo_url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}"
@@ -605,14 +608,28 @@ def _scan_dependency_injection(org: str, repo: str, company: str) -> Generator[t
 
         if tree_response.status_code == 200:
             tree_entries = tree_response.json().get('tree', [])
+            priority_paths = []
+            other_paths = []
+
             for entry in tree_entries[:max_tree_entries]:
                 if entry.get('type') != 'blob':
                     continue
                 path = entry.get('path', '')
                 if path.endswith('package.json'):
-                    package_json_paths.append(path)
-                    if len(package_json_paths) >= max_package_files:
-                        break
+                    # Check if this is a priority path
+                    is_priority = any(
+                        path == prefix or path.startswith(prefix)
+                        for prefix in priority_prefixes
+                    )
+                    if is_priority:
+                        priority_paths.append(path)
+                    else:
+                        other_paths.append(path)
+
+            # Combine priority paths first, then others, up to max
+            package_json_paths = priority_paths + other_paths
+            package_json_paths = package_json_paths[:max_package_files]
+
         if not package_json_paths:
             package_json_paths = ['package.json']
         elif len(package_json_paths) >= max_package_files:
@@ -1134,11 +1151,31 @@ def _check_locale_folders_exist_detailed(org: str, repo: str) -> tuple:
 
     Source-only folders (e.g., containing just en.json) indicate infrastructure
     is ready but translations haven't started - this is still a GOLDILOCKS ZONE.
+
+    IMPORTANT: Ignores locale folders found inside test/vendor directories
+    (node_modules, vendor, test, tests, fixtures, __tests__) as these are
+    typically test fixtures, not production translation files.
     """
+    # Directories to ignore when searching for locale folders
+    # Test fixtures and dependency directories should not count as "launched"
+    IGNORED_PARENT_DIRS = [
+        'node_modules', 'vendor', 'test', 'tests', 'fixtures',
+        '__tests__', '__mocks__', 'spec', 'e2e', 'cypress'
+    ]
+
+    def _is_in_ignored_directory(path: str) -> bool:
+        """Check if a path is inside an ignored directory."""
+        path_parts = path.lower().split('/')
+        for part in path_parts[:-1]:  # Check all parent directories
+            if part in IGNORED_PARENT_DIRS:
+                return True
+        return False
+
     found_folders = []
     folder_contents = {}
     all_source_only = True  # Assume source-only until proven otherwise
 
+    # First, check root-level locale folders
     for path in Config.EXCLUSION_FOLDERS:
         try:
             url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}/contents/{path}"
@@ -1172,6 +1209,71 @@ def _check_locale_folders_exist_detailed(org: str, repo: str) -> tuple:
 
         except requests.RequestException:
             continue
+
+    # Also search the repo tree for locale folders in subdirectories
+    # (e.g., app/locales, src/i18n, packages/web/translations)
+    try:
+        repo_url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}"
+        repo_response = make_github_request(repo_url, timeout=15)
+        default_branch = repo_response.json().get('default_branch', 'main') if repo_response.status_code == 200 else 'main'
+
+        tree_url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}/git/trees/{default_branch}"
+        tree_response = make_github_request(tree_url, params={'recursive': 1}, timeout=30)
+
+        if tree_response.status_code == 200:
+            tree_entries = tree_response.json().get('tree', [])
+            locale_folder_names = set(Config.EXCLUSION_FOLDERS)
+
+            for entry in tree_entries:
+                if entry.get('type') != 'tree':  # Only look at directories
+                    continue
+
+                entry_path = entry.get('path', '')
+                folder_name = entry_path.split('/')[-1].lower()
+
+                # Check if this is a locale folder by name
+                if folder_name not in locale_folder_names:
+                    continue
+
+                # Skip if already found at root level
+                if entry_path in found_folders:
+                    continue
+
+                # CRITICAL: Skip if inside an ignored directory (test fixtures, node_modules, etc.)
+                if _is_in_ignored_directory(entry_path):
+                    continue
+
+                # Found a valid locale folder in subdirectory
+                found_folders.append(entry_path)
+
+                # Fetch folder contents to check if source-only
+                try:
+                    folder_url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}/contents/{entry_path}"
+                    folder_response = make_github_request(folder_url, timeout=10)
+
+                    if folder_response.status_code == 200:
+                        contents = folder_response.json()
+                        files_in_folder = []
+
+                        if isinstance(contents, list):
+                            for item in contents:
+                                item_name = item.get('name', '')
+                                item_type = item.get('type', '')
+                                if item_type == 'file':
+                                    files_in_folder.append(item_name)
+
+                        folder_contents[entry_path] = files_in_folder
+
+                        if files_in_folder:
+                            folder_is_source_only = _is_source_only_folder(files_in_folder)
+                            if not folder_is_source_only:
+                                all_source_only = False
+
+                except requests.RequestException:
+                    pass
+
+    except requests.RequestException:
+        pass  # Tree search failure is non-fatal
 
     folders_exist = len(found_folders) > 0
 
@@ -1366,16 +1468,58 @@ def _calculate_intent_score(scan_results: dict) -> int:
     signals = scan_results.get('signals', [])
 
     # ============================================================
+    # Check for LAUNCHED status (disqualifying condition)
+    # ============================================================
+    already_launched_signals = [s for s in signals if s.get('type') == 'already_launched']
+    if already_launched_signals:
+        # They have locale folders - TOO LATE
+        scan_results['goldilocks_status'] = 'launched'
+        scan_results['lead_status'] = Config.LEAD_STATUS_LABELS.get('launched', 'LOW PRIORITY')
+        return Config.GOLDILOCKS_SCORES.get('launched', 10)
+
+    # ============================================================
+    # Check for PREPARING status (Goldilocks Zone!) - HIGHEST PRIORITY
+    # ============================================================
+    # This check MUST come before the Mega-Corp heuristic to ensure
+    # valid goldilocks signals (react-intl without locale folders) take precedence
+    dep_hits = summary.get('dependency_injection', {}).get('hits', [])
+    goldilocks_hits = [h for h in dep_hits if h.get('goldilocks_status') == 'preparing' or h.get('gap_verified')]
+
+    if goldilocks_hits:
+        # This is the GOLDILOCKS ZONE!
+        # Library found + No locale folders = PERFECT TIMING
+        scan_results['goldilocks_status'] = 'preparing'
+        scan_results['lead_status'] = Config.LEAD_STATUS_LABELS.get('preparing', 'HOT LEAD')
+
+        # Score based on number of libraries found (90-100 range)
+        base_score = Config.GOLDILOCKS_SCORES.get('preparing_min', 90)
+        bonus = min(len(goldilocks_hits) * 5, 10)  # Up to +10 bonus
+
+        # Add bonus for ghost branches (active work)
+        ghost_count = summary.get('ghost_branch', {}).get('count', 0)
+        if ghost_count > 0:
+            bonus = 10  # Max bonus if actively working on it
+
+        return min(base_score + bonus, Config.GOLDILOCKS_SCORES.get('preparing_max', 100))
+
+    # ============================================================
     # MEGA-CORP HEURISTIC: Detect high-maturity orgs without Preparing signals
     # ============================================================
     # Large engineering orgs (Airbnb, Uber, Facebook, etc.) often use custom/internal
     # i18n solutions that won't appear in our standard library scans. If they have
     # significant GitHub presence but no Preparing signals, they've likely already
     # launched with proprietary tooling.
+    #
+    # IMPORTANT: This check runs AFTER the Preparing check to ensure valid
+    # goldilocks signals (react-intl without locale folders) take precedence.
     total_stars = scan_results.get('total_stars', 0)
     public_repos = scan_results.get('org_public_repos', 0)
+    repos_scanned = len(scan_results.get('repos_scanned', []))
 
-    if total_stars > 5000 or public_repos > 100:
+    # Only apply mega-corp heuristic if:
+    # 1. We actually scanned repos (repos_scanned > 0)
+    # 2. The org has very high activity (stars > 20000 OR repos > 400)
+    if repos_scanned > 0 and (total_stars > 20000 or public_repos > 400):
         # High-maturity org with no Preparing signals = Already Launched
         scan_results['goldilocks_status'] = 'launched'
         scan_results['lead_status'] = Config.LEAD_STATUS_LABELS.get('launched', 'LOW PRIORITY')
@@ -1397,39 +1541,6 @@ def _calculate_intent_score(scan_results: dict) -> int:
         signals.append(mega_corp_signal)
 
         return Config.GOLDILOCKS_SCORES.get('launched', 10)
-
-    # ============================================================
-    # Check for LAUNCHED status (disqualifying condition)
-    # ============================================================
-    already_launched_signals = [s for s in signals if s.get('type') == 'already_launched']
-    if already_launched_signals:
-        # They have locale folders - TOO LATE
-        scan_results['goldilocks_status'] = 'launched'
-        scan_results['lead_status'] = Config.LEAD_STATUS_LABELS.get('launched', 'LOW PRIORITY')
-        return Config.GOLDILOCKS_SCORES.get('launched', 10)
-
-    # ============================================================
-    # Check for PREPARING status (Goldilocks Zone!)
-    # ============================================================
-    dep_hits = summary.get('dependency_injection', {}).get('hits', [])
-    goldilocks_hits = [h for h in dep_hits if h.get('goldilocks_status') == 'preparing' or h.get('gap_verified')]
-
-    if goldilocks_hits:
-        # This is the GOLDILOCKS ZONE!
-        # Library found + No locale folders = PERFECT TIMING
-        scan_results['goldilocks_status'] = 'preparing'
-        scan_results['lead_status'] = Config.LEAD_STATUS_LABELS.get('preparing', 'HOT LEAD')
-
-        # Score based on number of libraries found (90-100 range)
-        base_score = Config.GOLDILOCKS_SCORES.get('preparing_min', 90)
-        bonus = min(len(goldilocks_hits) * 5, 10)  # Up to +10 bonus
-
-        # Add bonus for ghost branches (active work)
-        ghost_count = summary.get('ghost_branch', {}).get('count', 0)
-        if ghost_count > 0:
-            bonus = 10  # Max bonus if actively working on it
-
-        return min(base_score + bonus, Config.GOLDILOCKS_SCORES.get('preparing_max', 100))
 
     # ============================================================
     # Check for THINKING status
