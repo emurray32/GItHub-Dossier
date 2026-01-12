@@ -621,8 +621,11 @@
         padding: 1.5rem 2rem;
         border-radius: 12px;
         margin-bottom: 2rem;
-        text-align: center;
+        text-align: left;
         font-weight: 700;
+        display: flex;
+        align-items: center;
+        gap: 1.5rem;
     }
 
     .goldilocks-preparing {
@@ -631,22 +634,26 @@
         border: 3px solid #15803d;
     }
 
-    .goldilocks-preparing .status-icon {
-        font-size: 2.5rem;
-        margin-bottom: 0.5rem;
+    .status-icon {
+        font-size: 3rem;
+        line-height: 1;
     }
 
-    .goldilocks-preparing .status-title {
-        font-size: 1.75rem;
+    .status-content {
+        flex: 1;
+    }
+
+    .status-title {
+        font-size: 2rem;
         text-transform: uppercase;
-        letter-spacing: 0.05em;
+        letter-spacing: 0.08em;
     }
 
-    .goldilocks-preparing .status-subtitle {
-        font-size: 1.125rem;
-        font-weight: 500;
-        margin-top: 0.5rem;
-        opacity: 0.95;
+    .status-points {
+        margin: 0.5rem 0 0 1.25rem;
+        padding: 0;
+        font-size: 1rem;
+        font-weight: 600;
     }
 
     .goldilocks-thinking {
@@ -850,26 +857,42 @@
     {% if goldilocks_status == 'preparing' %}
     <div class="goldilocks-banner goldilocks-preparing">
         <div class="status-icon">🎯</div>
-        <div class="status-title">Goldilocks Zone Detected!</div>
-        <div class="status-subtitle">Infrastructure is READY but NO translations exist yet. PERFECT time to call!</div>
+        <div class="status-content">
+            <div class="status-title">CALL NOW</div>
+            <ul class="status-points">
+                <li>Infrastructure is ready, but no translation files exist yet.</li>
+            </ul>
+        </div>
     </div>
     {% elif goldilocks_status == 'thinking' %}
     <div class="goldilocks-banner goldilocks-thinking">
         <div class="status-icon">💭</div>
-        <div class="status-title">Warm Lead - Discussing i18n</div>
-        <div class="status-subtitle">Company is researching internationalization but hasn't started building yet.</div>
+        <div class="status-content">
+            <div class="status-title">WARM LEAD</div>
+            <ul class="status-points">
+                <li>They are discussing i18n but have not started building.</li>
+            </ul>
+        </div>
     </div>
     {% elif goldilocks_status == 'launched' %}
     <div class="goldilocks-banner goldilocks-launched">
         <div class="status-icon">⚠️</div>
-        <div class="status-title">Too Late - Already Localized</div>
-        <div class="status-subtitle">Company already has translation files. Low priority for outreach.</div>
+        <div class="status-content">
+            <div class="status-title">TOO LATE</div>
+            <ul class="status-points">
+                <li>Translation files already exist, so localization is live.</li>
+            </ul>
+        </div>
     </div>
     {% else %}
     <div class="goldilocks-banner goldilocks-none">
         <div class="status-icon">❄️</div>
-        <div class="status-title">Cold Lead</div>
-        <div class="status-subtitle">No significant i18n signals detected.</div>
+        <div class="status-content">
+            <div class="status-title">COLD LEAD</div>
+            <ul class="status-points">
+                <li>No significant i18n signals detected.</li>
+            </ul>
+        </div>
     </div>
     {% endif %}
 
