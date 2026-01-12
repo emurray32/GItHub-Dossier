@@ -151,11 +151,14 @@ def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[obje
         yield _sse_log(f"Error fetching repos: {str(e)}")
 
     if not repos:
-        yield _sse_error("No repositories found. Scan aborted.")
-        return
+        # Don't abort - continue with empty repos so tier calculation can properly classify
+        # This is NOT an error - the org exists but has no public repos (or all filtered)
+        yield _sse_log("⚠️ No active repositories found. Organization may have private repos only.")
+        repos = []  # Continue with empty list
 
     # Select top repos for deep scan
     repos_to_scan = repos[:Config.MAX_REPOS_TO_SCAN]
+    original_repos_to_scan = repos_to_scan.copy()  # Keep original list for tier calculation
     last_scanned_at = _parse_timestamp(last_scanned_timestamp)
 
     if last_scanned_at:
@@ -173,6 +176,12 @@ def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[obje
                     continue
             filtered_repos.append(repo)
         repos_to_scan = filtered_repos
+
+        # CRITICAL FIX: If all repos were filtered as "unchanged", fall back to original list
+        # This prevents false "Disqualified" status when repos exist but haven't changed
+        if not repos_to_scan and original_repos_to_scan:
+            yield _sse_log("All repos unchanged since last scan, using original repo list for tier calculation")
+            repos_to_scan = original_repos_to_scan
 
     yield _sse_log(f"✓ Selected {len(repos_to_scan)} repositories for intent scan")
 
