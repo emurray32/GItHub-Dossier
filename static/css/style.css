@@ -37,6 +37,120 @@
     --transition-normal: 0.3s ease;
 }
 
+/* Status legend */
+.status-legend-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 16px;
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 12px;
+    margin-bottom: 1.5rem;
+    font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+
+.legend-item {
+    display: flex;
+    flex-direction: column;
+    padding: 8px 12px;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 8px;
+    flex: 1;
+    min-width: 200px;
+}
+
+.legend-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+    font-weight: 600;
+    font-size: 0.85rem;
+}
+
+.status-title {
+    font-weight: 600;
+}
+
+.status-desc {
+    font-size: 0.75rem;
+    color: #94a3b8;
+    line-height: 1.4;
+}
+
+.status-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 999px;
+    flex-shrink: 0;
+}
+
+.status-preparing {
+    background: rgba(34, 197, 94, 0.12);
+    border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.status-preparing .status-dot {
+    background: #22c55e;
+}
+
+.status-preparing .status-title {
+    color: #22c55e;
+}
+
+.status-thinking {
+    background: rgba(245, 158, 11, 0.12);
+    border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.status-thinking .status-dot {
+    background: #f59e0b;
+}
+
+.status-thinking .status-title {
+    color: #f59e0b;
+}
+
+.status-tracking {
+    background: rgba(148, 163, 184, 0.12);
+    border: 1px solid rgba(148, 163, 184, 0.3);
+}
+
+.status-tracking .status-dot {
+    background: #94a3b8;
+}
+
+.status-tracking .status-title {
+    color: #94a3b8;
+}
+
+.status-launched {
+    background: rgba(239, 68, 68, 0.12);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.status-launched .status-dot {
+    background: #ef4444;
+}
+
+.status-launched .status-title {
+    color: #ef4444;
+}
+
+.status-not-found {
+    background: rgba(75, 85, 99, 0.2);
+    border: 1px solid rgba(75, 85, 99, 0.4);
+}
+
+.status-not-found .status-dot {
+    background: #4b5563;
+}
+
+.status-not-found .status-title {
+    color: #4b5563;
+}
+
 /* Reset & Base */
 *, *::before, *::after {
     box-sizing: border-box;

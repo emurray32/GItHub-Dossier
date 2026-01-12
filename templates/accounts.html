@@ -673,51 +673,6 @@
         margin-bottom: 1.5rem;
     }
 
-    /* Legend */
-    .tier-legend {
-        display: flex;
-        gap: 1.5rem;
-        margin-bottom: 1.5rem;
-        padding: 1rem;
-        background: var(--bg-secondary);
-        border-radius: 8px;
-        flex-wrap: wrap;
-    }
-
-    .legend-item {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        font-size: 0.85rem;
-        color: var(--text-secondary);
-    }
-
-    .legend-dot {
-        width: 10px;
-        height: 10px;
-        border-radius: 50%;
-    }
-
-    .legend-dot-0 {
-        background: #64748b;
-    }
-
-    .legend-dot-1 {
-        background: #f59e0b;
-    }
-
-    .legend-dot-2 {
-        background: #22c55e;
-    }
-
-    .legend-dot-3 {
-        background: #ef4444;
-    }
-
-    .legend-dot-4 {
-        background: #4b5563;
-    }
-
     /* Invalid/disabled button for Tier 4 */
     .btn-invalid {
         display: inline-flex;
@@ -877,10 +832,6 @@
             display: none;
         }
 
-        .tier-legend {
-            gap: 1rem;
-        }
-
         .bulk-command-bar {
             width: calc(100% - 2rem);
             flex-direction: column;
@@ -950,26 +901,41 @@
         </div>
     </header>
 
-    <div class="tier-legend">
-        <div class="legend-item">
-            <span class="legend-dot legend-dot-2"></span>
-            <strong>Tier 2 - Preparing:</strong> i18n libraries installed, no locale folders (GOLDILOCKS)
+    <div class="status-legend-container">
+        <div class="legend-item status-preparing">
+            <div class="legend-header">
+                <span class="status-dot"></span>
+                <span class="status-title">Tier 2: Preparing</span>
+            </div>
+            <span class="status-desc">Libraries installed, no locale folders (GOLDILOCKS)</span>
         </div>
-        <div class="legend-item">
-            <span class="legend-dot legend-dot-1"></span>
-            <strong>Tier 1 - Thinking:</strong> RFC discussions found
+        <div class="legend-item status-thinking">
+            <div class="legend-header">
+                <span class="status-dot"></span>
+                <span class="status-title">Tier 1: Thinking</span>
+            </div>
+            <span class="status-desc">RFC discussions found</span>
         </div>
-        <div class="legend-item">
-            <span class="legend-dot legend-dot-0"></span>
-            <strong>Tier 0 - Tracking:</strong> No signals yet
+        <div class="legend-item status-tracking">
+            <div class="legend-header">
+                <span class="status-dot"></span>
+                <span class="status-title">Tier 0: Tracking</span>
+            </div>
+            <span class="status-desc">No signals yet</span>
         </div>
-        <div class="legend-item">
-            <span class="legend-dot legend-dot-3"></span>
-            <strong>Tier 3 - Launched:</strong> Already localized (too late)
+        <div class="legend-item status-launched">
+            <div class="legend-header">
+                <span class="status-dot"></span>
+                <span class="status-title">Tier 3: Launched</span>
+            </div>
+            <span class="status-desc">Already localized (too late)</span>
         </div>
-        <div class="legend-item">
-            <span class="legend-dot legend-dot-4"></span>
-            <strong>Tier 4 - Not Found:</strong> GitHub org not found or no public repos
+        <div class="legend-item status-not-found">
+            <div class="legend-header">
+                <span class="status-dot"></span>
+                <span class="status-title">Tier 4: Not Found</span>
+            </div>
+            <span class="status-desc">GitHub org not found or no public repos</span>
         </div>
     </div>
 
