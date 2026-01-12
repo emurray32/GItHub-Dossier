@@ -405,7 +405,7 @@
         color: #6b7280;
     }
 
-    /* Last Check cell */
+    /* Last Scanned cell */
     .last-check-cell {
         font-size: 0.85rem;
         color: var(--text-secondary);
@@ -1365,7 +1365,7 @@
                     <th class="sortable" data-sort-key="github_org">GitHub Org <span class="sort-indicator">↕</span>
                     </th>
                     <th class="sortable" data-sort-key="tier">Tier <span class="sort-indicator">↕</span></th>
-                    <th class="sortable" data-sort-key="last_scanned">Last Check <span class="sort-indicator">↕</span>
+                    <th class="sortable" data-sort-key="last_scanned">Last Scanned <span class="sort-indicator">↕</span>
                     </th>
                     <th class="sortable" data-sort-key="evidence">Evidence <span class="sort-indicator">↕</span></th>
                     <th>Actions</th>
@@ -1615,6 +1615,32 @@
         return `${month}-${day}-${year}`;
     }
 
+    function formatRelativeTime(timestamp) {
+        if (!timestamp) return '--';
+        const scanned = new Date(timestamp);
+        if (Number.isNaN(scanned.getTime())) return '--';
+
+        const now = new Date();
+        const diffMs = now - scanned;
+        const diffMins = Math.floor(diffMs / (1000 * 60));
+        const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+        const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+        // For very recent scans, show relative time
+        if (diffMins < 1) {
+            return 'Just now';
+        } else if (diffMins < 60) {
+            return `${diffMins}m ago`;
+        } else if (diffHours < 24) {
+            return `${diffHours}h ago`;
+        } else if (diffDays < 7) {
+            return `${diffDays}d ago`;
+        } else {
+            // Fall back to date format for older scans
+            return formatShortDate(timestamp);
+        }
+    }
+
     function getHoursSinceScanned(timestamp) {
         if (!timestamp) return Infinity;
         const now = new Date();
@@ -1684,12 +1710,12 @@
     // =============================================================================
 
     function initializeUI() {
-        // Update all "Scanned: date" timestamps
+        // Update all "Scanned: date" timestamps with relative time
         document.querySelectorAll('.scanned-time[data-timestamp]').forEach(el => {
             const timestamp = el.dataset.timestamp;
             if (timestamp) {
-                const formattedDate = formatShortDate(timestamp);
-                el.textContent = `Scanned: ${formattedDate}`;
+                const formattedTime = formatRelativeTime(timestamp);
+                el.textContent = `Scanned: ${formattedTime}`;
 
                 // Add visual class based on freshness
                 const hours = getHoursSinceScanned(timestamp);
@@ -1955,7 +1981,7 @@
         const selectedRows = getSelectedRows();
         if (selectedRows.length === 0) return;
 
-        const header = ['Company', 'GitHub Org', 'Tier', 'Last Check', 'Evidence'];
+        const header = ['Company', 'GitHub Org', 'Tier', 'Last Scanned', 'Evidence'];
         const csvRows = [header];
 
         selectedRows.forEach(row => {
@@ -2445,29 +2471,25 @@
                         else {
                             if (currentStatus === 'processing' || currentStatus === 'queued' || currentStatus === 'stuck') {
                                 // Transition from processing to idle -> scan complete
-                                const dateStr = account.last_scanned_at ? account.last_scanned_at.substring(0, 10) : 'Just now';
-                                const timeStr = account.last_scanned_at ? account.last_scanned_at.substring(11, 16) : '';
+                                const relativeTime = account.last_scanned_at ? formatRelativeTime(account.last_scanned_at) : 'Just now';
 
                                 content = `
                                     <div class="status-container">
-                                        <span class="scanned-time" style="color: var(--success-color);">
-                                            ✓ Scanned: ${dateStr}
+                                        <span class="scanned-time recent" style="color: var(--success-color);">
+                                            ✓ Scanned: ${relativeTime}
                                         </span>
-                                        <span class="tier-change-time">${timeStr}</span>
                                     </div>
                                 `;
                             } else {
                                 // Standard idle display
                                 statusCell.classList.remove('status-cell-active');
-                                const dateStr = account.last_scanned_at ? account.last_scanned_at.substring(0, 10) : 'Never';
+                                const relativeTime = account.last_scanned_at ? formatRelativeTime(account.last_scanned_at) : 'Never';
 
                                 let subText = '';
                                 if (account.status_changed_at) {
                                      let changeDate = account.status_changed_at;
                                      if (changeDate.includes('T')) changeDate = changeDate.split('T')[0];
                                      subText = `Tier changed: ${changeDate}`;
-                                } else if (account.last_scanned_at) {
-                                     subText = account.last_scanned_at.substring(11, 16);
                                 }
 
                                 const timeClass = !account.last_scanned_at ? 'never-scanned' : '';
@@ -2477,7 +2499,7 @@
                                 content = `
                                     <div class="status-container">
                                         <span class="scanned-time ${timeClass}">
-                                            ${label} ${dateStr}
+                                            ${label} ${relativeTime}
                                         </span>
                                         <span class="tier-change-time">${subText}</span>
                                     </div>

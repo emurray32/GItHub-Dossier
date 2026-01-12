@@ -1261,5 +1261,38 @@ def reset_all_scan_statuses() -> int:
     return reset_count
 
 
+def batch_set_scan_status_queued(company_names: list) -> int:
+    """
+    Batch update multiple accounts to 'queued' status in a single transaction.
+
+    This is much faster than calling set_scan_status individually for each account.
+
+    Args:
+        company_names: List of company names to queue.
+
+    Returns:
+        Number of accounts successfully queued.
+    """
+    if not company_names:
+        return 0
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Use parameterized query with placeholders for all company names
+    placeholders = ','.join(['?' for _ in company_names])
+    cursor.execute(f'''
+        UPDATE monitored_accounts
+        SET scan_status = ?, scan_progress = NULL
+        WHERE company_name IN ({placeholders})
+    ''', [SCAN_STATUS_QUEUED] + list(company_names))
+
+    updated_count = cursor.rowcount
+    conn.commit()
+    conn.close()
+
+    return updated_count
+
+
 # Initialize database on module import
 init_db()
