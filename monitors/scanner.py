@@ -15,7 +15,7 @@ import re
 import requests
 import base64
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Generator, Optional, List, Dict
 from config import Config
 from .discovery import get_github_headers, discover_organization, get_organization_repos
@@ -542,167 +542,201 @@ def _scan_dependency_injection(org: str, repo: str, company: str) -> Generator[t
     # ============================================================
     # POSITIVE CHECK: Scan for Goldilocks Zone libraries
     # ============================================================
+    package_json_paths = []
+    max_tree_entries = 2000
+    max_package_files = 20
+
+    try:
+        repo_url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}"
+        repo_response = make_github_request(repo_url, timeout=15)
+        default_branch = repo_response.json().get('default_branch', 'main') if repo_response.status_code == 200 else 'main'
+
+        tree_url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}/git/trees/{default_branch}"
+        tree_response = make_github_request(tree_url, params={'recursive': 1}, timeout=30)
+
+        if tree_response.status_code == 200:
+            tree_entries = tree_response.json().get('tree', [])
+            for entry in tree_entries[:max_tree_entries]:
+                if entry.get('type') != 'blob':
+                    continue
+                path = entry.get('path', '')
+                if path.endswith('package.json'):
+                    package_json_paths.append(path)
+                    if len(package_json_paths) >= max_package_files:
+                        break
+        if not package_json_paths:
+            package_json_paths = ['package.json']
+        elif len(package_json_paths) >= max_package_files:
+            yield (f"⚠️ Limiting package.json scan to {max_package_files} files", None)
+    except requests.RequestException:
+        package_json_paths = ['package.json']
+
     for dep_file in Config.DEPENDENCY_INJECTION_FILES:
-        try:
-            url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}/contents/{dep_file}"
-            response = make_github_request(url, timeout=15)
+        dep_paths = [dep_file]
+        if dep_file == 'package.json':
+            dep_paths = package_json_paths
 
-            if response.status_code != 200:
-                continue
+        for dep_path in dep_paths:
+            try:
+                url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}/contents/{dep_path}"
+                response = make_github_request(url, timeout=15)
 
-            file_data = response.json()
-            content_b64 = file_data.get('content', '')
-            file_url = file_data.get('html_url')
+                if response.status_code != 200:
+                    continue
 
-            if content_b64:
-                try:
-                    content = base64.b64decode(content_b64).decode('utf-8')
-                    content_lower = content.lower()
+                file_data = response.json()
+                content_b64 = file_data.get('content', '')
+                file_url = file_data.get('html_url')
 
-                    if dep_file == 'package.json':
-                        try:
-                            package_json = json.loads(content)
-                        except json.JSONDecodeError:
-                            package_json = {}
+                if content_b64:
+                    try:
+                        content = base64.b64decode(content_b64).decode('utf-8')
+                        content_lower = content.lower()
 
-                        scripts = package_json.get('scripts', {})
-                        if isinstance(scripts, dict):
-                            for script_name, script_command in scripts.items():
-                                script_name_text = str(script_name)
-                                script_command_text = str(script_command)
-                                script_name_lower = script_name_text.lower()
-                                script_command_lower = script_command_text.lower()
+                        if dep_file == 'package.json':
+                            try:
+                                package_json = json.loads(content)
+                            except json.JSONDecodeError:
+                                package_json = {}
 
-                                matched_keyword = next(
-                                    (
-                                        keyword for keyword in Config.I18N_SCRIPT_KEYWORDS
-                                        if keyword in script_name_lower or keyword in script_command_lower
-                                    ),
-                                    None
-                                )
+                            scripts = package_json.get('scripts', {})
+                            if isinstance(scripts, dict):
+                                for script_name, script_command in scripts.items():
+                                    script_name_text = str(script_name)
+                                    script_command_text = str(script_command)
+                                    script_name_lower = script_name_text.lower()
+                                    script_command_lower = script_command_text.lower()
 
-                                if matched_keyword:
-                                    signal = {
-                                        'Company': company,
-                                        'Signal': 'NPM Script',
-                                        'Evidence': (
-                                            f"Found automation script '{script_name_text}' in package.json - "
-                                            "Team is building translation pipeline."
+                                    matched_keyword = next(
+                                        (
+                                            keyword for keyword in Config.I18N_SCRIPT_KEYWORDS
+                                            if keyword in script_name_lower or keyword in script_command_lower
                                         ),
-                                        'Link': file_url,
-                                        'priority': 'MEDIUM',
-                                        'type': 'npm_script',
-                                        'repo': repo,
-                                        'file': dep_file,
-                                        'script_name': script_name_text,
-                                        'script_command': script_command_text,
-                                        'keyword_matched': matched_keyword,
-                                        'goldilocks_status': 'preparing',
-                                    }
-                                    yield (f"🧰 NPM SCRIPT: {script_name_text} in package.json", signal)
+                                        None
+                                    )
 
-                    found_libs = []
-                    bdr_explanations = []
-                    found_linter_libs = []
-                    found_cms_i18n_libs = []
+                                    if matched_keyword:
+                                        signal = {
+                                            'Company': company,
+                                            'Signal': 'NPM Script',
+                                            'Evidence': (
+                                                f"Found automation script '{script_name_text}' in package.json - "
+                                                "Team is building translation pipeline."
+                                            ),
+                                            'Link': file_url,
+                                            'priority': 'MEDIUM',
+                                            'type': 'npm_script',
+                                            'repo': repo,
+                                            'file': dep_path,
+                                            'script_name': script_name_text,
+                                            'script_command': script_command_text,
+                                            'keyword_matched': matched_keyword,
+                                            'goldilocks_status': 'preparing',
+                                        }
+                                        yield (f"🧰 NPM SCRIPT: {script_name_text} in {dep_path}", signal)
 
-                    # Check for our 4 target SMOKING GUN libraries
-                    for lib in Config.SMOKING_GUN_LIBS:
-                        # Match as dependency name (with quotes for JSON)
-                        if f'"{lib}"' in content_lower or f"'{lib}'" in content_lower:
-                            found_libs.append(lib)
-                            bdr_explanations.append(Config.BDR_TRANSLATIONS.get(lib, f'Found {lib}'))
+                        found_libs = []
+                        bdr_explanations = []
+                        found_linter_libs = []
+                        found_cms_i18n_libs = []
 
-                    # Special handling for Uppy - only count if i18n config is present
-                    if Config.UPPY_LIBRARY in content_lower:
-                        # Check if any i18n indicators are present
-                        for indicator in Config.UPPY_I18N_INDICATORS:
-                            if indicator in content_lower:
-                                found_libs.append(f"{Config.UPPY_LIBRARY} (with {indicator} config)")
-                                bdr_explanations.append(Config.BDR_TRANSLATIONS.get('uppy', 'Uppy with i18n'))
-                                break
+                        # Check for our 4 target SMOKING GUN libraries
+                        for lib in Config.SMOKING_GUN_LIBS:
+                            # Match as dependency name (with quotes for JSON)
+                            if f'"{lib}"' in content_lower or f"'{lib}'" in content_lower:
+                                found_libs.append(lib)
+                                bdr_explanations.append(Config.BDR_TRANSLATIONS.get(lib, f'Found {lib}'))
 
-                    for lib in Config.LINTER_LIBRARIES:
-                        if f'"{lib}"' in content_lower or f"'{lib}'" in content_lower:
-                            found_linter_libs.append(lib)
+                        # Special handling for Uppy - only count if i18n config is present
+                        if Config.UPPY_LIBRARY in content_lower:
+                            # Check if any i18n indicators are present
+                            for indicator in Config.UPPY_I18N_INDICATORS:
+                                if indicator in content_lower:
+                                    found_libs.append(f"{Config.UPPY_LIBRARY} (with {indicator} config)")
+                                    bdr_explanations.append(Config.BDR_TRANSLATIONS.get('uppy', 'Uppy with i18n'))
+                                    break
 
-                    for lib in Config.CMS_I18N_LIBS:
-                        if f'"{lib}"' in content_lower or f"'{lib}'" in content_lower:
-                            found_cms_i18n_libs.append(lib)
+                        for lib in Config.LINTER_LIBRARIES:
+                            if f'"{lib}"' in content_lower or f"'{lib}'" in content_lower:
+                                found_linter_libs.append(lib)
 
-                    if found_libs:
-                        # This is the GOLDILOCKS ZONE - Library found + NO locale folders (or source-only)!
-                        if source_only_evidence:
-                            # Source-only case: folder exists but only has source files
-                            evidence = f"🎯 GOLDILOCKS ZONE: Found {', '.join(found_libs)} in {dep_file}. {source_only_evidence}"
-                            gap_explanation = Config.BDR_TRANSLATIONS.get('locale_folder_source_only', 'Infrastructure ready, only source files')
-                        else:
-                            # No folder case: no locale folders at all
-                            evidence = f"🎯 GOLDILOCKS ZONE: Found {', '.join(found_libs)} in {dep_file} but NO locale folders exist!"
-                            gap_explanation = Config.BDR_TRANSLATIONS.get('locale_folder_missing', 'Infrastructure ready, no translations')
+                        for lib in Config.CMS_I18N_LIBS:
+                            if f'"{lib}"' in content_lower or f"'{lib}'" in content_lower:
+                                found_cms_i18n_libs.append(lib)
 
-                        signal = {
-                            'Company': company,
-                            'Signal': 'Dependency Injection',
-                            'Evidence': evidence,
-                            'Link': file_url,
-                            'priority': 'CRITICAL',
-                            'type': 'dependency_injection',
-                            'repo': repo,
-                            'file': dep_file,
-                            'libraries_found': found_libs,
-                            'goldilocks_status': 'preparing',
-                            'gap_verified': True,  # Negative check passed!
-                            'source_only': source_only_evidence is not None,
-                            'bdr_summary': ' | '.join(bdr_explanations),
-                            'bdr_gap_explanation': gap_explanation,
-                        }
+                        if found_libs:
+                            # This is the GOLDILOCKS ZONE - Library found + NO locale folders (or source-only)!
+                            if source_only_evidence:
+                                # Source-only case: folder exists but only has source files
+                                evidence = f"🎯 GOLDILOCKS ZONE: Found {', '.join(found_libs)} in {dep_path}. {source_only_evidence}"
+                                gap_explanation = Config.BDR_TRANSLATIONS.get('locale_folder_source_only', 'Infrastructure ready, only source files')
+                            else:
+                                # No folder case: no locale folders at all
+                                evidence = f"🎯 GOLDILOCKS ZONE: Found {', '.join(found_libs)} in {dep_path} but NO locale folders exist!"
+                                gap_explanation = Config.BDR_TRANSLATIONS.get('locale_folder_missing', 'Infrastructure ready, no translations')
 
-                        yield (f"🎯 GOLDILOCKS ZONE: {', '.join(found_libs)} in {dep_file} - NO TRANSLATIONS YET!", signal)
+                            signal = {
+                                'Company': company,
+                                'Signal': 'Dependency Injection',
+                                'Evidence': evidence,
+                                'Link': file_url,
+                                'priority': 'CRITICAL',
+                                'type': 'dependency_injection',
+                                'repo': repo,
+                                'file': dep_path,
+                                'libraries_found': found_libs,
+                                'goldilocks_status': 'preparing',
+                                'gap_verified': True,  # Negative check passed!
+                                'source_only': source_only_evidence is not None,
+                                'bdr_summary': ' | '.join(bdr_explanations),
+                                'bdr_gap_explanation': gap_explanation,
+                            }
 
-                    for lib in found_linter_libs:
-                        signal = {
-                            'Company': company,
-                            'Signal': 'Linter Config',
-                            'Evidence': (
-                                f"Found Code Cleaning tool '{lib}' - Team is scrubbing hardcoded strings to "
-                                "prepare for i18n."
-                            ),
-                            'Link': file_url,
-                            'priority': 'MEDIUM',
-                            'type': 'linter_config',
-                            'repo': repo,
-                            'file': dep_file,
-                            'library_found': lib,
-                            'goldilocks_status': 'preparing',
-                        }
+                            yield (f"🎯 GOLDILOCKS ZONE: {', '.join(found_libs)} in {dep_path} - NO TRANSLATIONS YET!", signal)
 
-                        yield (f"🧹 CODE CLEANING: {lib} found in {dep_file}", signal)
+                        for lib in found_linter_libs:
+                            signal = {
+                                'Company': company,
+                                'Signal': 'Linter Config',
+                                'Evidence': (
+                                    f"Found Code Cleaning tool '{lib}' - Team is scrubbing hardcoded strings to "
+                                    "prepare for i18n."
+                                ),
+                                'Link': file_url,
+                                'priority': 'MEDIUM',
+                                'type': 'linter_config',
+                                'repo': repo,
+                                'file': dep_path,
+                                'library_found': lib,
+                                'goldilocks_status': 'preparing',
+                            }
 
-                    for lib in found_cms_i18n_libs:
-                        signal = {
-                            'Company': company,
-                            'Signal': 'CMS Localization',
-                            'Evidence': (
-                                f"Found CMS Localization tool '{lib}' - Preparing content strategy for "
-                                "internationalization."
-                            ),
-                            'Link': file_url,
-                            'priority': 'MEDIUM',
-                            'type': 'cms_config',
-                            'repo': repo,
-                            'file': dep_file,
-                            'library_found': lib,
-                            'goldilocks_status': 'preparing',
-                        }
+                            yield (f"🧹 CODE CLEANING: {lib} found in {dep_path}", signal)
 
-                        yield (f"🌐 CMS LOCALIZATION: {lib} found in {dep_file}", signal)
+                        for lib in found_cms_i18n_libs:
+                            signal = {
+                                'Company': company,
+                                'Signal': 'CMS Localization',
+                                'Evidence': (
+                                    f"Found CMS Localization tool '{lib}' - Preparing content strategy for "
+                                    "internationalization."
+                                ),
+                                'Link': file_url,
+                                'priority': 'MEDIUM',
+                                'type': 'cms_config',
+                                'repo': repo,
+                                'file': dep_path,
+                                'library_found': lib,
+                                'goldilocks_status': 'preparing',
+                            }
 
-                except Exception:
-                    pass
+                            yield (f"🌐 CMS LOCALIZATION: {lib} found in {dep_path}", signal)
 
-        except requests.RequestException:
-            continue
+                    except Exception:
+                        pass
+
+            except requests.RequestException:
+                continue
 
 
 def _scan_pseudo_localization_configs(org: str, repo: str, company: str) -> Generator[tuple, None, None]:
@@ -1157,6 +1191,8 @@ def _scan_ghost_branches(org: str, repo: str, company: str) -> Generator[tuple, 
     Yields:
         Tuples of (log_message, signal_object)
     """
+    cutoff_date = datetime.now(timezone.utc) - timedelta(days=90)
+
     # Scan branches
     try:
         url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}/branches"
@@ -1169,6 +1205,12 @@ def _scan_ghost_branches(org: str, repo: str, company: str) -> Generator[tuple, 
 
             for branch in branches:
                 branch_name = branch.get('name', '').lower()
+                commit_date = _parse_github_datetime(
+                    branch.get('commit', {}).get('commit', {}).get('committer', {}).get('date')
+                    or branch.get('commit', {}).get('commit', {}).get('author', {}).get('date')
+                )
+                if commit_date and commit_date < cutoff_date:
+                    continue
 
                 # Check against ghost branch patterns
                 for pattern in Config.GHOST_BRANCH_PATTERNS:
@@ -1213,6 +1255,9 @@ def _scan_ghost_branches(org: str, repo: str, company: str) -> Generator[tuple, 
                 head_branch = pr.get('head', {}).get('ref', '').lower()
                 pr_url = pr.get('html_url')
                 pr_number = pr.get('number')
+                updated_at = _parse_github_datetime(pr.get('updated_at') or pr.get('created_at'))
+                if updated_at and updated_at < cutoff_date:
+                    continue
 
                 # Check title and branch for ghost patterns
                 text_to_check = f"{title} {head_branch}"
@@ -1240,6 +1285,15 @@ def _scan_ghost_branches(org: str, repo: str, company: str) -> Generator[tuple, 
 
     except requests.RequestException as e:
         yield (f"Error scanning PRs: {str(e)}", None)
+
+
+def _parse_github_datetime(value: Optional[str]) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        return datetime.strptime(value, '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
 
 
 def _calculate_intent_score(scan_results: dict) -> int:

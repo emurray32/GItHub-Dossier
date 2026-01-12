@@ -7,6 +7,7 @@ Includes AI-powered Universal Discovery Engine for any industry.
 import json
 import requests
 import threading
+from datetime import datetime, timedelta, timezone
 from itertools import cycle
 from typing import Optional, Generator, List, Dict
 from config import Config
@@ -259,6 +260,7 @@ def get_organization_repos(org_login: str) -> Generator[str, None, list]:
     all_repos = []
     page = 1
     per_page = 100
+    cutoff_date = datetime.now(timezone.utc) - timedelta(days=365)
 
     while True:
         try:
@@ -283,8 +285,25 @@ def get_organization_repos(org_login: str) -> Generator[str, None, list]:
             if not repos:
                 break
 
-            # Filter out archived repos
-            active_repos = [r for r in repos if not r.get('archived', False)]
+            # Filter out archived repos and inactive repos
+            active_repos = []
+            for repo in repos:
+                if repo.get('archived', False):
+                    continue
+
+                pushed_at = repo.get('pushed_at')
+                if pushed_at:
+                    try:
+                        pushed_date = datetime.strptime(pushed_at, '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=timezone.utc)
+                    except ValueError:
+                        pushed_date = None
+                else:
+                    pushed_date = None
+
+                if pushed_date and pushed_date < cutoff_date:
+                    continue
+
+                active_repos.append(repo)
             all_repos.extend(active_repos)
 
             yield f"Fetched page {page}: {len(active_repos)} active repos (total: {len(all_repos)})"
