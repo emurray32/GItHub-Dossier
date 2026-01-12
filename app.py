@@ -472,10 +472,18 @@ def accounts():
     """View monitored accounts dashboard."""
     page = request.args.get('page', 1, type=int)
     limit = request.args.get('limit', 50, type=int)
-    tier = request.args.get('tier', type=int)
+    
+    # Handle multi-select tier filter and search
+    tiers = request.args.getlist('tier', type=int)
+    if not tiers:
+        tiers = None
+        
+    search_query = request.args.get('q', '').strip()
+    if not search_query:
+        search_query = None
 
     # Get paginated accounts
-    result = get_all_accounts(page=page, limit=limit, tier_filter=tier)
+    result = get_all_accounts(page=page, limit=limit, tier_filter=tiers, search_query=search_query)
 
     return render_template(
         'accounts.html',
@@ -484,7 +492,8 @@ def accounts():
         total_pages=result['total_pages'],
         current_page=result['current_page'],
         limit=result['limit'],
-        current_tier_filter=tier,
+        current_tier_filter=tiers,
+        current_search=search_query or '',
         tier_config=TIER_CONFIG
     )
 
@@ -494,9 +503,18 @@ def api_accounts():
     """API endpoint to get all monitored accounts with live scan status and pagination."""
     page = request.args.get('page', 1, type=int)
     limit = request.args.get('limit', 50, type=int)
+    
+    # Handle multi-select tier filter and search
+    tiers = request.args.getlist('tier', type=int)
+    if not tiers:
+        tiers = None
+        
+    search_query = request.args.get('q', '').strip()
+    if not search_query:
+        search_query = None
 
     # Get paginated accounts
-    result = get_all_accounts(page=page, limit=limit)
+    result = get_all_accounts(page=page, limit=limit, tier_filter=tiers, search_query=search_query)
 
     # Scan status is now stored in the database (scan_status, scan_start_time columns)
     # The get_all_accounts() query already includes these fields
@@ -1171,4 +1189,4 @@ if __name__ == '__main__':
     # Mark as initialized to prevent duplicate auto-scan on first request
     _app_initialized = True
 
-    app.run(debug=Config.DEBUG, host='0.0.0.0', port=5000, threaded=True)
+    app.run(debug=Config.DEBUG, host='0.0.0.0', port=5001, threaded=True)

@@ -722,7 +722,7 @@ def add_account_to_tier_0(company_name: str, github_org: str) -> dict:
     }
 
 
-def get_all_accounts(page: int = 1, limit: int = 50, tier_filter: Optional[int] = None) -> dict:
+def get_all_accounts(page: int = 1, limit: int = 50, tier_filter: Optional[list] = None, search_query: Optional[str] = None) -> dict:
     """
     Get all monitored accounts with pagination, sorted by tier priority.
 
@@ -731,6 +731,8 @@ def get_all_accounts(page: int = 1, limit: int = 50, tier_filter: Optional[int] 
     Args:
         page: Page number (1-indexed, default 1)
         limit: Number of accounts per page (default 50)
+        tier_filter: List of tier integers to include (optional)
+        search_query: Search string for company name (optional)
 
     Returns:
         Dictionary with:
@@ -743,13 +745,26 @@ def get_all_accounts(page: int = 1, limit: int = 50, tier_filter: Optional[int] 
     conn = get_db_connection()
     cursor = conn.cursor()
 
+    # Build WHERE clause
+    where_clauses = []
+    params = []
+
+    if tier_filter:
+        placeholders = ','.join(['?'] * len(tier_filter))
+        where_clauses.append(f'current_tier IN ({placeholders})')
+        params.extend(tier_filter)
+    
+    if search_query:
+        where_clauses.append('company_name LIKE ?')
+        params.append(f'%{search_query}%')
+
+    where_sql = ''
+    if where_clauses:
+        where_sql = ' WHERE ' + ' AND '.join(where_clauses)
+
     # Get total count
-    count_query = 'SELECT COUNT(*) as total FROM monitored_accounts'
-    count_params = []
-    if tier_filter is not None:
-        count_query += ' WHERE current_tier = ?'
-        count_params.append(tier_filter)
-    cursor.execute(count_query, count_params)
+    count_query = f'SELECT COUNT(*) as total FROM monitored_accounts{where_sql}'
+    cursor.execute(count_query, params)
     total_items = cursor.fetchone()['total']
 
     # Calculate pagination
@@ -758,17 +773,12 @@ def get_all_accounts(page: int = 1, limit: int = 50, tier_filter: Optional[int] 
     offset = (current_page - 1) * limit
 
     # Custom sort: Tier 2 first (priority 1), Tier 1 (priority 2), Tier 0 (priority 3), Tier 3 (priority 4), Tier 4 last (priority 5)
-    select_query = '''
+    select_query = f'''
         SELECT
             ma.*,
             (SELECT r.id FROM reports r WHERE r.company_name = ma.company_name ORDER BY r.created_at DESC LIMIT 1) as latest_report_id
         FROM monitored_accounts ma
-    '''
-    select_params = []
-    if tier_filter is not None:
-        select_query += ' WHERE ma.current_tier = ?'
-        select_params.append(tier_filter)
-    select_query += '''
+        {where_sql}
         ORDER BY
             CASE ma.current_tier
                 WHEN 2 THEN 1
@@ -781,7 +791,10 @@ def get_all_accounts(page: int = 1, limit: int = 50, tier_filter: Optional[int] 
             ma.status_changed_at DESC
         LIMIT ? OFFSET ?
     '''
-    select_params.extend([limit, offset])
+    # We need to duplicate params for the second query execution or just reuse the list + limit/offset
+    # Since we execute a new query, we need to pass the params again + limit/offset
+    select_params = list(params) + [limit, offset]
+    
     cursor.execute(select_query, select_params)
 
     rows = cursor.fetchall()

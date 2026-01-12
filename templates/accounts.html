@@ -9,6 +9,8 @@
         justify-content: space-between;
         align-items: center;
         margin-bottom: 1.5rem;
+        gap: 1rem;
+        flex-wrap: wrap;
     }
 
     .accounts-page {
@@ -24,20 +26,67 @@
         display: flex;
         align-items: center;
         gap: 0.5rem;
+        flex-wrap: wrap;
     }
 
-    .tier-filter label {
-        font-size: 0.85rem;
-        color: var(--text-secondary);
-    }
-
-    .tier-filter select {
+    .tier-filter-btn {
         padding: 0.4rem 0.6rem;
         border-radius: 6px;
         border: 1px solid var(--border-color);
         background: var(--bg-secondary);
+        color: var(--text-muted);
+        font-size: 0.75rem;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+        transition: all var(--transition-fast);
+        user-select: none;
+    }
+
+    .tier-filter-btn:hover {
+        border-color: var(--text-muted);
+        color: var(--text-secondary);
+    }
+
+    .tier-filter-btn.active {
+        background: rgba(99, 102, 241, 0.15);
+        border-color: var(--accent-color);
+        color: var(--accent-color);
+        font-weight: 500;
+    }
+
+    .search-container {
+        position: relative;
+        min-width: 250px;
+    }
+
+    .search-input {
+        width: 100%;
+        padding: 0.5rem 0.75rem;
+        padding-left: 2rem;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
         color: var(--text-primary);
         font-size: 0.85rem;
+        transition: border-color var(--transition-fast);
+    }
+
+    .search-input:focus {
+        outline: none;
+        border-color: var(--accent-color);
+    }
+
+    .search-icon {
+        position: absolute;
+        left: 0.75rem;
+        top: 50%;
+        transform: translateY(-50%);
+        color: var(--text-muted);
+        width: 14px;
+        height: 14px;
+        pointer-events: none;
     }
 
     .stat-badge {
@@ -542,8 +591,15 @@
     }
 
     @keyframes pulse-warning {
-        0%, 100% { opacity: 1; }
-        50% { opacity: 0.7; }
+
+        0%,
+        100% {
+            opacity: 1;
+        }
+
+        50% {
+            opacity: 0.7;
+        }
     }
 
     .status-icon {
@@ -559,8 +615,15 @@
     }
 
     @keyframes pulse-queue {
-        0%, 100% { opacity: 0.6; }
-        50% { opacity: 1; }
+
+        0%,
+        100% {
+            opacity: 0.6;
+        }
+
+        50% {
+            opacity: 1;
+        }
     }
 
     .status-icon-processing {
@@ -568,8 +631,13 @@
     }
 
     @keyframes spin {
-        from { transform: rotate(0deg); }
-        to { transform: rotate(360deg); }
+        from {
+            transform: rotate(0deg);
+        }
+
+        to {
+            transform: rotate(360deg);
+        }
     }
 
     .status-icon-stuck {
@@ -577,9 +645,19 @@
     }
 
     @keyframes shake {
-        0%, 100% { transform: translateX(0); }
-        25% { transform: translateX(-2px); }
-        75% { transform: translateX(2px); }
+
+        0%,
+        100% {
+            transform: translateX(0);
+        }
+
+        25% {
+            transform: translateX(-2px);
+        }
+
+        75% {
+            transform: translateX(2px);
+        }
     }
 
     /* Progress bar for processing state */
@@ -606,8 +684,13 @@
     }
 
     @keyframes progress-sweep {
-        0% { left: -30%; }
-        100% { left: 100%; }
+        0% {
+            left: -30%;
+        }
+
+        100% {
+            left: 100%;
+        }
     }
 
     /* Progress bar for stuck state */
@@ -628,19 +711,22 @@
         left: 0;
         height: 100%;
         width: 100%;
-        background: repeating-linear-gradient(
-            90deg,
-            rgba(239, 68, 68, 0.5) 0px,
-            rgba(239, 68, 68, 0.5) 8px,
-            transparent 8px,
-            transparent 16px
-        );
+        background: repeating-linear-gradient(90deg,
+                rgba(239, 68, 68, 0.5) 0px,
+                rgba(239, 68, 68, 0.5) 8px,
+                transparent 8px,
+                transparent 16px);
         animation: stripes-move 1s linear infinite;
     }
 
     @keyframes stripes-move {
-        0% { background-position: 0 0; }
-        100% { background-position: 16px 0; }
+        0% {
+            background-position: 0 0;
+        }
+
+        100% {
+            background-position: 16px 0;
+        }
     }
 
     /* Elapsed time styling */
@@ -760,7 +846,11 @@
     }
 
     .evidence-text {
-        white-space: nowrap;
+        white-space: normal;
+        word-break: break-word;
+        max-width: 400px;
+        display: inline-block;
+        font-size: 0.8rem;
     }
 
     /* Actions cell */
@@ -1039,6 +1129,7 @@
             transform: scale(0.95);
             opacity: 0;
         }
+
         to {
             transform: scale(1);
             opacity: 1;
@@ -1336,22 +1427,36 @@
 <div class="container accounts-page">
     <header class="page-header">
         <div class="accounts-header">
-            <div>
-                <h1>Monitored Accounts</h1>
-                <p class="subtitle">Track companies through their localization journey</p>
+            <div style="display: flex; gap: 1rem; align-items: center;">
+                <h1 class="page-title">Monitored Accounts</h1>
+
+                <div class="search-container">
+                    <svg class="search-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+                        stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                    <input type="text" class="search-input" placeholder="Search accounts..."
+                        value="{{ current_search }}"
+                        onkeydown="if(event.key === 'Enter') updateFilters({search: this.value})">
+                </div>
             </div>
+
             <div class="accounts-stats">
                 <div class="tier-filter">
-                    <label for="tier-filter-select">Tier</label>
-                    <select id="tier-filter-select"
-                        onchange="window.location.href = `?page=1&limit=50&tier=${this.value}`;">
-                        <option value="" {% if current_tier_filter is none %}selected{% endif %}>All Tiers</option>
-                        <option value="2" {% if current_tier_filter == 2 %}selected{% endif %}>Tier 2 (Preparing)</option>
-                        <option value="1" {% if current_tier_filter == 1 %}selected{% endif %}>Tier 1 (Thinking)</option>
-                        <option value="0" {% if current_tier_filter == 0 %}selected{% endif %}>Tier 0 (Tracking)</option>
-                        <option value="3" {% if current_tier_filter == 3 %}selected{% endif %}>Tier 3 (Launched)</option>
-                        <option value="4" {% if current_tier_filter == 4 %}selected{% endif %}>Tier 4 (Not Found)</option>
-                    </select>
+                    <!-- Multi-select tier buttons -->
+                    <button class="tier-filter-btn {% if not current_tier_filter %}active{% endif %}"
+                        onclick="updateFilters({tier: null})">
+                        All
+                    </button>
+
+                    {% for tier_id, config in tier_config.items() %}
+                    <button
+                        class="tier-filter-btn {% if current_tier_filter and tier_id in current_tier_filter %}active{% endif %}"
+                        onclick="toggleTierFilter({{ tier_id }})">
+                        {{ config.emoji }} {{ config.name }}
+                    </button>
+                    {% endfor %}
                 </div>
                 {% set tier_counts = {'0': 0, '1': 0, '2': 0, '3': 0, '4': 0} %}
                 {% for account in accounts %}
@@ -1470,10 +1575,8 @@
                 </tr>
                 {% for account in accounts %}
                 <tr class="tier-row-{{ account.current_tier }}" id="row-{{ account.id }}"
-                    data-company="{{ account.company_name }}"
-                    data-account-id="{{ account.id }}"
-                    data-tier="{{ account.current_tier }}"
-                    data-last-scanned="{{ account.last_scanned_at or '' }}"
+                    data-company="{{ account.company_name }}" data-account-id="{{ account.id }}"
+                    data-tier="{{ account.current_tier }}" data-last-scanned="{{ account.last_scanned_at or '' }}"
                     data-status="idle">
                     <td class="select-col">
                         <input type="checkbox" class="select-account-checkbox row-select"
@@ -1492,13 +1595,13 @@
                                 data-company="{{ account.company_name|e }}"
                                 onclick="copyToClipboard(this.dataset.company, this)">
                                 <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                                    <path d="M16 1H6c-1.1 0-2 .9-2 2v12h2V3h10V1zm3 4H10c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h9c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H10V7h9v14z"/>
+                                    <path
+                                        d="M16 1H6c-1.1 0-2 .9-2 2v12h2V3h10V1zm3 4H10c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h9c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H10V7h9v14z" />
                                 </svg>
                             </button>
                         </span>
                     </td>
-                    <td class="github-org-cell" data-company="{{ account.company_name|e }}"
-                        ondblclick="editOrg(this)"
+                    <td class="github-org-cell" data-company="{{ account.company_name|e }}" ondblclick="editOrg(this)"
                         data-org="{{ account.github_org|default('', true)|e }}">
                         <span class="org-display">
                             {% if account.github_org %}
@@ -1593,29 +1696,27 @@
         </table>
         <div class="pagination-container">
             <div class="pagination-info">
-                Showing {{ ((current_page - 1) * limit) + 1 }}-{{ [current_page * limit, total_items]|min }} of {{ total_items }} accounts
+                Showing {{ ((current_page - 1) * limit) + 1 }}-{{ [current_page * limit, total_items]|min }} of {{
+                total_items }} accounts
             </div>
             <div class="pagination-controls">
                 <select id="limit-select" onchange="changeLimit(this.value)" class="pagination-limit-select"
                     aria-label="Rows per page">
-                    <option value="25" {% if limit == 25 %}selected{% endif %}>25 rows</option>
-                    <option value="50" {% if limit == 50 %}selected{% endif %}>50 rows</option>
-                    <option value="100" {% if limit == 100 %}selected{% endif %}>100 rows</option>
-                    <option value="250" {% if limit == 250 %}selected{% endif %}>250 rows</option>
+                    <option value="25" {% if limit==25 %}selected{% endif %}>25 rows</option>
+                    <option value="50" {% if limit==50 %}selected{% endif %}>50 rows</option>
+                    <option value="100" {% if limit==100 %}selected{% endif %}>100 rows</option>
+                    <option value="250" {% if limit==250 %}selected{% endif %}>250 rows</option>
                 </select>
-                <a href="{{ url_for('accounts', page=current_page - 1, limit=limit) }}"
-                   class="pagination-btn"
-                   {% if current_page <= 1 %}disabled{% endif %}
-                   {% if current_page <= 1 %}onclick="return false;"{% endif %}>
+                <a href="{{ url_for('accounts', page=current_page - 1, limit=limit) }}" class="pagination-btn" {% if
+                    current_page <=1 %}disabled{% endif %} {% if current_page <=1 %}onclick="return false;" {% endif %}>
                     ← Previous
                 </a>
                 <span class="pagination-page-display">
                     Page {{ current_page }} of {{ total_pages or 1 }}
                 </span>
-                <a href="{{ url_for('accounts', page=current_page + 1, limit=limit) }}"
-                   class="pagination-btn"
-                   {% if current_page >= total_pages %}disabled{% endif %}
-                   {% if current_page >= total_pages %}onclick="return false;"{% endif %}>
+                <a href="{{ url_for('accounts', page=current_page + 1, limit=limit) }}" class="pagination-btn" {% if
+                    current_page>= total_pages %}disabled{% endif %}
+                    {% if current_page >= total_pages %}onclick="return false;"{% endif %}>
                     Next →
                 </a>
             </div>
@@ -1654,10 +1755,12 @@
     <div class="queue-modal-content">
         <div class="queue-modal-header">
             <h2 id="queue-modal-title">Scan Queue</h2>
-            <button type="button" class="queue-modal-close" onclick="closeQueueModal()" aria-label="Close modal">×</button>
+            <button type="button" class="queue-modal-close" onclick="closeQueueModal()"
+                aria-label="Close modal">×</button>
         </div>
         <div class="queue-modal-tabs">
-            <button type="button" class="queue-tab-btn active" data-tab="processing" onclick="switchQueueTab('processing')">
+            <button type="button" class="queue-tab-btn active" data-tab="processing"
+                onclick="switchQueueTab('processing')">
                 🔄 Processing <span class="queue-count" id="processing-count">0</span>
             </button>
             <button type="button" class="queue-tab-btn" data-tab="queued" onclick="switchQueueTab('queued')">
@@ -1696,6 +1799,61 @@
         const frame = document.getElementById('report-frame');
         drawer.classList.remove('drawer-open');
         frame.src = '';
+    }
+
+    // Filter Logic
+    function getQueryParam(param) {
+        const urlParams = new URLSearchParams(window.location.search);
+        return urlParams.get(param);
+    }
+
+    function getAllQueryParams() {
+        return new URLSearchParams(window.location.search);
+    }
+
+    function updateFilters(updates) {
+        const urlParams = new URLSearchParams(window.location.search);
+
+        // Reset page to 1 on filter change
+        urlParams.set('page', 1);
+
+        if (updates.search !== undefined) {
+            if (updates.search) {
+                urlParams.set('q', updates.search);
+            } else {
+                urlParams.delete('q');
+            }
+        }
+
+        if (updates.tier !== undefined) {
+            urlParams.delete('tier'); // Clear all tiers first
+            if (updates.tier !== null) {
+                // updates.tier should be an array of integers
+                updates.tier.forEach(t => urlParams.append('tier', t));
+            }
+        }
+
+        window.location.href = '?' + urlParams.toString();
+    }
+
+    function toggleTierFilter(tierId) {
+        const urlParams = new URLSearchParams(window.location.search);
+        const currentTiers = urlParams.getAll('tier').map(t => parseInt(t));
+
+        let newTiers;
+        if (currentTiers.includes(tierId)) {
+            // Remove it
+            newTiers = currentTiers.filter(t => t !== tierId);
+        } else {
+            // Add it
+            newTiers = [...currentTiers, tierId];
+        }
+
+        // Convert to array of unique values
+        newTiers = [...new Set(newTiers)];
+
+        // If empty, it means 'All', so we pass null to updateFilters
+        updateFilters({ tier: newTiers.length > 0 ? newTiers : null });
     }
 
     function changeLimit(newLimit) {
@@ -2648,9 +2806,9 @@
 
                                 let subText = '';
                                 if (account.status_changed_at) {
-                                     let changeDate = account.status_changed_at;
-                                     if (changeDate.includes('T')) changeDate = changeDate.split('T')[0];
-                                     subText = `Tier changed: ${changeDate}`;
+                                    let changeDate = account.status_changed_at;
+                                    if (changeDate.includes('T')) changeDate = changeDate.split('T')[0];
+                                    subText = `Tier changed: ${changeDate}`;
                                 }
 
                                 const timeClass = !account.last_scanned_at ? 'never-scanned' : '';
