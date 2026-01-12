@@ -484,19 +484,36 @@ def history():
 @app.route('/accounts')
 def accounts():
     """View monitored accounts dashboard."""
-    all_accounts = get_all_accounts()
-    return render_template('accounts.html', accounts=all_accounts, tier_config=TIER_CONFIG)
+    page = request.args.get('page', 1, type=int)
+    limit = request.args.get('limit', 50, type=int)
+
+    # Get paginated accounts
+    result = get_all_accounts(page=page, limit=limit)
+
+    return render_template(
+        'accounts.html',
+        accounts=result['accounts'],
+        total_items=result['total_items'],
+        total_pages=result['total_pages'],
+        current_page=result['current_page'],
+        limit=result['limit'],
+        tier_config=TIER_CONFIG
+    )
 
 
 @app.route('/api/accounts')
 def api_accounts():
-    """API endpoint to get all monitored accounts with live scan status."""
-    all_accounts = get_all_accounts()
-    
+    """API endpoint to get all monitored accounts with live scan status and pagination."""
+    page = request.args.get('page', 1, type=int)
+    limit = request.args.get('limit', 50, type=int)
+
+    # Get paginated accounts
+    result = get_all_accounts(page=page, limit=limit)
+
     # Inject live scan status
-    for account in all_accounts:
+    for account in result['accounts']:
         company = account.get('company_name')
-        
+
         if company == CURRENT_SCAN_INFO['company']:
             account['scan_status'] = 'processing'
             account['scan_started_at'] = CURRENT_SCAN_INFO['start_time']
@@ -504,8 +521,14 @@ def api_accounts():
             account['scan_status'] = 'queued'
         else:
             account['scan_status'] = 'idle'
-            
-    return jsonify(all_accounts)
+
+    return jsonify({
+        'accounts': result['accounts'],
+        'total_items': result['total_items'],
+        'total_pages': result['total_pages'],
+        'current_page': result['current_page'],
+        'limit': result['limit']
+    })
 
 
 @app.route('/api/accounts/<int:account_id>', methods=['DELETE'])
@@ -543,9 +566,9 @@ def api_discover():
     # Search for orgs matching the keyword
     results = search_github_orgs(keyword, limit=limit)
 
-    # Get existing accounts to filter them out
-    existing_accounts = get_all_accounts()
-    existing_logins = {acc['github_org'].lower() for acc in existing_accounts if acc.get('github_org')}
+    # Get existing accounts to filter them out (use large limit to get all)
+    existing_accounts_result = get_all_accounts(page=1, limit=10000)
+    existing_logins = {acc['github_org'].lower() for acc in existing_accounts_result['accounts'] if acc.get('github_org')}
 
     # Filter out orgs already being monitored
     fresh_candidates = [
@@ -589,9 +612,9 @@ def api_ai_discover():
     # Use AI to discover companies in this sector
     companies = discover_companies_via_ai(keyword, limit=limit)
 
-    # Get existing accounts to filter them out
-    existing_accounts = get_all_accounts()
-    existing_logins = {acc['github_org'].lower() for acc in existing_accounts if acc.get('github_org')}
+    # Get existing accounts to filter them out (use large limit to get all)
+    existing_accounts_result = get_all_accounts(page=1, limit=10000)
+    existing_logins = {acc['github_org'].lower() for acc in existing_accounts_result['accounts'] if acc.get('github_org')}
 
     # Filter out companies already being monitored
     fresh_candidates = []
