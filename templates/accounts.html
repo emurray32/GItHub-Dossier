@@ -104,6 +104,16 @@
         vertical-align: middle;
     }
 
+    .accounts-table.table-compact th,
+    .accounts-table.table-compact td {
+        padding: 0.5rem;
+    }
+
+    .accounts-table.table-compact th.select-col,
+    .accounts-table.table-compact td.select-col {
+        padding: 0.4rem 0.3rem;
+    }
+
     .accounts-table tbody tr:hover {
         background: var(--bg-tertiary);
     }
@@ -145,6 +155,12 @@
         color: var(--text-primary);
     }
 
+    .company-cell-content {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
     .company-cell a {
         color: inherit;
         text-decoration: none;
@@ -153,6 +169,63 @@
 
     .company-cell a:hover {
         color: var(--accent-color);
+    }
+
+    .btn-copy-company {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 24px;
+        height: 24px;
+        border-radius: 4px;
+        border: 1px solid var(--border-color);
+        background: transparent;
+        color: var(--text-muted);
+        cursor: pointer;
+        transition: all var(--transition-fast);
+        padding: 0;
+    }
+
+    .btn-copy-company:hover {
+        background: var(--bg-tertiary);
+        color: var(--text-primary);
+        border-color: var(--text-muted);
+    }
+
+    .btn-copy-company svg {
+        width: 14px;
+        height: 14px;
+    }
+
+    .btn-copy-company.copied {
+        color: #22c55e;
+        border-color: rgba(34, 197, 94, 0.6);
+    }
+
+    .table-controls {
+        display: flex;
+        justify-content: flex-end;
+        margin-bottom: 0.75rem;
+    }
+
+    .btn-compact-toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 0.4rem 0.75rem;
+        border-radius: 6px;
+        border: 1px solid var(--border-color);
+        background: var(--bg-secondary);
+        color: var(--text-secondary);
+        font-size: 0.8rem;
+        cursor: pointer;
+        transition: all var(--transition-fast);
+    }
+
+    .btn-compact-toggle:hover {
+        background: var(--bg-tertiary);
+        color: var(--text-primary);
+        border-color: var(--text-muted);
     }
 
     /* GitHub org cell */
@@ -901,6 +974,12 @@
     </div>
 
     {% if accounts %}
+    <div class="table-controls">
+        <button type="button" class="btn-compact-toggle" id="compact-toggle" onclick="toggleTableDensity()"
+            aria-pressed="false">
+            Compact Mode
+        </button>
+    </div>
     <div class="accounts-table-container">
         <table class="accounts-table">
             <thead>
@@ -928,15 +1007,25 @@
                             data-account-id="{{ account.id }}" aria-label="Select {{ account.company_name }}">
                     </td>
                     <td class="company-cell">
-                        {% if account.latest_report_id %}
-                        <a href="{{ url_for('view_report', report_id=account.latest_report_id) }}">
+                        <span class="company-cell-content">
+                            {% if account.latest_report_id %}
+                            <a href="{{ url_for('view_report', report_id=account.latest_report_id) }}">
+                                {{ account.company_name }}
+                            </a>
+                            {% else %}
                             {{ account.company_name }}
-                        </a>
-                        {% else %}
-                        {{ account.company_name }}
-                        {% endif %}
+                            {% endif %}
+                            <button type="button" class="btn-copy-company" title="Copy company name"
+                                data-company="{{ account.company_name|e }}"
+                                onclick="copyToClipboard(this.dataset.company, this)">
+                                <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                                    <path d="M16 1H6c-1.1 0-2 .9-2 2v12h2V3h10V1zm3 4H10c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h9c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H10V7h9v14z"/>
+                                </svg>
+                            </button>
+                        </span>
                     </td>
                     <td class="github-org-cell" data-company="{{ account.company_name|e }}"
+                        ondblclick="editOrg(this)"
                         data-org="{{ account.github_org|default('', true)|e }}">
                         <span class="org-display">
                             {% if account.github_org %}
@@ -1165,6 +1254,62 @@
         // The button state is set in the HTML template, no dynamic changes needed
 
         initializeBulkSelection();
+    }
+
+    function toggleTableDensity() {
+        const table = document.querySelector('.accounts-table');
+        const toggleButton = document.getElementById('compact-toggle');
+        if (!table) return;
+        const isCompact = table.classList.toggle('table-compact');
+        if (toggleButton) {
+            toggleButton.setAttribute('aria-pressed', isCompact ? 'true' : 'false');
+        }
+    }
+
+    async function copyToClipboard(text, btn) {
+        if (!text || !btn) return;
+        const originalHTML = btn.innerHTML;
+
+        try {
+            if (navigator.clipboard?.writeText) {
+                await navigator.clipboard.writeText(text);
+            } else {
+                const tempInput = document.createElement('textarea');
+                tempInput.value = text;
+                tempInput.style.position = 'fixed';
+                tempInput.style.opacity = '0';
+                document.body.appendChild(tempInput);
+                tempInput.select();
+                document.execCommand('copy');
+                document.body.removeChild(tempInput);
+            }
+
+            btn.classList.add('copied');
+            btn.innerHTML = '✓';
+            setTimeout(() => {
+                btn.classList.remove('copied');
+                btn.innerHTML = originalHTML;
+            }, 1200);
+        } catch (error) {
+            console.error('Failed to copy text:', error);
+        }
+    }
+
+    function editOrg(cell) {
+        if (!cell) return;
+        const orgDisplay = cell.querySelector('.org-display');
+        const inputContainer = cell.querySelector('.github-org-input-container');
+        const input = cell.querySelector('.github-org-input');
+        const currentOrg = cell.dataset.org || '';
+
+        if (!orgDisplay || !inputContainer || !input) return;
+        if (inputContainer.classList.contains('active')) return;
+
+        orgDisplay.classList.add('hidden');
+        inputContainer.classList.add('active');
+        input.value = currentOrg;
+        input.focus();
+        input.select();
     }
 
     // =============================================================================
