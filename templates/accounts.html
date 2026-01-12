@@ -780,36 +780,27 @@
                 {% set _ = tier_counts.update({account.current_tier|string: tier_counts.get(account.current_tier|string,
                 0) + 1}) %}
                 {% endfor %}
+
+                <div class="stat-badge" style="background: var(--bg-tertiary); border: 1px solid var(--border-color);">
+                    <span class="tier-badge" style="background: rgba(59, 130, 246, 0.2); color: #60a5fa;">📊</span>
+                    <span class="count" id="dashboard-api-calls">--</span>
+                    <span>API Calls</span>
+                </div>
+
+                <div class="stat-badge" style="background: var(--bg-tertiary); border: 1px solid var(--border-color);">
+                    <span class="tier-badge" style="background: rgba(168, 85, 247, 0.2); color: #c084fc;">⏳</span>
+                    <span class="count" id="dashboard-queue-size">0</span>
+                    <span>Queued</span>
+                </div>
+
                 <div class="stat-badge">
                     <span class="tier-badge tier-badge-2">{{ tier_config[2].emoji }}</span>
                     <span class="count">{{ tier_counts['2'] }}</span>
-                    <span>Tier 2 (Hot)</span>
+                    <span>Hot</span>
                 </div>
-                <div class="stat-badge">
-                    <span class="tier-badge tier-badge-1">{{ tier_config[1].emoji }}</span>
-                    <span class="count">{{ tier_counts['1'] }}</span>
-                    <span>Tier 1 (Warm)</span>
-                </div>
-                <div class="stat-badge">
-                    <span class="tier-badge tier-badge-0">{{ tier_config[0].emoji }}</span>
-                    <span class="count">{{ tier_counts['0'] }}</span>
-                    <span>Tier 0 (Tracking)</span>
-                </div>
-                {% if tier_counts['3'] > 0 %}
-                <div class="stat-badge">
-                    <span class="tier-badge tier-badge-3">{{ tier_config[3].emoji }}</span>
-                    <span class="count">{{ tier_counts['3'] }}</span>
-                    <span>Tier 3 (Launched)</span>
-                </div>
-                {% endif %}
-                {% if tier_counts['4'] > 0 %}
-                <div class="stat-badge">
-                    <span class="tier-badge tier-badge-4">{{ tier_config[4].emoji }}</span>
-                    <span class="count">{{ tier_counts['4'] }}</span>
-                    <span>Tier 4 (Invalid)</span>
-                </div>
-                {% endif %}
-                <button type="button" class="btn-start-scan" onclick="scanPending()" style="margin-right: 0.5rem;">
+
+                <button type="button" class="btn-start-scan" onclick="scanPending()"
+                    style="margin-right: 0.5rem; margin-left: 1rem;">
                     ▶️ Scan Pending
                 </button>
                 <button type="button" class="btn-refresh-pipeline" onclick="refreshPipeline()">
@@ -1024,6 +1015,42 @@
     }
 
     // =============================================================================
+    // Dashboard Stats Polling
+    // =============================================================================
+
+    function updateDashboardStats() {
+        if (document.hidden) return;
+
+        fetch('/api/queue-status')
+            .then(response => response.json())
+            .then(data => {
+                const queueEl = document.getElementById('dashboard-queue-size');
+                if (queueEl) {
+                    queueEl.textContent = data.queue_size;
+                    if (data.queue_size > 0) {
+                        queueEl.style.color = 'var(--accent-color)';
+                    } else {
+                        queueEl.style.color = 'inherit';
+                    }
+                }
+            })
+            .catch(err => console.error('Error fetching queue status:', err));
+
+        fetch('/api/stats?days=1')
+            .then(response => response.json())
+            .then(data => {
+                const apiEl = document.getElementById('dashboard-api-calls');
+                if (apiEl && data.stats && data.stats.length > 0) {
+                    const todayStats = data.stats[data.stats.length - 1];
+                    apiEl.textContent = todayStats.api_calls_estimated.toLocaleString();
+                } else if (apiEl) {
+                    apiEl.textContent = '0';
+                }
+            })
+            .catch(err => console.error('Error fetching stats:', err));
+    }
+
+    // =============================================================================
     // UI Initialization
     // =============================================================================
 
@@ -1150,10 +1177,13 @@
     // Initialize on page load
     document.addEventListener('DOMContentLoaded', () => {
         initializeUI();
+        updateDashboardStats();
         document.querySelectorAll('.accounts-table th.sortable').forEach(th => {
             th.addEventListener('click', () => sortTableBy(th.dataset.sortKey));
         });
     });
+
+    setInterval(updateDashboardStats, 3000);
 
     // =============================================================================
     // Bulk Actions
