@@ -3093,7 +3093,7 @@
                         const elapsedClass = getQueueItemElapsedClass(elapsed);
                         const isStuck = elapsed >= TIMEOUT_DANGER;
                         const hasReport = account.latest_report_id;
-                        const reportUrl = hasReport ? `/reports/${account.latest_report_id}` : '#';
+                        const reportUrl = hasReport ? `/report/${account.latest_report_id}` : '#';
 
                         return `
                             <div class="queue-item">
@@ -3130,7 +3130,7 @@
                 } else {
                     queuedList.innerHTML = queuedAccounts.map((account, idx) => {
                         const hasReport = account.latest_report_id;
-                        const reportUrl = hasReport ? `/reports/${account.latest_report_id}` : '#';
+                        const reportUrl = hasReport ? `/report/${account.latest_report_id}` : '#';
 
                         return `
                             <div class="queue-item">
