@@ -595,6 +595,17 @@
         animation: pulse-warning 2s ease-in-out infinite;
     }
 
+    /* Inline status text styles (for initial page load) */
+    .status-queued {
+        color: #92400e !important;
+        font-weight: 600;
+    }
+
+    .status-processing {
+        color: var(--accent-color) !important;
+        font-weight: 600;
+    }
+
     @keyframes pulse-warning {
 
         0%,
@@ -1656,6 +1667,10 @@
                                 <strong class="last-scan-date" data-timestamp="{{ account.last_scanned_at }}">
                                     --
                                 </strong>
+                                {% elif account.scan_status == 'queued' %}
+                                <strong class="last-scan-date status-queued">In Queue</strong>
+                                {% elif account.scan_status == 'processing' %}
+                                <strong class="last-scan-date status-processing">Scanning...</strong>
                                 {% else %}
                                 <strong class="last-scan-date">Never</strong>
                                 {% endif %}
