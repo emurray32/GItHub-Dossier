@@ -422,7 +422,10 @@ def perform_background_scan(company_name: str):
         # Phase 1: Run the deep scan (silent)
         account = get_account_by_company_case_insensitive(company_name)
         last_scanned_at = account.get('last_scanned_at') if account else None
-        for message in deep_scan_generator(company_name, last_scanned_at):
+        # CRITICAL: Pass the pre-linked github_org so scanner uses it directly
+        # instead of trying to discover from company name (which can fail)
+        github_org = account.get('github_org') if account else None
+        for message in deep_scan_generator(company_name, last_scanned_at, github_org):
             # Capture LOG messages for real-time progress feedback in UI
             if 'data: LOG:' in message:
                 log_msg = message.split('data: LOG:', 1)[1].strip()
@@ -569,7 +572,9 @@ def stream_scan(company: str):
         try:
             account = get_account_by_company_case_insensitive(company)
             last_scanned_at = account.get('last_scanned_at') if account else None
-            for message in deep_scan_generator(company, last_scanned_at):
+            # CRITICAL: Pass the pre-linked github_org so scanner uses it directly
+            github_org = account.get('github_org') if account else None
+            for message in deep_scan_generator(company, last_scanned_at, github_org):
                 yield message
 
                 # Check if this is the scan complete message
