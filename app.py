@@ -269,9 +269,8 @@ def spawn_background_scan(company_name: str):
 
 @app.route('/')
 def index():
-    """Render the homepage with search bar."""
-    recent = get_recent_reports(limit=10)
-    return render_template('index.html', recent_reports=recent)
+    """Redirect to accounts page."""
+    return redirect(url_for('accounts'))
 
 
 @app.route('/scan/<company>')
