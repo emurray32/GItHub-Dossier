@@ -1642,15 +1642,18 @@
                     </td>
                     <td class="last-check-cell">
                         <div class="status-container">
-                            <span class="scanned-time {% if not account.last_scanned_at %}never-scanned{% endif %}">
-                                {% if account.last_scanned_at %}
+                            {% set scan_status = account.scan_status or 'idle' %}
+                            {% if not account.last_scanned_at and scan_status in ['queued', 'processing'] %}
+                            <span class="status-badge status-badge-{{ scan_status }}">
+                                {{ account.scan_progress if scan_status == 'processing' and account.scan_progress else scan_status|capitalize }}
+                            </span>
+                            {% elif not account.last_scanned_at %}
+                            <span class="status-badge status-badge-queued">Queued</span>
+                            {% else %}
+                            <span class="scanned-time">
                                 <strong class="scanned-time" data-timestamp="{{ account.last_scanned_at }}">Scanned:
                                     --</strong>
-                                {% else %}
-                                Never
-                                {% endif %}
                             </span>
-                            {% if account.last_scanned_at %}
                             <span class="tier-change-time">
                                 {% if account.status_changed_at %}
                                 {% set change_date = account.status_changed_at %}
@@ -2809,27 +2812,31 @@
                             } else {
                                 // Standard idle display
                                 statusCell.classList.remove('status-cell-active');
-                                const relativeTime = account.last_scanned_at ? formatRelativeTime(account.last_scanned_at) : 'Never';
 
-                                let subText = '';
-                                if (account.status_changed_at) {
-                                    let changeDate = account.status_changed_at;
-                                    if (changeDate.includes('T')) changeDate = changeDate.split('T')[0];
-                                    subText = `Tier changed: ${changeDate}`;
+                                if (!account.last_scanned_at) {
+                                    content = `
+                                        <div class="status-container">
+                                            <span class="status-badge status-badge-queued">Queued</span>
+                                        </div>
+                                    `;
+                                } else {
+                                    const relativeTime = formatRelativeTime(account.last_scanned_at);
+                                    let subText = '';
+                                    if (account.status_changed_at) {
+                                        let changeDate = account.status_changed_at;
+                                        if (changeDate.includes('T')) changeDate = changeDate.split('T')[0];
+                                        subText = `Tier changed: ${changeDate}`;
+                                    }
+
+                                    content = `
+                                        <div class="status-container">
+                                            <span class="scanned-time">
+                                                Scanned: ${relativeTime}
+                                            </span>
+                                            <span class="tier-change-time">${subText}</span>
+                                        </div>
+                                    `;
                                 }
-
-                                const timeClass = !account.last_scanned_at ? 'never-scanned' : '';
-                                let label = account.last_scanned_at ? 'Scanned:' : '';
-                                if (!account.last_scanned_at) label = '';
-
-                                content = `
-                                    <div class="status-container">
-                                        <span class="scanned-time ${timeClass}">
-                                            ${label} ${relativeTime}
-                                        </span>
-                                        <span class="tier-change-time">${subText}</span>
-                                    </div>
-                                `;
                             }
                         }
 
