@@ -14,7 +14,10 @@
     }
 
     .accounts-page {
-        max-width: 1600px;
+        max-width: 98%;
+        padding-left: 1rem;
+        padding-right: 1rem;
+        margin: 0 auto;
     }
 
     .accounts-stats {
@@ -115,10 +118,10 @@
     }
 
     .accounts-table {
-        width: max-content;
-        min-width: 100%;
+        width: 100%;
         border-collapse: collapse;
         font-size: 0.85rem;
+        table-layout: auto;
     }
 
     .accounts-table thead {
@@ -180,7 +183,7 @@
 
     .accounts-table.table-compact th,
     .accounts-table.table-compact td {
-        padding: 0.5rem;
+        padding: 4px 8px;
     }
 
     .accounts-table.table-compact th.select-col,
@@ -210,6 +213,10 @@
     .company-cell {
         font-weight: 600;
         color: var(--text-primary);
+        max-width: 250px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
     }
 
     .company-cell-content {
@@ -352,6 +359,10 @@
     /* GitHub org cell */
     .github-org-cell {
         font-size: 0.875rem;
+        max-width: 250px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
     }
 
     .github-org-link {
@@ -829,7 +840,8 @@
         font-size: 0.85rem;
         color: var(--text-secondary);
         line-height: 1.4;
-        white-space: nowrap;
+        white-space: normal;
+        min-width: 250px;
     }
 
     .evidence-text {
