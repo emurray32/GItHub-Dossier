@@ -913,6 +913,75 @@ def api_ai_discover():
     return jsonify(fresh_candidates)
 
 
+@app.route('/api/lead-stream')
+def api_lead_stream():
+    """
+    Rapid lead discovery stream for Technology and SaaS companies with GitHub repos.
+
+    Serves a continuous stream of leads filtered to the Goldilocks Zone ICP:
+    - Technology and SaaS industries ONLY
+    - Must have verified GitHub organization
+    - Prioritizes companies not yet in monitoring pipeline
+
+    Query parameters:
+        offset: Starting position (default 0, for pagination)
+        limit: Number of results per request (default 10, max 30)
+
+    Returns JSON list of pre-filtered leads ready for rapid approval/tracking.
+    """
+    offset = request.args.get('offset', 0, type=int)
+    limit = request.args.get('limit', 10, type=int)
+
+    # Enforce max limit
+    if limit > 30:
+        limit = 30
+    if offset < 0:
+        offset = 0
+
+    try:
+        # Discover Technology companies
+        tech_companies = discover_companies_via_ai("Technology Software Development", limit=15)
+
+        # Discover SaaS companies
+        saas_companies = discover_companies_via_ai("SaaS B2B Software", limit=15)
+
+        # Combine and deduplicate by GitHub login
+        all_companies = tech_companies + saas_companies
+        seen = set()
+        unique_companies = []
+
+        for company in all_companies:
+            github_login = company.get('github_data', {}).get('login', '')
+            if github_login and github_login.lower() not in seen:
+                seen.add(github_login.lower())
+                unique_companies.append(company)
+
+        # Filter out companies already being monitored
+        existing_accounts_result = get_all_accounts(page=1, limit=10000)
+        existing_logins = {acc['github_org'].lower() for acc in existing_accounts_result['accounts'] if acc.get('github_org')}
+
+        # Only return companies with validated GitHub and not already tracked
+        fresh_leads = []
+        for company in unique_companies:
+            github_login = company.get('github_data', {}).get('login', '')
+            if company.get('github_validated') and github_login and github_login.lower() not in existing_logins:
+                fresh_leads.append(company)
+
+        # Apply pagination
+        paginated_leads = fresh_leads[offset:offset + limit]
+
+        return jsonify({
+            'leads': paginated_leads,
+            'total': len(fresh_leads),
+            'offset': offset,
+            'limit': limit,
+            'has_more': offset + limit < len(fresh_leads)
+        })
+
+    except Exception as e:
+        return jsonify({'error': f'Failed to generate lead stream: {str(e)}'}), 500
+
+
 @app.route('/api/import', methods=['POST'])
 def api_import():
     """
