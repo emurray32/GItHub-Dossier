@@ -140,16 +140,20 @@
 }
 
 .status-not-found {
-    background: #f8fafc;
-    border: 1px solid #e2e8f0;
+    background: #f3f4f6;
+    border: 1px solid #d1d5db;
 }
 
 .status-not-found .status-dot {
-    background: #64748b;
+    background: #6b7280;
 }
 
 .status-not-found .status-title {
-    color: #64748b;
+    color: #374151;
+}
+
+.status-not-found .status-desc {
+    color: #374151;
 }
 
 /* Reset & Base */
