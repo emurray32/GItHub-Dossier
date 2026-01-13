@@ -25,7 +25,11 @@ from database import (
     save_signals, cleanup_duplicate_accounts
 )
 from monitors.scanner import deep_scan_generator
-from monitors.discovery import search_github_orgs, resolve_org_fast, discover_companies_via_ai
+from monitors.discovery import (
+    search_github_orgs,
+    resolve_org_fast,
+    discover_companies_via_ai_with_uncertain,
+)
 from ai_summary import generate_analysis
 from pdf_generator import generate_report_pdf
 
@@ -622,8 +626,11 @@ def api_ai_discover():
     if not keyword:
         return jsonify({'error': 'Missing query parameter: q'}), 400
 
+    if not Config.GEMINI_API_KEY:
+        return jsonify({'error': 'AI discovery requires GEMINI_API_KEY configuration.'}), 503
+
     # Use AI to discover companies in this sector
-    companies = discover_companies_via_ai(keyword, limit=limit)
+    companies = discover_companies_via_ai_with_uncertain(keyword, limit=limit)
 
     # Get existing accounts to filter them out (use large limit to get all)
     existing_accounts_result = get_all_accounts(page=1, limit=10000)
@@ -633,7 +640,10 @@ def api_ai_discover():
     fresh_candidates = []
     for company in companies:
         github_login = company.get('github_data', {}).get('login', '')
-        if github_login and github_login.lower() not in existing_logins:
+        if github_login:
+            if github_login.lower() not in existing_logins:
+                fresh_candidates.append(company)
+        else:
             fresh_candidates.append(company)
 
     return jsonify(fresh_candidates)
