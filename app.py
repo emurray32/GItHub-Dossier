@@ -35,8 +35,254 @@ app.config.from_object(Config)
 
 
 # =============================================================================
-# WEBHOOK NOTIFICATIONS - Push leads to Zapier/Salesforce
+# WEBHOOK NOTIFICATIONS - Push leads to Slack/Zapier/Salesforce
 # =============================================================================
+
+def format_slack_message(event_type: str, company_data: dict) -> dict:
+    """
+    Format webhook data as a Slack-ready message payload.
+
+    Creates a rich Block Kit message with:
+    - Company name and GitHub link
+    - Tier status with color
+    - Why they're a good lead (evidence)
+    - Link to the full report
+    - Key signal details
+
+    Args:
+        event_type: Type of event (e.g., 'tier_change')
+        company_data: Dictionary with company info, tier, signals, etc.
+
+    Returns:
+        Dictionary formatted for Slack's incoming webhook API
+    """
+    company = company_data.get('company', 'Unknown')
+    tier = company_data.get('tier', 0)
+    tier_name = company_data.get('tier_name', 'Unknown')
+    evidence = company_data.get('evidence', company_data.get('signal', ''))
+    github_org = company_data.get('github_org', '')
+    report_id = company_data.get('report_id')
+    signals_summary = company_data.get('signals_summary', [])
+
+    # Get base URL from Flask request context
+    from flask import request
+    base_url = request.host_url.rstrip('/')
+
+    # Determine color and emoji based on tier
+    tier_colors = {
+        0: '#808080',  # grey - Tracking
+        1: '#FFD700',  # gold - Thinking/Warm Lead
+        2: '#28A745',  # green - Preparing/Hot Lead
+        3: '#DC3545',  # red - Launched/Too Late
+        4: '#404040',  # dark grey - Invalid
+    }
+
+    tier_emojis = {
+        0: '👀',
+        1: '🔍',
+        2: '🎯',
+        3: '❌',
+        4: '⚠️',
+    }
+
+    color = tier_colors.get(tier, '#808080')
+    emoji = tier_emojis.get(tier, '')
+
+    # Build header blocks
+    header_blocks = [
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"{emoji} *New {tier_name} Lead Detected*"
+            }
+        },
+        {
+            "type": "divider"
+        },
+        {
+            "type": "section",
+            "fields": [
+                {
+                    "type": "mrkdwn",
+                    "text": f"*Company:*\n{company}"
+                },
+                {
+                    "type": "mrkdwn",
+                    "text": f"*Status:*\n{tier_name}"
+                }
+            ]
+        }
+    ]
+
+    # Add GitHub org link if available
+    if github_org:
+        header_blocks.append({
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"*GitHub Org:* <https://github.com/{github_org}|{github_org}>"
+            }
+        })
+
+    # Add evidence section (why they're a good lead)
+    evidence_blocks = [
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"*Why This Lead?*\n_{evidence}_"
+            }
+        }
+    ]
+
+    # Add signals summary if available
+    signals_blocks = []
+    if signals_summary:
+        signal_text = "*Key Signals Detected:*\n"
+        for i, signal in enumerate(signals_summary[:5], 1):  # Show top 5 signals
+            if isinstance(signal, dict):
+                signal_type = signal.get('type', signal.get('signal_type', 'Unknown'))
+                description = signal.get('description', signal.get('Evidence', ''))
+                signal_text += f"{i}. *{signal_type}:* {description}\n"
+            else:
+                signal_text += f"{i}. {signal}\n"
+
+        signals_blocks.append({
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": signal_text
+            }
+        })
+
+    # Add report link if available
+    action_blocks = []
+    if report_id:
+        report_url = f"{base_url}/report/{report_id}"
+        action_blocks.append({
+            "type": "actions",
+            "elements": [
+                {
+                    "type": "button",
+                    "text": {
+                        "type": "plain_text",
+                        "text": "View Full Report"
+                    },
+                    "url": report_url,
+                    "style": "primary"
+                },
+                {
+                    "type": "button",
+                    "text": {
+                        "type": "plain_text",
+                        "text": "Download PDF"
+                    },
+                    "url": f"{report_url}/pdf"
+                }
+            ]
+        })
+
+    # Add footer with timestamp
+    footer_blocks = [
+        {
+            "type": "context",
+            "elements": [
+                {
+                    "type": "mrkdwn",
+                    "text": f"🤖 GitHub Dossier • {datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')}"
+                }
+            ]
+        }
+    ]
+
+    # Combine all blocks
+    blocks = header_blocks + evidence_blocks + signals_blocks + action_blocks + footer_blocks
+
+    # Return Slack incoming webhook format
+    return {
+        "blocks": blocks,
+        "attachments": [
+            {
+                "fallback": f"{tier_name} Lead: {company}",
+                "color": color,
+                "text": evidence
+            }
+        ]
+    }
+
+
+def enrich_webhook_data(company_data: dict, report_id: Optional[int] = None) -> dict:
+    """
+    Enrich webhook data with report details and signals.
+
+    Fetches the most recent report for a company and includes:
+    - Report ID (for report link)
+    - GitHub organization
+    - Top signals detected
+    - Scan details
+
+    Args:
+        company_data: Base company data dictionary
+        report_id: Optional report ID (if not provided, fetches most recent)
+
+    Returns:
+        Enriched company_data dictionary with additional fields
+    """
+    enriched = company_data.copy()
+
+    try:
+        company_name = company_data.get('company', company_data.get('company_name', ''))
+
+        # If report_id not provided, fetch most recent report
+        if report_id is None:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT id, github_org FROM reports
+                WHERE company_name = ?
+                ORDER BY created_at DESC
+                LIMIT 1
+            ''', (company_name,))
+            row = cursor.fetchone()
+            conn.close()
+            if row:
+                report_id = row['id']
+                if not enriched.get('github_org'):
+                    enriched['github_org'] = row['github_org']
+
+        # If we have a report_id, fetch signals
+        if report_id:
+            enriched['report_id'] = report_id
+
+            # Fetch signals for this report
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT signal_type, description, file_path
+                FROM scan_signals
+                WHERE report_id = ?
+                ORDER BY timestamp DESC
+                LIMIT 10
+            ''', (report_id,))
+            signal_rows = cursor.fetchall()
+            conn.close()
+
+            if signal_rows:
+                signals_summary = []
+                for sig_row in signal_rows:
+                    signals_summary.append({
+                        'type': sig_row['signal_type'],
+                        'description': sig_row['description'],
+                        'file_path': sig_row['file_path']
+                    })
+                enriched['signals_summary'] = signals_summary
+    except Exception as e:
+        print(f"[WEBHOOK] Error enriching webhook data: {str(e)}")
+        # Continue with non-enriched data if error occurs
+
+    return enriched
+
 
 def trigger_webhook(event_type: str, company_data: dict) -> None:
     """
@@ -44,6 +290,10 @@ def trigger_webhook(event_type: str, company_data: dict) -> None:
 
     This function runs in a background thread to avoid blocking the UI.
     Fetches the webhook URL from system_settings and sends a POST request.
+
+    Supports both Slack webhooks (detects hooks.slack.com) and generic webhooks.
+    - Slack: Formats as rich Block Kit message with buttons and colors
+    - Generic: Sends standard JSON payload for Zapier, etc.
 
     Args:
         event_type: Type of event (e.g., 'tier_change', 'scan_complete')
@@ -54,14 +304,32 @@ def trigger_webhook(event_type: str, company_data: dict) -> None:
         print("[WEBHOOK] No webhook_url configured in settings, skipping notification")
         return
 
-    payload = {
-        'event_type': event_type,
-        'timestamp': datetime.now().isoformat(),
-        **company_data
-    }
-
     def send_webhook():
         company_name = company_data.get('company', company_data.get('company_name', 'Unknown'))
+
+        # Detect if this is a Slack webhook
+        is_slack_webhook = 'hooks.slack.com' in webhook_url
+
+        # Prepare payload based on webhook type
+        if is_slack_webhook:
+            # Format as Slack Block Kit message
+            try:
+                payload = format_slack_message(event_type, company_data)
+            except Exception as e:
+                print(f"[WEBHOOK] Error formatting Slack message: {str(e)}, falling back to generic payload")
+                payload = {
+                    'event_type': event_type,
+                    'timestamp': datetime.now().isoformat(),
+                    **company_data
+                }
+        else:
+            # Use generic JSON payload for Zapier, custom endpoints, etc.
+            payload = {
+                'event_type': event_type,
+                'timestamp': datetime.now().isoformat(),
+                **company_data
+            }
+
         try:
             response = requests.post(
                 webhook_url,
@@ -70,7 +338,8 @@ def trigger_webhook(event_type: str, company_data: dict) -> None:
                 timeout=10
             )
             if response.status_code >= 200 and response.status_code < 300:
-                print(f"[WEBHOOK] Success: {company_name} -> {webhook_url} (status: {response.status_code})")
+                webhook_type = "Slack" if is_slack_webhook else "Generic"
+                print(f"[WEBHOOK] Success ({webhook_type}): {company_name} -> {webhook_url} (status: {response.status_code})")
                 try:
                     log_webhook(event_type, company_name, 'success')
                     increment_daily_stat('webhooks_fired')
@@ -234,8 +503,11 @@ def perform_background_scan(company_name: str):
                     'company': company_name,
                     'tier': result.get('tier'),
                     'tier_name': tier_name,
-                    'signal': result.get('evidence', '')
+                    'evidence': result.get('evidence', ''),
+                    'github_org': scan_data.get('org_login', '')
                 }
+                # Enrich with report details and signals
+                webhook_data = enrich_webhook_data(webhook_data, report_id)
                 trigger_webhook('tier_change', webhook_data)
                 print(f"[WORKER] Webhook triggered for {company_name} (Tier {result.get('tier')})")
         except Exception as e:
@@ -376,8 +648,11 @@ def stream_scan(company: str):
                     'company': company,
                     'tier': account_result.get('tier'),
                     'tier_name': tier_name,
-                    'signal': account_result.get('evidence', '')
+                    'evidence': account_result.get('evidence', ''),
+                    'github_org': scan_data.get('org_login', '')
                 }
+                # Enrich with report details and signals
+                webhook_data = enrich_webhook_data(webhook_data, report_id)
                 trigger_webhook('tier_change', webhook_data)
                 yield f"data: LOG:Webhook notification sent for {tier_name} lead\n\n"
 
