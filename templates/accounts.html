@@ -1862,26 +1862,39 @@
 
     function formatSmartDate(dateString) {
         if (!dateString) return 'Never';
-        const date = new Date(dateString);
+        // Force UTC parsing if no timezone info is present
+        let date;
+        if (typeof dateString === 'string' && !dateString.includes('Z') && !dateString.includes('+')) {
+            date = new Date(dateString.replace(' ', 'T') + 'Z');
+        } else {
+            date = new Date(dateString);
+        }
+
         if (Number.isNaN(date.getTime())) return 'Never';
 
-        const now = new Date();
-        const isToday = date.getDate() === now.getDate() &&
-            date.getMonth() === now.getMonth() &&
-            date.getFullYear() === now.getFullYear();
+        const timeZone = 'America/New_York';
 
-        if (isToday) return 'Today';
+        // Compare dates in EST
+        const dateStr = date.toLocaleDateString('en-US', { timeZone, year: 'numeric', month: 'numeric', day: 'numeric' });
+        const nowStr = new Date().toLocaleDateString('en-US', { timeZone, year: 'numeric', month: 'numeric', day: 'numeric' });
 
-        const options = { month: 'short', day: 'numeric' };
+        if (dateStr === nowStr) return 'Today';
+
+        const options = { month: 'short', day: 'numeric', timeZone };
         return date.toLocaleDateString('en-US', options);
     }
 
     function formatNextDate(dateString) {
         if (!dateString) return '';
-        const date = new Date(dateString);
+        let date;
+        if (typeof dateString === 'string' && !dateString.includes('Z') && !dateString.includes('+')) {
+            date = new Date(dateString.replace(' ', 'T') + 'Z');
+        } else {
+            date = new Date(dateString);
+        }
         if (Number.isNaN(date.getTime())) return '';
 
-        const options = { month: 'short', day: 'numeric' };
+        const options = { month: 'short', day: 'numeric', timeZone: 'America/New_York' };
         return `Next: ${date.toLocaleDateString('en-US', options)}`;
     }
 
@@ -1931,14 +1944,26 @@
     function getHoursSinceScanned(timestamp) {
         if (!timestamp) return Infinity;
         const now = new Date();
-        const scanned = new Date(timestamp);
+        let scanned;
+        if (typeof timestamp === 'string' && !timestamp.includes('Z') && !timestamp.includes('+')) {
+            scanned = new Date(timestamp.replace(' ', 'T') + 'Z');
+        } else {
+            scanned = new Date(timestamp);
+        }
+        if (Number.isNaN(scanned.getTime())) return Infinity;
         return (now - scanned) / (1000 * 60 * 60);
     }
 
     function getDaysSinceScanned(timestamp) {
         if (!timestamp) return Infinity;
         const now = new Date();
-        const scanned = new Date(timestamp);
+        let scanned;
+        if (typeof timestamp === 'string' && !timestamp.includes('Z') && !timestamp.includes('+')) {
+            scanned = new Date(timestamp.replace(' ', 'T') + 'Z');
+        } else {
+            scanned = new Date(timestamp);
+        }
+        if (Number.isNaN(scanned.getTime())) return Infinity;
         return (now - scanned) / (1000 * 60 * 60 * 24);
     }
 
