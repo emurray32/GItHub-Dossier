@@ -188,15 +188,13 @@ a:hover {
 .navbar {
     background: var(--bg-primary);
     border-bottom: 1px solid var(--border-color);
-    padding: 1rem var(--container-padding);
+    padding: 1rem var(--container-padding) 1rem 1rem;
     position: sticky;
     top: 0;
     z-index: 100;
 }
 
 .nav-container {
-    max-width: var(--container-max);
-    margin: 0 auto;
     display: flex;
     justify-content: space-between;
     align-items: center;
