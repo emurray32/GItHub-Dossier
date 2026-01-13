@@ -1143,15 +1143,16 @@ def _check_locale_folders_exist_detailed(org: str, repo: str) -> tuple:
     
     # Specific path patterns that are NOT i18n locale folders (false positives)
     # These are editor/syntax files, library internals, etc.
+    # NOTE: Avoid overly broad patterns like 'languages/' which could match legitimate i18n
     IGNORED_PATH_PATTERNS = [
         'monaco/languages',      # Monaco editor syntax highlighting
-        'monaco-editor',         # Monaco editor package
+        'monaco-editor/esm',     # Monaco editor package internal
         'codemirror/lang',       # CodeMirror language modes
         'ace/lib/ace/mode',      # Ace editor language modes
         'prismjs/components',    # Prism syntax highlighting
-        'highlight.js/lib',      # Highlight.js syntax
-        'languages/',            # Generic languages folder (often syntax, not i18n)
-        'lang-',                 # Language mode files (e.g., lang-javascript.js)
+        'highlight.js/lib/languages',  # Highlight.js syntax (specific path)
+        'syntaxes/',             # TextMate/VS Code syntax grammars
+        'grammars/',             # Generic grammar definitions
     ]
 
     def _is_in_ignored_directory(path: str) -> bool:
@@ -1184,10 +1185,11 @@ def _check_locale_folders_exist_detailed(org: str, repo: str) -> tuple:
                 if next_part not in main_app_names:
                     return True
         
-        # 4. Skip if folder name suggests it's for a specific programming language (not i18n)
+        # 4. Skip programming language mode folders (for editors) - but NOT generic 'languages'
+        #    since 'languages' is a legitimate i18n folder in WordPress, Drupal, etc.
         folder_name = path_parts[-1] if path_parts else ''
-        programming_language_folders = ['languages', 'modes', 'syntaxes', 'grammars']
-        if folder_name in programming_language_folders:
+        programming_mode_folders = ['modes', 'syntaxes', 'grammars']  # Exclude 'languages' - it's often legitimate i18n
+        if folder_name in programming_mode_folders:
             return True
 
         return False
@@ -1202,35 +1204,65 @@ def _check_locale_folders_exist_detailed(org: str, repo: str) -> tuple:
             url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}/contents/{path}"
             response = make_github_request(url, timeout=10)
             if response.status_code == 200:
-                # Parse the folder contents
+                # Parse the folder contents (files AND directories)
                 contents = response.json()
-                files_in_folder = []
+                entries_in_folder = []
+                entry_types = []
 
                 if isinstance(contents, list):
                     for item in contents:
                         item_name = item.get('name', '')
-                        item_type = item.get('type', '')
+                        item_type = item.get('type', '')  # 'file' or 'dir'
+                        entries_in_folder.append(item_name)
+                        entry_types.append(item_type)
 
-                        # Only consider files, not subdirectories
-                        if item_type == 'file':
-                            files_in_folder.append(item_name)
-
-                # CRITICAL: Validate folder contains actual translation files
+                # CRITICAL: Validate folder contains actual translation files or locale subdirs
                 # Skip folders with code files that don't look like translations
-                if not _looks_like_translation_folder(files_in_folder):
+                if not _looks_like_translation_folder(entries_in_folder, entry_types):
                     continue
+                
+                # Separate files and locale subdirectories
+                files_in_folder = [e for e, t in zip(entries_in_folder, entry_types) if t == 'file']
+                locale_subdirs = [e for e, t in zip(entries_in_folder, entry_types) 
+                                  if t == 'dir' and _is_locale_name(e)]
 
                 found_folders.append(path)
                 folder_contents[path] = files_in_folder
 
                 # Check if this folder contains ONLY source locale files
-                if files_in_folder:
+                # For folders with locale subdirs, fetch their contents to verify translations
+                if locale_subdirs:
+                    # Aggregate files from locale subdirs to check for actual translations
+                    source_locales = ['en', 'en-us', 'en-gb', 'en_us', 'en_gb', 'base', 'source']
+                    aggregated_files = list(files_in_folder)  # Start with top-level files
+                    
+                    for subdir in locale_subdirs:
+                        try:
+                            subdir_url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}/contents/{path}/{subdir}"
+                            subdir_response = make_github_request(subdir_url, timeout=10)
+                            if subdir_response.status_code == 200:
+                                subdir_contents = subdir_response.json()
+                                if isinstance(subdir_contents, list):
+                                    # Add files with locale prefix preserved
+                                    for item in subdir_contents:
+                                        if item.get('type') == 'file':
+                                            file_name = item.get('name', '')
+                                            # Always preserve locale prefix for proper evaluation
+                                            aggregated_files.append(f"{subdir}/{file_name}")
+                        except requests.RequestException:
+                            pass
+                    
+                    # Check if aggregated files contain non-source translations
+                    folder_contents[path] = aggregated_files
+                    if aggregated_files:
+                        folder_is_source_only = _is_source_only_folder_with_subdirs(aggregated_files, source_locales)
+                        if not folder_is_source_only:
+                            all_source_only = False
+                elif files_in_folder:
                     folder_is_source_only = _is_source_only_folder(files_in_folder)
                     if not folder_is_source_only:
                         all_source_only = False
-                else:
-                    # Empty folder - treat as source-only (infrastructure ready)
-                    pass
+                # else: Empty folder - treat as source-only (infrastructure ready)
 
         except requests.RequestException:
             continue
@@ -1275,25 +1307,57 @@ def _check_locale_folders_exist_detailed(org: str, repo: str) -> tuple:
 
                     if folder_response.status_code == 200:
                         contents = folder_response.json()
-                        files_in_folder = []
+                        entries_in_folder = []
+                        entry_types_list = []
 
                         if isinstance(contents, list):
                             for item in contents:
                                 item_name = item.get('name', '')
-                                item_type = item.get('type', '')
-                                if item_type == 'file':
-                                    files_in_folder.append(item_name)
+                                item_type = item.get('type', '')  # 'file' or 'dir'
+                                entries_in_folder.append(item_name)
+                                entry_types_list.append(item_type)
 
-                        # CRITICAL: Validate folder contains actual translation files
+                        # CRITICAL: Validate folder contains actual translation files or locale subdirs
                         # Skip folders with code files that don't look like translations
-                        if not _looks_like_translation_folder(files_in_folder):
+                        if not _looks_like_translation_folder(entries_in_folder, entry_types_list):
                             continue
+
+                        # Separate files and locale subdirectories
+                        files_in_folder = [e for e, t in zip(entries_in_folder, entry_types_list) if t == 'file']
+                        locale_subdirs = [e for e, t in zip(entries_in_folder, entry_types_list) 
+                                          if t == 'dir' and _is_locale_name(e)]
 
                         # Valid locale folder with translation files
                         found_folders.append(entry_path)
                         folder_contents[entry_path] = files_in_folder
 
-                        if files_in_folder:
+                        # Check if this folder contains ONLY source locale files
+                        # For folders with locale subdirs, fetch their contents to verify translations
+                        if locale_subdirs:
+                            source_locales = ['en', 'en-us', 'en-gb', 'en_us', 'en_gb', 'base', 'source']
+                            aggregated_files = list(files_in_folder)
+                            
+                            for subdir in locale_subdirs:
+                                try:
+                                    subdir_url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}/contents/{entry_path}/{subdir}"
+                                    subdir_response = make_github_request(subdir_url, timeout=10)
+                                    if subdir_response.status_code == 200:
+                                        subdir_contents = subdir_response.json()
+                                        if isinstance(subdir_contents, list):
+                                            for item in subdir_contents:
+                                                if item.get('type') == 'file':
+                                                    file_name = item.get('name', '')
+                                                    # Always preserve locale prefix for proper evaluation
+                                                    aggregated_files.append(f"{subdir}/{file_name}")
+                                except requests.RequestException:
+                                    pass
+                            
+                            folder_contents[entry_path] = aggregated_files
+                            if aggregated_files:
+                                folder_is_source_only = _is_source_only_folder_with_subdirs(aggregated_files, source_locales)
+                                if not folder_is_source_only:
+                                    all_source_only = False
+                        elif files_in_folder:
                             folder_is_source_only = _is_source_only_folder(files_in_folder)
                             if not folder_is_source_only:
                                 all_source_only = False
@@ -1312,7 +1376,7 @@ def _check_locale_folders_exist_detailed(org: str, repo: str) -> tuple:
     return (folders_exist, found_folders, source_only, folder_contents)
 
 
-def _looks_like_translation_folder(files: list) -> bool:
+def _looks_like_translation_folder(files_and_dirs: list, entry_types: list = None) -> bool:
     """
     Check if folder contents look like actual translation files (not code/syntax files).
     
@@ -1320,60 +1384,123 @@ def _looks_like_translation_folder(files: list) -> bool:
     - Locale-named JSON/YAML: en.json, fr.json, de-DE.json, zh_CN.yml
     - Standard translation formats: messages.po, translations.xliff, strings.xml
     - gettext files: *.pot, *.po, *.mo
+    - Locale-named SUBDIRECTORIES: en/, fr/, de-DE/, zh_CN/ (common in React, Rails, etc.)
     
     Non-translation "messages" folders typically contain:
     - JavaScript/TypeScript files: MessageHandler.js, ChatMessage.tsx
     - Generic code files without locale patterns
     
+    Args:
+        files_and_dirs: List of filenames/directory names in the folder
+        entry_types: Optional list of types ('file' or 'dir') matching files_and_dirs
+    
     Returns:
         True if the folder looks like it contains actual translations
     """
-    if not files:
+    if not files_and_dirs:
         return False  # Empty folder is not a translation folder
     
     # Known translation file extensions
     TRANSLATION_EXTENSIONS = ['.po', '.pot', '.mo', '.xliff', '.xlf', '.arb', '.properties']
     
-    # Locale-pattern regex: matches files like en.json, fr-FR.json, zh_CN.yml
-    locale_pattern = re.compile(r'^[a-z]{2}([_-][a-z]{2,4})?\.', re.IGNORECASE)
+    # Locale-pattern regex: matches files/dirs like en.json, fr-FR.json, zh_CN.yml, or just 'en', 'fr-FR'
+    locale_pattern = re.compile(r'^[a-z]{2}([_-][a-z]{2,4})?(\.[a-z]+)?$', re.IGNORECASE)
     
-    translation_file_count = 0
-    total_relevant_files = 0
+    translation_indicator_count = 0
+    total_relevant_entries = 0
     
-    for filename in files:
-        filename_lower = filename.lower()
+    for i, entry_name in enumerate(files_and_dirs):
+        entry_name_lower = entry_name.lower()
+        entry_type = entry_types[i] if entry_types and i < len(entry_types) else None
         
-        # Skip obvious non-translation files
-        if filename_lower.startswith('.') or filename_lower == 'readme.md':
+        # Skip obvious non-translation entries
+        if entry_name_lower.startswith('.') or entry_name_lower == 'readme.md':
+            continue
+        
+        # Handle directories (locale-named subdirs like 'en/', 'fr-FR/')
+        if entry_type == 'dir':
+            total_relevant_entries += 1
+            # Check if directory name matches locale pattern (e.g., 'en', 'fr', 'de-DE', 'zh_CN')
+            if locale_pattern.match(entry_name_lower):
+                translation_indicator_count += 1
             continue
             
-        # Check for known translation extensions
+        # Check for known translation extensions (files only)
         for ext in TRANSLATION_EXTENSIONS:
-            if filename_lower.endswith(ext):
-                translation_file_count += 1
-                total_relevant_files += 1
+            if entry_name_lower.endswith(ext):
+                translation_indicator_count += 1
+                total_relevant_entries += 1
                 break
         else:
             # Check if it's a JSON/YAML/JS file with locale-like name
-            if filename_lower.endswith(('.json', '.yml', '.yaml')):
-                total_relevant_files += 1
+            if entry_name_lower.endswith(('.json', '.yml', '.yaml')):
+                total_relevant_entries += 1
                 # Check if filename matches locale pattern (e.g., en.json, fr-CA.json)
-                if locale_pattern.match(filename_lower):
-                    translation_file_count += 1
+                if locale_pattern.match(entry_name_lower):
+                    translation_indicator_count += 1
                 # Also check for common translation file names
-                elif any(name in filename_lower for name in ['translation', 'message', 'string', 'locale']):
-                    translation_file_count += 1
-            elif filename_lower.endswith(('.js', '.ts', '.jsx', '.tsx')):
+                elif any(name in entry_name_lower for name in ['translation', 'message', 'string', 'locale']):
+                    translation_indicator_count += 1
+            elif entry_name_lower.endswith(('.js', '.ts', '.jsx', '.tsx')):
                 # JS/TS files - only count if they match locale patterns
-                total_relevant_files += 1
-                if locale_pattern.match(filename_lower):
-                    translation_file_count += 1
+                total_relevant_entries += 1
+                if locale_pattern.match(entry_name_lower):
+                    translation_indicator_count += 1
     
-    # Folder looks like translations if most files are translation-like
-    if total_relevant_files == 0:
+    # Folder looks like translations if at least one translation indicator exists
+    # and a reasonable portion of contents are translation-like
+    if total_relevant_entries == 0:
         return False
     
-    return translation_file_count >= 1 and (translation_file_count / total_relevant_files) >= 0.3
+    return translation_indicator_count >= 1 and (translation_indicator_count / total_relevant_entries) >= 0.3
+
+
+def _is_locale_name(name: str) -> bool:
+    """
+    Check if a directory name looks like a locale identifier.
+    
+    Examples: en, fr, de-DE, zh_CN, pt-BR
+    """
+    locale_pattern = re.compile(r'^[a-z]{2}([_-][a-z]{2,4})?$', re.IGNORECASE)
+    return bool(locale_pattern.match(name))
+
+
+def _is_source_only_folder_with_subdirs(files: list, source_locales: list) -> bool:
+    """
+    Check if aggregated files from locale subdirs contain ONLY source language files.
+    
+    Files are in format: "locale/filename" where locale is the subdir name.
+    If any file has a non-source locale prefix, folder has translations.
+    
+    The key insight: the locale SUBDIR NAME determines if it's source or not.
+    The actual filename inside the subdir doesn't matter for classification.
+    
+    Examples:
+    - ["en/messages.json"] -> True (source-only: "en" is source locale)
+    - ["en/messages.json", "fr/messages.json"] -> False (has "fr" which is not source)
+    - ["en.json", "base.json"] -> True (top-level source files)
+    - ["en.json", "fr.json"] -> False (has "fr" which is not source)
+    """
+    if not files:
+        return True  # Empty = source-only
+    
+    for filename in files:
+        # Check if file is from a locale subdir (has prefix)
+        if '/' in filename:
+            # Has subdir prefix (e.g., "en/messages.json" or "fr/messages.json")
+            # The SUBDIR NAME determines if it's source - not the filename inside
+            locale_prefix = filename.split('/')[0].lower()
+            if locale_prefix not in source_locales:
+                # File from non-source locale (fr, de, etc.) = has translations
+                return False
+            # File from source locale (en, en-us, etc.) is source-only, continue
+        else:
+            # Top-level file - check against known source patterns (en.json, base.json, etc.)
+            if filename.lower() not in Config.SOURCE_LOCALE_PATTERNS:
+                # Not a recognized source file - could be a translation (like fr.json)
+                return False
+    
+    return True
 
 
 def _is_source_only_folder(files: list) -> bool:
