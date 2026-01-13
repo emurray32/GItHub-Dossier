@@ -1528,48 +1528,10 @@ def _calculate_intent_score(scan_results: dict) -> int:
         return min(base_score + bonus, Config.GOLDILOCKS_SCORES.get('preparing_max', 100))
 
     # ============================================================
-    # MEGA-CORP HEURISTIC: Detect high-maturity orgs without Preparing signals
-    # ============================================================
-    # Large engineering orgs (Airbnb, Uber, Facebook, etc.) often use custom/internal
-    # i18n solutions that won't appear in our standard library scans. If they have
-    # significant GitHub presence but no Preparing signals, they've likely already
-    # launched with proprietary tooling.
-    #
-    # IMPORTANT: This check runs AFTER the Preparing check to ensure valid
-    # goldilocks signals (react-intl without locale folders) take precedence.
-    total_stars = scan_results.get('total_stars', 0)
-    public_repos = scan_results.get('org_public_repos', 0)
-    repos_scanned = len(scan_results.get('repos_scanned', []))
-
-    # Only apply mega-corp heuristic if:
-    # 1. We actually scanned repos (repos_scanned > 0)
-    # 2. The org has very high activity (stars > 20000 OR repos > 400)
-    if repos_scanned > 0 and (total_stars > 20000 or public_repos > 400):
-        # High-maturity org with no Preparing signals = Already Launched
-        scan_results['goldilocks_status'] = 'launched'
-        scan_results['lead_status'] = Config.LEAD_STATUS_LABELS.get('launched', 'LOW PRIORITY')
-        scan_results['mega_corp_heuristic'] = True
-        scan_results['mega_corp_evidence'] = 'High-maturity engineering org (likely custom/internal i18n)'
-
-        # Add a synthetic signal to explain the classification
-        mega_corp_signal = {
-            'Company': scan_results.get('company_name', 'Unknown'),
-            'Signal': 'Mega-Corp Heuristic',
-            'Evidence': f'High-maturity engineering org (likely custom/internal i18n). Stars: {total_stars:,}, Repos: {public_repos}',
-            'Link': scan_results.get('org_url', ''),
-            'priority': 'LOW',
-            'type': 'mega_corp_launched',
-            'goldilocks_status': 'launched',
-            'total_stars': total_stars,
-            'public_repos': public_repos,
-        }
-        signals.append(mega_corp_signal)
-
-        return Config.GOLDILOCKS_SCORES.get('launched', 10)
-
-    # ============================================================
     # Check for THINKING status
     # ============================================================
+    # This check MUST come before the Mega-Corp heuristic to ensure
+    # valid thinking signals (RFCs/Discussions) take precedence
     rfc_count = summary.get('rfc_discussion', {}).get('count', 0)
     if rfc_count > 0:
         scan_results['goldilocks_status'] = 'thinking'
@@ -1590,6 +1552,46 @@ def _calculate_intent_score(scan_results: dict) -> int:
         scan_results['goldilocks_status'] = 'thinking'
         scan_results['lead_status'] = Config.LEAD_STATUS_LABELS.get('thinking', 'WARM LEAD')
         return min(35 + ghost_count * 5, 50)
+
+    # ============================================================
+    # MEGA-CORP HEURISTIC: Detect high-maturity orgs without any other signals
+    # ============================================================
+    # Large engineering orgs (Airbnb, Uber, Facebook, etc.) often use custom/internal
+    # i18n solutions that won't appear in our standard library scans. If they have
+    # significant GitHub presence but no other signals, they've likely already
+    # launched with proprietary tooling.
+    #
+    # IMPORTANT: This check runs LAST after all other signals (Preparing, Thinking, Ghost)
+    # to ensure valid intent signals take precedence.
+    total_stars = scan_results.get('total_stars', 0)
+    public_repos = scan_results.get('org_public_repos', 0)
+    repos_scanned = len(scan_results.get('repos_scanned', []))
+
+    # Only apply mega-corp heuristic if:
+    # 1. We actually scanned repos (repos_scanned > 0)
+    # 2. The org has very high activity (stars > 20000 OR repos > 400)
+    if repos_scanned > 0 and (total_stars > 20000 or public_repos > 400):
+        # High-maturity org with no Preparing/Thinking signals = Already Launched
+        scan_results['goldilocks_status'] = 'launched'
+        scan_results['lead_status'] = Config.LEAD_STATUS_LABELS.get('launched', 'LOW PRIORITY')
+        scan_results['mega_corp_heuristic'] = True
+        scan_results['mega_corp_evidence'] = 'High-maturity engineering org (likely custom/internal i18n)'
+
+        # Add a synthetic signal to explain the classification
+        mega_corp_signal = {
+            'Company': scan_results.get('company_name', 'Unknown'),
+            'Signal': 'Mega-Corp Heuristic',
+            'Evidence': f'High-maturity engineering org (likely custom/internal i18n). Stars: {total_stars:,}, Repos: {public_repos}',
+            'Link': scan_results.get('org_url', ''),
+            'priority': 'LOW',
+            'type': 'mega_corp_launched',
+            'goldilocks_status': 'launched',
+            'total_stars': total_stars,
+            'public_repos': public_repos,
+        }
+        signals.append(mega_corp_signal)
+
+        return Config.GOLDILOCKS_SCORES.get('launched', 10)
 
     # ============================================================
     # No signals found

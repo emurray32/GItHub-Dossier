@@ -887,7 +887,7 @@ def get_all_accounts(page: int = 1, limit: int = 50, tier_filter: Optional[list]
     select_query = f'''
         SELECT
             ma.*,
-            (SELECT r.id FROM reports r WHERE r.company_name = ma.company_name ORDER BY r.created_at DESC LIMIT 1) as latest_report_id
+            (SELECT r.id FROM reports r WHERE LOWER(r.company_name) = LOWER(ma.company_name) ORDER BY r.created_at DESC LIMIT 1) as latest_report_id
         FROM monitored_accounts ma
         {where_sql}
         ORDER BY
@@ -1087,7 +1087,7 @@ def get_refreshable_accounts() -> list:
     cursor.execute('''
         SELECT
             ma.*,
-            (SELECT r.id FROM reports r WHERE r.company_name = ma.company_name ORDER BY r.created_at DESC LIMIT 1) as latest_report_id
+            (SELECT r.id FROM reports r WHERE LOWER(r.company_name) = LOWER(ma.company_name) ORDER BY r.created_at DESC LIMIT 1) as latest_report_id
         FROM monitored_accounts ma
         WHERE ma.current_tier IN (0, 1, 2)
           AND (
