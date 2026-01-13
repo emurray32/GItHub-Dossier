@@ -827,10 +827,10 @@ def add_account_to_tier_0(company_name: str, github_org: str) -> dict:
         cursor.execute('''
             INSERT INTO monitored_accounts (
                 company_name, github_org, current_tier, last_scanned_at,
-                status_changed_at, evidence_summary, next_scan_due
-            ) VALUES (?, ?, ?, NULL, ?, ?, ?)
+                status_changed_at, evidence_summary, next_scan_due, scan_status
+            ) VALUES (?, ?, ?, NULL, ?, ?, ?, ?)
         ''', (company_name_normalized, github_org, TIER_TRACKING, now,
-              "Added via Grow pipeline", next_scan_iso))
+              "Added via Grow pipeline", next_scan_iso, SCAN_STATUS_QUEUED))
         account_id = cursor.lastrowid
 
     conn.commit()
