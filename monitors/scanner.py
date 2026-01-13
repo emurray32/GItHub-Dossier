@@ -18,7 +18,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Generator, Optional, List, Dict
 from config import Config
-from .discovery import get_github_headers, discover_organization, get_organization_repos
+from .discovery import get_github_headers, discover_organization, get_organization_repos, _get_org_details
 from database import increment_daily_stat
 from utils import make_github_request
 
@@ -54,7 +54,7 @@ def _format_request_exception(error: requests.RequestException) -> str:
     return f"Error: {status_code} {reason}"
 
 
-def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[object] = None) -> Generator[str, None, None]:
+def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[object] = None, github_org: Optional[str] = None) -> Generator[str, None, None]:
     """
     Perform a 3-Signal Intent Scan of a company's GitHub presence.
 
@@ -66,6 +66,9 @@ def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[obje
     Args:
         company_name: The company name to scan.
         last_scanned_timestamp: Optional timestamp of the last scan to skip unchanged repos.
+        github_org: Optional pre-linked GitHub organization login. If provided, skips discovery
+                    and uses this org directly. This is critical for accounts that have been
+                    manually linked to a GitHub org that may not match the company name exactly.
 
     Yields:
         SSE-formatted strings for streaming response.
@@ -77,23 +80,36 @@ def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[obje
     yield _sse_log("Target: Pre-launch internationalization signals")
     yield _sse_log("")
 
-    # Phase 1: Discover Organization
+    # Phase 1: Discover Organization (or use pre-linked org)
     yield _sse_log("PHASE 1: Organization Discovery")
     yield _sse_log("-" * 40)
 
     org_data = None
-    org_generator = discover_organization(company_name)
 
-    try:
-        while True:
-            try:
-                message = next(org_generator)
-                yield _sse_log(message)
-            except StopIteration as e:
-                org_data = e.value
-                break
-    except Exception as e:
-        yield _sse_log(f"Error during discovery: {str(e)}")
+    # If a github_org is pre-linked, use it directly instead of discovery
+    if github_org:
+        yield _sse_log(f"Using pre-linked GitHub organization: @{github_org}")
+        org_data = _get_org_details(github_org)
+        if org_data:
+            yield _sse_log(f"Organization found: @{github_org}")
+        else:
+            yield _sse_log(f"Pre-linked org @{github_org} not found, falling back to discovery...")
+            # Fall through to discovery below
+
+    # Run discovery if no pre-linked org or pre-linked org wasn't found
+    if not org_data:
+        org_generator = discover_organization(company_name)
+
+        try:
+            while True:
+                try:
+                    message = next(org_generator)
+                    yield _sse_log(message)
+                except StopIteration as e:
+                    org_data = e.value
+                    break
+        except Exception as e:
+            yield _sse_log(f"Error during discovery: {str(e)}")
 
     if not org_data:
         yield _sse_error("Could not find GitHub organization. Scan aborted.")
