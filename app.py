@@ -1169,6 +1169,31 @@ def api_webhook_logs():
     })
 
 
+def _watchdog_worker():
+    """
+    Background worker that runs indefinitely to clear stale processing statuses.
+    Runs every 2 minutes.
+    """
+    print("[WATCHDOG] Background thread started")
+    while True:
+        try:
+            # Clear any account stuck in 'processing' for more than 15 minutes
+            recovered = clear_stale_scan_statuses(timeout_minutes=15)
+            if recovered > 0:
+                print(f"[WATCHDOG] Recovered {recovered} stale scans")
+        except Exception as e:
+            print(f"[WATCHDOG] Error in watchdog: {e}")
+        
+        # Sleep for 2 minutes
+        time.sleep(120)
+
+
+def start_watchdog():
+    """Start the watchdog in a background daemon thread."""
+    thread = threading.Thread(target=_watchdog_worker, daemon=True, name="ScanWatchdog")
+    thread.start()
+
+
 if __name__ == '__main__':
     # Initialize when running directly
     print("[APP] Starting application...")
@@ -1187,6 +1212,9 @@ if __name__ == '__main__':
 
     # Initialize the executor
     get_executor()
+
+    # Start the background watchdog thread
+    start_watchdog()
 
     # Auto-scan any pending accounts on direct startup
     _auto_scan_pending_accounts()

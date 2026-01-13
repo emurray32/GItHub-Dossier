@@ -407,7 +407,9 @@
     }
 
     @keyframes spin {
-        to { transform: rotate(360deg); }
+        to {
+            transform: rotate(360deg);
+        }
     }
 
     .discovery-mode-toggle {
@@ -474,11 +476,8 @@
             <h2 class="panel-title">Bulk Import</h2>
             <form class="import-form" id="importForm" onsubmit="processImport(event)">
                 <label class="import-label">Company Names (one per line)</label>
-                <textarea
-                    class="companies-textarea"
-                    id="companiesInput"
-                    placeholder="Shopify&#10;Stripe&#10;Figma&#10;Slack&#10;Notion"
-                ></textarea>
+                <textarea class="companies-textarea" id="companiesInput"
+                    placeholder="Shopify&#10;Stripe&#10;Figma&#10;Slack&#10;Notion"></textarea>
 
                 <button type="submit" class="process-batch-btn" id="processBtn">
                     ▶ Process Batch
@@ -511,13 +510,9 @@
             </div>
 
             <div class="search-box">
-                <input
-                    type="text"
-                    class="discovery-search"
-                    id="discoverySearch"
+                <input type="text" class="discovery-search" id="discoverySearch"
                     placeholder="Enter industry (e.g., Fintech, HealthTech, DTC Retail)"
-                    onkeyup="handleSearchKeyup(event)"
-                />
+                    onkeyup="handleSearchKeyup(event)" oninput="handleSearchInput()" />
                 <button class="search-discovery-btn" id="searchBtn" onclick="performDiscovery()">
                     Discover
                 </button>
@@ -576,8 +571,28 @@
         performDiscovery();
     }
 
+    let discoveryDebounceTimer = null;
+
+    function handleSearchInput() {
+        if (discoveryDebounceTimer) {
+            clearTimeout(discoveryDebounceTimer);
+        }
+
+        // Use a longer debounce for discovery since it's an expensive operation
+        // 800ms feels responsive but prevents too many accidental triggers
+        discoveryDebounceTimer = setTimeout(() => {
+            const keyword = document.getElementById('discoverySearch').value.trim();
+            if (keyword.length >= 3) {
+                performDiscovery();
+            }
+        }, 800);
+    }
+
     function handleSearchKeyup(event) {
         if (event.key === 'Enter') {
+            if (discoveryDebounceTimer) {
+                clearTimeout(discoveryDebounceTimer);
+            }
             performDiscovery();
         }
     }
@@ -840,7 +855,7 @@
     }
 
     // Initialize on page load
-    document.addEventListener('DOMContentLoaded', function() {
+    document.addEventListener('DOMContentLoaded', function () {
         setDiscoveryMode('ai');
 
         const textarea = document.querySelector('.companies-textarea');

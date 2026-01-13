@@ -20,35 +20,9 @@ from typing import Generator, Optional, List, Dict
 from config import Config
 from .discovery import get_github_headers, discover_organization, get_organization_repos
 from database import increment_daily_stat
+from utils import make_github_request
 
 
-def make_github_request(url: str, params: Optional[dict] = None, timeout: int = 30) -> requests.Response:
-    response = requests.get(
-        url,
-        headers=get_github_headers(),
-        params=params,
-        timeout=timeout,
-    )
-
-    remaining_header = response.headers.get("X-RateLimit-Remaining")
-    if remaining_header is not None:
-        try:
-            remaining = int(remaining_header)
-        except ValueError:
-            remaining = None
-
-        if remaining is not None and remaining < 10:
-            reset_header = response.headers.get("X-RateLimit-Reset", "0")
-            try:
-                reset_time = int(reset_header)
-            except ValueError:
-                reset_time = 0
-            sleep_for = max(reset_time - int(time.time()), 0)
-            print(f"Warning: GitHub API rate limit low ({remaining} remaining). Sleeping {sleep_for} seconds.")
-            if sleep_for > 0:
-                time.sleep(sleep_for)
-
-    return response
 
 
 def _parse_timestamp(timestamp: Optional[object]) -> Optional[datetime]:

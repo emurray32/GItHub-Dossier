@@ -4,8 +4,76 @@ Utility functions for 3-Signal Internationalization Intent Scanner.
 Provides helper functions for signal detection and analysis.
 """
 import re
-from typing import Optional
+import time
+import random
+import threading
+import requests
+from itertools import cycle
+from typing import Optional, Dict, Any, List
 from config import Config
+
+
+# Thread-safe token rotation using round-robin strategy
+class TokenRotator:
+    """Thread-safe token rotator using round-robin selection."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._tokens = Config.GITHUB_TOKENS or []
+        self._cycle = cycle(self._tokens) if self._tokens else None
+
+    def get_token(self) -> Optional[str]:
+        """
+        Get the next token in round-robin order.
+
+        Thread-safe: uses a lock to ensure consistent rotation
+        across multiple threads.
+
+        Returns:
+            Next token string, or None if no tokens configured.
+        """
+        if not self._cycle:
+            return None
+
+        with self._lock:
+            return next(self._cycle)
+
+    def reload_tokens(self):
+        """Reload tokens from Config (useful if tokens change at runtime)."""
+        with self._lock:
+            self._tokens = Config.GITHUB_TOKENS or []
+            self._cycle = cycle(self._tokens) if self._tokens else None
+
+
+# Global token rotator instance
+_token_rotator = TokenRotator()
+
+
+def get_github_headers() -> dict:
+    """
+    Get headers for GitHub API requests with token rotation.
+
+    Uses round-robin selection from GITHUB_TOKENS if available,
+    otherwise falls back to the single GITHUB_TOKEN for backward
+    compatibility.
+
+    Thread-safe: can be called from multiple threads simultaneously.
+    """
+    headers = {
+        'Accept': 'application/vnd.github.v3+json',
+        'User-Agent': 'Lead-Machine/1.0'
+    }
+
+    # Try to get a token from the rotator (uses GITHUB_TOKENS if available)
+    token = _token_rotator.get_token()
+
+    if token:
+        headers['Authorization'] = f'token {token}'
+    elif Config.GITHUB_TOKEN:
+        # Fallback to single token if rotator has no tokens
+        headers['Authorization'] = f'token {Config.GITHUB_TOKEN}'
+
+    return headers
 
 
 def is_bot_account(username: str) -> bool:
@@ -135,3 +203,74 @@ def get_phase_from_signal_type(signal_type: str) -> str:
         'ghost_branch': 'Active',
     }
     return phase_mapping.get(signal_type, 'Unknown')
+
+
+def make_github_request(url: str, params: Optional[dict] = None, timeout: int = 30, priority: str = 'normal') -> requests.Response:
+    """
+    Enhanced GitHub API request wrapper with intelligent rate-limit buffering.
+    
+    Features:
+    - Buffering: Starts slowing down when remaining limit < 50
+    - Pre-emptive sleep: Sleeps longer as limit approaches zero
+    - Jitter: Random delay to prevent concurrent workers from hitting limit at once
+    - Priority aware: Can prioritize 'high' priority requests (Discovery)
+    """
+    # 1. Add small random jitter to help de-sync concurrent threads
+    time.sleep(random.uniform(0.01, 0.1))
+
+    response = requests.get(
+        url,
+        headers=get_github_headers(),
+        params=params,
+        timeout=timeout,
+    )
+
+    remaining_header = response.headers.get("X-RateLimit-Remaining")
+    if remaining_header is not None:
+        try:
+            remaining = int(remaining_header)
+        except ValueError:
+            remaining = None
+
+        if remaining is not None:
+            # SOFT BUFFERING: Start slowing down early
+            if remaining < 50:
+                reset_header = response.headers.get("X-RateLimit-Reset", "0")
+                try:
+                    reset_time = int(reset_header)
+                    now = int(time.time())
+                    wait_seconds = max(reset_time - now, 1)
+                except ValueError:
+                    wait_seconds = 10
+
+                # Calculate staggered sleep
+                # If remaining is 1, sleep almost the whole way to reset
+                # If remaining is 49, sleep just a tiny bit
+                if remaining < 10:
+                    # Critical zone: Sleep 50% of the reset time or at least 10s
+                    # but if priority is high (Discovery), sleep less
+                    sleep_factor = 0.5 if priority != 'high' else 0.2
+                    sleep_for = max(wait_seconds * sleep_factor, 10)
+                else:
+                    # Warning zone: Small variable sleep
+                    sleep_for = random.uniform(1.0, 3.0)
+
+                if remaining < 5 or (remaining < 20 and priority != 'high'):
+                    print(f"[RATE_LIMIT] Remaining: {remaining}. priority: {priority}. Buffering for {sleep_for:.1f}s...")
+                    time.sleep(sleep_for)
+
+    # Handle 429 explicitly if hit
+    if response.status_code == 429:
+        reset_header = response.headers.get("X-RateLimit-Reset", "0")
+        try:
+            reset_time = int(reset_header)
+            sleep_for = max(reset_time - int(time.time()), 0) + 1
+        except ValueError:
+            sleep_for = 60
+        
+        print(f"[RATE_LIMIT] Hit 429! Sleeping for {sleep_for}s...")
+        time.sleep(sleep_for)
+        # Retry once
+        return make_github_request(url, params, timeout, priority)
+
+    return response

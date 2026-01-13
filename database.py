@@ -4,7 +4,8 @@ SQLite database module for storing Lead Machine reports.
 import sqlite3
 import json
 import os
-from datetime import datetime
+import time
+from datetime import datetime, timedelta
 from typing import Optional
 from config import Config
 
@@ -87,6 +88,20 @@ def init_db() -> None:
     cursor.execute('''
         CREATE INDEX IF NOT EXISTS idx_accounts_company
         ON monitored_accounts(company_name)
+    ''')
+
+    # Case-insensitive indices for faster JOINs and lookups
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_accounts_company_lower
+        ON monitored_accounts(LOWER(company_name))
+    ''')
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_accounts_org_lower
+        ON monitored_accounts(LOWER(github_org))
+    ''')
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_reports_company_lower
+        ON reports(LOWER(company_name))
     ''')
 
     # System Settings table - key-value store
@@ -1455,3 +1470,35 @@ def batch_set_scan_status_queued(company_names: list) -> int:
 
 # Initialize database on module import
 init_db()
+def clear_stale_scan_statuses(timeout_minutes: int = 15) -> int:
+    """
+    Reset accounts that have been 'processing' for too long.
+    This acts as a watchdog to recover from crashed worker threads.
+
+    Args:
+        timeout_minutes: Minutes after which a scan is considered 'stale'
+
+    Returns:
+        Number of accounts recovered
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Calculate cutoff time: now - timeout_minutes
+    cutoff_time = (datetime.now() - timedelta(minutes=timeout_minutes)).isoformat()
+    
+    # Find accounts that are 'processing' but started before the cutoff
+    cursor.execute('''
+        UPDATE monitored_accounts 
+        SET scan_status = 'idle',
+            scan_progress = 'Timed out (automatically recovered)',
+            scan_start_time = NULL
+        WHERE scan_status = 'processing' 
+          AND scan_start_time < ?
+    ''', (cutoff_time,))
+    
+    count = cursor.rowcount
+    conn.commit()
+    conn.close()
+    
+    return count
