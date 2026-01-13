@@ -1518,8 +1518,8 @@
     </div>
 
     {% if accounts %}
-        <div class="table-controls">
-            <div class="table-controls-left">
+    <div class="table-controls">
+        <div class="table-controls-left">
             <label class="accounts-search" for="account-search-input">
                 <svg class="inline-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
                     stroke="currentColor" aria-hidden="true">
@@ -1565,10 +1565,9 @@
                     <td colspan="7">No accounts match your filters.</td>
                 </tr>
                 {% for account in accounts %}
-                <tr id="row-{{ account.id }}"
-                    data-company="{{ account.company_name }}" data-account-id="{{ account.id }}"
-                    data-tier="{{ account.current_tier }}" data-last-scanned="{{ account.last_scanned_at or '' }}"
-                    data-status="idle">
+                <tr id="row-{{ account.id }}" data-company="{{ account.company_name }}"
+                    data-account-id="{{ account.id }}" data-tier="{{ account.current_tier }}"
+                    data-last-scanned="{{ account.last_scanned_at or '' }}" data-status="idle">
                     <td class="select-col">
                         <input type="checkbox" class="select-account-checkbox row-select"
                             data-account-id="{{ account.id }}" aria-label="Select {{ account.company_name }}">
@@ -2769,11 +2768,12 @@
                                 `;
                             } else {
                                 // Normal processing state
+                                const progressMsg = account.scan_progress || 'Scanning...';
                                 content = `
                                     <div class="status-container">
                                         <span class="status-badge status-badge-processing" style="cursor: pointer;" onclick="openQueueModal()" title="Click to view processing details">
                                             ${statusIcons.processing}
-                                            <span>Scanning</span>
+                                            <span>${progressMsg}</span>
                                         </span>
                                         <span class="${elapsedClass}">${formatElapsedTime(elapsed)} • Click to view</span>
                                     </div>

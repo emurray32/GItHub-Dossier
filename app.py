@@ -153,6 +153,16 @@ def perform_background_scan(company_name: str):
         account = get_account_by_company_case_insensitive(company_name)
         last_scanned_at = account.get('last_scanned_at') if account else None
         for message in deep_scan_generator(company_name, last_scanned_at):
+            # Capture LOG messages for real-time progress feedback in UI
+            if 'data: LOG:' in message:
+                log_msg = message.split('data: LOG:', 1)[1].strip()
+                # Clean up the message and check for progress keywords
+                clean_msg = log_msg.replace('\n', '').strip()
+                
+                # Report key scanning steps to the database for UI display
+                if any(kw in clean_msg for kw in ['PHASE', 'Scanning', 'step', 'MEGA-CORP', 'Searching for']):
+                    set_scan_status(company_name, SCAN_STATUS_PROCESSING, clean_msg)
+
             # Check for scan errors - mark as invalid and exit
             if 'data: ERROR:' in message:
                 error_msg = message.split('data: ERROR:', 1)[1].strip()

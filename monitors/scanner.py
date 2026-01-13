@@ -131,7 +131,19 @@ def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[obje
         repos = []  # Continue with empty list
 
     # Select top repos for deep scan
-    repos_to_scan = repos[:Config.MAX_REPOS_TO_SCAN]
+    # NEW HEURISTIC: Mega-Corp check to handle massive orgs (PostHog, etc)
+    is_mega_corp = False
+    total_stars_top_10 = sum(r.get('stargazers_count', 0) for r in repos[:10])
+    public_repos_count = org_data.get('public_repos', 0)
+
+    if public_repos_count > 200 or total_stars_top_10 > 5000:
+        is_mega_corp = True
+        yield _sse_log(f"⚠️ MEGA-CORP DETECTED: {org_login} has {public_repos_count} repos and {total_stars_top_10} stars in top 10.")
+        yield _sse_log("Limiting scan to top 15 highest-value repositories to prevent timeout.")
+        repos_to_scan = repos[:15]
+    else:
+        repos_to_scan = repos[:Config.MAX_REPOS_TO_SCAN]
+
     original_repos_to_scan = repos_to_scan.copy()  # Keep original list for tier calculation
     last_scanned_at = _parse_timestamp(last_scanned_timestamp)
 
@@ -574,56 +586,35 @@ def _scan_dependency_injection(org: str, repo: str, company: str) -> Generator[t
     # ============================================================
     # POSITIVE CHECK: Scan for Goldilocks Zone libraries
     # ============================================================
-    package_json_paths = []
-    max_tree_entries = 2000
-    max_package_files = 50  # Increased from 20 to better handle monorepos
-
-    # Priority directories for package.json files (core product code)
-    priority_prefixes = ['package.json', 'app/', 'apps/', 'web/', 'frontend/', 'src/']
-
-    try:
-        repo_url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}"
-        repo_response = make_github_request(repo_url, timeout=15)
-        default_branch = repo_response.json().get('default_branch', 'main') if repo_response.status_code == 200 else 'main'
-
-        tree_url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}/git/trees/{default_branch}"
-        tree_response = make_github_request(tree_url, params={'recursive': 1}, timeout=30)
-
-        if tree_response.status_code == 200:
-            tree_entries = tree_response.json().get('tree', [])
-            priority_paths = []
-            other_paths = []
-
-            for entry in tree_entries[:max_tree_entries]:
-                if entry.get('type') != 'blob':
-                    continue
-                path = entry.get('path', '')
-                if path.endswith('package.json'):
-                    # Check if this is a priority path
-                    is_priority = any(
-                        path == prefix or path.startswith(prefix)
-                        for prefix in priority_prefixes
-                    )
-                    if is_priority:
-                        priority_paths.append(path)
-                    else:
-                        other_paths.append(path)
-
-            # Combine priority paths first, then others, up to max
-            package_json_paths = priority_paths + other_paths
-            package_json_paths = package_json_paths[:max_package_files]
-
-        if not package_json_paths:
-            package_json_paths = ['package.json']
-        elif len(package_json_paths) >= max_package_files:
-            yield (f"Limiting package.json scan to {max_package_files} files", None)
-    except requests.RequestException:
-        package_json_paths = ['package.json']
-
+    # Using Search API instead of recursive tree fetching to handle "Mega-Corp" repos efficiently
     for dep_file in Config.DEPENDENCY_INJECTION_FILES:
-        dep_paths = [dep_file]
-        if dep_file == 'package.json':
-            dep_paths = package_json_paths
+        yield (f"Searching for {dep_file}...", None)
+
+        # Query: q=repo:{org}/{repo} filename:{dep_filename}
+        query = f"repo:{org}/{repo} filename:{dep_file}"
+        search_url = f"{Config.GITHUB_API_BASE}/search/code"
+
+        dep_paths = []
+        try:
+            # Note: make_github_request handles rate limits and priority
+            search_response = make_github_request(search_url, params={'q': query}, timeout=15)
+
+            if search_response.status_code == 200:
+                search_data = search_response.json()
+                items = search_data.get('items', [])
+                # Limit to top 20 matches per file type (most common in monorepos)
+                dep_paths = [item.get('path') for item in items[:20]]
+            elif search_response.status_code == 422:
+                # Search sometimes fails on empty repos or if indexing is incomplete
+                dep_paths = [dep_file]
+            else:
+                # Fallback to root for other errors
+                dep_paths = [dep_file]
+        except Exception:
+            dep_paths = [dep_file]
+
+        if not dep_paths:
+            continue
 
         for dep_path in dep_paths:
             try:
