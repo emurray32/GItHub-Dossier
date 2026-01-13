@@ -523,29 +523,36 @@
     }
 
     /* Last Scanned cell */
-    .last-check-cell {
+    .account-last-scan {
         font-size: 0.85rem;
         color: var(--text-secondary);
         white-space: nowrap;
     }
 
-    .scanned-time {
+    .last-scan-date {
         color: var(--text-primary);
         font-weight: 600;
         display: block;
         margin-bottom: 0.15rem;
     }
 
-    .scanned-time.never-scanned {
+    .account-last-scan.never-scanned {
         color: #d97706;
     }
 
-    .scanned-time.recent {
+    .account-last-scan.recent .last-scan-date {
         color: #16a34a;
     }
 
-    .scanned-time.stale {
+    .account-last-scan.stale .last-scan-date {
         color: #d97706;
+    }
+
+    .next-scan-date {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        display: block;
+        margin-top: 0.1rem;
     }
 
     .tier-change-time {
@@ -937,13 +944,6 @@
     .empty-state p {
         color: var(--text-secondary);
         margin-bottom: 1.5rem;
-    }
-
-    .next-scan-value {
-        font-size: 0.75rem;
-        color: var(--text-muted);
-        display: block;
-        margin-top: 0.1rem;
     }
 
     /* Invalid/disabled button for Tier 4 */
@@ -1650,16 +1650,17 @@
                     </td>
                     <td class="last-check-cell">
                         <div class="status-container">
-                            <span class="scanned-time {% if not account.last_scanned_at %}never-scanned{% endif %}">
+                            <span
+                                class="account-last-scan {% if not account.last_scanned_at %}never-scanned{% endif %}">
                                 {% if account.last_scanned_at %}
-                                <strong class="scanned-time-value" data-timestamp="{{ account.last_scanned_at }}">
+                                <strong class="last-scan-date" data-timestamp="{{ account.last_scanned_at }}">
                                     --
                                 </strong>
                                 {% else %}
-                                <strong>Never</strong>
+                                <strong class="last-scan-date">Never</strong>
                                 {% endif %}
                             </span>
-                            <span class="next-scan-value" data-next-timestamp="{{ account.next_scan_due or '' }}">
+                            <span class="next-scan-date" data-next-timestamp="{{ account.next_scan_due or '' }}">
                                 {% if account.next_scan_due %}
                                 --
                                 {% endif %}
@@ -1997,23 +1998,26 @@
 
     function initializeUI() {
         // Update all last scan timestamps with smart formatting
-        document.querySelectorAll('.scanned-time-value[data-timestamp]').forEach(el => {
+        document.querySelectorAll('.last-scan-date[data-timestamp]').forEach(el => {
             const timestamp = el.dataset.timestamp;
             if (timestamp) {
                 el.textContent = formatSmartDate(timestamp);
 
                 // Add visual class based on freshness
                 const hours = getHoursSinceScanned(timestamp);
-                if (hours < 24) {
-                    el.closest('.scanned-time').classList.add('recent');
-                } else if (hours > 24 * 7) {
-                    el.closest('.scanned-time').classList.add('stale');
+                const container = el.closest('.account-last-scan');
+                if (container) {
+                    if (hours < 24) {
+                        container.classList.add('recent');
+                    } else if (hours > 24 * 7) {
+                        container.classList.add('stale');
+                    }
                 }
             }
         });
 
         // Update all next scan timestamps
-        document.querySelectorAll('.next-scan-value[data-next-timestamp]').forEach(el => {
+        document.querySelectorAll('.next-scan-date[data-next-timestamp]').forEach(el => {
             const timestamp = el.dataset.nextTimestamp;
             if (timestamp) {
                 el.textContent = formatNextDate(timestamp);
@@ -2761,10 +2765,16 @@
                     let elapsed = 0;
                     let isStuck = false;
                     if (newStatus === 'processing' && account.scan_started_at) {
-                        const startTime = typeof account.scan_started_at === 'string'
-                            ? Date.parse(account.scan_started_at) / 1000
-                            : account.scan_started_at;
-                        elapsed = Math.floor(Date.now() / 1000 - startTime);
+                        let startTimeString = account.scan_started_at;
+                        // Ensure we parse as UTC if it looks like an ISO string from server
+                        if (typeof startTimeString === 'string' && !startTimeString.includes('Z') && !startTimeString.includes('+')) {
+                            startTimeString += 'Z';
+                        }
+                        const startTime = typeof startTimeString === 'string'
+                            ? Date.parse(startTimeString) / 1000
+                            : startTimeString;
+
+                        elapsed = Math.max(0, Math.floor(Date.now() / 1000 - startTime));
                         isStuck = elapsed >= TIMEOUT_DANGER_SECONDS;
                     }
 
@@ -2832,10 +2842,10 @@
 
                                 content = `
                                     <div class="status-container">
-                                        <span class="scanned-time recent">
-                                            <strong class="scanned-time-value">${formatSmartDate(lastScanned)}</strong>
+                                        <span class="account-last-scan recent">
+                                            <strong class="last-scan-date">${formatSmartDate(lastScanned)}</strong>
                                         </span>
-                                        <span class="next-scan-value">${formatNextDate(nextScan)}</span>
+                                        <span class="next-scan-date">${formatNextDate(nextScan)}</span>
                                     </div>
                                 `;
                             } else {
@@ -2847,10 +2857,10 @@
 
                                 content = `
                                     <div class="status-container">
-                                        <span class="scanned-time ${timeClass}">
-                                            <strong class="scanned-time-value">${formatSmartDate(lastScanned)}</strong>
+                                        <span class="account-last-scan ${timeClass}">
+                                            <strong class="last-scan-date">${formatSmartDate(lastScanned)}</strong>
                                         </span>
-                                        <span class="next-scan-value">${formatNextDate(nextScan)}</span>
+                                        <span class="next-scan-date">${formatNextDate(nextScan)}</span>
                                     </div>
                                 `;
                             }
