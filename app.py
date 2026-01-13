@@ -1421,12 +1421,16 @@ def _auto_scan_pending_accounts():
 
     This is called on app startup to ensure imported accounts get scanned
     even if the app was restarted before their initial scan completed.
+    
+    Uses batch queueing for reliability - sets all statuses to 'queued' FIRST,
+    then submits to executor. This ensures status is visible immediately even
+    if executor submission is slow.
     """
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # Find accounts that have never been scanned
+        # Find accounts that have never been scanned (regardless of current status)
         cursor.execute('''
             SELECT company_name FROM monitored_accounts
             WHERE last_scanned_at IS NULL
@@ -1437,8 +1441,16 @@ def _auto_scan_pending_accounts():
 
         if pending_accounts:
             print(f"[APP] Found {len(pending_accounts)} accounts pending initial scan")
+            
+            # Step 1: Batch set ALL pending accounts to 'queued' status immediately
+            # This makes the queue visible right away in the UI
+            batch_set_scan_status_queued(pending_accounts)
+            print(f"[APP] Batch queued {len(pending_accounts)} pending accounts")
+            
+            # Step 2: Submit all to executor for background scanning
+            executor = get_executor()
             for company_name in pending_accounts:
-                spawn_background_scan(company_name)
+                executor.submit(perform_background_scan, company_name)
             print(f"[APP] Auto-submitted {len(pending_accounts)} pending accounts for scan")
         else:
             print("[APP] No pending accounts to scan")
