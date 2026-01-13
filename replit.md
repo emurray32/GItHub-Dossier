@@ -44,6 +44,7 @@ python app.py
 - **AI**: Google Gemini API
 
 ## Recent Changes
+- 2026-01-13: Improved UX for queued accounts - shows "In Queue" with queue position instead of "Never" for accounts waiting to be scanned
 - 2026-01-12: Comprehensive UI redesign to professional light theme
   - Removed all emojis from templates and backend logs
   - Replaced emoji icons with SVG icons on homepage feature list
