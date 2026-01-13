@@ -1402,8 +1402,9 @@
         <div class="prospects-list">
             {% for prospect in report.ai_analysis.top_prospects %}
             <div class="prospect-card">
-                {% set details = report.scan_data.contributors.get(prospect.login, {}) %}
-                <img src="{{ details.avatar_url or 'https://github.com/identicons/' ~ prospect.login ~ '.png' }}"
+                {% set contributors = report.scan_data.get('contributors', {}) or {} %}
+                {% set details = contributors.get(prospect.login, {}) %}
+                <img src="{{ details.get('avatar_url') or 'https://github.com/identicons/' ~ prospect.login ~ '.png' }}"
                     class="prospect-avatar">
                 <div class="prospect-info">
                     <div style="display: flex; justify-content: space-between;">
@@ -1412,8 +1413,8 @@
                             Profile</a>
                     </div>
                     <div class="prospect-role">{{ prospect.role_inference }}</div>
-                    {% if details.bio %}
-                    <div class="prospect-bio">"{{ details.bio }}"</div>
+                    {% if details.get('bio') %}
+                    <div class="prospect-bio">"{{ details.get('bio') }}"</div>
                     {% endif %}
                     <div class="strategy-box">
                         <strong>Strategy:</strong> {{ prospect.outreach_strategy }}
