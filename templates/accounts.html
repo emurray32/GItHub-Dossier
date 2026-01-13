@@ -939,6 +939,13 @@
         margin-bottom: 1.5rem;
     }
 
+    .next-scan-value {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        display: block;
+        margin-top: 0.1rem;
+    }
+
     /* Invalid/disabled button for Tier 4 */
     .btn-invalid {
         display: inline-flex;
@@ -1579,7 +1586,8 @@
                 {% for account in accounts %}
                 <tr id="row-{{ account.id }}" data-company="{{ account.company_name }}"
                     data-account-id="{{ account.id }}" data-tier="{{ account.current_tier }}"
-                    data-last-scanned="{{ account.last_scanned_at or '' }}" data-status="idle">
+                    data-last-scanned="{{ account.last_scanned_at or '' }}"
+                    data-next-scan-due="{{ account.next_scan_due or '' }}" data-status="idle">
                     <td class="select-col">
                         <input type="checkbox" class="select-account-checkbox row-select"
                             data-account-id="{{ account.id }}" aria-label="Select {{ account.company_name }}">
@@ -1644,25 +1652,18 @@
                         <div class="status-container">
                             <span class="scanned-time {% if not account.last_scanned_at %}never-scanned{% endif %}">
                                 {% if account.last_scanned_at %}
-                                <strong class="scanned-time" data-timestamp="{{ account.last_scanned_at }}">Scanned:
-                                    --</strong>
+                                <strong class="scanned-time-value" data-timestamp="{{ account.last_scanned_at }}">
+                                    --
+                                </strong>
                                 {% else %}
-                                Never
+                                <strong>Never</strong>
                                 {% endif %}
                             </span>
-                            {% if account.last_scanned_at %}
-                            <span class="tier-change-time">
-                                {% if account.status_changed_at %}
-                                {% set change_date = account.status_changed_at %}
-                                {% if 'T' in change_date %}
-                                {% set change_date = change_date.split('T')[0] %}
-                                {% endif %}
-                                Tier changed: {{ change_date }}
-                                {% else %}
-                                {{ account.last_scanned_at[11:16] }}
+                            <span class="next-scan-value" data-next-timestamp="{{ account.next_scan_due or '' }}">
+                                {% if account.next_scan_due %}
+                                --
                                 {% endif %}
                             </span>
-                            {% endif %}
                         </div>
                     </td>
                     <td class="evidence-cell">
@@ -1858,6 +1859,31 @@
         updateFilters({ tier: newTiers.length > 0 ? newTiers : null });
     }
 
+    function formatSmartDate(dateString) {
+        if (!dateString) return 'Never';
+        const date = new Date(dateString);
+        if (Number.isNaN(date.getTime())) return 'Never';
+
+        const now = new Date();
+        const isToday = date.getDate() === now.getDate() &&
+            date.getMonth() === now.getMonth() &&
+            date.getFullYear() === now.getFullYear();
+
+        if (isToday) return 'Today';
+
+        const options = { month: 'short', day: 'numeric' };
+        return date.toLocaleDateString('en-US', options);
+    }
+
+    function formatNextDate(dateString) {
+        if (!dateString) return '';
+        const date = new Date(dateString);
+        if (Number.isNaN(date.getTime())) return '';
+
+        const options = { month: 'short', day: 'numeric' };
+        return `Next: ${date.toLocaleDateString('en-US', options)}`;
+    }
+
     function changeLimit(newLimit) {
         const params = new URLSearchParams(window.location.search);
         params.set('limit', newLimit);
@@ -1970,25 +1996,29 @@
     // =============================================================================
 
     function initializeUI() {
-        // Update all "Scanned: date" timestamps with relative time
-        document.querySelectorAll('.scanned-time[data-timestamp]').forEach(el => {
+        // Update all last scan timestamps with smart formatting
+        document.querySelectorAll('.scanned-time-value[data-timestamp]').forEach(el => {
             const timestamp = el.dataset.timestamp;
             if (timestamp) {
-                const formattedTime = formatRelativeTime(timestamp);
-                el.textContent = `Scanned: ${formattedTime}`;
+                el.textContent = formatSmartDate(timestamp);
 
                 // Add visual class based on freshness
                 const hours = getHoursSinceScanned(timestamp);
                 if (hours < 24) {
-                    el.classList.add('recent');
+                    el.closest('.scanned-time').classList.add('recent');
                 } else if (hours > 24 * 7) {
-                    el.classList.add('stale');
+                    el.closest('.scanned-time').classList.add('stale');
                 }
             }
         });
 
-        // All action buttons are always enabled with "Rescan" text
-        // The button state is set in the HTML template, no dynamic changes needed
+        // Update all next scan timestamps
+        document.querySelectorAll('.next-scan-value[data-next-timestamp]').forEach(el => {
+            const timestamp = el.dataset.nextTimestamp;
+            if (timestamp) {
+                el.textContent = formatNextDate(timestamp);
+            }
+        });
 
         initializeBulkSelection();
         initializeFilters();
@@ -2797,37 +2827,30 @@
                         else {
                             if (currentStatus === 'processing' || currentStatus === 'queued' || currentStatus === 'stuck') {
                                 // Transition from processing to idle -> scan complete
-                                const relativeTime = account.last_scanned_at ? formatRelativeTime(account.last_scanned_at) : 'Just now';
+                                const lastScanned = account.last_scanned_at || new Date().toISOString();
+                                const nextScan = account.next_scan_due || '';
 
                                 content = `
                                     <div class="status-container">
-                                        <span class="scanned-time recent" style="color: var(--success-color);">
-                                            Scanned: ${relativeTime}
+                                        <span class="scanned-time recent">
+                                            <strong class="scanned-time-value">${formatSmartDate(lastScanned)}</strong>
                                         </span>
+                                        <span class="next-scan-value">${formatNextDate(nextScan)}</span>
                                     </div>
                                 `;
                             } else {
                                 // Standard idle display
                                 statusCell.classList.remove('status-cell-active');
-                                const relativeTime = account.last_scanned_at ? formatRelativeTime(account.last_scanned_at) : 'Never';
-
-                                let subText = '';
-                                if (account.status_changed_at) {
-                                    let changeDate = account.status_changed_at;
-                                    if (changeDate.includes('T')) changeDate = changeDate.split('T')[0];
-                                    subText = `Tier changed: ${changeDate}`;
-                                }
-
-                                const timeClass = !account.last_scanned_at ? 'never-scanned' : '';
-                                let label = account.last_scanned_at ? 'Scanned:' : '';
-                                if (!account.last_scanned_at) label = '';
+                                const lastScanned = account.last_scanned_at || '';
+                                const nextScan = account.next_scan_due || '';
+                                const timeClass = !lastScanned ? 'never-scanned' : '';
 
                                 content = `
                                     <div class="status-container">
                                         <span class="scanned-time ${timeClass}">
-                                            ${label} ${relativeTime}
+                                            <strong class="scanned-time-value">${formatSmartDate(lastScanned)}</strong>
                                         </span>
-                                        <span class="tier-change-time">${subText}</span>
+                                        <span class="next-scan-value">${formatNextDate(nextScan)}</span>
                                     </div>
                                 `;
                             }
