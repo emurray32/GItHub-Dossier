@@ -49,6 +49,8 @@ python app.py
   - Fixed inbox retrieval (inbox_id attribute) and message sending (inboxes.messages.send)
   - Added SKILL.md integration: ai_summary.py now loads `.agent/skills/cold-outreach/SKILL.md`
   - Cold email generation now uses custom skill instructions if the file exists
+  - Token pool auto-discovery: config.py now finds tokens matching GITHUB_TOKEN_*, GitHubToken_* (case-insensitive)
+  - BDRs can add their own GitHub tokens as secrets without modifying any config
 - 2026-01-13: Improved UX for queued accounts - shows "In Queue" with queue position instead of "Never" for accounts waiting to be scanned
 - 2026-01-12: Comprehensive UI redesign to professional light theme
   - Removed all emojis from templates and backend logs
