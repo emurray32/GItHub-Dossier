@@ -336,24 +336,51 @@
         border-color: var(--text-muted);
     }
 
-    .btn-compact-toggle {
+    .compact-toggle-label {
         display: inline-flex;
         align-items: center;
-        gap: 0.4rem;
-        padding: 0.4rem 0.75rem;
-        border-radius: 6px;
-        border: 1px solid var(--border-color);
-        background: var(--bg-primary);
-        color: var(--text-secondary);
-        font-size: 0.8rem;
+        gap: 0.5rem;
         cursor: pointer;
-        transition: all var(--transition-fast);
+        user-select: none;
     }
 
-    .btn-compact-toggle:hover {
-        background: var(--bg-tertiary);
-        color: var(--text-primary);
-        border-color: var(--text-muted);
+    .compact-toggle-label input {
+        display: none;
+    }
+
+    .compact-toggle-slider {
+        position: relative;
+        width: 36px;
+        height: 20px;
+        background: var(--border-color);
+        border-radius: 10px;
+        transition: background 0.2s ease;
+    }
+
+    .compact-toggle-slider::after {
+        content: '';
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 16px;
+        height: 16px;
+        background: white;
+        border-radius: 50%;
+        transition: transform 0.2s ease;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.15);
+    }
+
+    .compact-toggle-label input:checked + .compact-toggle-slider {
+        background: var(--accent-color);
+    }
+
+    .compact-toggle-label input:checked + .compact-toggle-slider::after {
+        transform: translateX(16px);
+    }
+
+    .compact-toggle-text {
+        font-size: 0.8rem;
+        color: var(--text-secondary);
     }
 
     /* GitHub org cell */
@@ -1587,10 +1614,11 @@
             </select>
             <button type="button" class="btn-clear-filters" id="clear-filters-btn">Clear filters</button>
         </div>
-        <button type="button" class="btn-compact-toggle" id="compact-toggle" onclick="toggleTableDensity()"
-            aria-pressed="false">
-            Compact Mode
-        </button>
+        <label class="compact-toggle-label">
+            <input type="checkbox" id="compact-toggle" checked onchange="toggleTableDensity()">
+            <span class="compact-toggle-slider"></span>
+            <span class="compact-toggle-text">Compact</span>
+        </label>
     </div>
     <div class="accounts-table-container">
         <table class="accounts-table">
@@ -2194,12 +2222,24 @@
 
     function toggleTableDensity() {
         const table = document.querySelector('.accounts-table');
-        const toggleButton = document.getElementById('compact-toggle');
-        if (!table) return;
-        const isCompact = table.classList.toggle('table-compact');
-        if (toggleButton) {
-            toggleButton.setAttribute('aria-pressed', isCompact ? 'true' : 'false');
-        }
+        const toggle = document.getElementById('compact-toggle');
+        if (!table || !toggle) return;
+        
+        const isCompact = toggle.checked;
+        table.classList.toggle('table-compact', isCompact);
+        localStorage.setItem('compactMode', isCompact ? 'true' : 'false');
+    }
+    
+    function initCompactMode() {
+        const table = document.querySelector('.accounts-table');
+        const toggle = document.getElementById('compact-toggle');
+        if (!table || !toggle) return;
+        
+        const savedPref = localStorage.getItem('compactMode');
+        const isCompact = savedPref === null ? true : savedPref === 'true';
+        
+        toggle.checked = isCompact;
+        table.classList.toggle('table-compact', isCompact);
     }
 
     async function copyToClipboard(text, btn) {
@@ -2601,6 +2641,7 @@
     // Initialize on page load
     document.addEventListener('DOMContentLoaded', () => {
         initializeUI();
+        initCompactMode();
         initializeDataTable();
         updateDashboardStats();
     });
