@@ -294,9 +294,11 @@ def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[obje
 
     for idx, repo in enumerate(repos_to_scan[:5], 1):  # Top 5 repos
         repo_name = repo.get('name')
-        yield _sse_log(f"  [{idx}/5] Scanning dependencies in: {repo_name}")
+        is_fork = repo.get('fork', False)
+        fork_indicator = " (fork)" if is_fork else ""
+        yield _sse_log(f"  [{idx}/5] Scanning dependencies in: {repo_name}{fork_indicator}")
 
-        for log_msg, signal in _scan_dependency_injection(org_login, repo_name, company_name):
+        for log_msg, signal in _scan_dependency_injection(org_login, repo_name, company_name, is_fork=is_fork):
             if log_msg:
                 yield _sse_log(f"    {log_msg}")
             if signal:
@@ -316,9 +318,11 @@ def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[obje
 
     for idx, repo in enumerate(repos_to_scan[:5], 1):  # Top 5 repos
         repo_name = repo.get('name')
-        yield _sse_log(f"  [{idx}/5] Scanning mobile architecture in: {repo_name}")
+        is_fork = repo.get('fork', False)
+        fork_indicator = " (fork)" if is_fork else ""
+        yield _sse_log(f"  [{idx}/5] Scanning mobile architecture in: {repo_name}{fork_indicator}")
 
-        for log_msg, signal in _scan_mobile_architecture(org_login, repo_name, company_name):
+        for log_msg, signal in _scan_mobile_architecture(org_login, repo_name, company_name, is_fork=is_fork):
             if log_msg:
                 yield _sse_log(f"    {log_msg}")
             if signal:
@@ -341,9 +345,11 @@ def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[obje
 
     for idx, repo in enumerate(repos_to_scan[:5], 1):  # Top 5 repos
         repo_name = repo.get('name')
-        yield _sse_log(f"  [{idx}/5] Scanning framework configs in: {repo_name}")
+        is_fork = repo.get('fork', False)
+        fork_indicator = " (fork)" if is_fork else ""
+        yield _sse_log(f"  [{idx}/5] Scanning framework configs in: {repo_name}{fork_indicator}")
 
-        for log_msg, signal in _scan_framework_configs(org_login, repo_name, company_name):
+        for log_msg, signal in _scan_framework_configs(org_login, repo_name, company_name, is_fork=is_fork):
             if log_msg:
                 yield _sse_log(f"    {log_msg}")
             if signal:
@@ -602,7 +608,7 @@ def _scan_rfc_discussion(org: str, repo: str, company: str) -> Generator[tuple, 
         pass  # Search API failures are non-fatal
 
 
-def _scan_dependency_injection(org: str, repo: str, company: str) -> Generator[tuple, None, None]:
+def _scan_dependency_injection(org: str, repo: str, company: str, is_fork: bool = False) -> Generator[tuple, None, None]:
     """
     Signal 2: Dependency Injection Scan (Preparing Phase) - GOLDILOCKS ZONE DETECTION
 
@@ -612,12 +618,19 @@ def _scan_dependency_injection(org: str, repo: str, company: str) -> Generator[t
     THE "GAP" REQUIREMENT (Negative Check):
     - A signal is ONLY valid if the repository has NO localization folders
     - If /locales, /i18n, /translations, or /lang exist -> DISQUALIFY (Already Launched)
+    - EXCEPTION: If is_fork=True, skip the negative check (fork's translations belong to upstream)
 
     TARGET LIBRARIES:
     - babel-plugin-react-intl
     - react-i18next
     - formatjs
     - uppy (only if i18n/locale properties are configured)
+
+    Args:
+        org: GitHub organization login
+        repo: Repository name
+        company: Company name for signal attribution
+        is_fork: If True, skip locale folder checks (fork translations belong to upstream)
 
     Yields:
         Tuples of (log_message, signal_object)
@@ -627,11 +640,19 @@ def _scan_dependency_injection(org: str, repo: str, company: str) -> Generator[t
 
     # ============================================================
     # NEGATIVE CHECK: Verify NO exclusion folders exist (with source-only exception)
+    # FORK EXCEPTION: Skip this check for forks - their translations belong to upstream
     # ============================================================
-    locale_exists, found_folders, source_only, folder_contents = _check_locale_folders_exist_detailed(org, repo)
-
-    # Track if we found source-only folders for evidence logging
+    locale_exists = False
+    found_folders = []
+    source_only = False
+    folder_contents = {}
     source_only_evidence = None
+
+    if is_fork:
+        # Skip locale folder check for forks - translations belong to upstream project
+        yield (f"FORK DETECTED: Skipping locale folder check (upstream translations don't disqualify)", None)
+    else:
+        locale_exists, found_folders, source_only, folder_contents = _check_locale_folders_exist_detailed(org, repo)
 
     if locale_exists:
         if source_only:
@@ -911,7 +932,7 @@ def _scan_pseudo_localization_configs(org: str, repo: str, company: str) -> Gene
             continue
 
 
-def _scan_mobile_architecture(org: str, repo: str, company: str) -> Generator[tuple, None, None]:
+def _scan_mobile_architecture(org: str, repo: str, company: str, is_fork: bool = False) -> Generator[tuple, None, None]:
     """
     Scan for Mobile Goldilocks Zone signals (iOS and Android).
 
@@ -919,11 +940,19 @@ def _scan_mobile_architecture(org: str, repo: str, company: str) -> Generator[tu
         - Check if Base.lproj folder exists
         - If YES, search for ANY other folders ending in .lproj
         - Signal if Base.lproj exists AND count of other .lproj folders == 0
+        - EXCEPTION: If is_fork=True, skip translation checks (fork translations belong to upstream)
 
     Android Logic:
         - Check if res/values/strings.xml exists
         - If YES, search for ANY folders matching values-[a-z]{2}
         - Signal if strings.xml exists AND count of values-* folders == 0
+        - EXCEPTION: If is_fork=True, skip translation checks (fork translations belong to upstream)
+
+    Args:
+        org: GitHub organization login
+        repo: Repository name
+        company: Company name for signal attribution
+        is_fork: If True, skip translation folder checks (fork translations belong to upstream)
 
     Yields:
         Tuples of (log_message, signal_object)
@@ -965,35 +994,43 @@ def _scan_mobile_architecture(org: str, repo: str, company: str) -> Generator[tu
             yield (f"iOS: Found Base.lproj folder", None)
 
             # Search for other .lproj folders (translations)
+            # FORK EXCEPTION: Skip translation check for forks - translations belong to upstream
             other_lproj_count = 0
-            lproj_search_url = f"{Config.GITHUB_API_BASE}/search/code"
-            lproj_params = {
-                'q': f'repo:{org}/{repo} path:*.lproj',
-                'per_page': 50
-            }
 
-            lproj_response = make_github_request(lproj_search_url, params=lproj_params, timeout=15)
+            if is_fork:
+                yield (f"iOS FORK: Skipping translation check (upstream translations don't disqualify)", None)
+            else:
+                lproj_search_url = f"{Config.GITHUB_API_BASE}/search/code"
+                lproj_params = {
+                    'q': f'repo:{org}/{repo} path:*.lproj',
+                    'per_page': 50
+                }
 
-            if lproj_response.status_code == 200:
-                lproj_results = lproj_response.json().get('items', [])
-                seen_folders = set()
+                lproj_response = make_github_request(lproj_search_url, params=lproj_params, timeout=15)
 
-                for item in lproj_results:
-                    path = item.get('path', '')
-                    # Extract .lproj folder name from path
-                    lproj_match = re.search(r'/([^/]+\.lproj)/', path)
-                    if lproj_match:
-                        folder_name = lproj_match.group(1)
-                        if folder_name != 'Base.lproj' and folder_name not in seen_folders:
-                            seen_folders.add(folder_name)
-                            other_lproj_count += 1
+                if lproj_response.status_code == 200:
+                    lproj_results = lproj_response.json().get('items', [])
+                    seen_folders = set()
 
-            if other_lproj_count == 0:
-                # GOLDILOCKS ZONE: Base.lproj exists but no translations!
+                    for item in lproj_results:
+                        path = item.get('path', '')
+                        # Extract .lproj folder name from path
+                        lproj_match = re.search(r'/([^/]+\.lproj)/', path)
+                        if lproj_match:
+                            folder_name = lproj_match.group(1)
+                            if folder_name != 'Base.lproj' and folder_name not in seen_folders:
+                                seen_folders.add(folder_name)
+                                other_lproj_count += 1
+
+            if other_lproj_count == 0 or is_fork:
+                # GOLDILOCKS ZONE: Base.lproj exists but no translations (or fork - ignore upstream translations)!
+                evidence = "iOS GOLDILOCKS: Base.lproj exists but NO other .lproj folders found - iOS app ready for localization!"
+                if is_fork:
+                    evidence = "iOS GOLDILOCKS (FORK): Base.lproj exists - fork's upstream translations ignored, treating as preparing!"
                 signal = {
                     'Company': company,
                     'Signal': 'Mobile Architecture (iOS)',
-                    'Evidence': f"iOS GOLDILOCKS: Base.lproj exists but NO other .lproj folders found - iOS app ready for localization!",
+                    'Evidence': evidence,
                     'Link': f"https://github.com/{org}/{repo}",
                     'priority': 'CRITICAL',
                     'type': 'mobile_architecture',
@@ -1001,6 +1038,7 @@ def _scan_mobile_architecture(org: str, repo: str, company: str) -> Generator[tu
                     'repo': repo,
                     'goldilocks_status': 'preparing',
                     'gap_verified': True,
+                    'is_fork': is_fork,
                     'bdr_summary': 'iOS Base Architecture ready, no translations',
                 }
                 yield (f"iOS GOLDILOCKS: Base.lproj found, no translations yet!", signal)
@@ -1026,28 +1064,35 @@ def _scan_mobile_architecture(org: str, repo: str, company: str) -> Generator[tu
             yield (f"Android: Found {strings_xml_path}", None)
 
             # Search for values-XX folders (language variants)
+            # FORK EXCEPTION: Skip translation check for forks - translations belong to upstream
             values_folder_count = 0
 
-            # Get contents of res/ folder to check for values-* folders
-            res_url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}/contents/res"
-            res_response = make_github_request(res_url, timeout=15)
+            if is_fork:
+                yield (f"Android FORK: Skipping translation check (upstream translations don't disqualify)", None)
+            else:
+                # Get contents of res/ folder to check for values-* folders
+                res_url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}/contents/res"
+                res_response = make_github_request(res_url, timeout=15)
 
-            if res_response.status_code == 200:
-                res_contents = res_response.json()
-                if isinstance(res_contents, list):
-                    for item in res_contents:
-                        item_name = item.get('name', '')
-                        item_type = item.get('type', '')
-                        # Match values-XX pattern (e.g., values-fr, values-de)
-                        if item_type == 'dir' and re.match(r'^values-[a-z]{2}(-[a-zA-Z]+)?$', item_name):
-                            values_folder_count += 1
+                if res_response.status_code == 200:
+                    res_contents = res_response.json()
+                    if isinstance(res_contents, list):
+                        for item in res_contents:
+                            item_name = item.get('name', '')
+                            item_type = item.get('type', '')
+                            # Match values-XX pattern (e.g., values-fr, values-de)
+                            if item_type == 'dir' and re.match(r'^values-[a-z]{2}(-[a-zA-Z]+)?$', item_name):
+                                values_folder_count += 1
 
-            if values_folder_count == 0:
-                # GOLDILOCKS ZONE: strings.xml exists but no translations!
+            if values_folder_count == 0 or is_fork:
+                # GOLDILOCKS ZONE: strings.xml exists but no translations (or fork - ignore upstream translations)!
+                evidence = "Android GOLDILOCKS: res/values/strings.xml exists but NO values-* folders found - Android app ready for localization!"
+                if is_fork:
+                    evidence = "Android GOLDILOCKS (FORK): res/values/strings.xml exists - fork's upstream translations ignored, treating as preparing!"
                 signal = {
                     'Company': company,
                     'Signal': 'Mobile Architecture (Android)',
-                    'Evidence': f"Android GOLDILOCKS: res/values/strings.xml exists but NO values-* folders found - Android app ready for localization!",
+                    'Evidence': evidence,
                     'Link': f"https://github.com/{org}/{repo}",
                     'priority': 'CRITICAL',
                     'type': 'mobile_architecture',
@@ -1055,6 +1100,7 @@ def _scan_mobile_architecture(org: str, repo: str, company: str) -> Generator[tu
                     'repo': repo,
                     'goldilocks_status': 'preparing',
                     'gap_verified': True,
+                    'is_fork': is_fork,
                     'bdr_summary': 'Android Strings architecture ready, no translations',
                 }
                 yield (f"Android GOLDILOCKS: strings.xml found, no translations yet!", signal)
@@ -1066,7 +1112,7 @@ def _scan_mobile_architecture(org: str, repo: str, company: str) -> Generator[tu
         yield (f"Android scan error: {error_detail}", None)
 
 
-def _scan_framework_configs(org: str, repo: str, company: str) -> Generator[tuple, None, None]:
+def _scan_framework_configs(org: str, repo: str, company: str, is_fork: bool = False) -> Generator[tuple, None, None]:
     """
     Scan framework configuration files for i18n routing configuration.
 
@@ -1077,13 +1123,29 @@ def _scan_framework_configs(org: str, repo: str, company: str) -> Generator[tupl
     Logic: Look for active i18n configuration blocks while ignoring comments.
     Gap Requirement: Only signal if locale folders don't exist.
 
+    Args:
+        org: GitHub organization login
+        repo: Repository name
+        company: Company name for signal attribution
+        is_fork: If True, skip locale folder checks (fork translations belong to upstream)
+
     Yields:
         Tuples of (log_message, signal_object)
     """
     # ============================================================
     # NEGATIVE CHECK: Verify NO locale folders exist (with source-only exception)
+    # FORK EXCEPTION: Skip this check for forks - their translations belong to upstream
     # ============================================================
-    locale_exists, found_folders, source_only, folder_contents = _check_locale_folders_exist_detailed(org, repo)
+    locale_exists = False
+    found_folders = []
+    source_only = False
+    folder_contents = {}
+
+    if is_fork:
+        # Skip locale folder check for forks - translations belong to upstream project
+        yield (f"FORK DETECTED: Skipping locale folder check (upstream translations don't disqualify)", None)
+    else:
+        locale_exists, found_folders, source_only, folder_contents = _check_locale_folders_exist_detailed(org, repo)
 
     if locale_exists:
         if source_only:
