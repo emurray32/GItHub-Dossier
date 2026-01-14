@@ -17,21 +17,51 @@ class Config:
     SECRET_KEY = os.getenv('FLASK_SECRET_KEY', 'dev-secret-key-change-in-production')
     DEBUG = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
 
-    # GitHub API
+    # ============================================================
+    # GITHUB TOKEN POOL - Crowdsourced Rate Limit Evasion
+    # ============================================================
+    #
+    # The Problem: GitHub's API limit is 5,000 requests/hour per token.
+    # Scanning a "Mega-Corp" uses ~100-200 requests. You hit the wall
+    # at ~25 companies per hour with a single token.
+    #
+    # The Solution: Token Pool with intelligent rotation.
+    #
+    # Setup:
+    #   1. Ask every BDR on the team to generate a Personal Access Token
+    #   2. Set GITHUB_TOKENS=token1,token2,token3,... in your .env file
+    #   3. The system automatically rotates through tokens, selecting the
+    #      one with the highest remaining rate limit.
+    #
+    # BDR Benefit:
+    #   - 1 token  =  5,000 req/hr =  ~25 companies/hour
+    #   - 5 tokens = 25,000 req/hr = ~125 companies/hour
+    #   - 10 tokens = 50,000 req/hr = ~250 companies/hour
+    #
+    # Token Requirements (minimum permissions):
+    #   - public_repo (read public repositories)
+    #   - read:org (read organization info) - optional but recommended
+    #
+    # ============================================================
+
     GITHUB_TOKEN = os.getenv('GITHUB_TOKEN')
     GITHUB_API_BASE = 'https://api.github.com'
 
-    # Multiple tokens for rotation (comma-separated in environment variable)
-    # If GITHUB_TOKENS is set, it takes precedence over GITHUB_TOKEN for rotation
-    # Maintains backward compatibility: if only GITHUB_TOKEN is set, it will be used
+    # Token pool configuration
+    TOKEN_POOL_LOW_THRESHOLD = 50     # Start considering other tokens when below this
+    TOKEN_POOL_CRITICAL_THRESHOLD = 10  # Definitely switch tokens when below this
+
     @staticmethod
     def get_github_tokens() -> list:
         """
         Load GitHub tokens from environment variables.
 
         Priority:
-        1. GITHUB_TOKENS (comma-separated list)
+        1. GITHUB_TOKENS (comma-separated list for token pool)
         2. GITHUB_TOKEN (single token, for backward compatibility)
+
+        Example .env:
+            GITHUB_TOKENS=ghp_abc123,ghp_def456,ghp_ghi789
 
         Returns:
             List of tokens, or empty list if none configured.
@@ -51,6 +81,25 @@ class Config:
         return []
 
     GITHUB_TOKENS = get_github_tokens.__func__()  # Initialize at class load time
+
+    @staticmethod
+    def get_token_pool_capacity() -> dict:
+        """
+        Calculate the theoretical capacity of the token pool.
+
+        Returns:
+            Dict with capacity metrics.
+        """
+        tokens = Config.get_github_tokens()
+        token_count = len(tokens)
+        hourly_capacity = token_count * 5000
+        companies_per_hour = hourly_capacity // 200  # ~200 requests per company scan
+
+        return {
+            'token_count': token_count,
+            'hourly_requests': hourly_capacity,
+            'estimated_companies_per_hour': companies_per_hour,
+        }
 
     # Gemini AI
     GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
@@ -85,9 +134,10 @@ class Config:
 
     # Low-value repository patterns (non-core repos to deprioritize)
     # -500 points if repo name contains any of these
+    # Note: 'docs' and 'documentation' intentionally excluded - they can be
+    # early indicators of i18n work (especially with Docusaurus/Astro)
     LOW_VALUE_PATTERNS = [
-        'docs', 'documentation', 'tool', 'script', 'demo',
-        'example', 'test', 'fork'
+        'tool', 'script', 'demo', 'example', 'test', 'fork'
     ]
 
     # High-value programming languages for i18n scanning
@@ -202,6 +252,10 @@ class Config:
         'nuxt.config.ts',
         'remix.config.js',
         'angular.json',
+        # Static site generators with i18n support
+        'docusaurus.config.js',
+        'docusaurus.config.ts',
+        'astro.config.mjs',
     ]
 
     # ============================================================
@@ -291,6 +345,90 @@ class Config:
     ]
 
     # ============================================================
+    # SIGNAL 4: DOCUMENTATION INTENT (Thinking Phase)
+    # ============================================================
+    # Target: Documentation files that may mention planned i18n work
+    # Logic: Flag if i18n keywords are found NEAR context words
+    #        indicating future/in-progress work
+    # This catches companies mentioning i18n in changelogs/roadmaps
+    # BEFORE the code is fully live.
+
+    DOCUMENTATION_FILES = [
+        'CHANGELOG.md',
+        'CONTRIBUTING.md',
+        'README.md',
+        'ROADMAP.md',
+        'changelog.md',
+        'contributing.md',
+        'readme.md',
+        'roadmap.md',
+        'HISTORY.md',
+        'history.md',
+    ]
+
+    # Intent keywords - these indicate i18n planning
+    DOCUMENTATION_INTENT_KEYWORDS = [
+        'i18n support',
+        'localization support',
+        'translation',
+        'internationalization',
+        'feat(i18n)',
+        'chore(i18n)',
+        'i18n:',
+        'l10n support',
+        'multi-language',
+        'multilingual',
+    ]
+
+    # Context keywords - these indicate future/in-progress work
+    # A match requires BOTH an intent keyword AND a context keyword nearby
+    DOCUMENTATION_CONTEXT_KEYWORDS = [
+        'beta',
+        'roadmap',
+        'upcoming',
+        'help wanted',
+        'best effort',
+        'planned',
+        'todo',
+        'wip',
+        'in progress',
+        'in-progress',
+        'unreleased',
+        'experimental',
+        'coming soon',
+        'future',
+        'proposal',
+        'rfc',
+        'draft',
+        'milestone',
+    ]
+
+    # Negative indicators - if found near the keyword, it's likely already launched
+    DOCUMENTATION_LAUNCHED_INDICATORS = [
+        'available in',
+        'supported languages',
+        'translated to',
+        'translations available',
+        'localized for',
+        'supports the following languages',
+        'language support includes',
+        'currently translated',
+        'fully localized',
+    ]
+
+    # Proximity threshold - how close (in characters) context words must be
+    DOCUMENTATION_PROXIMITY_CHARS = 200
+
+    # File priority weights - CHANGELOG is higher signal than README
+    DOCUMENTATION_FILE_WEIGHTS = {
+        'changelog': 'HIGH',
+        'roadmap': 'HIGH',
+        'history': 'HIGH',
+        'contributing': 'MEDIUM',
+        'readme': 'MEDIUM',
+    }
+
+    # ============================================================
     # INTENT SCORE WEIGHTS - GOLDILOCKS ZONE SCORING
     # ============================================================
     # New scoring model focused on PRE-LAUNCH detection.
@@ -301,6 +439,8 @@ class Config:
         'rfc_discussion_medium': 15,  # MEDIUM priority discussion
         'dependency_injection': 40,   # Smoking gun - highest value
         'ghost_branch': 25,           # WIP branch/PR
+        'documentation_intent_high': 20,    # HIGH priority (CHANGELOG, ROADMAP)
+        'documentation_intent_medium': 10,  # MEDIUM priority (README, CONTRIBUTING)
     }
 
     # ============================================================
@@ -382,9 +522,53 @@ class Config:
         'snyk-bot', 'codecov', 'codecov[bot]', 'vercel[bot]', 'netlify[bot]',
     ]
 
+    # ============================================================
+    # OPEN PROTOCOL / DECENTRALIZED PROJECT DISQUALIFIERS
+    # ============================================================
+    # These patterns identify open-source protocol projects and decentralized
+    # community projects that are NOT commercial companies with buying intent.
+    #
+    # Examples: Status (decentralized messenger), Protocol Labs, various DAOs
+    #
+    # If ANY of these patterns match the org description (case-insensitive),
+    # the account is disqualified as a false positive.
+
+    OPEN_PROTOCOL_DISQUALIFIERS = [
+        # Decentralized / Web3 indicators
+        'decentralized',
+        'decentralised',
+        'open protocol',
+        'open-protocol',
+        'community project',
+        'community-driven',
+        'community owned',
+        'community-owned',
+        'powered by the community',
+        'powered by its members',
+        'powered by their members',
+        'anyone can fork',
+        'anyone can build',
+        'anyone can contribute',
+
+        # Blockchain / Crypto indicators (typically not commercial buyers)
+        'blockchain protocol',
+        'web3 protocol',
+        'defi protocol',
+        'dao ',  # Note: space to avoid matching "dao" in words like "shadow"
+        ' dao',
+        'decentralized autonomous',
+
+        # Open source protocol indicators
+        'protocol specification',
+        'reference implementation',
+        'open standard',
+        'open-standard',
+    ]
+
     # Legacy confidence weights (mapped to intent score)
     CONFIDENCE_WEIGHTS = {
         'rfc_discussion': 25,
         'dependency_injection': 40,
         'ghost_branch': 25,
+        'documentation_intent': 15,
     }

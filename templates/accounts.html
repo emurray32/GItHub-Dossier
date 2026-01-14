@@ -336,24 +336,51 @@
         border-color: var(--text-muted);
     }
 
-    .btn-compact-toggle {
+    .compact-toggle-label {
         display: inline-flex;
         align-items: center;
-        gap: 0.4rem;
-        padding: 0.4rem 0.75rem;
-        border-radius: 6px;
-        border: 1px solid var(--border-color);
-        background: var(--bg-primary);
-        color: var(--text-secondary);
-        font-size: 0.8rem;
+        gap: 0.5rem;
         cursor: pointer;
-        transition: all var(--transition-fast);
+        user-select: none;
     }
 
-    .btn-compact-toggle:hover {
-        background: var(--bg-tertiary);
-        color: var(--text-primary);
-        border-color: var(--text-muted);
+    .compact-toggle-label input {
+        display: none;
+    }
+
+    .compact-toggle-slider {
+        position: relative;
+        width: 36px;
+        height: 20px;
+        background: var(--border-color);
+        border-radius: 10px;
+        transition: background 0.2s ease;
+    }
+
+    .compact-toggle-slider::after {
+        content: '';
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 16px;
+        height: 16px;
+        background: white;
+        border-radius: 50%;
+        transition: transform 0.2s ease;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+    }
+
+    .compact-toggle-label input:checked+.compact-toggle-slider {
+        background: var(--accent-color);
+    }
+
+    .compact-toggle-label input:checked+.compact-toggle-slider::after {
+        transform: translateX(16px);
+    }
+
+    .compact-toggle-text {
+        font-size: 0.8rem;
+        color: var(--text-secondary);
     }
 
     /* GitHub org cell */
@@ -595,6 +622,17 @@
         animation: pulse-warning 2s ease-in-out infinite;
     }
 
+    /* Inline status text styles (for initial page load) */
+    .status-queued {
+        color: #92400e !important;
+        font-weight: 600;
+    }
+
+    .status-processing {
+        color: var(--accent-color) !important;
+        font-weight: 600;
+    }
+
     @keyframes pulse-warning {
 
         0%,
@@ -816,7 +854,6 @@
         align-items: center;
         gap: 0.3rem;
         padding: 0.4rem 0.75rem;
-        margin-left: 0.4rem;
         background: #fee2e2;
         color: #991b1b;
         border: 1px solid #fecaca;
@@ -861,6 +898,9 @@
 
     /* Actions cell */
     .actions-cell {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
         white-space: nowrap;
     }
 
@@ -920,7 +960,6 @@
         text-decoration: none;
         cursor: pointer;
         transition: all var(--transition-fast);
-        margin-right: 0.5rem;
     }
 
     .btn-view-report:hover {
@@ -1427,6 +1466,25 @@
         }
     }
 </style>
+
+<!-- Server-side loading optimization styles -->
+<style>
+    .accounts-loading {
+        opacity: 0.6;
+        pointer-events: none;
+    }
+
+    .loading-spinner {
+        display: inline-block;
+        width: 16px;
+        height: 16px;
+        border: 2px solid rgba(0, 181, 173, 0.3);
+        border-top: 2px solid var(--accent-color);
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+        margin-right: 0.5rem;
+    }
+</style>
 {% endblock %}
 
 {% block content %}
@@ -1556,10 +1614,11 @@
             </select>
             <button type="button" class="btn-clear-filters" id="clear-filters-btn">Clear filters</button>
         </div>
-        <button type="button" class="btn-compact-toggle" id="compact-toggle" onclick="toggleTableDensity()"
-            aria-pressed="false">
-            Compact Mode
-        </button>
+        <label class="compact-toggle-label">
+            <input type="checkbox" id="compact-toggle" checked onchange="toggleTableDensity()">
+            <span class="compact-toggle-slider"></span>
+            <span class="compact-toggle-text">Compact</span>
+        </label>
     </div>
     <div class="accounts-table-container">
         <table class="accounts-table">
@@ -1575,157 +1634,212 @@
                     <th class="sortable" data-sort-key="tier">Tier <span class="sort-indicator">↕</span></th>
                     <th class="sortable" data-sort-key="last_scanned">Last Scanned <span class="sort-indicator">↕</span>
                     </th>
-                    <th class="sortable" data-sort-key="evidence">Evidence <span class="sort-indicator">↕</span></th>
+                    <th class="sortable" data-sort-key="evidence">Evidence Summary <span class="sort-indicator">↕</span>
+                    </th>
                     <th>Actions</th>
                 </tr>
             </thead>
-            <tbody>
-                <tr class="table-empty-row hidden" id="accounts-empty-row">
-                    <td colspan="7">No accounts match your filters.</td>
-                </tr>
-                {% for account in accounts %}
-                <tr id="row-{{ account.id }}" data-company="{{ account.company_name }}"
-                    data-account-id="{{ account.id }}" data-tier="{{ account.current_tier }}"
-                    data-last-scanned="{{ account.last_scanned_at or '' }}"
-                    data-next-scan-due="{{ account.next_scan_due or '' }}" data-status="idle">
-                    <td class="select-col">
-                        <input type="checkbox" class="select-account-checkbox row-select"
-                            data-account-id="{{ account.id }}" aria-label="Select {{ account.company_name }}">
-                    </td>
-                    <td class="company-cell">
-                        <span class="company-cell-content">
-                            {% if account.latest_report_id %}
-                            <a href="{{ url_for('view_report', report_id=account.latest_report_id) }}">
-                                {{ account.company_name }}
-                            </a>
-                            {% else %}
-                            {{ account.company_name }}
-                            {% endif %}
-                            <button type="button" class="btn-copy-company" title="Copy company name"
-                                data-company="{{ account.company_name|e }}"
-                                onclick="copyToClipboard(this.dataset.company, this)">
-                                <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                                    <path
-                                        d="M16 1H6c-1.1 0-2 .9-2 2v12h2V3h10V1zm3 4H10c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h9c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H10V7h9v14z" />
-                                </svg>
-                            </button>
-                        </span>
-                    </td>
-                    <td class="github-org-cell" data-company="{{ account.company_name|e }}" ondblclick="editOrg(this)"
-                        data-org="{{ account.github_org|default('', true)|e }}">
-                        <span class="org-display">
-                            {% if account.github_org %}
-                            <a href="https://github.com/{{ account.github_org }}" target="_blank" rel="noopener"
-                                class="github-org-link" title="View on GitHub">
-                                <svg viewBox="0 0 16 16" fill="currentColor">
-                                    <path
-                                        d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" />
-                                </svg>
-                                @{{ account.github_org }}
-                            </a>
-                            <button type="button" class="github-org-edit" onclick="showOrgEdit(this)"
-                                title="Edit GitHub org">
-                                Edit
-                            </button>
-                            {% else %}
-                            <span class="org-not-found">Not found</span>
-                            <button type="button" class="github-org-edit" onclick="showOrgEdit(this)"
-                                title="Set GitHub org">
-                                Set
-                            </button>
-                            {% endif %}
-                        </span>
-                        <span class="github-org-input-container">
-                            <input type="text" class="github-org-input" placeholder="org-name"
-                                value="{{ account.github_org or '' }}">
-                            <button type="button" class="btn-save-org" onclick="saveOrgEdit(this)">Save</button>
-                            <button type="button" class="btn-cancel-org" onclick="cancelOrgEdit(this)">Cancel</button>
-                        </span>
-                    </td>
-                    <td>
-                        <span class="tier-badge tier-badge-{{ account.current_tier }}">
-                            Tier {{ account.current_tier }} - {{
-                            account.tier_config.name }}
-                        </span>
-                    </td>
-                    <td class="last-check-cell">
-                        <div class="status-container">
-                            <span
-                                class="account-last-scan {% if not account.last_scanned_at %}never-scanned{% endif %}">
-                                {% if account.last_scanned_at %}
-                                <strong class="last-scan-date" data-timestamp="{{ account.last_scanned_at }}">
-                                    --
-                                </strong>
-                                {% else %}
-                                <strong class="last-scan-date">Never</strong>
-                                {% endif %}
-                            </span>
-                            <span class="next-scan-date" data-next-timestamp="{{ account.next_scan_due or '' }}">
-                                {% if account.next_scan_due %}
-                                --
-                                {% endif %}
-                            </span>
-                        </div>
-                    </td>
-                    <td class="evidence-cell">
-                        <span class="evidence-text" title="{{ account.evidence_summary or 'No evidence recorded' }}">
-                            {{ account.evidence_summary or 'No evidence recorded' }}
-                        </span>
-                    </td>
-                    <td class="actions-cell">
-                        {% if account.latest_report_id %}
-                        <button type="button" class="btn-view-report"
-                            onclick="openReport('{{ url_for('view_report', report_id=account.latest_report_id) }}')">
-                            View
-                        </button>
-                        {% endif %}
-                        {% if account.current_tier == 4 %}
-                        <button type="button" class="btn-invalid" disabled>
-                            Invalid
-                        </button>
-                        {% else %}
-                        <button type="button" class="btn-action-smart" data-company="{{ account.company_name }}"
-                            onclick="triggerRescan(this, '{{ account.company_name }}')">
-                            Rescan
-                        </button>
-                        {% endif %}
-                        <button type="button" class="btn-delete-account" data-company="{{ account.company_name }}"
-                            onclick="removeAccount(this)">
-                            Remove
-                        </button>
-                    </td>
-                </tr>
-                {% endfor %}
+            <tbody id="accounts-tbody">
+                <!-- DataTables will populate this with server-side data -->
             </tbody>
         </table>
-        <div class="pagination-container">
-            <div class="pagination-info">
-                Showing {{ ((current_page - 1) * limit) + 1 }}-{{ [current_page * limit, total_items]|min }} of {{
-                total_items }} accounts
-            </div>
-            <div class="pagination-controls">
-                <select id="limit-select" onchange="changeLimit(this.value)" class="pagination-limit-select"
-                    aria-label="Rows per page">
-                    <option value="25" {% if limit==25 %}selected{% endif %}>25 rows</option>
-                    <option value="50" {% if limit==50 %}selected{% endif %}>50 rows</option>
-                    <option value="100" {% if limit==100 %}selected{% endif %}>100 rows</option>
-                    <option value="250" {% if limit==250 %}selected{% endif %}>250 rows</option>
-                </select>
-                <a href="{{ url_for('accounts', page=current_page - 1, limit=limit) }}" class="pagination-btn" {% if
-                    current_page <=1 %}disabled{% endif %} {% if current_page <=1 %}onclick="return false;" {% endif %}>
-                    ← Previous
-                </a>
-                <span class="pagination-page-display">
-                    Page {{ current_page }} of {{ total_pages or 1 }}
+    </div>
+
+    <!-- Template for DataTables row rendering (will be cloned and filled) -->
+    <script type="text/template" id="accounts-row-template">
+        <tr id="row-{id}" data-company="{company_name}" data-account-id="{id}" data-tier="{current_tier}" data-status="idle">
+            <td class="select-col">
+                <input type="checkbox" class="select-account-checkbox row-select" data-account-id="{id}" aria-label="Select {company_name}">
+            </td>
+            <td class="company-cell">
+                <span class="company-cell-content">
+                    {company_link}
+                    <button type="button" class="btn-copy-company" title="Copy company name" data-company="{company_name}" onclick="copyToClipboard(this.dataset.company, this)">
+                        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                            <path d="M16 1H6c-1.1 0-2 .9-2 2v12h2V3h10V1zm3 4H10c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h9c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H10V7h9v14z" />
+                        </svg>
+                    </button>
                 </span>
-                <a href="{{ url_for('accounts', page=current_page + 1, limit=limit) }}" class="pagination-btn" {% if
-                    current_page>= total_pages %}disabled{% endif %}
-                    {% if current_page >= total_pages %}onclick="return false;"{% endif %}>
-                    Next →
-                </a>
-            </div>
+            </td>
+            <td class="github-org-cell" data-company="{company_name}" ondblclick="editOrg(this)" data-org="{github_org}">
+                <span class="org-display">
+                    {github_org_link}
+                </span>
+                <span class="github-org-input-container">
+                    <input type="text" class="github-org-input" placeholder="org-name" value="{github_org}">
+                    <button type="button" class="btn-save-org" onclick="saveOrgEdit(this)">Save</button>
+                    <button type="button" class="btn-cancel-org" onclick="cancelOrgEdit(this)">Cancel</button>
+                </span>
+            </td>
+            <td>
+                <span class="tier-badge tier-badge-{current_tier}">Tier {current_tier} - {tier_name}</span>
+            </td>
+            <td class="last-check-cell">
+                <div class="status-container">
+                    <span class="account-last-scan {last_scan_class}" data-timestamp="{last_scanned_at}">
+                        <strong class="last-scan-date">{last_scanned_formatted}</strong>
+                    </span>
+                </div>
+            </td>
+            <td class="evidence-cell">
+                <span class="evidence-text" title="{evidence_title}">{evidence_summary}</span>
+            </td>
+            <td class="actions-cell">
+                {actions_html}
+            </td>
+        </tr>
+    </script>
+
+    <!-- Hidden tbody placeholder -->
+    <div style="display: none;">
+        <tbody id="accounts-tbody-old">
+            <tr class="table-empty-row hidden" id="accounts-empty-row">
+                <td colspan="7">No accounts match your filters.</td>
+            </tr>
+            {% for account in accounts %}
+            <tr id="row-{{ account.id }}" data-company="{{ account.company_name }}" data-account-id="{{ account.id }}"
+                data-tier="{{ account.current_tier }}" data-last-scanned="{{ account.last_scanned_at or '' }}"
+                data-next-scan-due="{{ account.next_scan_due or '' }}" data-status="idle">
+                <td class="select-col">
+                    <input type="checkbox" class="select-account-checkbox row-select" data-account-id="{{ account.id }}"
+                        aria-label="Select {{ account.company_name }}">
+                </td>
+                <td class="company-cell">
+                    <span class="company-cell-content">
+                        {% if account.latest_report_id %}
+                        <a href="{{ url_for('view_report', report_id=account.latest_report_id) }}">
+                            {{ account.company_name }}
+                        </a>
+                        {% else %}
+                        {{ account.company_name }}
+                        {% endif %}
+                        <button type="button" class="btn-copy-company" title="Copy company name"
+                            data-company="{{ account.company_name|e }}"
+                            onclick="copyToClipboard(this.dataset.company, this)">
+                            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                                <path
+                                    d="M16 1H6c-1.1 0-2 .9-2 2v12h2V3h10V1zm3 4H10c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h9c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H10V7h9v14z" />
+                            </svg>
+                        </button>
+                    </span>
+                </td>
+                <td class="github-org-cell" data-company="{{ account.company_name|e }}" ondblclick="editOrg(this)"
+                    data-org="{{ account.github_org|default('', true)|e }}">
+                    <span class="org-display">
+                        {% if account.github_org %}
+                        <a href="https://github.com/{{ account.github_org }}" target="_blank" rel="noopener"
+                            class="github-org-link" title="View on GitHub">
+                            <svg viewBox="0 0 16 16" fill="currentColor">
+                                <path
+                                    d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" />
+                            </svg>
+                            @{{ account.github_org }}
+                        </a>
+                        <button type="button" class="github-org-edit" onclick="showOrgEdit(this)"
+                            title="Edit GitHub org">
+                            Edit
+                        </button>
+                        {% else %}
+                        <span class="org-not-found">Not found</span>
+                        <button type="button" class="github-org-edit" onclick="showOrgEdit(this)"
+                            title="Set GitHub org">
+                            Set
+                        </button>
+                        {% endif %}
+                    </span>
+                    <span class="github-org-input-container">
+                        <input type="text" class="github-org-input" placeholder="org-name"
+                            value="{{ account.github_org or '' }}">
+                        <button type="button" class="btn-save-org" onclick="saveOrgEdit(this)">Save</button>
+                        <button type="button" class="btn-cancel-org" onclick="cancelOrgEdit(this)">Cancel</button>
+                    </span>
+                </td>
+                <td>
+                    <span class="tier-badge tier-badge-{{ account.current_tier }}">
+                        Tier {{ account.current_tier }} - {{
+                        account.tier_config.name }}
+                    </span>
+                </td>
+                <td class="last-check-cell">
+                    <div class="status-container">
+                        <span class="account-last-scan {% if not account.last_scanned_at %}never-scanned{% endif %}">
+                            {% if account.last_scanned_at %}
+                            <strong class="last-scan-date" data-timestamp="{{ account.last_scanned_at }}">
+                                --
+                            </strong>
+                            {% elif account.scan_status == 'queued' %}
+                            <strong class="last-scan-date status-queued">In Queue</strong>
+                            {% elif account.scan_status == 'processing' %}
+                            <strong class="last-scan-date status-processing">Scanning...</strong>
+                            {% else %}
+                            <strong class="last-scan-date">Never</strong>
+                            {% endif %}
+                        </span>
+                        <span class="next-scan-date" data-next-timestamp="{{ account.next_scan_due or '' }}">
+                            {% if account.next_scan_due %}
+                            --
+                            {% endif %}
+                        </span>
+                    </div>
+                </td>
+                <td class="evidence-cell">
+                    <span class="evidence-text" title="{{ account.evidence_summary or 'No evidence recorded' }}">
+                        {{ account.evidence_summary or 'No evidence recorded' }}
+                    </span>
+                </td>
+                <td class="actions-cell">
+                    {% if account.latest_report_id %}
+                    <button type="button" class="btn-view-report"
+                        onclick="openReport('{{ url_for('view_report', report_id=account.latest_report_id) }}')">
+                        View
+                    </button>
+                    {% endif %}
+                    {% if account.current_tier == 4 %}
+                    <button type="button" class="btn-action-smart" disabled
+                        title="Tier 4 accounts are marked as not found">
+                        Rescan
+                    </button>
+                    {% else %}
+                    <button type="button" class="btn-action-smart" data-company="{{ account.company_name }}"
+                        onclick="triggerRescan(this, '{{ account.company_name }}')">
+                        Rescan
+                    </button>
+                    {% endif %}
+                    <button type="button" class="btn-delete-account" data-company="{{ account.company_name }}"
+                        onclick="removeAccount(this)">
+                        Remove
+                    </button>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+        </table>
+    </div>
+    <!-- Pagination Controls -->
+    <div class="pagination-container" id="pagination-container">
+        <div class="pagination-info" id="pagination-info">
+            Loading...
+        </div>
+        <div class="pagination-controls">
+            <select id="limit-select" class="pagination-limit-select" aria-label="Rows per page">
+                <option value="25">25 rows</option>
+                <option value="50" selected>50 rows</option>
+                <option value="100">100 rows</option>
+                <option value="250">250 rows</option>
+                <option value="10000">All</option>
+            </select>
+            <button type="button" class="pagination-btn" id="prev-page-btn" disabled>
+                Previous
+            </button>
+            <span class="pagination-page-display" id="page-display">
+                Page 1 of 1
+            </span>
+            <button type="button" class="pagination-btn" id="next-page-btn" disabled>
+                Next
+            </button>
         </div>
     </div>
+
     <div class="bulk-command-bar hidden" id="bulk-command-bar">
         <span class="bulk-command-count" id="bulk-selection-count">0 accounts selected</span>
         <div class="bulk-command-actions">
@@ -1862,14 +1976,15 @@
 
     function formatSmartDate(dateString) {
         if (!dateString) return 'Never';
-        // Force UTC parsing if no timezone info is present
-        let date;
-        if (typeof dateString === 'string' && !dateString.includes('Z') && !dateString.includes('+')) {
-            date = new Date(dateString.replace(' ', 'T') + 'Z');
-        } else {
-            date = new Date(dateString);
+        // Server stores timestamps in UTC without 'Z' suffix - add it to parse correctly
+        let normalizedDateString = dateString;
+        if (typeof dateString === 'string') {
+            normalizedDateString = dateString.replace(' ', 'T');
+            if (!normalizedDateString.endsWith('Z') && !normalizedDateString.includes('+') && !normalizedDateString.includes('-', 10)) {
+                normalizedDateString += 'Z';
+            }
         }
-
+        const date = new Date(normalizedDateString);
         if (Number.isNaN(date.getTime())) return 'Never';
 
         const timeZone = 'America/New_York';
@@ -1886,12 +2001,15 @@
 
     function formatNextDate(dateString) {
         if (!dateString) return '';
-        let date;
-        if (typeof dateString === 'string' && !dateString.includes('Z') && !dateString.includes('+')) {
-            date = new Date(dateString.replace(' ', 'T') + 'Z');
-        } else {
-            date = new Date(dateString);
+        // Server stores timestamps in UTC without 'Z' suffix - add it to parse correctly
+        let normalizedDateString = dateString;
+        if (typeof dateString === 'string') {
+            normalizedDateString = dateString.replace(' ', 'T');
+            if (!normalizedDateString.endsWith('Z') && !normalizedDateString.includes('+') && !normalizedDateString.includes('-', 10)) {
+                normalizedDateString += 'Z';
+            }
         }
+        const date = new Date(normalizedDateString);
         if (Number.isNaN(date.getTime())) return '';
 
         const options = { month: 'short', day: 'numeric', timeZone: 'America/New_York' };
@@ -1907,7 +2025,12 @@
 
     function formatShortDate(timestamp) {
         if (!timestamp) return '--';
-        const scanned = new Date(timestamp);
+        // Server stores timestamps in UTC without 'Z' suffix - add it to parse correctly
+        let normalizedTimestamp = timestamp;
+        if (!timestamp.endsWith('Z') && !timestamp.includes('+') && !timestamp.includes('-', 10)) {
+            normalizedTimestamp = timestamp + 'Z';
+        }
+        const scanned = new Date(normalizedTimestamp);
         if (Number.isNaN(scanned.getTime())) return '--';
         const month = scanned.getMonth() + 1;
         const day = scanned.getDate();
@@ -1917,7 +2040,12 @@
 
     function formatRelativeTime(timestamp) {
         if (!timestamp) return '--';
-        const scanned = new Date(timestamp);
+        // Server stores timestamps in UTC without 'Z' suffix - add it to parse correctly
+        let normalizedTimestamp = timestamp;
+        if (!timestamp.endsWith('Z') && !timestamp.includes('+') && !timestamp.includes('-', 10)) {
+            normalizedTimestamp = timestamp + 'Z';
+        }
+        const scanned = new Date(normalizedTimestamp);
         if (Number.isNaN(scanned.getTime())) return '--';
 
         const now = new Date();
@@ -2111,12 +2239,24 @@
 
     function toggleTableDensity() {
         const table = document.querySelector('.accounts-table');
-        const toggleButton = document.getElementById('compact-toggle');
-        if (!table) return;
-        const isCompact = table.classList.toggle('table-compact');
-        if (toggleButton) {
-            toggleButton.setAttribute('aria-pressed', isCompact ? 'true' : 'false');
-        }
+        const toggle = document.getElementById('compact-toggle');
+        if (!table || !toggle) return;
+
+        const isCompact = toggle.checked;
+        table.classList.toggle('table-compact', isCompact);
+        localStorage.setItem('compactMode', isCompact ? 'true' : 'false');
+    }
+
+    function initCompactMode() {
+        const table = document.querySelector('.accounts-table');
+        const toggle = document.getElementById('compact-toggle');
+        if (!table || !toggle) return;
+
+        const savedPref = localStorage.getItem('compactMode');
+        const isCompact = savedPref === null ? true : savedPref === 'true';
+
+        toggle.checked = isCompact;
+        table.classList.toggle('table-compact', isCompact);
     }
 
     async function copyToClipboard(text, btn) {
@@ -2265,13 +2405,262 @@
         }
     }
 
+    // Initialize TIER_CONFIG from server data
+    const TIER_CONFIG = {
+        0: { name: 'Tracking', color: '#808080' },
+        1: { name: 'Thinking', color: '#FFD700' },
+        2: { name: 'Preparing', color: '#28A745' },
+        3: { name: 'Launched', color: '#DC3545' },
+        4: { name: 'Invalid', color: '#404040' }
+    };
+
+    // Pagination state
+    let paginationState = {
+        currentPage: 1,
+        pageSize: 50,
+        totalRecords: 0,
+        totalPages: 1
+    };
+
+    function initializeDataTable() {
+        const accountsTable = document.querySelector('.accounts-table');
+        if (!accountsTable) return;
+
+        // Get initial filters from URL parameters
+        const urlParams = new URLSearchParams(window.location.search);
+        const initialSearch = urlParams.get('q') || '';
+        const initialPage = parseInt(urlParams.get('page')) || 1;
+        const initialLimit = parseInt(urlParams.get('limit')) || 50;
+
+        paginationState.currentPage = initialPage;
+        paginationState.pageSize = initialLimit;
+
+        // Create a custom search input binding
+        const searchInput = document.querySelector('#account-search-input');
+        if (searchInput) {
+            searchInput.value = initialSearch;
+            let searchTimeout;
+            searchInput.addEventListener('input', (e) => {
+                clearTimeout(searchTimeout);
+                searchTimeout = setTimeout(() => {
+                    paginationState.currentPage = 1;
+                    reloadAccountsTable();
+                }, 300);
+            });
+        }
+
+        // Setup pagination controls
+        const limitSelect = document.getElementById('limit-select');
+        const prevBtn = document.getElementById('prev-page-btn');
+        const nextBtn = document.getElementById('next-page-btn');
+
+        if (limitSelect) {
+            limitSelect.value = paginationState.pageSize;
+            limitSelect.addEventListener('change', (e) => {
+                paginationState.pageSize = parseInt(e.target.value);
+                paginationState.currentPage = 1;
+                reloadAccountsTable();
+            });
+        }
+
+        if (prevBtn) {
+            prevBtn.addEventListener('click', () => {
+                if (paginationState.currentPage > 1) {
+                    paginationState.currentPage--;
+                    reloadAccountsTable();
+                }
+            });
+        }
+
+        if (nextBtn) {
+            nextBtn.addEventListener('click', () => {
+                if (paginationState.currentPage < paginationState.totalPages) {
+                    paginationState.currentPage++;
+                    reloadAccountsTable();
+                }
+            });
+        }
+
+        // Load initial data
+        reloadAccountsTable();
+
+        // Setup tier filter buttons
+        const tierButtons = document.querySelectorAll('.tier-filter-btn');
+        tierButtons.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                paginationState.currentPage = 1;
+                const tierId = parseInt(btn.dataset.tierId);
+                toggleTierFilter(tierId);
+            });
+        });
+    }
+
+    function reloadAccountsTable() {
+        const tbody = document.querySelector('#accounts-tbody');
+        const searchInput = document.querySelector('#account-search-input');
+        const urlParams = new URLSearchParams(window.location.search);
+
+        const searchValue = searchInput ? searchInput.value : urlParams.get('q') || '';
+        const tierFilters = urlParams.getAll('tier').map(t => parseInt(t));
+
+        // Calculate start offset
+        const start = (paginationState.currentPage - 1) * paginationState.pageSize;
+
+        // Build query parameters
+        const params = new URLSearchParams();
+        params.set('draw', '1');
+        params.set('start', start.toString());
+        params.set('length', paginationState.pageSize.toString());
+        params.set('search[value]', searchValue);
+
+        tierFilters.forEach(tier => {
+            params.append('tier', tier);
+        });
+
+        // Fetch data from server
+        fetch(`/api/accounts/datatable?${params.toString()}`)
+            .then(response => response.json())
+            .then(data => {
+                paginationState.totalRecords = data.recordsFiltered || data.recordsTotal || 0;
+                paginationState.totalPages = Math.ceil(paginationState.totalRecords / paginationState.pageSize) || 1;
+                renderAccountsTable(data.data);
+                updatePaginationUI();
+            })
+            .catch(error => {
+                console.error('Error loading accounts:', error);
+                tbody.innerHTML = '<tr><td colspan="7">Error loading accounts. Please try again.</td></tr>';
+            });
+    }
+
+    function updatePaginationUI() {
+        const infoEl = document.getElementById('pagination-info');
+        const pageDisplay = document.getElementById('page-display');
+        const prevBtn = document.getElementById('prev-page-btn');
+        const nextBtn = document.getElementById('next-page-btn');
+
+        if (infoEl) {
+            const start = ((paginationState.currentPage - 1) * paginationState.pageSize) + 1;
+            const end = Math.min(paginationState.currentPage * paginationState.pageSize, paginationState.totalRecords);
+            infoEl.textContent = paginationState.totalRecords > 0
+                ? `Showing ${start}-${end} of ${paginationState.totalRecords} accounts`
+                : 'No accounts found';
+        }
+
+        if (pageDisplay) {
+            pageDisplay.textContent = `Page ${paginationState.currentPage} of ${paginationState.totalPages}`;
+        }
+
+        if (prevBtn) {
+            prevBtn.disabled = paginationState.currentPage <= 1;
+        }
+
+        if (nextBtn) {
+            nextBtn.disabled = paginationState.currentPage >= paginationState.totalPages;
+        }
+    }
+
+    function renderAccountsTable(accounts) {
+        const tbody = document.querySelector('#accounts-tbody');
+
+        if (!accounts || accounts.length === 0) {
+            tbody.innerHTML = '<tr class="table-empty-row"><td colspan="7">No accounts match your filters.</td></tr>';
+            return;
+        }
+
+        const rows = accounts.map(account => {
+            const companyLink = account.latest_report_id
+                ? `<a href="/report/${account.latest_report_id}">${escapeHtml(account.company_name)}</a>`
+                : escapeHtml(account.company_name);
+
+            const githubOrgLink = account.github_org
+                ? `<a href="https://github.com/${escapeHtml(account.github_org)}" target="_blank" rel="noopener" class="github-org-link" title="View on GitHub">
+                    <svg viewBox="0 0 16 16" fill="currentColor">
+                        <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" />
+                    </svg>
+                    @${escapeHtml(account.github_org)}
+                </a>
+                <button type="button" class="github-org-edit" onclick="showOrgEdit(this)" title="Edit GitHub org">Edit</button>`
+                : `<span class="org-not-found">Not found</span>
+                   <button type="button" class="github-org-edit" onclick="showOrgEdit(this)" title="Set GitHub org">Set</button>`;
+
+            const tierConfig = TIER_CONFIG[account.current_tier] || TIER_CONFIG[0];
+            const lastScannedFormatted = account.last_scanned_at ? formatSmartDate(account.last_scanned_at) : 'Never';
+
+            let actionsHtml = '';
+            if (account.latest_report_id) {
+                actionsHtml += `<button type="button" class="btn-view-report" onclick="openReport('/report/${account.latest_report_id}')">View</button>`;
+            }
+            actionsHtml += `<button type="button" class="btn-rescan" onclick="rescanAccount(${account.id})">Rescan</button>`;
+            actionsHtml += `<button type="button" class="btn-delete-account" onclick="deleteAccount(${account.id})">Remove</button>`;
+
+            return `
+                <tr id="row-${account.id}" data-company="${escapeHtml(account.company_name)}" data-account-id="${account.id}" data-tier="${account.current_tier}" data-status="idle">
+                    <td class="select-col">
+                        <input type="checkbox" class="select-account-checkbox row-select" data-account-id="${account.id}" aria-label="Select ${escapeHtml(account.company_name)}">
+                    </td>
+                    <td class="company-cell">
+                        <span class="company-cell-content">
+                            ${companyLink}
+                            <button type="button" class="btn-copy-company" title="Copy company name" data-company="${escapeHtml(account.company_name)}" onclick="copyToClipboard(this.dataset.company, this)">
+                                <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                                    <path d="M16 1H6c-1.1 0-2 .9-2 2v12h2V3h10V1zm3 4H10c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h9c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H10V7h9v14z" />
+                                </svg>
+                            </button>
+                        </span>
+                    </td>
+                    <td class="github-org-cell" data-company="${escapeHtml(account.company_name)}" ondblclick="editOrg(this)" data-org="${escapeHtml(account.github_org || '')}">
+                        <span class="org-display">
+                            ${githubOrgLink}
+                        </span>
+                        <span class="github-org-input-container">
+                            <input type="text" class="github-org-input" placeholder="org-name" value="${escapeHtml(account.github_org || '')}">
+                            <button type="button" class="btn-save-org" onclick="saveOrgEdit(this)">Save</button>
+                            <button type="button" class="btn-cancel-org" onclick="cancelOrgEdit(this)">Cancel</button>
+                        </span>
+                    </td>
+                    <td>
+                        <span class="tier-badge tier-badge-${account.current_tier}">Tier ${account.current_tier} - ${escapeHtml(tierConfig.name)}</span>
+                    </td>
+                    <td class="last-check-cell">
+                        <div class="status-container">
+                            <span class="account-last-scan" data-timestamp="${account.last_scanned_at || ''}">
+                                <strong class="last-scan-date">${lastScannedFormatted}</strong>
+                            </span>
+                        </div>
+                    </td>
+                    <td class="evidence-cell">
+                        <span class="evidence-text" title="${escapeHtml(account.evidence_summary || 'No evidence recorded')}">${escapeHtml(account.evidence_summary || 'No evidence recorded')}</span>
+                    </td>
+                    <td class="actions-cell">
+                        ${actionsHtml}
+                    </td>
+                </tr>
+            `;
+        }).join('');
+
+        tbody.innerHTML = rows;
+        initializeBulkSelection();
+    }
+
+    function escapeHtml(text) {
+        if (!text) return '';
+        const map = {
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#039;'
+        };
+        return text.replace(/[&<>"']/g, m => map[m]);
+    }
+
     // Initialize on page load
     document.addEventListener('DOMContentLoaded', () => {
         initializeUI();
+        initCompactMode();
+        initializeDataTable();
         updateDashboardStats();
-        document.querySelectorAll('.accounts-table th.sortable').forEach(th => {
-            th.addEventListener('click', () => sortTableBy(th.dataset.sortKey));
-        });
     });
 
     setInterval(updateDashboardStats, 8000);
@@ -2361,7 +2750,7 @@
         const selectedRows = getSelectedRows();
         if (selectedRows.length === 0) return;
 
-        const header = ['Company', 'GitHub Org', 'Tier', 'Last Scanned', 'Evidence'];
+        const header = ['Company', 'GitHub Org', 'Tier', 'Last Scanned', 'Evidence Summary'];
         const csvRows = [header];
 
         selectedRows.forEach(row => {
@@ -3118,7 +3507,7 @@
                         const elapsedClass = getQueueItemElapsedClass(elapsed);
                         const isStuck = elapsed >= TIMEOUT_DANGER;
                         const hasReport = account.latest_report_id;
-                        const reportUrl = hasReport ? `/reports/${account.latest_report_id}` : '#';
+                        const reportUrl = hasReport ? `/report/${account.latest_report_id}` : '#';
 
                         return `
                             <div class="queue-item">
@@ -3155,7 +3544,7 @@
                 } else {
                     queuedList.innerHTML = queuedAccounts.map((account, idx) => {
                         const hasReport = account.latest_report_id;
-                        const reportUrl = hasReport ? `/reports/${account.latest_report_id}` : '#';
+                        const reportUrl = hasReport ? `/report/${account.latest_report_id}` : '#';
 
                         return `
                             <div class="queue-item">

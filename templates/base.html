@@ -10,7 +10,7 @@
 <body>
     <nav class="navbar">
         <div class="nav-container">
-            <a href="{{ url_for('index') }}" class="nav-brand">
+            <a href="{{ url_for('accounts') }}" class="nav-brand">
                 <svg class="brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <circle cx="11" cy="11" r="7"></circle>
@@ -19,9 +19,8 @@
                 Lead Machine
             </a>
             <div class="nav-links">
-                <a href="{{ url_for('index') }}" class="{% if request.endpoint == 'index' %}active{% endif %}">Search</a>
-                <a href="{{ url_for('grow') }}" class="{% if request.endpoint == 'grow' %}active{% endif %}">Grow</a>
                 <a href="{{ url_for('accounts') }}" class="{% if request.endpoint == 'accounts' %}active{% endif %}">Accounts</a>
+                <a href="{{ url_for('grow') }}" class="{% if request.endpoint == 'grow' %}active{% endif %}">Grow</a>
                 <a href="{{ url_for('history') }}" class="{% if request.endpoint == 'history' %}active{% endif %}">History</a>
             </div>
         </div>

@@ -18,7 +18,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Generator, Optional, List, Dict
 from config import Config
-from .discovery import get_github_headers, discover_organization, get_organization_repos
+from .discovery import get_github_headers, discover_organization, get_organization_repos, _get_org_details
 from database import increment_daily_stat
 from utils import make_github_request
 
@@ -54,7 +54,32 @@ def _format_request_exception(error: requests.RequestException) -> str:
     return f"Error: {status_code} {reason}"
 
 
-def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[object] = None) -> Generator[str, None, None]:
+def _is_open_protocol_project(org_description: Optional[str]) -> Optional[str]:
+    """
+    Check if an organization description matches open protocol/decentralized project patterns.
+
+    These are NOT commercial companies with buying intent - they're community-driven
+    open source projects, blockchain protocols, DAOs, etc.
+
+    Args:
+        org_description: The GitHub organization's description field
+
+    Returns:
+        The matched disqualifier pattern if found, None otherwise
+    """
+    if not org_description:
+        return None
+
+    description_lower = org_description.lower()
+
+    for pattern in Config.OPEN_PROTOCOL_DISQUALIFIERS:
+        if pattern.lower() in description_lower:
+            return pattern
+
+    return None
+
+
+def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[object] = None, github_org: Optional[str] = None) -> Generator[str, None, None]:
     """
     Perform a 3-Signal Intent Scan of a company's GitHub presence.
 
@@ -66,6 +91,9 @@ def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[obje
     Args:
         company_name: The company name to scan.
         last_scanned_timestamp: Optional timestamp of the last scan to skip unchanged repos.
+        github_org: Optional pre-linked GitHub organization login. If provided, skips discovery
+                    and uses this org directly. This is critical for accounts that have been
+                    manually linked to a GitHub org that may not match the company name exactly.
 
     Yields:
         SSE-formatted strings for streaming response.
@@ -77,23 +105,36 @@ def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[obje
     yield _sse_log("Target: Pre-launch internationalization signals")
     yield _sse_log("")
 
-    # Phase 1: Discover Organization
+    # Phase 1: Discover Organization (or use pre-linked org)
     yield _sse_log("PHASE 1: Organization Discovery")
     yield _sse_log("-" * 40)
 
     org_data = None
-    org_generator = discover_organization(company_name)
 
-    try:
-        while True:
-            try:
-                message = next(org_generator)
-                yield _sse_log(message)
-            except StopIteration as e:
-                org_data = e.value
-                break
-    except Exception as e:
-        yield _sse_log(f"Error during discovery: {str(e)}")
+    # If a github_org is pre-linked, use it directly instead of discovery
+    if github_org:
+        yield _sse_log(f"Using pre-linked GitHub organization: @{github_org}")
+        org_data = _get_org_details(github_org)
+        if org_data:
+            yield _sse_log(f"Organization found: @{github_org}")
+        else:
+            yield _sse_log(f"Pre-linked org @{github_org} not found, falling back to discovery...")
+            # Fall through to discovery below
+
+    # Run discovery if no pre-linked org or pre-linked org wasn't found
+    if not org_data:
+        org_generator = discover_organization(company_name)
+
+        try:
+            while True:
+                try:
+                    message = next(org_generator)
+                    yield _sse_log(message)
+                except StopIteration as e:
+                    org_data = e.value
+                    break
+        except Exception as e:
+            yield _sse_log(f"Error during discovery: {str(e)}")
 
     if not org_data:
         yield _sse_error("Could not find GitHub organization. Scan aborted.")
@@ -101,9 +142,21 @@ def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[obje
 
     org_login = org_data.get('login')
     org_name = org_data.get('name') or org_login
+    org_description = org_data.get('description')
 
     yield _sse_log(f"Organization confirmed: {org_name} (@{org_login})")
     yield _sse_log(f"  Public repos: {org_data.get('public_repos', 'N/A')}")
+
+    # Check for open protocol / decentralized project disqualifiers
+    # These are NOT commercial companies with buying intent
+    matched_pattern = _is_open_protocol_project(org_description)
+    if matched_pattern:
+        yield _sse_log("")
+        yield _sse_log("⚠️ OPEN PROTOCOL PROJECT DETECTED")
+        yield _sse_log(f"  Description: {org_description}")
+        yield _sse_log(f"  Matched pattern: '{matched_pattern}'")
+        yield _sse_error(f"DISQUALIFIED: Open protocol/decentralized project - not a commercial buyer. Pattern matched: '{matched_pattern}'")
+        return
 
     # Phase 2: Fetch Repositories
     yield _sse_log("")
@@ -183,7 +236,7 @@ def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[obje
         'scan_timestamp': datetime.now().isoformat(),
         'total_stars': sum(r.get('stargazers_count', 0) for r in repos_to_scan),
 
-        # 3-Signal Intent Results
+        # 3-Signal Intent Results (plus documentation intent)
         'signals': [],  # List of structured signal objects
         'signal_summary': {
             'rfc_discussion': {
@@ -197,6 +250,11 @@ def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[obje
             },
             'ghost_branch': {
                 'count': 0,
+                'hits': []
+            },
+            'documentation_intent': {
+                'count': 0,
+                'high_priority_count': 0,
                 'hits': []
             }
         },
@@ -300,6 +358,31 @@ def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[obje
     # Update dep_count to include framework config signals
     dep_count = scan_results['signal_summary']['dependency_injection']['count']
 
+    # Phase 4d: Documentation Intent Scan (Thinking Phase)
+    yield _sse_log("")
+    yield _sse_log("PHASE 4d: Documentation Intent Scan")
+    yield _sse_log("-" * 40)
+    yield _sse_log("Checking documentation for i18n intent signals...")
+
+    for idx, repo in enumerate(repos_to_scan[:5], 1):  # Top 5 repos
+        repo_name = repo.get('name')
+        yield _sse_log(f"  [{idx}/5] Scanning documentation in: {repo_name}")
+
+        for log_msg, signal in _scan_documentation_files(org_login, repo_name, company_name):
+            if log_msg:
+                yield _sse_log(f"    {log_msg}")
+            if signal:
+                scan_results['signals'].append(signal)
+                scan_results['signal_summary']['documentation_intent']['hits'].append(signal)
+                scan_results['signal_summary']['documentation_intent']['count'] += 1
+                if signal.get('priority') == 'HIGH':
+                    scan_results['signal_summary']['documentation_intent']['high_priority_count'] += 1
+                yield _sse_signal(signal)
+
+    doc_count = scan_results['signal_summary']['documentation_intent']['count']
+    doc_high = scan_results['signal_summary']['documentation_intent']['high_priority_count']
+    yield _sse_log(f"Documentation Intent scan complete: {doc_count} signals ({doc_high} HIGH priority)")
+
     # Phase 5: Signal 3 - Ghost Branch Scan (Active Phase)
     yield _sse_log("")
     yield _sse_log("PHASE 5: Ghost Branch Scan (Active Phase)")
@@ -352,6 +435,7 @@ def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[obje
     yield _sse_log(f"Total Signals Detected: {total_signals}")
     yield _sse_log(f"   • RFC & Discussion: {rfc_count} ({high_priority} HIGH)")
     yield _sse_log(f"   • Dependency Injection: {dep_count}")
+    yield _sse_log(f"   • Documentation Intent: {doc_count} ({doc_high} HIGH)")
     yield _sse_log(f"   • Ghost Branches: {ghost_count}")
     yield _sse_log(f"Intent Score: {scan_results['intent_score']}/100")
     yield _sse_log(f"Scan Duration: {duration:.1f}s")
@@ -588,7 +672,7 @@ def _scan_dependency_injection(org: str, repo: str, company: str) -> Generator[t
     # ============================================================
     # Using Search API instead of recursive tree fetching to handle "Mega-Corp" repos efficiently
     for dep_file in Config.DEPENDENCY_INJECTION_FILES:
-        yield (f"Searching for {dep_file}...", None)
+        yield ("Scanning dependencies...", None)
 
         # Query: q=repo:{org}/{repo} filename:{dep_filename}
         query = f"repo:{org}/{repo} filename:{dep_file}"
@@ -997,13 +1081,25 @@ def _scan_framework_configs(org: str, repo: str, company: str) -> Generator[tupl
         Tuples of (log_message, signal_object)
     """
     # ============================================================
-    # NEGATIVE CHECK: Verify NO locale folders exist
+    # NEGATIVE CHECK: Verify NO locale folders exist (with source-only exception)
     # ============================================================
-    locale_exists = _check_locale_folders_exist(org, repo)
+    locale_exists, found_folders, source_only, folder_contents = _check_locale_folders_exist_detailed(org, repo)
 
     if locale_exists:
-        yield ("Framework config scan skipped - locale folders already exist", None)
-        return
+        if source_only:
+            # SOURCE-ONLY EXCEPTION: Folder exists but ONLY contains source files (en.json, etc.)
+            # This means infrastructure is ready, but no translations yet - still a valid lead!
+            all_files = []
+            for folder, files in folder_contents.items():
+                all_files.extend(files)
+            files_str = ', '.join(all_files) if all_files else 'empty'
+            folders_str = ', '.join(found_folders)
+            yield (f"Found locale folder ({folders_str}), but it appears to be source-only ({files_str}) - marking as PREPARING, not LAUNCHED", None)
+            # Continue to positive check - don't return!
+        else:
+            # Locale folders with actual translations exist - skip framework config scan
+            yield (f"Framework config scan skipped - locale folders already exist ({', '.join(found_folders)})", None)
+            return
 
     # ============================================================
     # POSITIVE CHECK: Scan framework config files for i18n patterns
@@ -1067,6 +1163,117 @@ def _scan_framework_configs(org: str, repo: str, company: str) -> Generator[tupl
 
         except requests.RequestException:
             continue
+
+
+def _scan_documentation_files(org: str, repo: str, company: str) -> Generator[tuple, None, None]:
+    """
+    Signal 4: Documentation Intent Scan (Thinking Phase)
+
+    Target: CHANGELOG.md, CONTRIBUTING.md, README.md, ROADMAP.md
+    Logic: Flag if i18n keywords are found NEAR context words indicating
+           future or in-progress work (e.g., "beta", "roadmap", "upcoming")
+
+    This catches companies mentioning i18n in their documentation before
+    the code is fully live - an early intent signal.
+
+    Gap Requirement: Also checks for "launched" indicators to avoid
+    false positives on companies that already have i18n.
+
+    Yields:
+        Tuples of (log_message, signal_object)
+    """
+    for doc_file in Config.DOCUMENTATION_FILES:
+        try:
+            url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}/contents/{doc_file}"
+            response = make_github_request(url, timeout=15)
+
+            if response.status_code != 200:
+                continue
+
+            file_data = response.json()
+            content_b64 = file_data.get('content', '')
+            file_url = file_data.get('html_url')
+
+            if not content_b64:
+                continue
+
+            try:
+                content = base64.b64decode(content_b64).decode('utf-8')
+            except Exception:
+                continue
+
+            content_lower = content.lower()
+
+            # Determine file priority based on filename
+            file_basename = doc_file.lower().replace('.md', '')
+            file_priority = Config.DOCUMENTATION_FILE_WEIGHTS.get(file_basename, 'MEDIUM')
+
+            # Check for "already launched" indicators first (negative check)
+            has_launched_indicator = False
+            for indicator in Config.DOCUMENTATION_LAUNCHED_INDICATORS:
+                if indicator.lower() in content_lower:
+                    has_launched_indicator = True
+                    break
+
+            if has_launched_indicator:
+                yield (f"Skipping {doc_file} - contains launched indicators", None)
+                continue
+
+            # Search for intent keywords
+            for keyword in Config.DOCUMENTATION_INTENT_KEYWORDS:
+                keyword_lower = keyword.lower()
+                keyword_pos = content_lower.find(keyword_lower)
+
+                while keyword_pos != -1:
+                    # Extract context window around the keyword
+                    window_start = max(0, keyword_pos - Config.DOCUMENTATION_PROXIMITY_CHARS)
+                    window_end = min(len(content_lower), keyword_pos + len(keyword_lower) + Config.DOCUMENTATION_PROXIMITY_CHARS)
+                    context_window = content_lower[window_start:window_end]
+
+                    # Check if any context keyword is within the proximity window
+                    matched_context = None
+                    for context_kw in Config.DOCUMENTATION_CONTEXT_KEYWORDS:
+                        if context_kw.lower() in context_window:
+                            matched_context = context_kw
+                            break
+
+                    if matched_context:
+                        # Extract the actual line containing the keyword for evidence
+                        line_start = content.rfind('\n', 0, keyword_pos) + 1
+                        line_end = content.find('\n', keyword_pos)
+                        if line_end == -1:
+                            line_end = len(content)
+                        matched_line = content[line_start:line_end].strip()
+
+                        # Truncate long lines for readability
+                        if len(matched_line) > 120:
+                            matched_line = matched_line[:117] + '...'
+
+                        signal = {
+                            'Company': company,
+                            'Signal': 'Documentation Intent',
+                            'Evidence': f"Found '{keyword}' near '{matched_context}' in {doc_file}: \"{matched_line}\"",
+                            'Link': file_url,
+                            'priority': file_priority,
+                            'type': 'documentation_intent',
+                            'repo': repo,
+                            'file': doc_file,
+                            'keyword_matched': keyword,
+                            'context_matched': matched_context,
+                            'matched_line': matched_line,
+                            'goldilocks_status': 'thinking',
+                        }
+
+                        yield (f"DOC INTENT ({file_priority}): '{keyword}' + '{matched_context}' in {doc_file}", signal)
+                        # Only one signal per keyword per file to avoid spam
+                        break
+
+                    # Search for next occurrence of the keyword
+                    keyword_pos = content_lower.find(keyword_lower, keyword_pos + 1)
+
+        except requests.RequestException as e:
+            error_detail = _format_request_exception(e)
+            yield (f"Error scanning {doc_file}: {error_detail}", None)
 
 
 def _strip_comments(content: str) -> str:
@@ -1137,7 +1344,22 @@ def _check_locale_folders_exist_detailed(org: str, repo: str) -> tuple:
         '__tests__', '__mocks__', 'spec', 'e2e', 'cypress',
         'examples', 'example', 'demo', 'demos', 'sample', 'samples',
         'docs', 'documentation', 'site', 'website', 'temp', 'tmp',
-        'dist', 'build', 'out'
+        'dist', 'build', 'out', 'deps', 'third_party', 'third-party',
+        'external', 'lib', 'libs', 'plugins'
+    ]
+    
+    # Specific path patterns that are NOT i18n locale folders (false positives)
+    # These are editor/syntax files, library internals, etc.
+    # NOTE: Avoid overly broad patterns like 'languages/' which could match legitimate i18n
+    IGNORED_PATH_PATTERNS = [
+        'monaco/languages',      # Monaco editor syntax highlighting
+        'monaco-editor/esm',     # Monaco editor package internal
+        'codemirror/lang',       # CodeMirror language modes
+        'ace/lib/ace/mode',      # Ace editor language modes
+        'prismjs/components',    # Prism syntax highlighting
+        'highlight.js/lib/languages',  # Highlight.js syntax (specific path)
+        'syntaxes/',             # TextMate/VS Code syntax grammars
+        'grammars/',             # Generic grammar definitions
     ]
 
     def _is_in_ignored_directory(path: str) -> bool:
@@ -1149,15 +1371,33 @@ def _check_locale_folders_exist_detailed(org: str, repo: str) -> tuple:
         for part in path_parts[:-1]:  # Check all parent directories
             if part in IGNORED_PARENT_DIRS:
                 return True
-                
-        # 2. Check for third-party library patterns in monorepos (e.g., packages/@uppy/locales)
-        # Often these are tagged with '@' for scoped packages or are in a 'vendor' like structure
-        for i, part in enumerate(path_parts):
-            if part.startswith('@') and i > 0 and path_parts[i-1] == 'packages':
-                # This is likely a third-party or scoped package in a monorepo
-                # We should be cautious, but if the folder is 'locales' inside a scoped package,
-                # it's usually the library's own translations, not the main app's.
+        
+        # 2. Check for specific false-positive path patterns (editor syntax files, etc.)
+        for pattern in IGNORED_PATH_PATTERNS:
+            if pattern in path_lower:
                 return True
+                
+        # 3. Check for third-party library patterns in monorepos
+        for i, part in enumerate(path_parts):
+            # Scoped npm packages (e.g., packages/@uppy/locales, packages/@company/lib)
+            if part.startswith('@'):
+                return True
+            
+            # Common monorepo third-party package patterns
+            if part == 'packages' and i < len(path_parts) - 2:
+                # packages/some-library/locales - likely a library's locales, not the main app
+                next_part = path_parts[i + 1]
+                # Allow if it looks like a main app package (common names: app, web, frontend, main, core)
+                main_app_names = ['app', 'web', 'frontend', 'main', 'core', 'client', 'server', 'api']
+                if next_part not in main_app_names:
+                    return True
+        
+        # 4. Skip programming language mode folders (for editors) - but NOT generic 'languages'
+        #    since 'languages' is a legitimate i18n folder in WordPress, Drupal, etc.
+        folder_name = path_parts[-1] if path_parts else ''
+        programming_mode_folders = ['modes', 'syntaxes', 'grammars']  # Exclude 'languages' - it's often legitimate i18n
+        if folder_name in programming_mode_folders:
+            return True
 
         return False
 
@@ -1171,31 +1411,65 @@ def _check_locale_folders_exist_detailed(org: str, repo: str) -> tuple:
             url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}/contents/{path}"
             response = make_github_request(url, timeout=10)
             if response.status_code == 200:
-                found_folders.append(path)
-
-                # Parse the folder contents
+                # Parse the folder contents (files AND directories)
                 contents = response.json()
-                files_in_folder = []
+                entries_in_folder = []
+                entry_types = []
 
                 if isinstance(contents, list):
                     for item in contents:
                         item_name = item.get('name', '')
-                        item_type = item.get('type', '')
+                        item_type = item.get('type', '')  # 'file' or 'dir'
+                        entries_in_folder.append(item_name)
+                        entry_types.append(item_type)
 
-                        # Only consider files, not subdirectories
-                        if item_type == 'file':
-                            files_in_folder.append(item_name)
+                # CRITICAL: Validate folder contains actual translation files or locale subdirs
+                # Skip folders with code files that don't look like translations
+                if not _looks_like_translation_folder(entries_in_folder, entry_types):
+                    continue
+                
+                # Separate files and locale subdirectories
+                files_in_folder = [e for e, t in zip(entries_in_folder, entry_types) if t == 'file']
+                locale_subdirs = [e for e, t in zip(entries_in_folder, entry_types) 
+                                  if t == 'dir' and _is_locale_name(e)]
 
+                found_folders.append(path)
                 folder_contents[path] = files_in_folder
 
                 # Check if this folder contains ONLY source locale files
-                if files_in_folder:
+                # For folders with locale subdirs, fetch their contents to verify translations
+                if locale_subdirs:
+                    # Aggregate files from locale subdirs to check for actual translations
+                    source_locales = ['en', 'en-us', 'en-gb', 'en_us', 'en_gb', 'base', 'source']
+                    aggregated_files = list(files_in_folder)  # Start with top-level files
+                    
+                    for subdir in locale_subdirs:
+                        try:
+                            subdir_url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}/contents/{path}/{subdir}"
+                            subdir_response = make_github_request(subdir_url, timeout=10)
+                            if subdir_response.status_code == 200:
+                                subdir_contents = subdir_response.json()
+                                if isinstance(subdir_contents, list):
+                                    # Add files with locale prefix preserved
+                                    for item in subdir_contents:
+                                        if item.get('type') == 'file':
+                                            file_name = item.get('name', '')
+                                            # Always preserve locale prefix for proper evaluation
+                                            aggregated_files.append(f"{subdir}/{file_name}")
+                        except requests.RequestException:
+                            pass
+                    
+                    # Check if aggregated files contain non-source translations
+                    folder_contents[path] = aggregated_files
+                    if aggregated_files:
+                        folder_is_source_only = _is_source_only_folder_with_subdirs(aggregated_files, source_locales)
+                        if not folder_is_source_only:
+                            all_source_only = False
+                elif files_in_folder:
                     folder_is_source_only = _is_source_only_folder(files_in_folder)
                     if not folder_is_source_only:
                         all_source_only = False
-                else:
-                    # Empty folder - treat as source-only (infrastructure ready)
-                    pass
+                # else: Empty folder - treat as source-only (infrastructure ready)
 
         except requests.RequestException:
             continue
@@ -1233,28 +1507,64 @@ def _check_locale_folders_exist_detailed(org: str, repo: str) -> tuple:
                 if _is_in_ignored_directory(entry_path):
                     continue
 
-                # Found a valid locale folder in subdirectory
-                found_folders.append(entry_path)
-
-                # Fetch folder contents to check if source-only
+                # Fetch folder contents to validate it's actually a translation folder
                 try:
                     folder_url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}/contents/{entry_path}"
                     folder_response = make_github_request(folder_url, timeout=10)
 
                     if folder_response.status_code == 200:
                         contents = folder_response.json()
-                        files_in_folder = []
+                        entries_in_folder = []
+                        entry_types_list = []
 
                         if isinstance(contents, list):
                             for item in contents:
                                 item_name = item.get('name', '')
-                                item_type = item.get('type', '')
-                                if item_type == 'file':
-                                    files_in_folder.append(item_name)
+                                item_type = item.get('type', '')  # 'file' or 'dir'
+                                entries_in_folder.append(item_name)
+                                entry_types_list.append(item_type)
 
+                        # CRITICAL: Validate folder contains actual translation files or locale subdirs
+                        # Skip folders with code files that don't look like translations
+                        if not _looks_like_translation_folder(entries_in_folder, entry_types_list):
+                            continue
+
+                        # Separate files and locale subdirectories
+                        files_in_folder = [e for e, t in zip(entries_in_folder, entry_types_list) if t == 'file']
+                        locale_subdirs = [e for e, t in zip(entries_in_folder, entry_types_list) 
+                                          if t == 'dir' and _is_locale_name(e)]
+
+                        # Valid locale folder with translation files
+                        found_folders.append(entry_path)
                         folder_contents[entry_path] = files_in_folder
 
-                        if files_in_folder:
+                        # Check if this folder contains ONLY source locale files
+                        # For folders with locale subdirs, fetch their contents to verify translations
+                        if locale_subdirs:
+                            source_locales = ['en', 'en-us', 'en-gb', 'en_us', 'en_gb', 'base', 'source']
+                            aggregated_files = list(files_in_folder)
+                            
+                            for subdir in locale_subdirs:
+                                try:
+                                    subdir_url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}/contents/{entry_path}/{subdir}"
+                                    subdir_response = make_github_request(subdir_url, timeout=10)
+                                    if subdir_response.status_code == 200:
+                                        subdir_contents = subdir_response.json()
+                                        if isinstance(subdir_contents, list):
+                                            for item in subdir_contents:
+                                                if item.get('type') == 'file':
+                                                    file_name = item.get('name', '')
+                                                    # Always preserve locale prefix for proper evaluation
+                                                    aggregated_files.append(f"{subdir}/{file_name}")
+                                except requests.RequestException:
+                                    pass
+                            
+                            folder_contents[entry_path] = aggregated_files
+                            if aggregated_files:
+                                folder_is_source_only = _is_source_only_folder_with_subdirs(aggregated_files, source_locales)
+                                if not folder_is_source_only:
+                                    all_source_only = False
+                        elif files_in_folder:
                             folder_is_source_only = _is_source_only_folder(files_in_folder)
                             if not folder_is_source_only:
                                 all_source_only = False
@@ -1271,6 +1581,133 @@ def _check_locale_folders_exist_detailed(org: str, repo: str) -> tuple:
     source_only = all_source_only if folders_exist else False
 
     return (folders_exist, found_folders, source_only, folder_contents)
+
+
+def _looks_like_translation_folder(files_and_dirs: list, entry_types: list = None) -> bool:
+    """
+    Check if folder contents look like actual translation files (not code/syntax files).
+    
+    Translation files typically have patterns like:
+    - Locale-named JSON/YAML: en.json, fr.json, de-DE.json, zh_CN.yml
+    - Standard translation formats: messages.po, translations.xliff, strings.xml
+    - gettext files: *.pot, *.po, *.mo
+    - Locale-named SUBDIRECTORIES: en/, fr/, de-DE/, zh_CN/ (common in React, Rails, etc.)
+    
+    Non-translation "messages" folders typically contain:
+    - JavaScript/TypeScript files: MessageHandler.js, ChatMessage.tsx
+    - Generic code files without locale patterns
+    
+    Args:
+        files_and_dirs: List of filenames/directory names in the folder
+        entry_types: Optional list of types ('file' or 'dir') matching files_and_dirs
+    
+    Returns:
+        True if the folder looks like it contains actual translations
+    """
+    if not files_and_dirs:
+        return False  # Empty folder is not a translation folder
+    
+    # Known translation file extensions
+    TRANSLATION_EXTENSIONS = ['.po', '.pot', '.mo', '.xliff', '.xlf', '.arb', '.properties']
+    
+    # Locale-pattern regex: matches files/dirs like en.json, fr-FR.json, zh_CN.yml, or just 'en', 'fr-FR'
+    locale_pattern = re.compile(r'^[a-z]{2}([_-][a-z]{2,4})?(\.[a-z]+)?$', re.IGNORECASE)
+    
+    translation_indicator_count = 0
+    total_relevant_entries = 0
+    
+    for i, entry_name in enumerate(files_and_dirs):
+        entry_name_lower = entry_name.lower()
+        entry_type = entry_types[i] if entry_types and i < len(entry_types) else None
+        
+        # Skip obvious non-translation entries
+        if entry_name_lower.startswith('.') or entry_name_lower == 'readme.md':
+            continue
+        
+        # Handle directories (locale-named subdirs like 'en/', 'fr-FR/')
+        if entry_type == 'dir':
+            total_relevant_entries += 1
+            # Check if directory name matches locale pattern (e.g., 'en', 'fr', 'de-DE', 'zh_CN')
+            if locale_pattern.match(entry_name_lower):
+                translation_indicator_count += 1
+            continue
+            
+        # Check for known translation extensions (files only)
+        for ext in TRANSLATION_EXTENSIONS:
+            if entry_name_lower.endswith(ext):
+                translation_indicator_count += 1
+                total_relevant_entries += 1
+                break
+        else:
+            # Check if it's a JSON/YAML/JS file with locale-like name
+            if entry_name_lower.endswith(('.json', '.yml', '.yaml')):
+                total_relevant_entries += 1
+                # Check if filename matches locale pattern (e.g., en.json, fr-CA.json)
+                if locale_pattern.match(entry_name_lower):
+                    translation_indicator_count += 1
+                # Also check for common translation file names
+                elif any(name in entry_name_lower for name in ['translation', 'message', 'string', 'locale']):
+                    translation_indicator_count += 1
+            elif entry_name_lower.endswith(('.js', '.ts', '.jsx', '.tsx')):
+                # JS/TS files - only count if they match locale patterns
+                total_relevant_entries += 1
+                if locale_pattern.match(entry_name_lower):
+                    translation_indicator_count += 1
+    
+    # Folder looks like translations if at least one translation indicator exists
+    # and a reasonable portion of contents are translation-like
+    if total_relevant_entries == 0:
+        return False
+    
+    return translation_indicator_count >= 1 and (translation_indicator_count / total_relevant_entries) >= 0.3
+
+
+def _is_locale_name(name: str) -> bool:
+    """
+    Check if a directory name looks like a locale identifier.
+    
+    Examples: en, fr, de-DE, zh_CN, pt-BR
+    """
+    locale_pattern = re.compile(r'^[a-z]{2}([_-][a-z]{2,4})?$', re.IGNORECASE)
+    return bool(locale_pattern.match(name))
+
+
+def _is_source_only_folder_with_subdirs(files: list, source_locales: list) -> bool:
+    """
+    Check if aggregated files from locale subdirs contain ONLY source language files.
+    
+    Files are in format: "locale/filename" where locale is the subdir name.
+    If any file has a non-source locale prefix, folder has translations.
+    
+    The key insight: the locale SUBDIR NAME determines if it's source or not.
+    The actual filename inside the subdir doesn't matter for classification.
+    
+    Examples:
+    - ["en/messages.json"] -> True (source-only: "en" is source locale)
+    - ["en/messages.json", "fr/messages.json"] -> False (has "fr" which is not source)
+    - ["en.json", "base.json"] -> True (top-level source files)
+    - ["en.json", "fr.json"] -> False (has "fr" which is not source)
+    """
+    if not files:
+        return True  # Empty = source-only
+    
+    for filename in files:
+        # Check if file is from a locale subdir (has prefix)
+        if '/' in filename:
+            # Has subdir prefix (e.g., "en/messages.json" or "fr/messages.json")
+            # The SUBDIR NAME determines if it's source - not the filename inside
+            locale_prefix = filename.split('/')[0].lower()
+            if locale_prefix not in source_locales:
+                # File from non-source locale (fr, de, etc.) = has translations
+                return False
+            # File from source locale (en, en-us, etc.) is source-only, continue
+        else:
+            # Top-level file - check against known source patterns (en.json, base.json, etc.)
+            if filename.lower() not in Config.SOURCE_LOCALE_PATTERNS:
+                # Not a recognized source file - could be a translation (like fr.json)
+                return False
+    
+    return True
 
 
 def _is_source_only_folder(files: list) -> bool:
@@ -1493,21 +1930,32 @@ def _calculate_intent_score(scan_results: dict) -> int:
         return min(base_score + bonus, Config.GOLDILOCKS_SCORES.get('preparing_max', 100))
 
     # ============================================================
-    # Check for THINKING status
+    # Check for THINKING status (RFC/Discussion OR Documentation Intent)
     # ============================================================
     # This check MUST come before the Mega-Corp heuristic to ensure
-    # valid thinking signals (RFCs/Discussions) take precedence
+    # valid thinking signals (RFCs/Discussions/Documentation) take precedence
     rfc_count = summary.get('rfc_discussion', {}).get('count', 0)
-    if rfc_count > 0:
+    doc_count = summary.get('documentation_intent', {}).get('count', 0)
+
+    if rfc_count > 0 or doc_count > 0:
         scan_results['goldilocks_status'] = 'thinking'
         scan_results['lead_status'] = Config.LEAD_STATUS_LABELS.get('thinking', 'WARM LEAD')
 
-        # Base score for thinking + bonus for HIGH priority discussions
+        # Base score for thinking
         base_score = Config.GOLDILOCKS_SCORES.get('thinking', 40)
-        high_priority_count = summary.get('rfc_discussion', {}).get('high_priority_count', 0)
-        bonus = min(high_priority_count * 10, 20)  # Up to +20 for high priority
 
-        return min(base_score + bonus, 60)  # Cap at 60 for thinking
+        # Bonus for HIGH priority discussions
+        rfc_high_priority = summary.get('rfc_discussion', {}).get('high_priority_count', 0)
+        rfc_bonus = min(rfc_high_priority * 10, 15)  # Up to +15 for RFC high priority
+
+        # Bonus for HIGH priority documentation signals (CHANGELOG, ROADMAP)
+        doc_high_priority = summary.get('documentation_intent', {}).get('high_priority_count', 0)
+        doc_bonus = min(doc_high_priority * 8, 15)  # Up to +15 for doc high priority
+
+        # Combined bonus (cap at +25)
+        total_bonus = min(rfc_bonus + doc_bonus, 25)
+
+        return min(base_score + total_bonus, 65)  # Cap at 65 for thinking
 
     # ============================================================
     # Check for Ghost Branches only (Active experimentation)
