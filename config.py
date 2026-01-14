@@ -212,7 +212,11 @@ class Config:
         # TIER 1: Primary Targets (High-Intent Pre-Launch Signals)
         'babel-plugin-react-intl',   # React string extraction - infrastructure setup
         'react-i18next',             # React i18n framework - preparing for translations
+        'react-intl',                # React i18n framework - core library
+        'i18next',                   # i18n framework core
         'formatjs',                  # ICU message formatting - building the foundation
+        'vue-i18n',                  # Vue i18n framework - core library
+        'next-i18next',              # Next.js i18n wrapper - core library
         'try-pseudo-localization',   # Pseudo-localization for UI layout testing
         'react-pseudo',              # Pseudo-localization for React
         'i18next-pseudo',            # Pseudo-localization for i18next
