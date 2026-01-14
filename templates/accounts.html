@@ -2591,8 +2591,8 @@
             if (account.latest_report_id) {
                 actionsHtml += `<button type="button" class="btn-view-report" onclick="openReport('/report/${account.latest_report_id}')">View</button>`;
             }
-            actionsHtml += `<button type="button" class="btn-rescan" onclick="rescanAccount(${account.id})">Rescan</button>`;
-            actionsHtml += `<button type="button" class="btn-delete-account" onclick="deleteAccount(${account.id})">Remove</button>`;
+            actionsHtml += `<button type="button" class="btn-action-smart" data-company="${escapeHtml(account.company_name)}" onclick="triggerRescan(this, this.dataset.company)">Rescan</button>`;
+            actionsHtml += `<button type="button" class="btn-delete-account" onclick="removeAccount(this)">Remove</button>`;
 
             return `
                 <tr id="row-${account.id}" data-company="${escapeHtml(account.company_name)}" data-account-id="${account.id}" data-tier="${account.current_tier}" data-status="idle">
