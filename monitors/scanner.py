@@ -192,8 +192,8 @@ def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[obje
     if public_repos_count > 200 or total_stars_top_10 > 5000:
         is_mega_corp = True
         yield _sse_log(f"⚠️ MEGA-CORP DETECTED: {org_login} has {public_repos_count} repos and {total_stars_top_10} stars in top 10.")
-        yield _sse_log("Limiting scan to top 15 highest-value repositories to prevent timeout.")
-        repos_to_scan = repos[:15]
+        yield _sse_log("Limiting scan to top 30 highest-value repositories to prevent timeout.")
+        repos_to_scan = repos[:30]
     else:
         repos_to_scan = repos[:Config.MAX_REPOS_TO_SCAN]
 
@@ -786,9 +786,21 @@ def _scan_dependency_injection(org: str, repo: str, company: str, is_fork: bool 
                         found_cms_i18n_libs = []
 
                         # Check for our 4 target SMOKING GUN libraries
+                        # Check for our 4 target SMOKING GUN libraries
                         for lib in Config.SMOKING_GUN_LIBS:
-                            # Match as dependency name (with quotes for JSON)
-                            if f'"{lib}"' in content_lower or f"'{lib}'" in content_lower:
+                            # Context-aware matching:
+                            # strict quotes for JSON/Lockfiles, loose matching for others
+                            is_strict_file = dep_file in ['package.json', 'composer.json', 'package-lock.json']
+                            
+                            found = False
+                            if is_strict_file:
+                                if f'"{lib}"' in content_lower or f"'{lib}'" in content_lower:
+                                    found = True
+                            else:
+                                if lib in content_lower:
+                                    found = True
+                                    
+                            if found:
                                 found_libs.append(lib)
                                 bdr_explanations.append(Config.BDR_TRANSLATIONS.get(lib, f'Found {lib}'))
 

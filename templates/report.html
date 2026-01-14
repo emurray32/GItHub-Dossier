@@ -1158,16 +1158,61 @@
     </div>
     {% endif %}
 
+    <!-- Email Draft (One-Click Cold Email Generator) - PROMINENT POSITION -->
+    {% if report.ai_analysis.email_draft %}
+    <div class="email-draft-section">
+        <div class="email-draft-header">
+            <div style="display: flex; align-items: center; gap: 0.75rem;">
+                <h3 style="margin: 0;">Ready-to-Send Cold Email</h3>
+                <span class="badge badge-primary">Skill Applied: Cold Outreach</span>
+            </div>
+            <button class="copy-email-btn" onclick="copyEmailDraft(this)" id="copyEmailBtn">
+                <span class="copy-icon copy-icon--default" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <rect x="9" y="9" width="13" height="13" rx="2"></rect>
+                        <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"></path>
+                    </svg>
+                </span>
+                <span class="copy-icon copy-icon--success" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <path d="M20 6L9 17l-5-5"></path>
+                    </svg>
+                </span>
+                <span class="btn-text">Copy Email</span>
+            </button>
+        </div>
+        <div class="email-draft-content">
+            <div class="email-edit-hint">Personalized draft following Expert BDR rules.</div>
+            <div class="email-subject">
+                <span class="email-subject-label">Subject Line</span>
+                <input id="emailSubject" class="email-edit-field email-subject-input" type="text"
+                    value="{{ report.ai_analysis.email_draft.subject }}">
+            </div>
+            <div>
+                <span class="email-body-label">Email Body</span>
+                <div class="email-body">
+                    <textarea id="emailBody" class="email-edit-field email-body-textarea"
+                        style="min-height: 200px;">{{ report.ai_analysis.email_draft.body }}</textarea>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
     <!-- BDR Quick Action Box (for Goldilocks Zone) -->
     {% if goldilocks_status == 'preparing' %}
     <div class="bdr-highlight bdr-highlight-critical">
         <div class="bdr-label">BDR Action Required</div>
-        <div class="bdr-text">This company has installed i18n libraries but has ZERO translation files. The infrastructure is ready, waiting for content. CALL TODAY!</div>
+        <div class="bdr-text">This company has installed i18n libraries but has ZERO translation files. The
+            infrastructure is ready, waiting for content. CALL TODAY!</div>
     </div>
     {% elif goldilocks_status == 'launched' %}
     <div class="bdr-highlight bdr-highlight-warning">
         <div class="bdr-label">Low Priority Notice</div>
-        <div class="bdr-text">This company already has translation files in place. They have a working i18n system. Focus on higher-priority leads.</div>
+        <div class="bdr-text">This company already has translation files in place. They have a working i18n system.
+            Focus on higher-priority leads.</div>
     </div>
     {% endif %}
 
@@ -1251,7 +1296,8 @@
             </p>
             <p style="margin: 0; font-size: 0.875rem; color: var(--text-secondary);">
                 {% if goldilocks_status == 'preparing' %}
-                <strong style="color: #166534;">Infrastructure is ready, but no translations exist yet.</strong> This is our ideal customer.
+                <strong style="color: #166534;">Infrastructure is ready, but no translations exist yet.</strong> This is
+                our ideal customer.
                 {% elif goldilocks_status == 'thinking' %}
                 Company is discussing i18n but hasn't started building. Worth nurturing.
                 {% elif goldilocks_status == 'launched' %}
@@ -1265,12 +1311,15 @@
         {% set opp_type = report.ai_analysis.opportunity_type or goldilocks_status or 'unknown' %}
         <p>
             <strong>Opportunity Type:</strong>
-            <span class="maturity-badge maturity-{{ 'mature' if opp_type == 'launched' else 'emerging' if opp_type == 'preparing' else 'developing' }}">
-                {% if opp_type == 'preparing' %}Goldilocks Zone{% elif opp_type == 'launched' %}Already Localized{% else %}{{ opp_type|replace('_', ' ')|title }}{% endif %}
+            <span
+                class="maturity-badge maturity-{{ 'mature' if opp_type == 'launched' else 'emerging' if opp_type == 'preparing' else 'developing' }}">
+                {% if opp_type == 'preparing' %}Goldilocks Zone{% elif opp_type == 'launched' %}Already Localized{% else
+                %}{{ opp_type|replace('_', ' ')|title }}{% endif %}
             </span>
         </p>
 
-        {% set maturity = report.ai_analysis.localization_maturity or ('launched' if goldilocks_status == 'launched' else 'emerging') %}
+        {% set maturity = report.ai_analysis.localization_maturity or ('launched' if goldilocks_status == 'launched'
+        else 'emerging') %}
         <p>
             <strong>Localization Maturity:</strong>
             <span class="maturity-badge maturity-{{ maturity }}">{{ maturity }}</span>
@@ -1282,18 +1331,22 @@
             <div class="score-bar">
                 <div class="score-fill" style="width: {{ score * 10 }}%"></div>
             </div>
-            <span class="score-value {% if score >= 8 %}confidence-high{% elif score >= 5 %}confidence-medium{% else %}confidence-low{% endif %}">{{ score }}/10</span>
+            <span
+                class="score-value {% if score >= 8 %}confidence-high{% elif score >= 5 %}confidence-medium{% else %}confidence-low{% endif %}">{{
+                score }}/10</span>
         </div>
 
         {% if goldilocks_status == 'preparing' %}
         <div class="bdr-highlight bdr-highlight-critical" style="margin-top: 1rem;">
             <div class="bdr-label">Why This Score</div>
-            <div class="bdr-text">Found i18n libraries installed WITHOUT any locale/translation folders. The shelves are built, books are missing!</div>
+            <div class="bdr-text">Found i18n libraries installed WITHOUT any locale/translation folders. The shelves are
+                built, books are missing!</div>
         </div>
         {% elif goldilocks_status == 'launched' %}
         <div class="bdr-highlight bdr-highlight-warning" style="margin-top: 1rem;">
             <div class="bdr-label">Why Low Score</div>
-            <div class="bdr-text">Company already has locale folders with translations. They have a working system - we missed the window.</div>
+            <div class="bdr-text">Company already has locale folders with translations. They have a working system - we
+                missed the window.</div>
         </div>
         {% endif %}
 
@@ -1384,9 +1437,10 @@
                     </span>
                     <span class="btn-text">Copy Email</span>
                 </button>
-                <button class="send-bdr-btn" onclick="showSendToBDRModal()" id="sendToBDRBtn" title="Send draft to BDR via email">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                        stroke-linecap="round" stroke-linejoin="round">
+                <button class="send-bdr-btn" onclick="showSendToBDRModal()" id="sendToBDRBtn"
+                    title="Send draft to BDR via email">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
                         <path d="M22 2L11 13"></path>
                         <path d="M22 2L15 22L11 13L2 9L22 2Z"></path>
                     </svg>
@@ -1404,12 +1458,14 @@
             <div>
                 <span class="email-body-label">Email Body</span>
                 <div class="email-body">
-                    <textarea id="emailBody" class="email-edit-field email-body-textarea">{{ report.ai_analysis.email_draft.body }}</textarea>
+                    <textarea id="emailBody"
+                        class="email-edit-field email-body-textarea">{{ report.ai_analysis.email_draft.body }}</textarea>
                 </div>
             </div>
         </div>
     </div>
     {% endif %}
+
 
     <!-- Key Findings - BDR-Optimized -->
     {% if report.ai_analysis.key_findings %}
@@ -1420,13 +1476,15 @@
         </p>
         <ul class="findings-list">
             {% for finding in report.ai_analysis.key_findings %}
-            <li class="finding-item {% if finding.significance == 'critical' %}critical-finding{% elif finding.significance == 'low' %}low-priority-finding{% endif %}">
+            <li
+                class="finding-item {% if finding.significance == 'critical' %}critical-finding{% elif finding.significance == 'low' %}low-priority-finding{% endif %}">
                 <div class="finding-header">
                     <span class="finding-text">
                         <strong>{{ finding.finding }}</strong>
                     </span>
                     <span class="finding-significance significance-{{ finding.significance }}">
-                        {% if finding.significance == 'critical' %}GOLDILOCKS{% else %}{{ finding.significance }}{% endif %}
+                        {% if finding.significance == 'critical' %}GOLDILOCKS{% else %}{{ finding.significance }}{%
+                        endif %}
                     </span>
                 </div>
                 {% if finding.sales_angle %}
@@ -1672,8 +1730,8 @@
 </div>
 
 <button class="print-button" onclick="window.print()" title="Print Report">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+        stroke-linejoin="round" aria-hidden="true">
         <path d="M6 9V2h12v7"></path>
         <path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"></path>
         <path d="M6 14h12v8H6z"></path>
@@ -1702,118 +1760,118 @@
 </div>
 
 <script>
-function copyEmailDraft(button) {
-    const subject = document.getElementById('emailSubject').value;
-    const body = document.getElementById('emailBody').value;
+    function copyEmailDraft(button) {
+        const subject = document.getElementById('emailSubject').value;
+        const body = document.getElementById('emailBody').value;
 
-    const emailText = `Subject: ${subject}\n\n${body}`;
+        const emailText = `Subject: ${subject}\n\n${body}`;
 
-    navigator.clipboard.writeText(emailText).then(() => {
-        button.classList.add('copied');
-        button.querySelector('.btn-text').textContent = 'Copied!';
+        navigator.clipboard.writeText(emailText).then(() => {
+            button.classList.add('copied');
+            button.querySelector('.btn-text').textContent = 'Copied!';
 
-        setTimeout(() => {
-            button.classList.remove('copied');
-            button.querySelector('.btn-text').textContent = 'Copy Email';
-        }, 2000);
-    }).catch(err => {
-        console.error('Failed to copy:', err);
-        alert('Failed to copy email. Please select and copy manually.');
-    });
-}
-
-function showSendToBDRModal() {
-    const modal = document.getElementById('bdrModal');
-    if (modal) {
-        modal.classList.add('active');
-        const emailInput = document.getElementById('bdrEmail');
-        const savedEmail = localStorage.getItem('bdrEmail');
-        if (savedEmail && emailInput) {
-            emailInput.value = savedEmail;
-        }
-        if (emailInput) emailInput.focus();
-    }
-}
-
-function closeBDRModal() {
-    const modal = document.getElementById('bdrModal');
-    if (modal) {
-        modal.classList.remove('active');
-    }
-}
-
-async function sendToBDR() {
-    const emailInput = document.getElementById('bdrEmail');
-    const sendBtn = document.getElementById('bdrSendBtn');
-    const subject = document.getElementById('emailSubject').value;
-    const body = document.getElementById('emailBody').value;
-    const toEmail = emailInput.value.trim();
-    
-    if (!toEmail) {
-        alert('Please enter a BDR email address.');
-        return;
-    }
-    
-    if (!toEmail.includes('@')) {
-        alert('Please enter a valid email address.');
-        return;
-    }
-    
-    localStorage.setItem('bdrEmail', toEmail);
-    
-    sendBtn.disabled = true;
-    sendBtn.textContent = 'Sending...';
-    
-    try {
-        const response = await fetch('/api/send-to-bdr', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                to_email: toEmail,
-                subject: subject,
-                body: body,
-                company_name: '{{ report.company_name }}',
-                report_url: window.location.href
-            })
-        });
-        
-        const data = await response.json();
-        
-        if (data.success) {
-            sendBtn.textContent = 'Sent!';
             setTimeout(() => {
-                closeBDRModal();
-                sendBtn.disabled = false;
-                sendBtn.textContent = 'Send Email';
-            }, 1500);
-        } else {
-            throw new Error(data.error || 'Failed to send email');
+                button.classList.remove('copied');
+                button.querySelector('.btn-text').textContent = 'Copy Email';
+            }, 2000);
+        }).catch(err => {
+            console.error('Failed to copy:', err);
+            alert('Failed to copy email. Please select and copy manually.');
+        });
+    }
+
+    function showSendToBDRModal() {
+        const modal = document.getElementById('bdrModal');
+        if (modal) {
+            modal.classList.add('active');
+            const emailInput = document.getElementById('bdrEmail');
+            const savedEmail = localStorage.getItem('bdrEmail');
+            if (savedEmail && emailInput) {
+                emailInput.value = savedEmail;
+            }
+            if (emailInput) emailInput.focus();
         }
-    } catch (error) {
-        console.error('Send error:', error);
-        alert('Failed to send email: ' + error.message);
-        sendBtn.disabled = false;
-        sendBtn.textContent = 'Send Email';
     }
-}
 
-document.getElementById('bdrModal')?.addEventListener('click', function(e) {
-    if (e.target === this) closeBDRModal();
-});
-
-function autoResizeEmailBody(textarea) {
-    textarea.style.height = 'auto';
-    textarea.style.height = `${textarea.scrollHeight}px`;
-}
-
-document.addEventListener('DOMContentLoaded', () => {
-    const textarea = document.getElementById('emailBody');
-    if (textarea) {
-        autoResizeEmailBody(textarea);
-        textarea.addEventListener('input', () => autoResizeEmailBody(textarea));
+    function closeBDRModal() {
+        const modal = document.getElementById('bdrModal');
+        if (modal) {
+            modal.classList.remove('active');
+        }
     }
-});
+
+    async function sendToBDR() {
+        const emailInput = document.getElementById('bdrEmail');
+        const sendBtn = document.getElementById('bdrSendBtn');
+        const subject = document.getElementById('emailSubject').value;
+        const body = document.getElementById('emailBody').value;
+        const toEmail = emailInput.value.trim();
+
+        if (!toEmail) {
+            alert('Please enter a BDR email address.');
+            return;
+        }
+
+        if (!toEmail.includes('@')) {
+            alert('Please enter a valid email address.');
+            return;
+        }
+
+        localStorage.setItem('bdrEmail', toEmail);
+
+        sendBtn.disabled = true;
+        sendBtn.textContent = 'Sending...';
+
+        try {
+            const response = await fetch('/api/send-to-bdr', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    to_email: toEmail,
+                    subject: subject,
+                    body: body,
+                    company_name: '{{ report.company_name }}',
+                    report_url: window.location.href
+                })
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                sendBtn.textContent = 'Sent!';
+                setTimeout(() => {
+                    closeBDRModal();
+                    sendBtn.disabled = false;
+                    sendBtn.textContent = 'Send Email';
+                }, 1500);
+            } else {
+                throw new Error(data.error || 'Failed to send email');
+            }
+        } catch (error) {
+            console.error('Send error:', error);
+            alert('Failed to send email: ' + error.message);
+            sendBtn.disabled = false;
+            sendBtn.textContent = 'Send Email';
+        }
+    }
+
+    document.getElementById('bdrModal')?.addEventListener('click', function (e) {
+        if (e.target === this) closeBDRModal();
+    });
+
+    function autoResizeEmailBody(textarea) {
+        textarea.style.height = 'auto';
+        textarea.style.height = `${textarea.scrollHeight}px`;
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        const textarea = document.getElementById('emailBody');
+        if (textarea) {
+            autoResizeEmailBody(textarea);
+            textarea.addEventListener('input', () => autoResizeEmailBody(textarea));
+        }
+    });
 </script>
 {% endblock %}
