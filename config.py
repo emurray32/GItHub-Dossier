@@ -56,29 +56,38 @@ class Config:
         """
         Load GitHub tokens from environment variables.
 
-        Priority:
+        Auto-discovers tokens matching these patterns:
         1. GITHUB_TOKENS (comma-separated list for token pool)
         2. GITHUB_TOKEN (single token, for backward compatibility)
+        3. GITHUB_TOKEN_* (e.g., GITHUB_TOKEN_2, GITHUB_TOKEN_BDR)
+        4. GitHubToken_* (e.g., GitHubToken_Michael, GitHubToken_Sales)
 
-        Example .env:
-            GITHUB_TOKENS=ghp_abc123,ghp_def456,ghp_ghi789
+        This allows BDRs to add their own tokens without modifying config.
 
         Returns:
-            List of tokens, or empty list if none configured.
+            List of unique tokens, or empty list if none configured.
         """
+        tokens = []
+        seen = set()
+
+        def add_token(token):
+            if token and token.strip() and token.strip() not in seen:
+                seen.add(token.strip())
+                tokens.append(token.strip())
+
         tokens_str = os.getenv('GITHUB_TOKENS', '')
         if tokens_str:
-            # Parse comma-separated tokens, strip whitespace, filter empty
-            tokens = [t.strip() for t in tokens_str.split(',') if t.strip()]
-            if tokens:
-                return tokens
+            for t in tokens_str.split(','):
+                add_token(t)
 
-        # Fall back to single token for backward compatibility
-        single_token = os.getenv('GITHUB_TOKEN')
-        if single_token:
-            return [single_token]
+        add_token(os.getenv('GITHUB_TOKEN'))
 
-        return []
+        for key, value in os.environ.items():
+            key_upper = key.upper()
+            if key_upper.startswith('GITHUB_TOKEN_') or key_upper.startswith('GITHUBTOKEN_'):
+                add_token(value)
+
+        return tokens
 
     GITHUB_TOKENS = get_github_tokens.__func__()  # Initialize at class load time
 
