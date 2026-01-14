@@ -236,7 +236,7 @@ def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[obje
         'scan_timestamp': datetime.now().isoformat(),
         'total_stars': sum(r.get('stargazers_count', 0) for r in repos_to_scan),
 
-        # 3-Signal Intent Results
+        # 3-Signal Intent Results (plus documentation intent)
         'signals': [],  # List of structured signal objects
         'signal_summary': {
             'rfc_discussion': {
@@ -250,6 +250,11 @@ def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[obje
             },
             'ghost_branch': {
                 'count': 0,
+                'hits': []
+            },
+            'documentation_intent': {
+                'count': 0,
+                'high_priority_count': 0,
                 'hits': []
             }
         },
@@ -353,6 +358,31 @@ def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[obje
     # Update dep_count to include framework config signals
     dep_count = scan_results['signal_summary']['dependency_injection']['count']
 
+    # Phase 4d: Documentation Intent Scan (Thinking Phase)
+    yield _sse_log("")
+    yield _sse_log("PHASE 4d: Documentation Intent Scan")
+    yield _sse_log("-" * 40)
+    yield _sse_log("Checking documentation for i18n intent signals...")
+
+    for idx, repo in enumerate(repos_to_scan[:5], 1):  # Top 5 repos
+        repo_name = repo.get('name')
+        yield _sse_log(f"  [{idx}/5] Scanning documentation in: {repo_name}")
+
+        for log_msg, signal in _scan_documentation_files(org_login, repo_name, company_name):
+            if log_msg:
+                yield _sse_log(f"    {log_msg}")
+            if signal:
+                scan_results['signals'].append(signal)
+                scan_results['signal_summary']['documentation_intent']['hits'].append(signal)
+                scan_results['signal_summary']['documentation_intent']['count'] += 1
+                if signal.get('priority') == 'HIGH':
+                    scan_results['signal_summary']['documentation_intent']['high_priority_count'] += 1
+                yield _sse_signal(signal)
+
+    doc_count = scan_results['signal_summary']['documentation_intent']['count']
+    doc_high = scan_results['signal_summary']['documentation_intent']['high_priority_count']
+    yield _sse_log(f"Documentation Intent scan complete: {doc_count} signals ({doc_high} HIGH priority)")
+
     # Phase 5: Signal 3 - Ghost Branch Scan (Active Phase)
     yield _sse_log("")
     yield _sse_log("PHASE 5: Ghost Branch Scan (Active Phase)")
@@ -405,6 +435,7 @@ def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[obje
     yield _sse_log(f"Total Signals Detected: {total_signals}")
     yield _sse_log(f"   • RFC & Discussion: {rfc_count} ({high_priority} HIGH)")
     yield _sse_log(f"   • Dependency Injection: {dep_count}")
+    yield _sse_log(f"   • Documentation Intent: {doc_count} ({doc_high} HIGH)")
     yield _sse_log(f"   • Ghost Branches: {ghost_count}")
     yield _sse_log(f"Intent Score: {scan_results['intent_score']}/100")
     yield _sse_log(f"Scan Duration: {duration:.1f}s")
@@ -1122,6 +1153,117 @@ def _scan_framework_configs(org: str, repo: str, company: str) -> Generator[tupl
             continue
 
 
+def _scan_documentation_files(org: str, repo: str, company: str) -> Generator[tuple, None, None]:
+    """
+    Signal 4: Documentation Intent Scan (Thinking Phase)
+
+    Target: CHANGELOG.md, CONTRIBUTING.md, README.md, ROADMAP.md
+    Logic: Flag if i18n keywords are found NEAR context words indicating
+           future or in-progress work (e.g., "beta", "roadmap", "upcoming")
+
+    This catches companies mentioning i18n in their documentation before
+    the code is fully live - an early intent signal.
+
+    Gap Requirement: Also checks for "launched" indicators to avoid
+    false positives on companies that already have i18n.
+
+    Yields:
+        Tuples of (log_message, signal_object)
+    """
+    for doc_file in Config.DOCUMENTATION_FILES:
+        try:
+            url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}/contents/{doc_file}"
+            response = make_github_request(url, timeout=15)
+
+            if response.status_code != 200:
+                continue
+
+            file_data = response.json()
+            content_b64 = file_data.get('content', '')
+            file_url = file_data.get('html_url')
+
+            if not content_b64:
+                continue
+
+            try:
+                content = base64.b64decode(content_b64).decode('utf-8')
+            except Exception:
+                continue
+
+            content_lower = content.lower()
+
+            # Determine file priority based on filename
+            file_basename = doc_file.lower().replace('.md', '')
+            file_priority = Config.DOCUMENTATION_FILE_WEIGHTS.get(file_basename, 'MEDIUM')
+
+            # Check for "already launched" indicators first (negative check)
+            has_launched_indicator = False
+            for indicator in Config.DOCUMENTATION_LAUNCHED_INDICATORS:
+                if indicator.lower() in content_lower:
+                    has_launched_indicator = True
+                    break
+
+            if has_launched_indicator:
+                yield (f"Skipping {doc_file} - contains launched indicators", None)
+                continue
+
+            # Search for intent keywords
+            for keyword in Config.DOCUMENTATION_INTENT_KEYWORDS:
+                keyword_lower = keyword.lower()
+                keyword_pos = content_lower.find(keyword_lower)
+
+                while keyword_pos != -1:
+                    # Extract context window around the keyword
+                    window_start = max(0, keyword_pos - Config.DOCUMENTATION_PROXIMITY_CHARS)
+                    window_end = min(len(content_lower), keyword_pos + len(keyword_lower) + Config.DOCUMENTATION_PROXIMITY_CHARS)
+                    context_window = content_lower[window_start:window_end]
+
+                    # Check if any context keyword is within the proximity window
+                    matched_context = None
+                    for context_kw in Config.DOCUMENTATION_CONTEXT_KEYWORDS:
+                        if context_kw.lower() in context_window:
+                            matched_context = context_kw
+                            break
+
+                    if matched_context:
+                        # Extract the actual line containing the keyword for evidence
+                        line_start = content.rfind('\n', 0, keyword_pos) + 1
+                        line_end = content.find('\n', keyword_pos)
+                        if line_end == -1:
+                            line_end = len(content)
+                        matched_line = content[line_start:line_end].strip()
+
+                        # Truncate long lines for readability
+                        if len(matched_line) > 120:
+                            matched_line = matched_line[:117] + '...'
+
+                        signal = {
+                            'Company': company,
+                            'Signal': 'Documentation Intent',
+                            'Evidence': f"Found '{keyword}' near '{matched_context}' in {doc_file}: \"{matched_line}\"",
+                            'Link': file_url,
+                            'priority': file_priority,
+                            'type': 'documentation_intent',
+                            'repo': repo,
+                            'file': doc_file,
+                            'keyword_matched': keyword,
+                            'context_matched': matched_context,
+                            'matched_line': matched_line,
+                            'goldilocks_status': 'thinking',
+                        }
+
+                        yield (f"DOC INTENT ({file_priority}): '{keyword}' + '{matched_context}' in {doc_file}", signal)
+                        # Only one signal per keyword per file to avoid spam
+                        break
+
+                    # Search for next occurrence of the keyword
+                    keyword_pos = content_lower.find(keyword_lower, keyword_pos + 1)
+
+        except requests.RequestException as e:
+            error_detail = _format_request_exception(e)
+            yield (f"Error scanning {doc_file}: {error_detail}", None)
+
+
 def _strip_comments(content: str) -> str:
     """
     Remove JavaScript/TypeScript comments from content.
@@ -1776,21 +1918,32 @@ def _calculate_intent_score(scan_results: dict) -> int:
         return min(base_score + bonus, Config.GOLDILOCKS_SCORES.get('preparing_max', 100))
 
     # ============================================================
-    # Check for THINKING status
+    # Check for THINKING status (RFC/Discussion OR Documentation Intent)
     # ============================================================
     # This check MUST come before the Mega-Corp heuristic to ensure
-    # valid thinking signals (RFCs/Discussions) take precedence
+    # valid thinking signals (RFCs/Discussions/Documentation) take precedence
     rfc_count = summary.get('rfc_discussion', {}).get('count', 0)
-    if rfc_count > 0:
+    doc_count = summary.get('documentation_intent', {}).get('count', 0)
+
+    if rfc_count > 0 or doc_count > 0:
         scan_results['goldilocks_status'] = 'thinking'
         scan_results['lead_status'] = Config.LEAD_STATUS_LABELS.get('thinking', 'WARM LEAD')
 
-        # Base score for thinking + bonus for HIGH priority discussions
+        # Base score for thinking
         base_score = Config.GOLDILOCKS_SCORES.get('thinking', 40)
-        high_priority_count = summary.get('rfc_discussion', {}).get('high_priority_count', 0)
-        bonus = min(high_priority_count * 10, 20)  # Up to +20 for high priority
 
-        return min(base_score + bonus, 60)  # Cap at 60 for thinking
+        # Bonus for HIGH priority discussions
+        rfc_high_priority = summary.get('rfc_discussion', {}).get('high_priority_count', 0)
+        rfc_bonus = min(rfc_high_priority * 10, 15)  # Up to +15 for RFC high priority
+
+        # Bonus for HIGH priority documentation signals (CHANGELOG, ROADMAP)
+        doc_high_priority = summary.get('documentation_intent', {}).get('high_priority_count', 0)
+        doc_bonus = min(doc_high_priority * 8, 15)  # Up to +15 for doc high priority
+
+        # Combined bonus (cap at +25)
+        total_bonus = min(rfc_bonus + doc_bonus, 25)
+
+        return min(base_score + total_bonus, 65)  # Cap at 65 for thinking
 
     # ============================================================
     # Check for Ghost Branches only (Active experimentation)
