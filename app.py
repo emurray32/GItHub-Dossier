@@ -15,7 +15,7 @@ from flask import Flask, render_template, Response, request, jsonify, redirect, 
 from config import Config
 from database import (
     save_report, get_report, get_recent_reports, search_reports,
-    update_account_status, get_all_accounts, add_account_to_tier_0, TIER_CONFIG,
+    update_account_status, get_all_accounts, get_all_accounts_datatable, add_account_to_tier_0, TIER_CONFIG,
     get_account_by_company, get_account_by_company_case_insensitive,
     mark_account_as_invalid, get_refreshable_accounts, delete_account,
     get_db_connection, get_setting, set_setting, increment_daily_stat,
@@ -822,6 +822,53 @@ def api_accounts():
         'current_page': result['current_page'],
         'limit': result['limit']
     })
+
+
+@app.route('/api/accounts/datatable', methods=['GET', 'POST'])
+def api_accounts_datatable():
+    """
+    DataTables server-side processing endpoint.
+
+    Handles parameters from DataTables JavaScript library for efficient
+    server-side pagination, searching, and sorting.
+    """
+    # DataTables parameters
+    draw = request.args.get('draw', 1, type=int)
+    start = request.args.get('start', 0, type=int)
+    length = request.args.get('length', 50, type=int)
+    search_value = request.args.get('search[value]', '').strip()
+
+    # Get tier filter if provided
+    tiers = request.args.getlist('tier', type=int)
+    tier_filter = tiers if tiers else None
+
+    # Get ordering parameters
+    order_column = request.args.get('order[0][column]', 0, type=int)
+    order_dir = request.args.get('order[0][dir]', 'asc').lower()
+
+    # Validate parameters
+    length = max(1, min(length, 500))  # Limit to max 500 rows per request
+    start = max(0, start)
+
+    # Get data from database
+    result = get_all_accounts_datatable(
+        draw=draw,
+        start=start,
+        length=length,
+        search_value=search_value,
+        tier_filter=tier_filter,
+        order_column=order_column,
+        order_dir=order_dir
+    )
+
+    # Ensure scan status is set
+    for account in result['data']:
+        if not account.get('scan_status'):
+            account['scan_status'] = SCAN_STATUS_IDLE
+        if account.get('scan_start_time'):
+            account['scan_started_at'] = account['scan_start_time']
+
+    return jsonify(result)
 
 
 @app.route('/api/accounts/<int:account_id>', methods=['DELETE'])
