@@ -134,9 +134,10 @@ class Config:
 
     # Low-value repository patterns (non-core repos to deprioritize)
     # -500 points if repo name contains any of these
+    # Note: 'docs' and 'documentation' intentionally excluded - they can be
+    # early indicators of i18n work (especially with Docusaurus/Astro)
     LOW_VALUE_PATTERNS = [
-        'docs', 'documentation', 'tool', 'script', 'demo',
-        'example', 'test', 'fork'
+        'tool', 'script', 'demo', 'example', 'test', 'fork'
     ]
 
     # High-value programming languages for i18n scanning
@@ -251,6 +252,10 @@ class Config:
         'nuxt.config.ts',
         'remix.config.js',
         'angular.json',
+        # Static site generators with i18n support
+        'docusaurus.config.js',
+        'docusaurus.config.ts',
+        'astro.config.mjs',
     ]
 
     # ============================================================
