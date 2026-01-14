@@ -189,6 +189,10 @@ class Config:
         'requirements.txt',
         'composer.json',
         'mix.exs',
+        'pubspec.yaml',
+        'Podfile',
+        'build.gradle',
+        'build.gradle.kts',
     ]
 
     I18N_SCRIPT_KEYWORDS = [

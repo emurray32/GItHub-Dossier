@@ -332,13 +332,28 @@ class StreamHandler {
             preview.innerHTML += `
                 <div class="preview-section">
                     <h3>Assessment</h3>
-                    <p>
-                        <strong>Maturity:</strong>
+                    <div style="display: flex; gap: 1rem; align-items: center;">
                         <span class="maturity-badge maturity-${maturity}">${maturity}</span>
-                    </p>
-                    <p>
-                        <strong>Opportunity Score:</strong> ${score}/10
-                    </p>
+                        <span style="font-weight: 600;">Opportunity Score: ${score}/10</span>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Email Draft Preview
+        if (this.analysisData.email_draft) {
+            preview.innerHTML += `
+                <div class="preview-section" style="background: var(--bg-primary); border: 1px solid var(--border-color); padding: 1rem; border-radius: 8px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                        <h3 style="margin: 0;">Email Draft Generated</h3>
+                        <span class="badge badge-primary">Skill: Cold Outreach</span>
+                    </div>
+                    <div style="font-size: 0.875rem; color: var(--text-secondary); margin-bottom: 0.5rem;">
+                        <strong>Subject:</strong> ${this.escapeHtml(this.analysisData.email_draft.subject)}
+                    </div>
+                    <div style="font-size: 0.875rem; white-space: pre-line; line-height: 1.5; color: var(--text-primary); max-height: 150px; overflow-y: auto; padding: 0.75rem; background: var(--bg-secondary); border-radius: 4px;">
+                        ${this.escapeHtml(this.analysisData.email_draft.body)}
+                    </div>
                 </div>
             `;
         }
