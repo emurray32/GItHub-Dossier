@@ -44,6 +44,11 @@ python app.py
 - **AI**: Google Gemini API
 
 ## Recent Changes
+- 2026-01-14: Fixed AgentMail integration and SKILL.md cold email generation
+  - Rewrote agentmail_client.py to use the official AgentMail Python SDK
+  - Fixed inbox retrieval (inbox_id attribute) and message sending (inboxes.messages.send)
+  - Added SKILL.md integration: ai_summary.py now loads `.agent/skills/cold-outreach/SKILL.md`
+  - Cold email generation now uses custom skill instructions if the file exists
 - 2026-01-13: Improved UX for queued accounts - shows "In Queue" with queue position instead of "Never" for accounts waiting to be scanned
 - 2026-01-12: Comprehensive UI redesign to professional light theme
   - Removed all emojis from templates and backend logs

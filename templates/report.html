@@ -830,6 +830,153 @@
         display: inline-flex;
     }
 
+    .email-actions {
+        display: flex;
+        gap: 0.5rem;
+    }
+
+    .send-bdr-btn {
+        background: var(--accent-color);
+        color: white;
+        border: none;
+        padding: 0.5rem 1rem;
+        border-radius: 6px;
+        font-weight: 600;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        transition: all 0.2s;
+    }
+
+    .send-bdr-btn:hover {
+        background: var(--accent-hover);
+        transform: scale(1.02);
+    }
+
+    .send-bdr-btn:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+        transform: none;
+    }
+
+    .send-bdr-btn svg {
+        width: 16px;
+        height: 16px;
+    }
+
+    /* BDR Modal */
+    .bdr-modal {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: 1000;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .bdr-modal.active {
+        display: flex;
+    }
+
+    .bdr-modal-content {
+        background: var(--bg-primary);
+        border-radius: 12px;
+        padding: 2rem;
+        max-width: 450px;
+        width: 90%;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    }
+
+    .bdr-modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1.5rem;
+    }
+
+    .bdr-modal-header h3 {
+        margin: 0;
+        font-size: 1.25rem;
+    }
+
+    .bdr-modal-close {
+        background: none;
+        border: none;
+        font-size: 1.5rem;
+        cursor: pointer;
+        color: var(--text-secondary);
+        padding: 0.25rem;
+    }
+
+    .bdr-modal-close:hover {
+        color: var(--text-primary);
+    }
+
+    .bdr-form-group {
+        margin-bottom: 1rem;
+    }
+
+    .bdr-form-group label {
+        display: block;
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+        font-size: 0.875rem;
+    }
+
+    .bdr-form-group input {
+        width: 100%;
+        padding: 0.75rem;
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        font-size: 1rem;
+    }
+
+    .bdr-form-group input:focus {
+        outline: none;
+        border-color: var(--accent-color);
+    }
+
+    .bdr-modal-actions {
+        display: flex;
+        gap: 0.75rem;
+        margin-top: 1.5rem;
+    }
+
+    .bdr-modal-actions button {
+        flex: 1;
+        padding: 0.75rem;
+        border-radius: 6px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+
+    .bdr-cancel-btn {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        color: var(--text-primary);
+    }
+
+    .bdr-send-btn {
+        background: var(--accent-color);
+        border: none;
+        color: white;
+    }
+
+    .bdr-send-btn:hover {
+        background: var(--accent-hover);
+    }
+
+    .bdr-send-btn:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+
     .email-draft-content {
         padding: 1.5rem;
     }
@@ -1220,22 +1367,32 @@
     <div class="email-draft-section">
         <div class="email-draft-header">
             <h3>Ready-to-Send Cold Email</h3>
-            <button class="copy-email-btn" onclick="copyEmailDraft(this)" id="copyEmailBtn">
-                <span class="copy-icon copy-icon--default" aria-hidden="true">
+            <div class="email-actions">
+                <button class="copy-email-btn" onclick="copyEmailDraft(this)" id="copyEmailBtn">
+                    <span class="copy-icon copy-icon--default" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                            stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="9" y="9" width="13" height="13" rx="2"></rect>
+                            <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"></path>
+                        </svg>
+                    </span>
+                    <span class="copy-icon copy-icon--success" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                            stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M20 6L9 17l-5-5"></path>
+                        </svg>
+                    </span>
+                    <span class="btn-text">Copy Email</span>
+                </button>
+                <button class="send-bdr-btn" onclick="showSendToBDRModal()" id="sendToBDRBtn" title="Send draft to BDR via email">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                         stroke-linecap="round" stroke-linejoin="round">
-                        <rect x="9" y="9" width="13" height="13" rx="2"></rect>
-                        <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"></path>
+                        <path d="M22 2L11 13"></path>
+                        <path d="M22 2L15 22L11 13L2 9L22 2Z"></path>
                     </svg>
-                </span>
-                <span class="copy-icon copy-icon--success" aria-hidden="true">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                        stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M20 6L9 17l-5-5"></path>
-                    </svg>
-                </span>
-                <span class="btn-text">Copy Email</span>
-            </button>
+                    <span class="btn-text">Send to BDR</span>
+                </button>
+            </div>
         </div>
         <div class="email-draft-content">
             <div class="email-edit-hint">Edit before copying.</div>
@@ -1523,6 +1680,27 @@
     </svg>
 </button>
 
+<!-- Send to BDR Modal -->
+<div class="bdr-modal" id="bdrModal">
+    <div class="bdr-modal-content">
+        <div class="bdr-modal-header">
+            <h3>Send to BDR</h3>
+            <button class="bdr-modal-close" onclick="closeBDRModal()">&times;</button>
+        </div>
+        <p style="color: var(--text-secondary); margin-bottom: 1rem; font-size: 0.875rem;">
+            Send the cold email draft to your BDR's inbox for follow-up.
+        </p>
+        <div class="bdr-form-group">
+            <label for="bdrEmail">BDR Email Address</label>
+            <input type="email" id="bdrEmail" placeholder="bdr@company.com" autocomplete="email">
+        </div>
+        <div class="bdr-modal-actions">
+            <button class="bdr-cancel-btn" onclick="closeBDRModal()">Cancel</button>
+            <button class="bdr-send-btn" id="bdrSendBtn" onclick="sendToBDR()">Send Email</button>
+        </div>
+    </div>
+</div>
+
 <script>
 function copyEmailDraft(button) {
     const subject = document.getElementById('emailSubject').value;
@@ -1531,11 +1709,9 @@ function copyEmailDraft(button) {
     const emailText = `Subject: ${subject}\n\n${body}`;
 
     navigator.clipboard.writeText(emailText).then(() => {
-        // Update button state
         button.classList.add('copied');
         button.querySelector('.btn-text').textContent = 'Copied!';
 
-        // Reset after 2 seconds
         setTimeout(() => {
             button.classList.remove('copied');
             button.querySelector('.btn-text').textContent = 'Copy Email';
@@ -1545,6 +1721,87 @@ function copyEmailDraft(button) {
         alert('Failed to copy email. Please select and copy manually.');
     });
 }
+
+function showSendToBDRModal() {
+    const modal = document.getElementById('bdrModal');
+    if (modal) {
+        modal.classList.add('active');
+        const emailInput = document.getElementById('bdrEmail');
+        const savedEmail = localStorage.getItem('bdrEmail');
+        if (savedEmail && emailInput) {
+            emailInput.value = savedEmail;
+        }
+        if (emailInput) emailInput.focus();
+    }
+}
+
+function closeBDRModal() {
+    const modal = document.getElementById('bdrModal');
+    if (modal) {
+        modal.classList.remove('active');
+    }
+}
+
+async function sendToBDR() {
+    const emailInput = document.getElementById('bdrEmail');
+    const sendBtn = document.getElementById('bdrSendBtn');
+    const subject = document.getElementById('emailSubject').value;
+    const body = document.getElementById('emailBody').value;
+    const toEmail = emailInput.value.trim();
+    
+    if (!toEmail) {
+        alert('Please enter a BDR email address.');
+        return;
+    }
+    
+    if (!toEmail.includes('@')) {
+        alert('Please enter a valid email address.');
+        return;
+    }
+    
+    localStorage.setItem('bdrEmail', toEmail);
+    
+    sendBtn.disabled = true;
+    sendBtn.textContent = 'Sending...';
+    
+    try {
+        const response = await fetch('/api/send-to-bdr', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                to_email: toEmail,
+                subject: subject,
+                body: body,
+                company_name: '{{ report.company_name }}',
+                report_url: window.location.href
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            sendBtn.textContent = 'Sent!';
+            setTimeout(() => {
+                closeBDRModal();
+                sendBtn.disabled = false;
+                sendBtn.textContent = 'Send Email';
+            }, 1500);
+        } else {
+            throw new Error(data.error || 'Failed to send email');
+        }
+    } catch (error) {
+        console.error('Send error:', error);
+        alert('Failed to send email: ' + error.message);
+        sendBtn.disabled = false;
+        sendBtn.textContent = 'Send Email';
+    }
+}
+
+document.getElementById('bdrModal')?.addEventListener('click', function(e) {
+    if (e.target === this) closeBDRModal();
+});
 
 function autoResizeEmailBody(textarea) {
     textarea.style.height = 'auto';
