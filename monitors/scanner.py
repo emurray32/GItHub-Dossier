@@ -1050,13 +1050,25 @@ def _scan_framework_configs(org: str, repo: str, company: str) -> Generator[tupl
         Tuples of (log_message, signal_object)
     """
     # ============================================================
-    # NEGATIVE CHECK: Verify NO locale folders exist
+    # NEGATIVE CHECK: Verify NO locale folders exist (with source-only exception)
     # ============================================================
-    locale_exists = _check_locale_folders_exist(org, repo)
+    locale_exists, found_folders, source_only, folder_contents = _check_locale_folders_exist_detailed(org, repo)
 
     if locale_exists:
-        yield ("Framework config scan skipped - locale folders already exist", None)
-        return
+        if source_only:
+            # SOURCE-ONLY EXCEPTION: Folder exists but ONLY contains source files (en.json, etc.)
+            # This means infrastructure is ready, but no translations yet - still a valid lead!
+            all_files = []
+            for folder, files in folder_contents.items():
+                all_files.extend(files)
+            files_str = ', '.join(all_files) if all_files else 'empty'
+            folders_str = ', '.join(found_folders)
+            yield (f"Found locale folder ({folders_str}), but it appears to be source-only ({files_str}) - marking as PREPARING, not LAUNCHED", None)
+            # Continue to positive check - don't return!
+        else:
+            # Locale folders with actual translations exist - skip framework config scan
+            yield (f"Framework config scan skipped - locale folders already exist ({', '.join(found_folders)})", None)
+            return
 
     # ============================================================
     # POSITIVE CHECK: Scan framework config files for i18n patterns
