@@ -54,6 +54,31 @@ def _format_request_exception(error: requests.RequestException) -> str:
     return f"Error: {status_code} {reason}"
 
 
+def _is_open_protocol_project(org_description: Optional[str]) -> Optional[str]:
+    """
+    Check if an organization description matches open protocol/decentralized project patterns.
+
+    These are NOT commercial companies with buying intent - they're community-driven
+    open source projects, blockchain protocols, DAOs, etc.
+
+    Args:
+        org_description: The GitHub organization's description field
+
+    Returns:
+        The matched disqualifier pattern if found, None otherwise
+    """
+    if not org_description:
+        return None
+
+    description_lower = org_description.lower()
+
+    for pattern in Config.OPEN_PROTOCOL_DISQUALIFIERS:
+        if pattern.lower() in description_lower:
+            return pattern
+
+    return None
+
+
 def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[object] = None, github_org: Optional[str] = None) -> Generator[str, None, None]:
     """
     Perform a 3-Signal Intent Scan of a company's GitHub presence.
@@ -117,9 +142,21 @@ def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[obje
 
     org_login = org_data.get('login')
     org_name = org_data.get('name') or org_login
+    org_description = org_data.get('description')
 
     yield _sse_log(f"Organization confirmed: {org_name} (@{org_login})")
     yield _sse_log(f"  Public repos: {org_data.get('public_repos', 'N/A')}")
+
+    # Check for open protocol / decentralized project disqualifiers
+    # These are NOT commercial companies with buying intent
+    matched_pattern = _is_open_protocol_project(org_description)
+    if matched_pattern:
+        yield _sse_log("")
+        yield _sse_log("⚠️ OPEN PROTOCOL PROJECT DETECTED")
+        yield _sse_log(f"  Description: {org_description}")
+        yield _sse_log(f"  Matched pattern: '{matched_pattern}'")
+        yield _sse_error(f"DISQUALIFIED: Open protocol/decentralized project - not a commercial buyer. Pattern matched: '{matched_pattern}'")
+        return
 
     # Phase 2: Fetch Repositories
     yield _sse_log("")

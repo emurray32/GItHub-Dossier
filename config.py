@@ -382,6 +382,49 @@ class Config:
         'snyk-bot', 'codecov', 'codecov[bot]', 'vercel[bot]', 'netlify[bot]',
     ]
 
+    # ============================================================
+    # OPEN PROTOCOL / DECENTRALIZED PROJECT DISQUALIFIERS
+    # ============================================================
+    # These patterns identify open-source protocol projects and decentralized
+    # community projects that are NOT commercial companies with buying intent.
+    #
+    # Examples: Status (decentralized messenger), Protocol Labs, various DAOs
+    #
+    # If ANY of these patterns match the org description (case-insensitive),
+    # the account is disqualified as a false positive.
+
+    OPEN_PROTOCOL_DISQUALIFIERS = [
+        # Decentralized / Web3 indicators
+        'decentralized',
+        'decentralised',
+        'open protocol',
+        'open-protocol',
+        'community project',
+        'community-driven',
+        'community owned',
+        'community-owned',
+        'powered by the community',
+        'powered by its members',
+        'powered by their members',
+        'anyone can fork',
+        'anyone can build',
+        'anyone can contribute',
+
+        # Blockchain / Crypto indicators (typically not commercial buyers)
+        'blockchain protocol',
+        'web3 protocol',
+        'defi protocol',
+        'dao ',  # Note: space to avoid matching "dao" in words like "shadow"
+        ' dao',
+        'decentralized autonomous',
+
+        # Open source protocol indicators
+        'protocol specification',
+        'reference implementation',
+        'open standard',
+        'open-standard',
+    ]
+
     # Legacy confidence weights (mapped to intent score)
     CONFIDENCE_WEIGHTS = {
         'rfc_discussion': 25,
