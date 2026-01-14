@@ -345,6 +345,90 @@ class Config:
     ]
 
     # ============================================================
+    # SIGNAL 4: DOCUMENTATION INTENT (Thinking Phase)
+    # ============================================================
+    # Target: Documentation files that may mention planned i18n work
+    # Logic: Flag if i18n keywords are found NEAR context words
+    #        indicating future/in-progress work
+    # This catches companies mentioning i18n in changelogs/roadmaps
+    # BEFORE the code is fully live.
+
+    DOCUMENTATION_FILES = [
+        'CHANGELOG.md',
+        'CONTRIBUTING.md',
+        'README.md',
+        'ROADMAP.md',
+        'changelog.md',
+        'contributing.md',
+        'readme.md',
+        'roadmap.md',
+        'HISTORY.md',
+        'history.md',
+    ]
+
+    # Intent keywords - these indicate i18n planning
+    DOCUMENTATION_INTENT_KEYWORDS = [
+        'i18n support',
+        'localization support',
+        'translation',
+        'internationalization',
+        'feat(i18n)',
+        'chore(i18n)',
+        'i18n:',
+        'l10n support',
+        'multi-language',
+        'multilingual',
+    ]
+
+    # Context keywords - these indicate future/in-progress work
+    # A match requires BOTH an intent keyword AND a context keyword nearby
+    DOCUMENTATION_CONTEXT_KEYWORDS = [
+        'beta',
+        'roadmap',
+        'upcoming',
+        'help wanted',
+        'best effort',
+        'planned',
+        'todo',
+        'wip',
+        'in progress',
+        'in-progress',
+        'unreleased',
+        'experimental',
+        'coming soon',
+        'future',
+        'proposal',
+        'rfc',
+        'draft',
+        'milestone',
+    ]
+
+    # Negative indicators - if found near the keyword, it's likely already launched
+    DOCUMENTATION_LAUNCHED_INDICATORS = [
+        'available in',
+        'supported languages',
+        'translated to',
+        'translations available',
+        'localized for',
+        'supports the following languages',
+        'language support includes',
+        'currently translated',
+        'fully localized',
+    ]
+
+    # Proximity threshold - how close (in characters) context words must be
+    DOCUMENTATION_PROXIMITY_CHARS = 200
+
+    # File priority weights - CHANGELOG is higher signal than README
+    DOCUMENTATION_FILE_WEIGHTS = {
+        'changelog': 'HIGH',
+        'roadmap': 'HIGH',
+        'history': 'HIGH',
+        'contributing': 'MEDIUM',
+        'readme': 'MEDIUM',
+    }
+
+    # ============================================================
     # INTENT SCORE WEIGHTS - GOLDILOCKS ZONE SCORING
     # ============================================================
     # New scoring model focused on PRE-LAUNCH detection.
@@ -355,6 +439,8 @@ class Config:
         'rfc_discussion_medium': 15,  # MEDIUM priority discussion
         'dependency_injection': 40,   # Smoking gun - highest value
         'ghost_branch': 25,           # WIP branch/PR
+        'documentation_intent_high': 20,    # HIGH priority (CHANGELOG, ROADMAP)
+        'documentation_intent_medium': 10,  # MEDIUM priority (README, CONTRIBUTING)
     }
 
     # ============================================================
@@ -484,4 +570,5 @@ class Config:
         'rfc_discussion': 25,
         'dependency_injection': 40,
         'ghost_branch': 25,
+        'documentation_intent': 15,
     }
