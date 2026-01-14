@@ -1789,39 +1789,29 @@
             </tbody>
         </table>
     </div>
-    <!-- Pagination will be inserted here by DataTables -->
-
-    <!-- Legacy pagination controls (kept for reference, hidden) -->
-    <div style="display: none;">
-        <div class="pagination-container">
-            <div class="pagination-info">
-                Showing {{ ((current_page - 1) * limit) + 1 }}-{{ [current_page * limit, total_items]|min }} of {{
-                total_items }} accounts
-            </div>
-            <div class="pagination-controls">
-                <select id="limit-select" onchange="changeLimit(this.value)" class="pagination-limit-select"
-                    aria-label="Rows per page">
-                    <option value="25" {% if limit==25 %}selected{% endif %}>25 rows</option>
-                    <option value="50" {% if limit==50 %}selected{% endif %}>50 rows</option>
-                    <option value="100" {% if limit==100 %}selected{% endif %}>100 rows</option>
-                    <option value="250" {% if limit==250 %}selected{% endif %}>250 rows</option>
-                </select>
-                <a href="{{ url_for('accounts', page=current_page - 1, limit=limit) }}" class="pagination-btn" {% if
-                    current_page <=1 %}disabled{% endif %} {% if current_page <=1 %}onclick="return false;" {% endif %}>
-                    ← Previous
-                </a>
-                <span class="pagination-page-display">
-                    Page {{ current_page }} of {{ total_pages or 1 }}
-                </span>
-                <a href="{{ url_for('accounts', page=current_page + 1, limit=limit) }}" class="pagination-btn" {% if
-                    current_page>= total_pages %}disabled{% endif %}
-                    {% if current_page >= total_pages %}onclick="return false;"{% endif %}>
-                    Next →
-                </a>
-            </div>
+    <!-- Pagination Controls -->
+    <div class="pagination-container" id="pagination-container">
+        <div class="pagination-info" id="pagination-info">
+            Loading...
+        </div>
+        <div class="pagination-controls">
+            <select id="limit-select" class="pagination-limit-select" aria-label="Rows per page">
+                <option value="25">25 rows</option>
+                <option value="50" selected>50 rows</option>
+                <option value="100">100 rows</option>
+                <option value="250">250 rows</option>
+            </select>
+            <button type="button" class="pagination-btn" id="prev-page-btn" disabled>
+                Previous
+            </button>
+            <span class="pagination-page-display" id="page-display">
+                Page 1 of 1
+            </span>
+            <button type="button" class="pagination-btn" id="next-page-btn" disabled>
+                Next
+            </button>
         </div>
     </div>
-    </div> <!-- End of hidden legacy pagination -->
 
     <div class="bulk-command-bar hidden" id="bulk-command-bar">
         <span class="bulk-command-count" id="bulk-selection-count">0 accounts selected</span>
@@ -2346,28 +2336,70 @@
         4: { name: 'Invalid', color: '#404040' }
     };
 
-    // Initialize DataTables
-    let accountsTable = null;
+    // Pagination state
+    let paginationState = {
+        currentPage: 1,
+        pageSize: 50,
+        totalRecords: 0,
+        totalPages: 1
+    };
 
     function initializeDataTable() {
-        if (accountsTable) {
-            accountsTable.destroy();
-        }
-
-        accountsTable = document.querySelector('.accounts-table');
+        const accountsTable = document.querySelector('.accounts-table');
         if (!accountsTable) return;
 
         // Get initial filters from URL parameters
         const urlParams = new URLSearchParams(window.location.search);
         const initialSearch = urlParams.get('q') || '';
-        const tierFilters = urlParams.getAll('tier').map(t => parseInt(t));
+        const initialPage = parseInt(urlParams.get('page')) || 1;
+        const initialLimit = parseInt(urlParams.get('limit')) || 50;
+        
+        paginationState.currentPage = initialPage;
+        paginationState.pageSize = initialLimit;
 
         // Create a custom search input binding
         const searchInput = document.querySelector('#account-search-input');
         if (searchInput) {
             searchInput.value = initialSearch;
+            let searchTimeout;
             searchInput.addEventListener('input', (e) => {
+                clearTimeout(searchTimeout);
+                searchTimeout = setTimeout(() => {
+                    paginationState.currentPage = 1;
+                    reloadAccountsTable();
+                }, 300);
+            });
+        }
+
+        // Setup pagination controls
+        const limitSelect = document.getElementById('limit-select');
+        const prevBtn = document.getElementById('prev-page-btn');
+        const nextBtn = document.getElementById('next-page-btn');
+        
+        if (limitSelect) {
+            limitSelect.value = paginationState.pageSize;
+            limitSelect.addEventListener('change', (e) => {
+                paginationState.pageSize = parseInt(e.target.value);
+                paginationState.currentPage = 1;
                 reloadAccountsTable();
+            });
+        }
+        
+        if (prevBtn) {
+            prevBtn.addEventListener('click', () => {
+                if (paginationState.currentPage > 1) {
+                    paginationState.currentPage--;
+                    reloadAccountsTable();
+                }
+            });
+        }
+        
+        if (nextBtn) {
+            nextBtn.addEventListener('click', () => {
+                if (paginationState.currentPage < paginationState.totalPages) {
+                    paginationState.currentPage++;
+                    reloadAccountsTable();
+                }
             });
         }
 
@@ -2379,6 +2411,7 @@
         tierButtons.forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.preventDefault();
+                paginationState.currentPage = 1;
                 const tierId = parseInt(btn.dataset.tierId);
                 toggleTierFilter(tierId);
             });
@@ -2393,11 +2426,14 @@
         const searchValue = searchInput ? searchInput.value : urlParams.get('q') || '';
         const tierFilters = urlParams.getAll('tier').map(t => parseInt(t));
 
+        // Calculate start offset
+        const start = (paginationState.currentPage - 1) * paginationState.pageSize;
+
         // Build query parameters
         const params = new URLSearchParams();
         params.set('draw', '1');
-        params.set('start', '0');
-        params.set('length', '50');
+        params.set('start', start.toString());
+        params.set('length', paginationState.pageSize.toString());
         params.set('search[value]', searchValue);
 
         tierFilters.forEach(tier => {
@@ -2408,12 +2444,42 @@
         fetch(`/api/accounts/datatable?${params.toString()}`)
             .then(response => response.json())
             .then(data => {
+                paginationState.totalRecords = data.recordsFiltered || data.recordsTotal || 0;
+                paginationState.totalPages = Math.ceil(paginationState.totalRecords / paginationState.pageSize) || 1;
                 renderAccountsTable(data.data);
+                updatePaginationUI();
             })
             .catch(error => {
                 console.error('Error loading accounts:', error);
                 tbody.innerHTML = '<tr><td colspan="7">Error loading accounts. Please try again.</td></tr>';
             });
+    }
+    
+    function updatePaginationUI() {
+        const infoEl = document.getElementById('pagination-info');
+        const pageDisplay = document.getElementById('page-display');
+        const prevBtn = document.getElementById('prev-page-btn');
+        const nextBtn = document.getElementById('next-page-btn');
+        
+        if (infoEl) {
+            const start = ((paginationState.currentPage - 1) * paginationState.pageSize) + 1;
+            const end = Math.min(paginationState.currentPage * paginationState.pageSize, paginationState.totalRecords);
+            infoEl.textContent = paginationState.totalRecords > 0 
+                ? `Showing ${start}-${end} of ${paginationState.totalRecords} accounts`
+                : 'No accounts found';
+        }
+        
+        if (pageDisplay) {
+            pageDisplay.textContent = `Page ${paginationState.currentPage} of ${paginationState.totalPages}`;
+        }
+        
+        if (prevBtn) {
+            prevBtn.disabled = paginationState.currentPage <= 1;
+        }
+        
+        if (nextBtn) {
+            nextBtn.disabled = paginationState.currentPage >= paginationState.totalPages;
+        }
     }
 
     function renderAccountsTable(accounts) {
