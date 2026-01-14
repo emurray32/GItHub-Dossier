@@ -672,7 +672,7 @@ def _scan_dependency_injection(org: str, repo: str, company: str) -> Generator[t
     # ============================================================
     # Using Search API instead of recursive tree fetching to handle "Mega-Corp" repos efficiently
     for dep_file in Config.DEPENDENCY_INJECTION_FILES:
-        yield (f"Searching for {dep_file}...", None)
+        yield ("Scanning dependencies...", None)
 
         # Query: q=repo:{org}/{repo} filename:{dep_filename}
         query = f"repo:{org}/{repo} filename:{dep_file}"

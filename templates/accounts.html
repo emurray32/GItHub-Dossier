@@ -1950,7 +1950,12 @@
 
     function formatSmartDate(dateString) {
         if (!dateString) return 'Never';
-        const date = new Date(dateString);
+        // Server stores timestamps in UTC without 'Z' suffix - add it to parse correctly
+        let normalizedDateString = dateString;
+        if (!dateString.endsWith('Z') && !dateString.includes('+') && !dateString.includes('-', 10)) {
+            normalizedDateString = dateString + 'Z';
+        }
+        const date = new Date(normalizedDateString);
         if (Number.isNaN(date.getTime())) return 'Never';
 
         const now = new Date();
@@ -1966,7 +1971,12 @@
 
     function formatNextDate(dateString) {
         if (!dateString) return '';
-        const date = new Date(dateString);
+        // Server stores timestamps in UTC without 'Z' suffix - add it to parse correctly
+        let normalizedDateString = dateString;
+        if (!dateString.endsWith('Z') && !dateString.includes('+') && !dateString.includes('-', 10)) {
+            normalizedDateString = dateString + 'Z';
+        }
+        const date = new Date(normalizedDateString);
         if (Number.isNaN(date.getTime())) return '';
 
         const options = { month: 'short', day: 'numeric' };
@@ -1982,7 +1992,12 @@
 
     function formatShortDate(timestamp) {
         if (!timestamp) return '--';
-        const scanned = new Date(timestamp);
+        // Server stores timestamps in UTC without 'Z' suffix - add it to parse correctly
+        let normalizedTimestamp = timestamp;
+        if (!timestamp.endsWith('Z') && !timestamp.includes('+') && !timestamp.includes('-', 10)) {
+            normalizedTimestamp = timestamp + 'Z';
+        }
+        const scanned = new Date(normalizedTimestamp);
         if (Number.isNaN(scanned.getTime())) return '--';
         const month = scanned.getMonth() + 1;
         const day = scanned.getDate();
@@ -1992,7 +2007,12 @@
 
     function formatRelativeTime(timestamp) {
         if (!timestamp) return '--';
-        const scanned = new Date(timestamp);
+        // Server stores timestamps in UTC without 'Z' suffix - add it to parse correctly
+        let normalizedTimestamp = timestamp;
+        if (!timestamp.endsWith('Z') && !timestamp.includes('+') && !timestamp.includes('-', 10)) {
+            normalizedTimestamp = timestamp + 'Z';
+        }
+        const scanned = new Date(normalizedTimestamp);
         if (Number.isNaN(scanned.getTime())) return '--';
 
         const now = new Date();
