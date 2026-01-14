@@ -165,8 +165,28 @@ Generate a JSON response with these fields. USE BOLD, PUNCHY, NON-TECHNICAL LANG
    Example: {{"finding": "Found react-i18next - Infrastructure is READY but no translations exist yet", "significance": "critical", "sales_angle": "They built the car but have no gas. Offer to fill the tank."}}
 
 5. "cold_email_draft":
-   - "subject": Short, punchy, references their specific situation
-   - "body": 3 sentences max. Reference what you found. Non-technical.
+   Generate a hyper-personalized cold email following these STRICT rules:
+   
+   FORMATTING RULES:
+   - Total body MUST be under 120 words
+   - NEVER write a paragraph longer than 2 sentences
+   - Use double line breaks between thoughts (visual spacing matters)
+   - Tone: peer-to-peer, technical, helpful - NOT "salesy" or enthusiastic
+   
+   STRUCTURE (3 parts):
+   a) "subject": Short, references specific library/file/signal found (e.g., "Saw you added react-i18next")
+   b) "body": Follow this exact structure:
+      - THE HOOK: Start IMMEDIATELY with the specific library, file, or branch you found.
+        Do NOT use "I hope you are well" or pleasantries.
+        Example: "I noticed you recently added `react-i18next` to your `package.json`."
+      - THE PAIN/VALUE: Connect that signal to the pain of manual localization.
+        Mention GitHub Actions/API integration and automation.
+      - THE SOFT CTA: Ask for INTEREST, not time. Low friction.
+        Examples: "Worth a chat?" or "Open to seeing how we fit into your CI/CD?"
+   
+   PHRASE MESSAGING:
+   - DO mention: automation, API, GitHub integration, "infrastructure," "continuous localization"
+   - DO NOT mention: "high quality translations," "professional linguists" (devs care about process, not linguists)
 
 6. "conversation_starters": (list of 3 questions BDRs can ask)
    - Non-technical, open-ended questions

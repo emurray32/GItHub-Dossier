@@ -30,6 +30,7 @@ from monitors.scanner import deep_scan_generator
 from monitors.discovery import search_github_orgs, resolve_org_fast, discover_companies_via_ai
 from ai_summary import generate_analysis
 from pdf_generator import generate_report_pdf
+from agentmail_client import is_agentmail_configured, send_email_draft
 
 
 app = Flask(__name__)
@@ -748,6 +749,46 @@ def api_search_reports():
     query = request.args.get('q', '')
     reports = search_reports(query)
     return jsonify(reports)
+
+
+@app.route('/api/agentmail/status')
+def api_agentmail_status():
+    """Check if AgentMail is configured."""
+    return jsonify({'configured': is_agentmail_configured()})
+
+
+@app.route('/api/send-to-bdr', methods=['POST'])
+def api_send_to_bdr():
+    """Send email draft to BDR via AgentMail."""
+    data = request.get_json()
+    
+    if not data:
+        return jsonify({'success': False, 'error': 'No data provided'}), 400
+    
+    to_email = data.get('to_email')
+    subject = data.get('subject')
+    body = data.get('body')
+    company_name = data.get('company_name')
+    report_url = data.get('report_url')
+    
+    if not to_email:
+        return jsonify({'success': False, 'error': 'BDR email address required'}), 400
+    
+    if not subject or not body:
+        return jsonify({'success': False, 'error': 'Email subject and body required'}), 400
+    
+    result = send_email_draft(
+        to_email=to_email,
+        subject=subject,
+        body=body,
+        company_name=company_name,
+        report_url=report_url
+    )
+    
+    if result.get('success'):
+        return jsonify(result)
+    else:
+        return jsonify(result), 500
 
 
 @app.route('/history')
