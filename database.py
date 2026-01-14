@@ -942,6 +942,123 @@ def get_all_accounts(page: int = 1, limit: int = 50, tier_filter: Optional[list]
     }
 
 
+def get_all_accounts_datatable(draw: int, start: int, length: int, search_value: str = '',
+                               tier_filter: Optional[list] = None, order_column: int = 0,
+                               order_dir: str = 'asc') -> dict:
+    """
+    Get accounts data in DataTables format for server-side processing.
+
+    This function supports DataTables server-side processing with:
+    - Pagination (start, length)
+    - Global search (search_value)
+    - Tier filtering
+    - Sorting
+
+    Args:
+        draw: DataTables draw counter (for pagination)
+        start: Start row index
+        length: Number of rows to return
+        search_value: Global search string (searches company_name and github_org)
+        tier_filter: List of tier integers to include (optional)
+        order_column: Column index for sorting (0=company, 1=org, 2=tier, etc.)
+        order_dir: Sort direction ('asc' or 'desc')
+
+    Returns:
+        Dictionary with DataTables format:
+        - draw: Same draw counter
+        - recordsTotal: Total records in database
+        - recordsFiltered: Total records after filtering
+        - data: Array of account objects
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Column mapping for sorting (must match table column order)
+    column_map = {
+        0: 'company_name',
+        1: 'github_org',
+        2: 'current_tier',
+        3: 'last_scanned_at',
+        4: 'evidence_summary',
+    }
+
+    # Get total count without filters
+    cursor.execute('SELECT COUNT(*) as total FROM monitored_accounts')
+    total_records = cursor.fetchone()['total']
+
+    # Build WHERE clause for filtering
+    where_clauses = []
+    params = []
+
+    # Tier filter
+    if tier_filter:
+        placeholders = ','.join(['?'] * len(tier_filter))
+        where_clauses.append(f'current_tier IN ({placeholders})')
+        params.extend(tier_filter)
+
+    # Global search - searches both company_name and github_org
+    if search_value:
+        where_clauses.append('(LOWER(company_name) LIKE ? OR LOWER(github_org) LIKE ?)')
+        search_param = f'%{search_value.lower()}%'
+        params.extend([search_param, search_param])
+
+    where_sql = ''
+    if where_clauses:
+        where_sql = ' WHERE ' + ' AND '.join(where_clauses)
+
+    # Get filtered count
+    count_query = f'SELECT COUNT(*) as total FROM monitored_accounts{where_sql}'
+    cursor.execute(count_query, params)
+    filtered_records = cursor.fetchone()['total']
+
+    # Determine sort column
+    sort_column = column_map.get(order_column, 'company_name')
+    sort_order = 'DESC' if order_dir.lower() == 'desc' else 'ASC'
+
+    # Validate sort order
+    if sort_order not in ('ASC', 'DESC'):
+        sort_order = 'ASC'
+
+    # Get paginated and sorted data
+    select_query = f'''
+        SELECT
+            ma.*,
+            (SELECT r.id FROM reports r WHERE LOWER(r.company_name) = LOWER(ma.company_name) ORDER BY r.created_at DESC LIMIT 1) as latest_report_id
+        FROM monitored_accounts ma
+        {where_sql}
+        ORDER BY
+            CASE ma.current_tier
+                WHEN 2 THEN 1
+                WHEN 1 THEN 2
+                WHEN 0 THEN 3
+                WHEN 3 THEN 4
+                WHEN 4 THEN 5
+                ELSE 6
+            END,
+            ma.status_changed_at DESC
+        LIMIT ? OFFSET ?
+    '''
+
+    select_params = list(params) + [length, start]
+    cursor.execute(select_query, select_params)
+    rows = cursor.fetchall()
+    conn.close()
+
+    accounts = []
+    for row in rows:
+        account = dict(row)
+        tier = account.get('current_tier', 0)
+        account['tier_config'] = TIER_CONFIG.get(tier, TIER_CONFIG[TIER_TRACKING])
+        accounts.append(account)
+
+    return {
+        'draw': draw,
+        'recordsTotal': total_records,
+        'recordsFiltered': filtered_records,
+        'data': accounts
+    }
+
+
 def get_account(account_id: int) -> Optional[dict]:
     """Get a single account by ID."""
     conn = get_db_connection()
