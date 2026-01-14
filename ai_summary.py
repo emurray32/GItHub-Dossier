@@ -7,8 +7,69 @@ Generates actionable sales intelligence from pre-launch i18n signals:
 - Ghost Branch (Active Phase)
 """
 import json
+import os
 from typing import Generator
 from config import Config
+
+
+def _load_cold_outreach_skill() -> str:
+    """Load the cold-outreach SKILL.md file if it exists."""
+    skill_paths = [
+        '.agent/skills/cold-outreach/SKILL.md',
+        'skills/cold-outreach/SKILL.md',
+        '.agent/skill/cold-outreach/SKILL.md',
+    ]
+    
+    for path in skill_paths:
+        if os.path.exists(path):
+            try:
+                with open(path, 'r') as f:
+                    content = f.read()
+                    print(f"[AI] Loaded cold outreach skill from: {path}")
+                    return content
+            except Exception as e:
+                print(f"[AI] Failed to load skill from {path}: {e}")
+    
+    print("[AI] No cold-outreach skill file found, using defaults")
+    return ""
+
+
+def _get_cold_email_instructions() -> str:
+    """Get cold email instructions from SKILL.md or use defaults."""
+    skill_content = _load_cold_outreach_skill()
+    
+    if skill_content:
+        return f"""
+   *** COLD OUTREACH SKILL INSTRUCTIONS (FROM SKILL.md) ***
+   Follow these instructions EXACTLY when drafting the cold email:
+   
+{skill_content}
+   
+   *** END OF SKILL INSTRUCTIONS ***
+"""
+    
+    return """
+   FORMATTING RULES:
+   - Total body MUST be under 120 words
+   - NEVER write a paragraph longer than 2 sentences
+   - Use double line breaks between thoughts (visual spacing matters)
+   - Tone: peer-to-peer, technical, helpful - NOT "salesy" or enthusiastic
+   
+   STRUCTURE (3 parts):
+   a) "subject": Short, references specific library/file/signal found (e.g., "Saw you added react-i18next")
+   b) "body": Follow this exact structure:
+      - THE HOOK: Start IMMEDIATELY with the specific library, file, or branch you found.
+        Do NOT use "I hope you are well" or pleasantries.
+        Example: "I noticed you recently added `react-i18next` to your `package.json`."
+      - THE PAIN/VALUE: Connect that signal to the pain of manual localization.
+        Mention GitHub Actions/API integration and automation.
+      - THE SOFT CTA: Ask for INTEREST, not time. Low friction.
+        Examples: "Worth a chat?" or "Open to seeing how we fit into your CI/CD?"
+   
+   PHRASE MESSAGING:
+   - DO mention: automation, API, GitHub integration, "infrastructure," "continuous localization"
+   - DO NOT mention: "high quality translations," "professional linguists" (devs care about process, not linguists)
+"""
 
 try:
     from google import genai
@@ -167,26 +228,9 @@ Generate a JSON response with these fields. USE BOLD, PUNCHY, NON-TECHNICAL LANG
 5. "cold_email_draft":
    Generate a hyper-personalized cold email following these STRICT rules:
    
-   FORMATTING RULES:
-   - Total body MUST be under 120 words
-   - NEVER write a paragraph longer than 2 sentences
-   - Use double line breaks between thoughts (visual spacing matters)
-   - Tone: peer-to-peer, technical, helpful - NOT "salesy" or enthusiastic
-   
-   STRUCTURE (3 parts):
-   a) "subject": Short, references specific library/file/signal found (e.g., "Saw you added react-i18next")
-   b) "body": Follow this exact structure:
-      - THE HOOK: Start IMMEDIATELY with the specific library, file, or branch you found.
-        Do NOT use "I hope you are well" or pleasantries.
-        Example: "I noticed you recently added `react-i18next` to your `package.json`."
-      - THE PAIN/VALUE: Connect that signal to the pain of manual localization.
-        Mention GitHub Actions/API integration and automation.
-      - THE SOFT CTA: Ask for INTEREST, not time. Low friction.
-        Examples: "Worth a chat?" or "Open to seeing how we fit into your CI/CD?"
-   
-   PHRASE MESSAGING:
-   - DO mention: automation, API, GitHub integration, "infrastructure," "continuous localization"
-   - DO NOT mention: "high quality translations," "professional linguists" (devs care about process, not linguists)
+{_get_cold_email_instructions()}
+
+   Return as: {{"subject": "...", "body": "..."}}
 
 6. "conversation_starters": (list of 3 questions BDRs can ask)
    - Non-technical, open-ended questions
