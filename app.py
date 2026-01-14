@@ -22,6 +22,7 @@ from database import (
     get_stats_last_n_days, log_webhook, get_recent_webhook_logs,
     set_scan_status, get_scan_status, get_queued_and_processing_accounts,
     clear_stale_scan_statuses, reset_all_scan_statuses, batch_set_scan_status_queued,
+    reset_stale_queued_accounts, reset_all_queued_to_idle,
     SCAN_STATUS_IDLE, SCAN_STATUS_QUEUED, SCAN_STATUS_PROCESSING,
     save_signals, cleanup_duplicate_accounts
 )
@@ -1446,25 +1447,60 @@ def initialize_on_first_request():
     Initialize the thread pool executor and reset stale scan statuses on first request.
 
     This provides resilience against app restarts:
-    - Resets any scan statuses that were stuck in 'queued' or 'processing'
+    - Recovers accounts stuck in 'queued' status and re-queues them
+    - Resets any scan statuses that were stuck in 'processing'
     - Auto-scans any accounts that were imported but never scanned
     """
     global _app_initialized
     if not _app_initialized:
         print("[APP] First request - initializing executor and cleaning up...")
 
-        # Reset any stale scan statuses from previous run
+        # Initialize the executor FIRST
+        get_executor()
+
+        # IMPORTANT: Recover stuck queued accounts BEFORE reset_all_scan_statuses
+        _recover_stuck_queued_accounts()
+
+        # Reset any remaining stale scan statuses (processing accounts)
         reset_count = reset_all_scan_statuses()
         if reset_count > 0:
-            print(f"[APP] Reset {reset_count} stale scan statuses from previous run")
-
-        # Initialize the executor
-        get_executor()
+            print(f"[APP] Reset {reset_count} stale processing statuses from previous run")
 
         # Auto-scan any accounts that were imported but never scanned
         _auto_scan_pending_accounts()
 
         _app_initialized = True
+
+
+def _recover_stuck_queued_accounts():
+    """
+    Recover accounts that were stuck in 'queued' status from a previous run.
+
+    This handles cases where accounts were queued but the app was restarted
+    before they could be processed. The accounts are reset to idle and then
+    re-queued for scanning.
+    """
+    try:
+        # Get all accounts stuck in queued status and reset them
+        stuck_accounts = reset_all_queued_to_idle()
+
+        if stuck_accounts:
+            print(f"[APP] Found {len(stuck_accounts)} accounts stuck in queue from previous run")
+
+            # Re-queue them using batch method
+            batch_set_scan_status_queued(stuck_accounts)
+
+            # Submit all to executor for background scanning
+            executor = get_executor()
+            for company_name in stuck_accounts:
+                executor.submit(perform_background_scan, company_name)
+
+            print(f"[APP] Re-queued {len(stuck_accounts)} stuck accounts for scanning")
+        else:
+            print("[APP] No stuck queued accounts to recover")
+
+    except Exception as e:
+        print(f"[APP] Error recovering stuck queued accounts: {str(e)}")
 
 
 def _auto_scan_pending_accounts():
@@ -1473,7 +1509,7 @@ def _auto_scan_pending_accounts():
 
     This is called on app startup to ensure imported accounts get scanned
     even if the app was restarted before their initial scan completed.
-    
+
     Uses batch queueing for reliability - sets all statuses to 'queued' FIRST,
     then submits to executor. This ensures status is visible immediately even
     if executor submission is slow.
@@ -1635,19 +1671,34 @@ def api_webhook_logs():
 
 def _watchdog_worker():
     """
-    Background worker that runs indefinitely to clear stale processing statuses.
+    Background worker that runs indefinitely to clear stale processing statuses
+    and recover stuck queued accounts.
     Runs every 2 minutes.
     """
     print("[WATCHDOG] Background thread started")
     while True:
         try:
             # Clear any account stuck in 'processing' for more than 15 minutes
-            recovered = clear_stale_scan_statuses(timeout_minutes=15)
-            if recovered > 0:
-                print(f"[WATCHDOG] Recovered {recovered} stale scans")
+            recovered_processing = clear_stale_scan_statuses(timeout_minutes=15)
+            if recovered_processing > 0:
+                print(f"[WATCHDOG] Recovered {recovered_processing} stale processing scans")
+
+            # Recover accounts stuck in 'queued' for more than 30 minutes
+            # These are accounts that were queued but never picked up by a worker
+            stale_queued = reset_stale_queued_accounts(timeout_minutes=30)
+            if stale_queued:
+                print(f"[WATCHDOG] Found {len(stale_queued)} stale queued accounts, re-queueing...")
+                # Re-queue these accounts by submitting them to the executor
+                for company_name in stale_queued:
+                    try:
+                        spawn_background_scan(company_name)
+                        print(f"[WATCHDOG] Re-queued: {company_name}")
+                    except Exception as e:
+                        print(f"[WATCHDOG] Failed to re-queue {company_name}: {e}")
+
         except Exception as e:
             print(f"[WATCHDOG] Error in watchdog: {e}")
-        
+
         # Sleep for 2 minutes
         time.sleep(120)
 
@@ -1663,24 +1714,28 @@ if __name__ == '__main__':
     print("[APP] Starting application...")
     print(f"[APP] ThreadPoolExecutor configured with {MAX_SCAN_WORKERS} workers")
 
-    # Reset any stale scan statuses from previous run
-    reset_count = reset_all_scan_statuses()
-    if reset_count > 0:
-        print(f"[APP] Reset {reset_count} stale scan statuses from previous run")
-
     # Cleanup any duplicate accounts
     cleanup_result = cleanup_duplicate_accounts()
     removed_count = cleanup_result.get('deleted', 0)
     if removed_count > 0:
         print(f"[APP] Removed {removed_count} duplicate accounts")
 
-    # Initialize the executor
+    # Initialize the executor BEFORE recovery functions need it
     get_executor()
 
     # Start the background watchdog thread
     start_watchdog()
 
-    # Auto-scan any pending accounts on direct startup
+    # IMPORTANT: Recover stuck queued accounts BEFORE reset_all_scan_statuses
+    # This captures accounts stuck in 'queued' state and re-queues them
+    _recover_stuck_queued_accounts()
+
+    # Reset any remaining stale scan statuses (processing accounts)
+    reset_count = reset_all_scan_statuses()
+    if reset_count > 0:
+        print(f"[APP] Reset {reset_count} stale processing statuses from previous run")
+
+    # Auto-scan any accounts that were never scanned
     _auto_scan_pending_accounts()
 
     # Mark as initialized to prevent duplicate auto-scan on first request

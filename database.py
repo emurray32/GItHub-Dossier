@@ -1404,7 +1404,8 @@ def set_scan_status(company_name: str, status: str, progress: str = None) -> boo
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    now = datetime.now().isoformat() if status == SCAN_STATUS_PROCESSING else None
+    # Track time for both 'processing' and 'queued' statuses for watchdog recovery
+    now = datetime.now().isoformat() if status in (SCAN_STATUS_PROCESSING, SCAN_STATUS_QUEUED) else None
 
     if status == SCAN_STATUS_PROCESSING:
         cursor.execute('''
@@ -1418,6 +1419,13 @@ def set_scan_status(company_name: str, status: str, progress: str = None) -> boo
             SET scan_status = ?, scan_progress = NULL, scan_start_time = NULL
             WHERE company_name = ?
         ''', (status, company_name))
+    elif status == SCAN_STATUS_QUEUED:
+        # Track queue time for watchdog to recover stale queued accounts
+        cursor.execute('''
+            UPDATE monitored_accounts
+            SET scan_status = ?, scan_progress = ?, scan_start_time = ?
+            WHERE company_name = ?
+        ''', (status, progress, now, company_name))
     else:
         cursor.execute('''
             UPDATE monitored_accounts
@@ -1567,13 +1575,16 @@ def batch_set_scan_status_queued(company_names: list) -> int:
     conn = get_db_connection()
     cursor = conn.cursor()
 
+    # Track queue time for watchdog recovery of stale queued accounts
+    now = datetime.now().isoformat()
+
     # Use parameterized query with placeholders for all company names
     placeholders = ','.join(['?' for _ in company_names])
     cursor.execute(f'''
         UPDATE monitored_accounts
-        SET scan_status = ?, scan_progress = NULL
+        SET scan_status = ?, scan_progress = NULL, scan_start_time = ?
         WHERE company_name IN ({placeholders})
-    ''', [SCAN_STATUS_QUEUED] + list(company_names))
+    ''', [SCAN_STATUS_QUEUED, now] + list(company_names))
 
     updated_count = cursor.rowcount
     conn.commit()
@@ -1587,6 +1598,8 @@ def batch_set_scan_status_queued(company_names: list) -> int:
 
 # Initialize database on module import
 init_db()
+
+
 def clear_stale_scan_statuses(timeout_minutes: int = 15) -> int:
     """
     Reset accounts that have been 'processing' for too long.
@@ -1600,22 +1613,149 @@ def clear_stale_scan_statuses(timeout_minutes: int = 15) -> int:
     """
     conn = get_db_connection()
     cursor = conn.cursor()
-    
+
     # Calculate cutoff time: now - timeout_minutes
     cutoff_time = (datetime.now() - timedelta(minutes=timeout_minutes)).isoformat()
-    
+
     # Find accounts that are 'processing' but started before the cutoff
     cursor.execute('''
-        UPDATE monitored_accounts 
+        UPDATE monitored_accounts
         SET scan_status = 'idle',
             scan_progress = 'Timed out (automatically recovered)',
             scan_start_time = NULL
-        WHERE scan_status = 'processing' 
+        WHERE scan_status = 'processing'
           AND scan_start_time < ?
     ''', (cutoff_time,))
-    
+
     count = cursor.rowcount
     conn.commit()
     conn.close()
-    
+
     return count
+
+
+def get_stale_queued_accounts(timeout_minutes: int = 30) -> list:
+    """
+    Get accounts that have been stuck in 'queued' status for too long.
+
+    This retrieves accounts that were queued but never picked up by a worker,
+    possibly due to executor saturation, deadlock, or app restart.
+
+    Args:
+        timeout_minutes: Minutes after which a queued account is considered 'stale'
+
+    Returns:
+        List of company names that are stale-queued
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Calculate cutoff time: now - timeout_minutes
+    cutoff_time = (datetime.now() - timedelta(minutes=timeout_minutes)).isoformat()
+
+    # Find accounts that have been 'queued' for too long
+    cursor.execute('''
+        SELECT company_name FROM monitored_accounts
+        WHERE scan_status = 'queued'
+          AND scan_start_time IS NOT NULL
+          AND scan_start_time < ?
+    ''', (cutoff_time,))
+
+    accounts = [row[0] for row in cursor.fetchall()]
+    conn.close()
+
+    return accounts
+
+
+def reset_stale_queued_accounts(timeout_minutes: int = 30) -> list:
+    """
+    Reset accounts that have been stuck in 'queued' status for too long.
+    Returns the list of reset account names so they can be re-queued.
+
+    Args:
+        timeout_minutes: Minutes after which a queued account is considered 'stale'
+
+    Returns:
+        List of company names that were reset (for re-queueing)
+    """
+    # First get the list of accounts that will be reset
+    accounts = get_stale_queued_accounts(timeout_minutes)
+
+    if not accounts:
+        return []
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Calculate cutoff time: now - timeout_minutes
+    cutoff_time = (datetime.now() - timedelta(minutes=timeout_minutes)).isoformat()
+
+    # Reset these accounts to 'idle' so they can be re-queued
+    cursor.execute('''
+        UPDATE monitored_accounts
+        SET scan_status = 'idle',
+            scan_progress = 'Re-queued (was stuck in queue)',
+            scan_start_time = NULL
+        WHERE scan_status = 'queued'
+          AND scan_start_time IS NOT NULL
+          AND scan_start_time < ?
+    ''', (cutoff_time,))
+
+    conn.commit()
+    conn.close()
+
+    return accounts
+
+
+def get_all_queued_accounts() -> list:
+    """
+    Get all accounts currently in 'queued' status.
+    Used for startup recovery of stuck accounts.
+
+    Returns:
+        List of company names that are currently queued
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT company_name FROM monitored_accounts
+        WHERE scan_status = 'queued'
+    ''')
+
+    accounts = [row[0] for row in cursor.fetchall()]
+    conn.close()
+
+    return accounts
+
+
+def reset_all_queued_to_idle() -> list:
+    """
+    Reset all queued accounts to idle status.
+    Returns the list of accounts that were reset so they can be re-queued.
+
+    This is used at startup to recover accounts stuck in queue from previous run.
+
+    Returns:
+        List of company names that were reset
+    """
+    accounts = get_all_queued_accounts()
+
+    if not accounts:
+        return []
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        UPDATE monitored_accounts
+        SET scan_status = 'idle',
+            scan_progress = 'Reset at startup',
+            scan_start_time = NULL
+        WHERE scan_status = 'queued'
+    ''')
+
+    conn.commit()
+    conn.close()
+
+    return accounts
