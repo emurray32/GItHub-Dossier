@@ -1571,6 +1571,52 @@ def api_stats():
     })
 
 
+@app.route('/api/token-pool')
+def api_token_pool():
+    """
+    Get the current status of the GitHub token pool.
+
+    The token pool allows crowdsourced rate limit expansion:
+    - Each BDR contributes their Personal Access Token
+    - System rotates through tokens, selecting the one with highest remaining limit
+    - 10 BDRs = 50,000 requests/hour = 250+ company scans without pausing
+
+    Returns:
+        JSON with pool status:
+        {
+            "pool_size": 5,
+            "tokens_available": 4,
+            "tokens_rate_limited": 1,
+            "total_remaining": 20000,
+            "total_limit": 25000,
+            "effective_hourly_capacity": 25000,
+            "estimated_companies_per_hour": 125,
+            "token_details": [
+                {
+                    "token": "ghp_...wxyz",
+                    "remaining": 4500,
+                    "limit": 5000,
+                    "usage_percent": 10.0,
+                    "request_count": 50,
+                    "is_rate_limited": false,
+                    "resets_in_seconds": 0
+                },
+                ...
+            ]
+        }
+    """
+    from utils import get_token_pool_status
+    from config import Config
+
+    pool_status = get_token_pool_status()
+
+    # Add capacity estimates
+    capacity = Config.get_token_pool_capacity()
+    pool_status['estimated_companies_per_hour'] = capacity['estimated_companies_per_hour']
+
+    return jsonify(pool_status)
+
+
 @app.route('/api/webhook-logs')
 def api_webhook_logs():
     """
