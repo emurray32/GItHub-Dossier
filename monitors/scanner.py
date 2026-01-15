@@ -2049,20 +2049,12 @@ def _calculate_intent_score(scan_results: dict) -> int:
     signals = scan_results.get('signals', [])
 
     # ============================================================
-    # Check for LAUNCHED status (disqualifying condition)
-    # ============================================================
-    already_launched_signals = [s for s in signals if s.get('type') == 'already_launched']
-    if already_launched_signals:
-        # They have locale folders - TOO LATE
-        scan_results['goldilocks_status'] = 'launched'
-        scan_results['lead_status'] = Config.LEAD_STATUS_LABELS.get('launched', 'LOW PRIORITY')
-        return Config.GOLDILOCKS_SCORES.get('launched', 10)
-
-    # ============================================================
     # Check for PREPARING status (Goldilocks Zone!) - HIGHEST PRIORITY
     # ============================================================
-    # This check MUST come before the Mega-Corp heuristic to ensure
-    # valid goldilocks signals (react-intl without locale folders) take precedence
+    # This check MUST come before "Already Launched" to ensure that if a company
+    # has ONE localized repo but is actively preparing another (Smoking Gun),
+    # we don't disqualify them based on the single localized repo.
+    # We want to capture the NEW opportunity.
     dep_hits = summary.get('dependency_injection', {}).get('hits', [])
     goldilocks_hits = [h for h in dep_hits if h.get('goldilocks_status') == 'preparing' or h.get('gap_verified')]
 
@@ -2094,6 +2086,17 @@ def _calculate_intent_score(scan_results: dict) -> int:
             bonus = 10  # Max bonus if actively working on it
 
         return min(base_score + bonus, Config.GOLDILOCKS_SCORES.get('preparing_max', 100))
+
+    # ============================================================
+    # Check for LAUNCHED status (disqualifying condition)
+    # ============================================================
+    # Only if NO preparing signals were found, does a launched signal disqualify.
+    already_launched_signals = [s for s in signals if s.get('type') == 'already_launched']
+    if already_launched_signals:
+        # They have locale folders - TOO LATE
+        scan_results['goldilocks_status'] = 'launched'
+        scan_results['lead_status'] = Config.LEAD_STATUS_LABELS.get('launched', 'LOW PRIORITY')
+        return Config.GOLDILOCKS_SCORES.get('launched', 10)
 
     # ============================================================
     # Check for THINKING status (RFC/Discussion OR Documentation Intent)
