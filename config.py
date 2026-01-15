@@ -193,6 +193,8 @@ class Config:
         'Podfile',
         'build.gradle',
         'build.gradle.kts',
+        'go.mod',
+        'pom.xml',
     ]
 
     I18N_SCRIPT_KEYWORDS = [
@@ -231,6 +233,13 @@ class Config:
         'i18next-pseudo',            # Pseudo-localization for i18next
         'i18n-js',                   # JavaScript i18n library - general purpose
         'typesafe-i18n',             # TypeScript-first i18n library - type-safe translations
+
+        # Backend / Other Languages
+        'django-babel', 'flask-babel', 'python-i18n', 'babel',
+        'rails-i18n', 'i18n-tasks', 'globalize',
+        'go-i18n', 'golang.org/x/text',
+        'icu4j', 'messageformat',
+
         # Note: 'uppy' is checked separately for i18n/locale properties
     ]
 
@@ -555,6 +564,21 @@ class Config:
         '@lingui/react': 'LinguiJS React Bindings',
         '@lingui/macro': 'LinguiJS Macro',
         '@formatjs/intl': 'FormatJS Core',
+
+        # Python
+        'django-babel': 'Django Translation',
+        'flask-babel': 'Flask Translation',
+        'python-i18n': 'Python i18n',
+        # Ruby
+        'rails-i18n': 'Rails I18n',
+        'i18n-tasks': 'Ruby i18n Tasks',
+        # Go
+        'go-i18n': 'Go Localization',
+        'golang.org/x/text': 'Go Text Library',
+        # Java/Kotlin
+        'icu4j': 'Java ICU Library',
+        'messageformat': 'Java MessageFormat',
+
         # Legacy mappings
         'react-intl': 'React',
         'i18next': 'JS/React',
@@ -578,6 +602,20 @@ class Config:
         '@lingui/core': 'They are using LinguiJS, a powerful i18n library. They care about bundle size and performance.',
         '@lingui/react': 'They are integrating LinguiJS into their React components.',
         '@formatjs/intl': 'They are using the core FormatJS standards library. Highly technical implementation.',
+
+        # Backend Libraries
+        'django-babel': 'Found backend localization library. Infrastructure is active.',
+        'flask-babel': 'Found backend localization library. Infrastructure is active.',
+        'python-i18n': 'Found backend localization library. Infrastructure is active.',
+        'babel': 'Found backend localization library. Infrastructure is active.',
+        'rails-i18n': 'Found backend localization library. Infrastructure is active.',
+        'i18n-tasks': 'Found backend localization library. Infrastructure is active.',
+        'globalize': 'Found backend localization library. Infrastructure is active.',
+        'go-i18n': 'Found backend localization library. Infrastructure is active.',
+        'golang.org/x/text': 'Found backend localization library. Infrastructure is active.',
+        'icu4j': 'Found backend localization library. Infrastructure is active.',
+        'messageformat': 'Found backend localization library. Infrastructure is active.',
+
         'locale_folder_missing': 'GOLDILOCKS: They built the shelves, but have no books. Call now!',
         'locale_folder_source_only': 'GOLDILOCKS: They have a locale folder but ONLY source files. Infrastructure ready, waiting for translation!',
         'locale_folder_exists': 'BLOCKED: They already have translation files. We are too late.',
