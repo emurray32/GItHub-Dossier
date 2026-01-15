@@ -198,6 +198,7 @@ class Config:
         'build.gradle.kts',
         'go.mod',
         'pom.xml',
+        'pyproject.toml',
     ]
 
     I18N_SCRIPT_KEYWORDS = [
