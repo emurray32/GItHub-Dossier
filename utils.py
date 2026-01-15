@@ -473,24 +473,19 @@ def make_github_request(url: str, params: Optional[dict] = None, timeout: int = 
         return response
 
     # 7. Soft buffering when approaching limit (only if we're running low)
-    if remaining is not None and remaining < 50:
-        now = int(time.time())
-        wait_seconds = max(reset_time - now, 1)
-
+    if remaining is not None and remaining < 10:
         # Check if other tokens have capacity - if so, skip buffering
         pool_status = _token_pool.get_pool_status()
         other_tokens_have_capacity = pool_status['total_remaining'] > remaining + 100
 
         if not other_tokens_have_capacity:
-            # No other tokens have much capacity - need to slow down
-            if remaining < 10:
-                sleep_factor = 0.5 if priority != 'high' else 0.2
-                sleep_for = max(wait_seconds * sleep_factor, 10)
-            else:
-                sleep_for = random.uniform(1.0, 3.0)
-
-            if remaining < 5 or (remaining < 20 and priority != 'high'):
-                print(f"[TOKEN_POOL] Token low ({remaining} remaining), buffering {sleep_for:.1f}s...")
+            # Only buffer if we are critically low (< 3 requests)
+            if remaining < 3:
+                sleep_for = 2.0 
+                print(f"[TOKEN_POOL] Token critical ({remaining} remaining), buffering {sleep_for:.1f}s...")
                 time.sleep(sleep_for)
+            elif remaining < 5 and priority != 'high':
+                # Slight pause for low priority requests when running on fumes
+                time.sleep(0.5)
 
     return response
