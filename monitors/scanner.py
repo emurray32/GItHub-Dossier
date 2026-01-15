@@ -666,9 +666,9 @@ def _scan_smoking_gun_forks(repos: list, company: str, org_login: str) -> Genera
             repo_description = repo.get('description', 'No description')
             pushed_at = repo.get('pushed_at', 'Unknown')
             
-            # Get library-specific messaging
-            lib_desc = Config.LIBRARY_DESCRIPTIONS.get(repo_name_lower, 'i18n library')
-            lib_meaning = Config.LIBRARY_MEANINGS.get(repo_name_lower, 'i18n infrastructure is being prepared')
+            # Get library-specific messaging from existing config
+            lib_desc = Config.I18N_LIBRARIES.get(repo_name_lower, 'i18n library')
+            lib_meaning = Config.BDR_TRANSLATIONS.get(repo_name_lower, 'i18n infrastructure is being prepared')
             
             signal = {
                 'Company': company,
