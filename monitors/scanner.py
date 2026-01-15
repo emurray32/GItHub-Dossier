@@ -248,6 +248,10 @@ def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[obje
                 'count': 0,
                 'hits': []
             },
+            'smoking_gun_fork': {
+                'count': 0,
+                'hits': []
+            },
             'ghost_branch': {
                 'count': 0,
                 'hits': []
@@ -260,6 +264,28 @@ def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[obje
         },
         'intent_score': 0,  # Calculated at the end
     }
+
+    # Phase 2b: Smoking Gun Fork Detection
+    # Check if the org has forked any known i18n libraries (uppy, react-intl, etc.)
+    yield _sse_log("")
+    yield _sse_log("PHASE 2b: Smoking Gun Fork Detection")
+    yield _sse_log("-" * 40)
+    yield _sse_log("Checking for forked i18n libraries (uppy, react-intl, i18next, etc.)...")
+
+    for log_msg, signal in _scan_smoking_gun_forks(repos, company_name, org_login):
+        if log_msg:
+            yield _sse_log(f"  {log_msg}")
+        if signal:
+            scan_results['signals'].append(signal)
+            scan_results['signal_summary']['smoking_gun_fork']['hits'].append(signal)
+            scan_results['signal_summary']['smoking_gun_fork']['count'] += 1
+            yield _sse_signal(signal)
+
+    fork_count = scan_results['signal_summary']['smoking_gun_fork']['count']
+    if fork_count > 0:
+        yield _sse_log(f"Smoking Gun Fork detection complete: {fork_count} HIGH intent signals!")
+    else:
+        yield _sse_log("Smoking Gun Fork detection complete: No known i18n library forks found")
 
     # Phase 3: Signal 1 - RFC & Discussion Scan (Thinking Phase)
     yield _sse_log("")
@@ -606,6 +632,60 @@ def _scan_rfc_discussion(org: str, repo: str, company: str) -> Generator[tuple, 
 
     except requests.RequestException:
         pass  # Search API failures are non-fatal
+
+
+def _scan_smoking_gun_forks(repos: list, company: str, org_login: str) -> Generator[tuple, None, None]:
+    """
+    Detect when a company has forked a known i18n-related library.
+    
+    This is a HIGH intent signal - forking uppy/react-intl/i18next/etc.
+    indicates the company is actively customizing i18n infrastructure.
+    This is even stronger than just listing a dependency because they're
+    modifying the source code.
+    
+    Args:
+        repos: List of repository data dicts from the organization.
+        company: Company name for signal records.
+        org_login: GitHub organization login.
+        
+    Yields:
+        Tuple of (log_message, signal_dict or None)
+    """
+    smoking_gun_repos = [r.lower() for r in Config.SMOKING_GUN_FORK_REPOS]
+    
+    for repo in repos:
+        if not repo.get('fork', False):
+            continue
+            
+        repo_name = repo.get('name', '')
+        repo_name_lower = repo_name.lower()
+        
+        if repo_name_lower in smoking_gun_repos:
+            # This is a "Smoking Gun" fork!
+            repo_html_url = repo.get('html_url', f"https://github.com/{org_login}/{repo_name}")
+            repo_description = repo.get('description', 'No description')
+            pushed_at = repo.get('pushed_at', 'Unknown')
+            
+            # Get library-specific messaging
+            lib_desc = Config.LIBRARY_DESCRIPTIONS.get(repo_name_lower, 'i18n library')
+            lib_meaning = Config.LIBRARY_MEANINGS.get(repo_name_lower, 'i18n infrastructure is being prepared')
+            
+            signal = {
+                'Company': company,
+                'Signal': 'Smoking Gun Fork',
+                'Evidence': f"Company forked '{repo_name}' ({lib_desc}). {lib_meaning}",
+                'Link': repo_html_url,
+                'priority': 'HIGH',
+                'type': 'smoking_gun_fork',
+                'goldilocks_status': 'PREPARING',
+                'repo': repo_name,
+                'description': repo_description,
+                'pushed_at': pushed_at,
+                'libraries_found': [repo_name_lower],
+                'bdr_summary': f"Forked {repo_name} library - signals active i18n customization work",
+            }
+            
+            yield (f"🎯 SMOKING GUN FORK: '{repo_name}' - known i18n library!", signal)
 
 
 def _scan_dependency_injection(org: str, repo: str, company: str, is_fork: bool = False) -> Generator[tuple, None, None]:
@@ -1986,15 +2066,27 @@ def _calculate_intent_score(scan_results: dict) -> int:
     dep_hits = summary.get('dependency_injection', {}).get('hits', [])
     goldilocks_hits = [h for h in dep_hits if h.get('goldilocks_status') == 'preparing' or h.get('gap_verified')]
 
-    if goldilocks_hits:
+    # SMOKING GUN FORKS are ALWAYS PREPARING status - forking an i18n library
+    # is even stronger intent than just using it as a dependency!
+    smoking_gun_hits = summary.get('smoking_gun_fork', {}).get('hits', [])
+    
+    # Combine both types of PREPARING signals
+    all_preparing_hits = goldilocks_hits + smoking_gun_hits
+
+    if all_preparing_hits:
         # This is the GOLDILOCKS ZONE!
         # Library found + No locale folders = PERFECT TIMING
+        # OR forked i18n library = ACTIVE CUSTOMIZATION
         scan_results['goldilocks_status'] = 'preparing'
         scan_results['lead_status'] = Config.LEAD_STATUS_LABELS.get('preparing', 'HOT LEAD')
 
-        # Score based on number of libraries found (90-100 range)
+        # Score based on number of signals (90-100 range)
         base_score = Config.GOLDILOCKS_SCORES.get('preparing_min', 90)
-        bonus = min(len(goldilocks_hits) * 5, 10)  # Up to +10 bonus
+        bonus = min(len(all_preparing_hits) * 5, 10)  # Up to +10 bonus
+
+        # Smoking gun forks get extra bonus - they're forking the source!
+        if smoking_gun_hits:
+            bonus = max(bonus, 8)  # At least +8 for any smoking gun fork
 
         # Add bonus for ghost branches (active work)
         ghost_count = summary.get('ghost_branch', {}).get('count', 0)

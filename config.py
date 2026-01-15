@@ -254,6 +254,44 @@ class Config:
     UPPY_LIBRARY = 'uppy'
     UPPY_I18N_INDICATORS = ['locale', 'i18n', 'locales', 'strings']
 
+    # =========================================================================
+    # SMOKING GUN FORK DETECTION
+    # =========================================================================
+    # When a company FORKS these repositories (not just uses them as deps),
+    # it's a strong signal they're customizing i18n infrastructure for their use case.
+    # This is even stronger than dependency injection since they're modifying the source.
+    SMOKING_GUN_FORK_REPOS = [
+        'uppy',                      # File uploader with built-in i18n
+        'react-intl',                # React i18n - forking = deep customization
+        'i18next',                   # i18n framework - forking = extending
+        'formatjs',                  # ICU message formatting
+        'vue-i18n',                  # Vue i18n solution
+        'next-i18next',              # Next.js i18n wrapper
+        'react-i18next',             # React wrapper for i18next
+        'lingui',                    # Lingui i18n framework  
+        'typesafe-i18n',             # TypeScript-first i18n
+        'polyglot.js',               # Airbnb's i18n library
+        'ttag',                      # gettext-based i18n
+        'rosetta',                   # i18n library
+        'globalize',                 # jQuery Foundation i18n
+        'messageformat',             # ICU MessageFormat
+    ]
+
+    # Keywords in package.json "scripts" that indicate i18n preparation
+    BUILD_SCRIPT_I18N_KEYWORDS = [
+        'locale',
+        'i18n',
+        'translation',
+        'translations',
+        'messages',
+        'intl',
+        'localize',
+        'localization',
+        'l10n',
+        'extract-messages',
+        'compile-messages',
+    ]
+
     # Pseudo-localization config patterns
     PSEUDO_CONFIG_PATTERNS = [
         'pseudo: true',
