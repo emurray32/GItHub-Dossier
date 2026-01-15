@@ -297,7 +297,7 @@ def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[obje
         repo_name = repo.get('name')
         yield _sse_log(f"  [{idx}/5] Scanning issues in: {repo_name}")
 
-        for log_msg, signal in _scan_rfc_discussion(org_login, repo_name, company_name):
+        for log_msg, signal in _scan_rfc_discussion(org_login, repo_name, company_name, since_timestamp=last_scanned_at):
             if log_msg:
                 yield _sse_log(f"    {log_msg}")
             if signal:
@@ -425,7 +425,7 @@ def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[obje
         repo_name = repo.get('name')
         yield _sse_log(f"  [{idx}/5] Scanning branches in: {repo_name}")
 
-        for log_msg, signal in _scan_ghost_branches(org_login, repo_name, company_name):
+        for log_msg, signal in _scan_ghost_branches(org_login, repo_name, company_name, since_timestamp=last_scanned_at):
             if log_msg:
                 yield _sse_log(f"    {log_msg}")
             if signal:
@@ -495,20 +495,25 @@ def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[obje
     yield _sse_data('SCAN_COMPLETE', scan_results)
 
 
-def _scan_rfc_discussion(org: str, repo: str, company: str) -> Generator[tuple, None, None]:
+def _scan_rfc_discussion(org: str, repo: str, company: str, since_timestamp: datetime = None) -> Generator[tuple, None, None]:
     """
     Signal 1: RFC & Discussion Scan (Thinking Phase)
 
     Target: Issues and Discussions (Open & Closed)
-    Logic: Flag if title or body contains high-intent keywords in last 6 months
+    Logic: Flag if title or body contains high-intent keywords in last 6 months (or since last scan)
     Keywords: 'i18n strategy', 'localization support', 'handle timezones',
-              'currency formatting', 'RTL support', 'translation workflow', 'multi-currency'
+              'currency formatting', 'RTL support', 'translation workflow', 'multi-currency',
+              'internationalization', 'translate', 'global expansion'
     Priority: HIGH if title starts with 'RFC' or 'Proposal'
 
     Yields:
         Tuples of (log_message, signal_object)
     """
-    cutoff_date = datetime.now() - timedelta(days=Config.RFC_LOOKBACK_DAYS)
+    if since_timestamp:
+        cutoff_date = since_timestamp
+    else:
+        cutoff_date = datetime.now() - timedelta(days=Config.RFC_LOOKBACK_DAYS)
+    
     cutoff_str = cutoff_date.strftime('%Y-%m-%dT%H:%M:%SZ')
 
     # Scan Issues
@@ -1913,7 +1918,7 @@ def _check_locale_folders_exist(org: str, repo: str) -> bool:
     return False
 
 
-def _scan_ghost_branches(org: str, repo: str, company: str) -> Generator[tuple, None, None]:
+def _scan_ghost_branches(org: str, repo: str, company: str, since_timestamp: datetime = None) -> Generator[tuple, None, None]:
     """
     Signal 3: Ghost Branch Scan (Active Phase)
 
@@ -1925,7 +1930,10 @@ def _scan_ghost_branches(org: str, repo: str, company: str) -> Generator[tuple, 
     Yields:
         Tuples of (log_message, signal_object)
     """
-    cutoff_date = datetime.now(timezone.utc) - timedelta(days=90)
+    if since_timestamp:
+        cutoff_date = since_timestamp.replace(tzinfo=timezone.utc) if since_timestamp.tzinfo is None else since_timestamp
+    else:
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=90)
 
     # Scan branches
     try:
