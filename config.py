@@ -221,6 +221,11 @@ class Config:
         'formatjs',                  # ICU message formatting - building the foundation
         'vue-i18n',                  # Vue i18n framework - core library
         'next-i18next',              # Next.js i18n wrapper - core library
+        'next-intl',                 # Modern Next.js i18n library
+        '@lingui/core',              # LinguiJS core
+        '@lingui/react',             # LinguiJS React bindings
+        '@lingui/macro',             # LinguiJS Macro
+        '@formatjs/intl',            # FormatJS Intl library
         'try-pseudo-localization',   # Pseudo-localization for UI layout testing
         'react-pseudo',              # Pseudo-localization for React
         'i18next-pseudo',            # Pseudo-localization for i18next
@@ -545,6 +550,11 @@ class Config:
         'react-i18next': 'React i18n Framework',
         'formatjs': 'Message Formatting Library',
         'uppy': 'File Uploader with i18n Config',
+        'next-intl': 'Next.js Internationalization',
+        '@lingui/core': 'LinguiJS Implementation',
+        '@lingui/react': 'LinguiJS React Bindings',
+        '@lingui/macro': 'LinguiJS Macro',
+        '@formatjs/intl': 'FormatJS Core',
         # Legacy mappings
         'react-intl': 'React',
         'i18next': 'JS/React',
@@ -564,6 +574,10 @@ class Config:
         'react-i18next': 'The team has installed the TRANSLATION ENGINE but hasnt loaded any languages yet. The car is built, but theres no gas.',
         'formatjs': 'The team is setting up MESSAGE FORMATTING - how dates, numbers, and plurals will display in different languages.',
         'uppy': 'The file uploader is being prepared for MULTIPLE LANGUAGES. International users are expected.',
+        'next-intl': 'They are preparing their Next.js app for global markets. This is a modern, high-growth stack.',
+        '@lingui/core': 'They are using LinguiJS, a powerful i18n library. They care about bundle size and performance.',
+        '@lingui/react': 'They are integrating LinguiJS into their React components.',
+        '@formatjs/intl': 'They are using the core FormatJS standards library. Highly technical implementation.',
         'locale_folder_missing': 'GOLDILOCKS: They built the shelves, but have no books. Call now!',
         'locale_folder_source_only': 'GOLDILOCKS: They have a locale folder but ONLY source files. Infrastructure ready, waiting for translation!',
         'locale_folder_exists': 'BLOCKED: They already have translation files. We are too late.',
