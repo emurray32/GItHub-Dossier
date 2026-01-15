@@ -174,6 +174,9 @@ class Config:
         'RTL support',
         'translation workflow',
         'multi-currency',
+        'internationalization',
+        'translate',
+        'global expansion',
     ]
 
     # ============================================================

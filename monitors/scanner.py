@@ -677,7 +677,7 @@ def _scan_smoking_gun_forks(repos: list, company: str, org_login: str) -> Genera
                 'Link': repo_html_url,
                 'priority': 'HIGH',
                 'type': 'smoking_gun_fork',
-                'goldilocks_status': 'PREPARING',
+                'goldilocks_status': 'preparing',
                 'repo': repo_name,
                 'description': repo_description,
                 'pushed_at': pushed_at,
