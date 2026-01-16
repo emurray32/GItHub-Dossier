@@ -506,15 +506,24 @@ a:hover {
     z-index: 10;
 }
 
+.accounts-table td {
+    vertical-align: middle !important;
+    min-height: 48px;
+    height: 48px;
+}
+
+.accounts-table tr {
+    min-height: 48px;
+}
+
 .accounts-table tbody tr:nth-child(even) {
     background-color: transparent;
 }
 
 .evidence-cell {
-    min-width: 250px;
-    max-width: 500px;
     white-space: normal;
     word-wrap: break-word;
+    vertical-align: middle !important;
 }
 
 .company-cell {
