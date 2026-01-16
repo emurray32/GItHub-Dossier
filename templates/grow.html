@@ -1,0 +1,1660 @@
+{% extends "base.html" %}
+
+{% block title %}Grow Pipeline - Lead Machine{% endblock %}
+
+{% block head %}
+<style>
+    .grow-container {
+        display: flex;
+        flex-direction: column;
+        gap: 2rem;
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 2rem;
+    }
+
+    @media (max-width: 1024px) {
+        .grow-container {
+            flex-direction: column;
+        }
+    }
+
+    .panel {
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        padding: 2rem;
+        display: flex;
+        flex-direction: column;
+        box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05);
+    }
+
+    .panel-title {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: var(--text-primary);
+        margin-bottom: 1.5rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    /* Left Panel - Bulk Import */
+    .import-form {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+    }
+
+    .import-label {
+        font-size: 0.875rem;
+        font-weight: 600;
+        color: var(--text-secondary);
+        margin-bottom: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+
+    .companies-textarea {
+        flex: 1;
+        min-height: 300px;
+        padding: 1rem;
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        color: var(--text-primary);
+        font-family: var(--font-mono);
+        font-size: 0.875rem;
+        line-height: 1.6;
+        resize: vertical;
+        outline: none;
+        transition: border-color var(--transition-fast);
+        margin-bottom: 1rem;
+    }
+
+    .companies-textarea:focus {
+        border-color: var(--accent-color);
+    }
+
+    .companies-textarea::placeholder {
+        color: var(--text-muted);
+    }
+
+    .process-batch-btn {
+        padding: 0.875rem 1.5rem;
+        font-size: 1rem;
+        font-weight: 600;
+        background: var(--accent-color);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+        margin-bottom: 1.5rem;
+    }
+
+    .process-batch-btn:hover:not(:disabled) {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
+    }
+
+    .process-batch-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    .console-log {
+        flex: 1;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 1rem;
+        overflow-y: auto;
+        max-height: 400px;
+        font-family: var(--font-mono);
+        font-size: 0.75rem;
+        color: var(--text-secondary);
+        line-height: 1.4;
+    }
+
+    .console-entry {
+        margin-bottom: 0.5rem;
+        padding: 0.25rem 0;
+    }
+
+    .console-entry.success {
+        color: var(--success-color);
+    }
+
+    .console-entry.error {
+        color: var(--error-color);
+    }
+
+    .console-entry.info {
+        color: var(--accent-color);
+    }
+
+    .console-entry.warning {
+        color: var(--warning-color);
+    }
+
+    .console-empty {
+        color: var(--text-muted);
+        font-style: italic;
+        text-align: center;
+        padding: 2rem 0;
+    }
+
+    /* Right Panel - Discovery Engine */
+    .icp-presets {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+    }
+
+    .icp-btn {
+        padding: 0.5rem 1rem;
+        font-size: 0.85rem;
+        font-weight: 500;
+        background: var(--bg-primary);
+        color: var(--text-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 20px;
+        cursor: pointer;
+        transition: all var(--transition-fast);
+    }
+
+    .icp-btn:hover {
+        background: var(--accent-color);
+        color: white;
+        border-color: var(--accent-color);
+        transform: translateY(-1px);
+    }
+
+    .icp-btn.active {
+        background: var(--accent-color);
+        color: white;
+        border-color: var(--accent-color);
+    }
+
+    .search-box {
+        display: flex;
+        gap: 0.75rem;
+        margin-bottom: 1.5rem;
+    }
+
+    .discovery-search {
+        flex: 1;
+        padding: 0.875rem 1rem;
+        font-size: 1rem;
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        color: var(--text-primary);
+        outline: none;
+        transition: border-color var(--transition-fast);
+    }
+
+    .discovery-search:focus {
+        border-color: var(--accent-color);
+    }
+
+    .discovery-search::placeholder {
+        color: var(--text-muted);
+    }
+
+    .search-discovery-btn {
+        padding: 0.875rem 1.5rem;
+        font-size: 1rem;
+        font-weight: 600;
+        background: var(--accent-color);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+    }
+
+    .search-discovery-btn:hover:not(:disabled) {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
+    }
+
+    .search-discovery-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    .results-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 1rem;
+        overflow-y: auto;
+        flex: 1;
+    }
+
+    .org-card {
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 1rem;
+        transition: all var(--transition-normal);
+        display: flex;
+        flex-direction: column;
+        position: relative;
+        box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+    }
+
+    .org-card:hover {
+        border-color: var(--accent-color);
+        transform: translateY(-2px);
+    }
+
+    .org-card.added {
+        opacity: 0.5;
+    }
+
+    .org-card-header {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.75rem;
+        margin-bottom: 0.75rem;
+    }
+
+    .org-avatar {
+        width: 50px;
+        height: 50px;
+        border-radius: 8px;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        flex-shrink: 0;
+    }
+
+    .org-header-info {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .org-name {
+        font-size: 0.95rem;
+        font-weight: 700;
+        color: var(--text-primary);
+        margin-bottom: 0.25rem;
+        word-break: break-word;
+    }
+
+    .org-company-name {
+        font-size: 0.8rem;
+        color: var(--text-muted);
+        margin-bottom: 0.25rem;
+    }
+
+    .revenue-badge {
+        position: absolute;
+        top: 0.75rem;
+        right: 0.75rem;
+        padding: 0.25rem 0.5rem;
+        font-size: 0.7rem;
+        font-weight: 600;
+        background: #fef3c7;
+        color: #92400e;
+        border-radius: 999px;
+        border: 1px solid #fde68a;
+    }
+
+    .industry-tag {
+        display: inline-block;
+        padding: 0.2rem 0.5rem;
+        font-size: 0.7rem;
+        font-weight: 500;
+        background: var(--bg-secondary);
+        color: var(--text-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 4px;
+        margin-bottom: 0.5rem;
+    }
+
+    .org-description {
+        font-size: 0.75rem;
+        color: var(--text-secondary);
+        line-height: 1.4;
+        margin-bottom: 0.75rem;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        min-height: 2.1em;
+    }
+
+    .org-meta {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 0.75rem;
+        font-size: 0.7rem;
+    }
+
+    .org-repos {
+        color: var(--text-muted);
+    }
+
+    .github-status {
+        display: flex;
+        align-items: center;
+        gap: 0.25rem;
+        padding: 0.2rem 0.4rem;
+        border-radius: 4px;
+        font-weight: 500;
+    }
+
+    .github-status.validated {
+        background: rgba(34, 197, 94, 0.1);
+        color: var(--success-color);
+    }
+
+    .github-status.uncertain {
+        background: rgba(245, 158, 11, 0.1);
+        color: var(--warning-color);
+    }
+
+    .track-btn {
+        padding: 0.5rem 0.75rem;
+        font-size: 0.75rem;
+        font-weight: 600;
+        background: var(--accent-color);
+        color: white;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: all var(--transition-fast);
+        width: 100%;
+    }
+
+    .track-btn:hover {
+        background: var(--accent-hover);
+        transform: scale(1.02);
+    }
+
+    .track-btn:disabled {
+        background: var(--success-color);
+        cursor: default;
+        transform: none;
+    }
+
+    .no-results {
+        text-align: center;
+        color: var(--text-muted);
+        padding: 3rem 1rem;
+        grid-column: 1 / -1;
+    }
+
+    .loading {
+        text-align: center;
+        color: var(--accent-color);
+        padding: 2rem 1rem;
+        grid-column: 1 / -1;
+    }
+
+    .spinner {
+        display: inline-block;
+        width: 20px;
+        height: 20px;
+        border: 3px solid var(--border-color);
+        border-top-color: var(--accent-color);
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+        to {
+            transform: rotate(360deg);
+        }
+    }
+
+    .discovery-mode-toggle {
+        display: flex;
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+    }
+
+    .mode-btn {
+        padding: 0.4rem 0.75rem;
+        font-size: 0.75rem;
+        font-weight: 500;
+        background: var(--bg-primary);
+        color: var(--text-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        cursor: pointer;
+        transition: all var(--transition-fast);
+    }
+
+    .mode-btn:hover {
+        border-color: var(--accent-color);
+    }
+
+    .mode-btn.active {
+        background: var(--accent-color);
+        color: white;
+        border-color: var(--accent-color);
+    }
+
+    .page-header {
+        background: var(--bg-secondary);
+        border-bottom: 1px solid var(--border-color);
+        padding: 2rem;
+        margin-bottom: 1rem;
+    }
+
+    .page-title {
+        font-size: 2rem;
+        font-weight: 800;
+        color: var(--text-primary);
+        margin-bottom: 0.5rem;
+    }
+
+    .page-subtitle {
+        font-size: 1rem;
+        color: var(--text-secondary);
+    }
+
+    .bulk-import-tabs {
+        display: flex;
+        gap: 0.5rem;
+        margin-bottom: 1.5rem;
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    .bulk-import-tab {
+        padding: 0.75rem 1rem;
+        font-size: 0.9rem;
+        font-weight: 600;
+        background: none;
+        color: var(--text-secondary);
+        border: none;
+        border-bottom: 2px solid transparent;
+        cursor: pointer;
+        transition: all var(--transition-fast);
+    }
+
+    .bulk-import-tab:hover {
+        color: var(--text-primary);
+    }
+
+    .bulk-import-tab.active {
+        color: var(--accent-color);
+        border-bottom-color: var(--accent-color);
+    }
+
+    .bulk-import-tab-content {
+        display: none;
+    }
+
+    .bulk-import-tab-content.active {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .file-upload-area {
+        border: 2px dashed var(--border-color);
+        border-radius: 8px;
+        padding: 2rem;
+        text-align: center;
+        cursor: pointer;
+        transition: all var(--transition-normal);
+        background: var(--bg-secondary);
+    }
+
+    .file-upload-area:hover {
+        border-color: var(--accent-color);
+        background: rgba(14, 165, 233, 0.05);
+    }
+
+    .file-upload-area.drag-over {
+        border-color: var(--accent-color);
+        background: rgba(14, 165, 233, 0.1);
+    }
+
+    .file-upload-label {
+        display: block;
+        font-size: 1rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin-bottom: 0.5rem;
+    }
+
+    .file-upload-hint {
+        font-size: 0.85rem;
+        color: var(--text-secondary);
+        margin-bottom: 1rem;
+    }
+
+    #csvFileInput {
+        display: none;
+    }
+
+    .csv-upload-btn {
+        padding: 0.875rem 1.5rem;
+        font-size: 1rem;
+        font-weight: 600;
+        background: var(--accent-color);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+        margin-top: 0.5rem;
+    }
+
+    .csv-upload-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
+    }
+
+    .file-selected-info {
+        padding: 0.75rem 1rem;
+        background: rgba(34, 197, 94, 0.1);
+        color: var(--success-color);
+        border-radius: 6px;
+        margin-bottom: 1rem;
+        font-size: 0.9rem;
+    }
+
+    .lead-stream-controls {
+        display: flex;
+        gap: 0.75rem;
+        margin-bottom: 1rem;
+        align-items: center;
+    }
+
+    .lead-stream-btn {
+        padding: 0.875rem 1.5rem;
+        font-size: 1rem;
+        font-weight: 600;
+        background: var(--accent-color);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+    }
+
+    .lead-stream-btn:hover:not(:disabled) {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
+    }
+
+    .lead-stream-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    .lead-stream-stats {
+        display: flex;
+        gap: 1rem;
+        font-size: 0.85rem;
+        color: var(--text-secondary);
+    }
+
+    .lead-stream-stat {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .lead-stream-stat-value {
+        font-weight: 700;
+        color: var(--text-primary);
+    }
+
+    .lead-stream-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        gap: 1rem;
+        overflow-y: auto;
+        flex: 1;
+    }
+
+    .lead-card {
+        background: var(--bg-primary);
+        border: 2px solid var(--border-color);
+        border-radius: 8px;
+        padding: 1.25rem;
+        transition: all var(--transition-normal);
+        display: flex;
+        flex-direction: column;
+        position: relative;
+        box-shadow: 0 2px 4px rgba(15, 23, 42, 0.06);
+    }
+
+    .lead-card:hover {
+        border-color: var(--accent-color);
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(15, 23, 42, 0.1);
+    }
+
+    .lead-card.added {
+        opacity: 0.6;
+        border-color: var(--success-color);
+    }
+
+    .lead-card-header {
+        display: flex;
+        align-items: flex-start;
+        gap: 1rem;
+        margin-bottom: 1rem;
+    }
+
+    .lead-card-avatar {
+        width: 60px;
+        height: 60px;
+        border-radius: 8px;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        flex-shrink: 0;
+    }
+
+    .lead-card-info {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .lead-card-name {
+        font-size: 1rem;
+        font-weight: 700;
+        color: var(--text-primary);
+        margin-bottom: 0.25rem;
+        word-break: break-word;
+    }
+
+    .lead-card-github {
+        font-size: 0.85rem;
+        color: var(--accent-color);
+        font-family: var(--font-mono);
+    }
+
+    .lead-card-industry {
+        display: inline-block;
+        padding: 0.3rem 0.75rem;
+        font-size: 0.75rem;
+        font-weight: 600;
+        background: var(--accent-color);
+        color: white;
+        border-radius: 20px;
+        margin-bottom: 0.75rem;
+    }
+
+    .lead-card-description {
+        font-size: 0.85rem;
+        color: var(--text-secondary);
+        line-height: 1.5;
+        margin-bottom: 1rem;
+        display: -webkit-box;
+        -webkit-line-clamp: 3;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        min-height: 3em;
+    }
+
+    .lead-card-meta {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.75rem 0;
+        border-top: 1px solid var(--border-color);
+        margin-bottom: 0.75rem;
+        font-size: 0.8rem;
+        color: var(--text-muted);
+    }
+
+    .lead-card-revenue {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .lead-card-actions {
+        display: flex;
+        gap: 0.5rem;
+    }
+
+    .lead-approve-btn {
+        flex: 1;
+        padding: 0.75rem;
+        font-size: 0.85rem;
+        font-weight: 600;
+        background: var(--success-color);
+        color: white;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: all var(--transition-fast);
+    }
+
+    .lead-approve-btn:hover:not(:disabled) {
+        transform: scale(1.02);
+        box-shadow: 0 2px 8px rgba(34, 197, 94, 0.3);
+    }
+
+    .lead-approve-btn:disabled {
+        background: var(--accent-color);
+        cursor: default;
+        transform: none;
+    }
+
+    .lead-skip-btn {
+        padding: 0.75rem 1rem;
+        font-size: 0.85rem;
+        font-weight: 600;
+        background: var(--bg-secondary);
+        color: var(--text-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        cursor: pointer;
+        transition: all var(--transition-fast);
+    }
+
+    .lead-skip-btn:hover {
+        background: var(--border-color);
+        color: var(--text-primary);
+    }
+
+    .stream-empty {
+        text-align: center;
+        color: var(--text-muted);
+        padding: 2rem;
+        grid-column: 1 / -1;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="container">
+        <h1 class="page-title">Grow Pipeline</h1>
+        <p class="page-subtitle">Rapidly fill the top of your funnel with new companies</p>
+    </div>
+</div>
+
+<div class="container">
+    <div class="grow-container">
+        <!-- Top Panel: Bulk Import -->
+        <div class="panel">
+            <h2 class="panel-title">Bulk Import</h2>
+
+            <!-- Tabs for different import methods -->
+            <div class="bulk-import-tabs">
+                <button class="bulk-import-tab active" onclick="switchImportTab('manual')">Manual Entry</button>
+                <button class="bulk-import-tab" onclick="switchImportTab('csv')">Upload CSV</button>
+            </div>
+
+            <!-- Manual Entry Tab -->
+            <div class="bulk-import-tab-content active" id="manualTab">
+                <form class="import-form" id="importForm" onsubmit="processImport(event)">
+                    <label class="import-label">Company Names (one per line)</label>
+                    <textarea class="companies-textarea" id="companiesInput"
+                        placeholder="Shopify&#10;Stripe&#10;Figma&#10;Slack&#10;Notion"></textarea>
+
+                    <button type="submit" class="process-batch-btn" id="processBtn">
+                        ▶ Process Batch
+                    </button>
+                </form>
+            </div>
+
+            <!-- CSV Upload Tab -->
+            <div class="bulk-import-tab-content" id="csvTab">
+                <div class="file-upload-area" id="fileUploadArea" onclick="document.getElementById('csvFileInput').click()">
+                    <span class="file-upload-label">📁 Choose CSV File or Drag Here</span>
+                    <span class="file-upload-hint">CSV should have a "company_name" column. Optional: "annual_revenue"</span>
+                    <button type="button" class="csv-upload-btn">Select File</button>
+                </div>
+                <input type="file" id="csvFileInput" accept=".csv" onchange="handleCSVFile(event)">
+                <div id="fileSelectedInfo" style="display: none;" class="file-selected-info"></div>
+                <button type="button" class="process-batch-btn" id="processCSVBtn" style="display: none;" onclick="processCSVImport()">
+                    ▶ Process CSV
+                </button>
+            </div>
+
+            <label class="import-label" style="margin-top: 1.5rem;">Console Log</label>
+            <div class="console-log" id="consoleLog">
+                <div class="console-empty">Console output will appear here...</div>
+            </div>
+        </div>
+
+        <!-- Bottom Panel: Discovery Engine -->
+        <div class="panel">
+            <h2 class="panel-title">Universal Discovery Engine</h2>
+
+            <!-- Discovery Mode Toggle -->
+            <div class="discovery-mode-toggle">
+                <button class="mode-btn" id="modeStream" onclick="setDiscoveryMode('stream')">🔥 Lead Stream</button>
+                <button class="mode-btn" id="modeGithub" onclick="setDiscoveryMode('github')">GitHub Search</button>
+                <button class="mode-btn active" id="modeAI" onclick="setDiscoveryMode('ai')">AI Discovery</button>
+            </div>
+
+            <!-- Lead Stream Controls (hidden by default) -->
+            <div class="lead-stream-controls" id="leadStreamControls" style="display: none;">
+                <button type="button" class="lead-stream-btn" id="loadMoreBtn" onclick="loadMoreLeads()">
+                    Load More Leads
+                </button>
+                <div class="lead-stream-stats">
+                    <div class="lead-stream-stat">
+                        <span>Total Leads:</span>
+                        <span class="lead-stream-stat-value" id="totalLeadsCount">0</span>
+                    </div>
+                    <div class="lead-stream-stat">
+                        <span>Added:</span>
+                        <span class="lead-stream-stat-value" id="addedLeadsCount">0</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ICP Presets -->
+            <div class="icp-presets" id="icpPresets">
+                <button class="icp-btn" onclick="selectICP('Retail/DTC E-commerce')">Retail/DTC</button>
+                <button class="icp-btn" onclick="selectICP('Fintech Banking')">Fintech</button>
+                <button class="icp-btn" onclick="selectICP('HealthTech Medical')">HealthTech</button>
+                <button class="icp-btn" onclick="selectICP('Logistics Supply Chain')">Logistics</button>
+                <button class="icp-btn" onclick="selectICP('SaaS B2B Software')">SaaS</button>
+            </div>
+
+            <div class="search-box">
+                <input type="text" class="discovery-search" id="discoverySearch"
+                    placeholder="Enter industry (e.g., Fintech, HealthTech, DTC Retail)"
+                    onkeyup="handleSearchKeyup(event)" oninput="handleSearchInput()" />
+                <button class="search-discovery-btn" id="searchBtn" onclick="performDiscovery()">
+                    Discover
+                </button>
+            </div>
+
+            <!-- Results Grid (for AI and GitHub modes) -->
+            <div class="results-grid" id="resultsGrid">
+                <div class="console-empty">Select an ICP preset or enter an industry to discover companies...</div>
+            </div>
+
+            <!-- Lead Stream Grid (for stream mode) -->
+            <div class="lead-stream-grid" id="leadStreamGrid" style="display: none;">
+                <div class="stream-empty">Start the lead stream to see rapid-fire leads for approval...</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Discovery mode: 'ai' or 'github' or 'stream'
+    let discoveryMode = 'ai';
+    let selectedCSVData = null;
+    let csvFileInput = null;
+    let leadStreamOffset = 0;
+    let leadStreamTotal = 0;
+    let addedLeadsCount = 0;
+    let allStreamLeads = [];
+
+    function switchImportTab(tab) {
+        // Update tab buttons
+        document.querySelectorAll('.bulk-import-tab').forEach(btn => btn.classList.remove('active'));
+        event.target.classList.add('active');
+
+        // Update tab contents
+        document.getElementById('manualTab').classList.remove('active');
+        document.getElementById('csvTab').classList.remove('active');
+
+        if (tab === 'manual') {
+            document.getElementById('manualTab').classList.add('active');
+        } else {
+            document.getElementById('csvTab').classList.add('active');
+            setupDragDrop();
+        }
+    }
+
+    function setupDragDrop() {
+        const uploadArea = document.getElementById('fileUploadArea');
+        if (!uploadArea) return;
+
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('drag-over');
+        });
+
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('drag-over');
+        });
+
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('drag-over');
+            if (e.dataTransfer.files.length > 0) {
+                document.getElementById('csvFileInput').files = e.dataTransfer.files;
+                handleCSVFile({ target: { files: e.dataTransfer.files } });
+            }
+        });
+    }
+
+    function handleCSVFile(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        if (!file.name.endsWith('.csv')) {
+            addConsoleEntry('Please select a CSV file', 'error');
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const csv = e.target.result;
+                const companies = parseCSV(csv);
+
+                if (companies.length === 0) {
+                    addConsoleEntry('No valid company names found in CSV', 'error');
+                    return;
+                }
+
+                selectedCSVData = companies;
+                const infoDiv = document.getElementById('fileSelectedInfo');
+                infoDiv.textContent = `✓ ${companies.length} companies loaded from ${file.name}`;
+                infoDiv.style.display = 'block';
+
+                document.getElementById('processCSVBtn').style.display = 'block';
+                addConsoleEntry(`Ready to process ${companies.length} companies from CSV`, 'info');
+            } catch (error) {
+                addConsoleEntry(`Error parsing CSV: ${error.message}`, 'error');
+            }
+        };
+
+        reader.readAsText(file);
+    }
+
+    function parseCSV(csv) {
+        const lines = csv.trim().split('\n');
+        if (lines.length === 0) return [];
+
+        const header = lines[0].split(',').map(h => h.trim().toLowerCase());
+        const companyNameIndex = header.findIndex(h =>
+            h === 'company_name' || h === 'name' || h === 'company' || h === 'company name'
+        );
+
+        if (companyNameIndex === -1) {
+            throw new Error('CSV must have a "company_name", "name", or "company" column');
+        }
+
+        // Find annual_revenue column (optional)
+        const revenueIndex = header.findIndex(h =>
+            h === 'annual_revenue' || h === 'revenue' || h === 'annual revenue' || h === 'estimated_revenue'
+        );
+
+        const companies = [];
+        for (let i = 1; i < lines.length; i++) {
+            const fields = lines[i].split(',').map(f => f.trim());
+            if (fields[companyNameIndex]) {
+                const company = {
+                    name: fields[companyNameIndex],
+                    annual_revenue: revenueIndex !== -1 ? fields[revenueIndex] || null : null
+                };
+                companies.push(company);
+            }
+        }
+
+        return companies;
+    }
+
+    async function processCSVImport() {
+        if (!selectedCSVData || selectedCSVData.length === 0) {
+            addConsoleEntry('No CSV data loaded', 'error');
+            return;
+        }
+
+        const btn = document.getElementById('processCSVBtn');
+        btn.disabled = true;
+
+        clearConsole();
+        addConsoleEntry(`Starting batch import of ${selectedCSVData.length} companies from CSV...`, 'info');
+
+        try {
+            const response = await fetch('/api/import', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ companies: selectedCSVData })
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                // Handle async batch import response
+                if (data.status === 'queued' && data.batch_id) {
+                    addConsoleEntry(`Import batch #${data.batch_id} queued (${data.total_count} companies)`, 'info');
+                    addConsoleEntry('Processing in background...', 'info');
+
+                    // Reset CSV immediately
+                    selectedCSVData = null;
+                    document.getElementById('csvFileInput').value = '';
+                    document.getElementById('fileSelectedInfo').style.display = 'none';
+                    document.getElementById('processCSVBtn').style.display = 'none';
+
+                    // Poll for batch completion
+                    await pollBatchProgress(data.batch_id, data.total_count);
+                } else if (data.results) {
+                    // Legacy synchronous response format (if ever used)
+                    handleLegacyImportResponse(data);
+                } else {
+                    addConsoleEntry('Import started successfully', 'success');
+                    if (data.batch_id) {
+                        setTimeout(() => {
+                            window.location.href = `/accounts?highlight_batch=${data.batch_id}`;
+                        }, 2000);
+                    }
+                }
+            } else {
+                addConsoleEntry(`Error: ${data.error}`, 'error');
+            }
+        } catch (error) {
+            addConsoleEntry(`Network Error: ${error.message}`, 'error');
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    async function pollBatchProgress(batchId, totalCount) {
+        let lastProcessed = 0;
+        const pollInterval = 2000; // 2 seconds
+        const maxPolls = 600; // Max 20 minutes of polling
+        let pollCount = 0;
+
+        const poll = async () => {
+            try {
+                const response = await fetch(`/api/import-batch/${batchId}`);
+                const data = await response.json();
+
+                if (!response.ok) {
+                    addConsoleEntry(`Error checking batch status: ${data.error}`, 'error');
+                    return;
+                }
+
+                const processed = data.processed_count || 0;
+                const total = data.total_count || totalCount;
+                const status = data.status;
+
+                // Update progress if changed
+                if (processed > lastProcessed) {
+                    const progressBar = '█'.repeat(Math.floor(processed / total * 20)) + '░'.repeat(20 - Math.floor(processed / total * 20));
+                    addConsoleEntry(`[${progressBar}] ${processed}/${total} (${data.progress_percent}%)`, 'info');
+                    lastProcessed = processed;
+                }
+
+                if (status === 'completed') {
+                    addConsoleEntry('', 'info');
+                    addConsoleEntry(`═══════════════════════════════════`, 'info');
+                    addConsoleEntry(`Import Complete`, 'success');
+                    addConsoleEntry(`═══════════════════════════════════`, 'info');
+                    addConsoleEntry(`Processed: ${processed} / ${total}`, 'success');
+                    addConsoleEntry('', 'info');
+                    addConsoleEntry('Redirecting to results...', 'info');
+                    setTimeout(() => {
+                        window.location.href = `/accounts?highlight_batch=${batchId}`;
+                    }, 2000);
+                    return;
+                } else if (status === 'failed') {
+                    addConsoleEntry('Import batch failed', 'error');
+                    return;
+                } else if (pollCount < maxPolls) {
+                    pollCount++;
+                    setTimeout(poll, pollInterval);
+                } else {
+                    addConsoleEntry('Import is still processing. Check accounts page for results.', 'info');
+                    setTimeout(() => {
+                        window.location.href = `/accounts?highlight_batch=${batchId}`;
+                    }, 2000);
+                }
+            } catch (error) {
+                addConsoleEntry(`Error polling batch status: ${error.message}`, 'error');
+            }
+        };
+
+        // Start polling
+        setTimeout(poll, pollInterval);
+    }
+
+    function handleLegacyImportResponse(data) {
+        // Handle legacy synchronous response format
+        addConsoleEntry('', 'info');
+        addConsoleEntry(`═══════════════════════════════════`, 'info');
+        addConsoleEntry(`Import Complete`, 'success');
+        addConsoleEntry(`═══════════════════════════════════`, 'info');
+
+        const results = data.results || [];
+        const added = data.added || [];
+        const failed = data.failed || [];
+        const totalProcessed = data.total_processed || results.length;
+
+        const enrichedCount = results.filter(r => r.status === 'enriched').length;
+        addConsoleEntry(`Added: ${added.length} / ${totalProcessed}`, 'success');
+        if (enrichedCount > 0) {
+            addConsoleEntry(`Enriched: ${enrichedCount} / ${totalProcessed}`, 'success');
+        }
+        addConsoleEntry(`Failed: ${failed.length} / ${totalProcessed}`, 'error');
+        addConsoleEntry('', 'info');
+
+        // Show results
+        results.forEach(result => {
+            if (result.status === 'added') {
+                addConsoleEntry(`Added ${result.company} → ${result.github_org}`, 'success');
+            } else if (result.status === 'enriched') {
+                addConsoleEntry(`Enriched ${result.company} with revenue data`, 'success');
+            } else {
+                addConsoleEntry(`${result.company} (${result.status})`, 'error');
+            }
+        });
+
+        // Reset CSV
+        selectedCSVData = null;
+        document.getElementById('csvFileInput').value = '';
+        document.getElementById('fileSelectedInfo').style.display = 'none';
+        document.getElementById('processCSVBtn').style.display = 'none';
+
+        // Redirect to accounts page with batch_id
+        if (data.batch_id) {
+            addConsoleEntry('', 'info');
+            addConsoleEntry('Redirecting to results...', 'info');
+            setTimeout(() => {
+                window.location.href = `/accounts?highlight_batch=${data.batch_id}`;
+            }, 2000);
+        }
+    }
+
+    async function initLeadStream() {
+        // Reset stream state
+        leadStreamOffset = 0;
+        leadStreamTotal = 0;
+        addedLeadsCount = 0;
+        allStreamLeads = [];
+
+        // Show stream grid
+        document.getElementById('leadStreamGrid').style.display = 'grid';
+        document.getElementById('leadStreamGrid').innerHTML = '<div class="loading"><div class="spinner"></div> Loading lead stream...</div>';
+
+        // Load initial batch
+        await loadMoreLeads();
+    }
+
+    async function loadMoreLeads() {
+        const grid = document.getElementById('leadStreamGrid');
+        const btn = document.getElementById('loadMoreBtn');
+        btn.disabled = true;
+
+        try {
+            const response = await fetch(`/api/lead-stream?offset=${leadStreamOffset}&limit=10`);
+            const data = await response.json();
+
+            if (response.ok) {
+                leadStreamTotal = data.total;
+                const leads = data.leads || [];
+
+                if (leads.length === 0 && leadStreamOffset === 0) {
+                    grid.innerHTML = '<div class="stream-empty">No leads available at this time. Try again later.</div>';
+                    btn.disabled = false;
+                    return;
+                }
+
+                // Add new leads to our collection
+                allStreamLeads.push(...leads);
+                leadStreamOffset += leads.length;
+
+                // Render the leads
+                displayLeadStream(leads, leadStreamOffset === leads.length);
+
+                // Update stats
+                document.getElementById('totalLeadsCount').textContent = leadStreamTotal;
+                document.getElementById('addedLeadsCount').textContent = addedLeadsCount;
+            } else {
+                grid.innerHTML = `<div class="stream-empty">Error loading leads: ${data.error || 'Unknown error'}</div>`;
+            }
+        } catch (error) {
+            grid.innerHTML = `<div class="stream-empty">Error: ${error.message}</div>`;
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    function displayLeadStream(leads, isInitial) {
+        const grid = document.getElementById('leadStreamGrid');
+
+        if (isInitial) {
+            grid.innerHTML = '';
+        }
+
+        const html = leads.map(lead => {
+            const githubData = lead.github_data || {};
+            const orgLogin = githubData.login || '';
+            const avatarUrl = githubData.avatar_url || 'https://via.placeholder.com/60?text=' + encodeURIComponent(lead.name.charAt(0));
+
+            return `
+                <div class="lead-card" data-login="${escapeHtml(orgLogin)}">
+                    <div class="lead-card-header">
+                        <img src="${avatarUrl}" alt="${escapeHtml(lead.name)}" class="lead-card-avatar" onerror="this.src='https://via.placeholder.com/60'">
+                        <div class="lead-card-info">
+                            <div class="lead-card-name">${escapeHtml(lead.name)}</div>
+                            <div class="lead-card-github">@${escapeHtml(orgLogin)}</div>
+                        </div>
+                    </div>
+
+                    <span class="lead-card-industry">${escapeHtml(lead.industry || 'Technology')}</span>
+
+                    <div class="lead-card-description">${escapeHtml(lead.description || 'No description available')}</div>
+
+                    <div class="lead-card-meta">
+                        <div class="lead-card-revenue">💰 ${escapeHtml(lead.revenue || 'Unknown')}</div>
+                        <span>${githubData.public_repos || 0} repos</span>
+                    </div>
+
+                    <div class="lead-card-actions">
+                        <button
+                            class="lead-approve-btn"
+                            onclick="approveLeadQuick('${escapeHtml(orgLogin)}', '${escapeHtml(lead.name)}', this)"
+                            data-org="${escapeHtml(orgLogin)}"
+                        >
+                            ✓ Add Lead
+                        </button>
+                        <button class="lead-skip-btn" onclick="skipLead(this)">Skip</button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        grid.innerHTML += html;
+    }
+
+    async function approveLeadQuick(orgLogin, companyName, button) {
+        button.disabled = true;
+
+        try {
+            const response = await fetch('/api/track', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    org_login: orgLogin,
+                    company_name: companyName || orgLogin
+                })
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                addedLeadsCount++;
+                document.getElementById('addedLeadsCount').textContent = addedLeadsCount;
+                button.parentElement.parentElement.classList.add('added');
+                button.textContent = '✓ Added';
+            } else {
+                addConsoleEntry(`Failed to add ${orgLogin}: ${data.error}`, 'error');
+                button.disabled = false;
+            }
+        } catch (error) {
+            addConsoleEntry(`Error adding ${orgLogin}: ${error.message}`, 'error');
+            button.disabled = false;
+        }
+    }
+
+    function skipLead(button) {
+        button.parentElement.parentElement.classList.add('added');
+        button.disabled = true;
+        button.textContent = 'Skipped';
+    }
+
+    function setDiscoveryMode(mode) {
+        discoveryMode = mode;
+
+        // Update button states
+        document.getElementById('modeAI').classList.toggle('active', mode === 'ai');
+        document.getElementById('modeGithub').classList.toggle('active', mode === 'github');
+        document.getElementById('modeStream').classList.toggle('active', mode === 'stream');
+
+        // Hide results grids
+        document.getElementById('resultsGrid').style.display = 'none';
+        document.getElementById('leadStreamGrid').style.display = 'none';
+
+        // Show/hide ICP presets (only for AI mode)
+        document.getElementById('icpPresets').style.display = mode === 'ai' ? 'flex' : 'none';
+
+        // Show/hide search box (not for stream mode)
+        document.querySelector('.search-box').style.display = mode === 'stream' ? 'none' : 'flex';
+
+        // Show/hide lead stream controls
+        document.getElementById('leadStreamControls').style.display = mode === 'stream' ? 'flex' : 'none';
+
+        if (mode === 'stream') {
+            // Initialize lead stream
+            initLeadStream();
+        } else if (mode === 'ai') {
+            document.getElementById('resultsGrid').style.display = 'block';
+            showGridMessage('Select an ICP preset or enter an industry to discover companies...');
+        } else if (mode === 'github') {
+            document.getElementById('resultsGrid').style.display = 'block';
+            showGridMessage('Enter a keyword to search GitHub organizations...');
+        }
+
+        // Update placeholder
+        const searchInput = document.getElementById('discoverySearch');
+        if (mode === 'ai') {
+            searchInput.placeholder = 'Enter industry (e.g., Fintech, HealthTech, DTC Retail)';
+        } else {
+            searchInput.placeholder = 'Search keywords (e.g., fintech, health, react)';
+        }
+    }
+
+    function selectICP(industry) {
+        // Update search input
+        document.getElementById('discoverySearch').value = industry;
+
+        // Clear active state from all ICP buttons
+        document.querySelectorAll('.icp-btn').forEach(btn => btn.classList.remove('active'));
+
+        // Mark clicked button as active
+        event.target.classList.add('active');
+
+        // Trigger discovery
+        performDiscovery();
+    }
+
+    let discoveryDebounceTimer = null;
+
+    function handleSearchInput() {
+        if (discoveryDebounceTimer) {
+            clearTimeout(discoveryDebounceTimer);
+        }
+
+        // Use a longer debounce for discovery since it's an expensive operation
+        // 800ms feels responsive but prevents too many accidental triggers
+        discoveryDebounceTimer = setTimeout(() => {
+            const keyword = document.getElementById('discoverySearch').value.trim();
+            if (keyword.length >= 3) {
+                performDiscovery();
+            }
+        }, 800);
+    }
+
+    function handleSearchKeyup(event) {
+        if (event.key === 'Enter') {
+            if (discoveryDebounceTimer) {
+                clearTimeout(discoveryDebounceTimer);
+            }
+            performDiscovery();
+        }
+    }
+
+    async function performDiscovery() {
+        const keyword = document.getElementById('discoverySearch').value.trim();
+        if (!keyword) {
+            showGridMessage('Please enter a search keyword');
+            return;
+        }
+
+        const grid = document.getElementById('resultsGrid');
+        const btn = document.getElementById('searchBtn');
+        btn.disabled = true;
+
+        // Show loading with mode-specific message
+        const loadingMsg = discoveryMode === 'ai'
+            ? 'AI is discovering companies...'
+            : 'Searching GitHub...';
+        grid.innerHTML = `<div class="loading"><div class="spinner"></div> ${loadingMsg}</div>`;
+
+        try {
+            // Use different API based on mode
+            const apiUrl = discoveryMode === 'ai'
+                ? `/api/ai-discover?q=${encodeURIComponent(keyword)}`
+                : `/api/discover?q=${encodeURIComponent(keyword)}`;
+
+            const response = await fetch(apiUrl);
+            const data = await response.json();
+
+            if (response.ok) {
+                if (discoveryMode === 'ai') {
+                    displayAIResults(data);
+                } else {
+                    displayGitHubResults(data);
+                }
+            } else {
+                showGridMessage(`Error: ${data.error || 'Search failed'}`);
+            }
+        } catch (error) {
+            showGridMessage(`Error: ${error.message}`);
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    function displayAIResults(companies) {
+        const grid = document.getElementById('resultsGrid');
+
+        if (!companies || companies.length === 0) {
+            showGridMessage('No companies found. Try a different industry or check if AI is configured.');
+            return;
+        }
+
+        grid.innerHTML = companies.map(company => {
+            const githubData = company.github_data || {};
+            const orgLogin = githubData.login || company.suggested_github_org || '';
+            const avatarUrl = githubData.avatar_url || 'https://via.placeholder.com/50?text=' + encodeURIComponent(company.name.charAt(0));
+            const repoCount = githubData.public_repos || 0;
+            const isValidated = company.github_validated;
+
+            return `
+                <div class="org-card" data-login="${escapeHtml(orgLogin)}">
+                    <span class="revenue-badge">Revenue: ${escapeHtml(company.revenue || 'Unknown')}</span>
+
+                    <div class="org-card-header">
+                        <img src="${avatarUrl}" alt="${escapeHtml(company.name)}" class="org-avatar" onerror="this.src='https://via.placeholder.com/50'">
+                        <div class="org-header-info">
+                            <div class="org-name">${escapeHtml(company.name)}</div>
+                            <div class="org-company-name">@${escapeHtml(orgLogin)}</div>
+                        </div>
+                    </div>
+
+                    <span class="industry-tag">${escapeHtml(company.industry || 'Tech')}</span>
+
+                    <div class="org-description">${escapeHtml(company.description || 'No description available')}</div>
+
+                    <div class="org-meta">
+                        <span class="org-repos">${repoCount} repos</span>
+                        <span class="github-status ${isValidated ? 'validated' : 'uncertain'}">
+                            ${isValidated ? 'GitHub Found' : 'GitHub Uncertain'}
+                        </span>
+                    </div>
+
+                    <button
+                        class="track-btn"
+                        onclick="trackOrganization('${escapeHtml(orgLogin)}', '${escapeHtml(company.name)}', this)"
+                        data-org="${escapeHtml(orgLogin)}"
+                        ${!isValidated ? 'disabled title="GitHub org not validated"' : ''}
+                    >
+                        ${isValidated ? '+ Track' : 'GitHub Not Found'}
+                    </button>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function displayGitHubResults(orgs) {
+        const grid = document.getElementById('resultsGrid');
+
+        if (!orgs || orgs.length === 0) {
+            showGridMessage('No organizations found matching this keyword');
+            return;
+        }
+
+        grid.innerHTML = orgs.map(org => `
+            <div class="org-card" data-login="${escapeHtml(org.login)}">
+                <div class="org-card-header">
+                    <img src="${org.avatar_url}" alt="${escapeHtml(org.login)}" class="org-avatar" onerror="this.src='https://via.placeholder.com/50'">
+                    <div class="org-header-info">
+                        <div class="org-name">${escapeHtml(org.login)}</div>
+                    </div>
+                </div>
+
+                <div class="org-description">${escapeHtml(org.description || 'No description')}</div>
+
+                <div class="org-meta">
+                    <span class="org-repos">${org.public_repos} repos</span>
+                    <span class="github-status validated">GitHub Found</span>
+                </div>
+
+                <button
+                    class="track-btn"
+                    onclick="trackOrganization('${escapeHtml(org.login)}', '${escapeHtml(org.login)}', this)"
+                    data-org="${escapeHtml(org.login)}"
+                >
+                    + Track
+                </button>
+            </div>
+        `).join('');
+    }
+
+    function showGridMessage(message) {
+        document.getElementById('resultsGrid').innerHTML = `<div class="console-empty">${escapeHtml(message)}</div>`;
+    }
+
+    async function trackOrganization(orgLogin, companyName, button) {
+        button.disabled = true;
+
+        try {
+            const response = await fetch('/api/track', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    org_login: orgLogin,
+                    company_name: companyName || orgLogin
+                })
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                button.textContent = 'Added';
+                button.parentElement.classList.add('added');
+                addConsoleEntry(`Tracked ${companyName || orgLogin} (@${orgLogin}) to Tier 0`, 'success');
+            } else {
+                addConsoleEntry(`Failed to track ${orgLogin}: ${data.error}`, 'error');
+                button.disabled = false;
+            }
+        } catch (error) {
+            addConsoleEntry(`Error tracking ${orgLogin}: ${error.message}`, 'error');
+            button.disabled = false;
+        }
+    }
+
+    async function processImport(event) {
+        event.preventDefault();
+
+        const input = document.getElementById('companiesInput').value.trim();
+        const btn = document.getElementById('processBtn');
+
+        if (!input) {
+            addConsoleEntry('Please enter at least one company name', 'warning');
+            return;
+        }
+
+        const companies = input.split('\n').map(c => c.trim()).filter(c => c.length > 0);
+
+        clearConsole();
+        btn.disabled = true;
+        addConsoleEntry(`Starting batch import of ${companies.length} companies...`, 'info');
+
+        try {
+            const response = await fetch('/api/import', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ companies })
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                addConsoleEntry('', 'info');
+                addConsoleEntry(`═══════════════════════════════════`, 'info');
+                addConsoleEntry(`Import Complete`, 'success');
+                addConsoleEntry(`═══════════════════════════════════`, 'info');
+                addConsoleEntry(`Added: ${data.added.length} / ${data.total_processed}`, 'success');
+                addConsoleEntry(`Failed: ${data.failed.length} / ${data.total_processed}`, 'error');
+                addConsoleEntry('', 'info');
+
+                // Show results
+                data.results.forEach(result => {
+                    if (result.status === 'added') {
+                        addConsoleEntry(`Added ${result.company} → ${result.github_org}`, 'success');
+                    } else {
+                        addConsoleEntry(`${result.company} (${result.status})`, 'error');
+                    }
+                });
+
+                // Redirect to accounts page with batch_id to highlight new imports
+                if (data.batch_id) {
+                    addConsoleEntry('', 'info');
+                    addConsoleEntry('Redirecting to results...', 'info');
+                    setTimeout(() => {
+                        window.location.href = `/accounts?highlight_batch=${data.batch_id}`;
+                    }, 2000);
+                }
+            } else {
+                addConsoleEntry(`Error: ${data.error}`, 'error');
+            }
+        } catch (error) {
+            addConsoleEntry(`Network Error: ${error.message}`, 'error');
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    function clearConsole() {
+        const log = document.getElementById('consoleLog');
+        log.innerHTML = '';
+    }
+
+    function addConsoleEntry(message, type = 'info') {
+        const log = document.getElementById('consoleLog');
+
+        // Clear "empty" message on first entry
+        if (log.querySelector('.console-empty')) {
+            log.innerHTML = '';
+        }
+
+        const entry = document.createElement('div');
+        entry.className = `console-entry ${type}`;
+        entry.textContent = message;
+        log.appendChild(entry);
+
+        // Auto-scroll to bottom
+        log.scrollTop = log.scrollHeight;
+    }
+
+    function escapeHtml(text) {
+        if (!text) return '';
+        const map = {
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#039;'
+        };
+        return String(text).replace(/[&<>"']/g, m => map[m]);
+    }
+
+    // Initialize on page load
+    document.addEventListener('DOMContentLoaded', function () {
+        setDiscoveryMode('ai');
+
+        const textarea = document.querySelector('.companies-textarea');
+        if (textarea) {
+            const resizeTextarea = () => {
+                textarea.style.height = 'auto';
+                textarea.style.height = `${textarea.scrollHeight}px`;
+            };
+
+            textarea.addEventListener('input', resizeTextarea);
+            resizeTextarea();
+        }
+    });
+</script>
+{% endblock %}

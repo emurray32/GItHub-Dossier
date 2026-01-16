@@ -20,6 +20,7 @@
             </a>
             <div class="nav-links">
                 <a href="{{ url_for('accounts') }}" class="{% if request.endpoint == 'accounts' %}active{% endif %}">Accounts</a>
+                <a href="{{ url_for('grow') }}" class="{% if request.endpoint == 'grow' %}active{% endif %}">Grow</a>
                 <a href="{{ url_for('history') }}" class="{% if request.endpoint == 'history' %}active{% endif %}">History</a>
             </div>
         </div>
