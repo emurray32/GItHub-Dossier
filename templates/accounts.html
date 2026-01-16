@@ -149,6 +149,15 @@
         padding: 0.6rem 0.4rem;
     }
 
+    .accounts-table th.row-num-col,
+    .accounts-table td.row-num-col {
+        width: 40px;
+        text-align: center;
+        padding: 0.6rem 0.4rem;
+        color: var(--text-muted);
+        font-size: 0.85rem;
+    }
+
     .select-account-checkbox {
         width: 16px;
         height: 16px;
@@ -1628,6 +1637,7 @@
                         <input type="checkbox" id="select-all-accounts" class="select-account-checkbox"
                             aria-label="Select all accounts">
                     </th>
+                    <th class="row-num-col">#</th>
                     <th class="sortable" data-sort-key="company">Company <span class="sort-indicator">↕</span></th>
                     <th class="sortable" data-sort-key="github_org">GitHub Org <span class="sort-indicator">↕</span>
                     </th>
@@ -1651,6 +1661,7 @@
             <td class="select-col">
                 <input type="checkbox" class="select-account-checkbox row-select" data-account-id="{id}" aria-label="Select {company_name}">
             </td>
+            <td class="row-num-col">{row_number}</td>
             <td class="company-cell">
                 <span class="company-cell-content">
                     {company_link}
@@ -1694,7 +1705,7 @@
     <div style="display: none;">
         <tbody id="accounts-tbody-old">
             <tr class="table-empty-row hidden" id="accounts-empty-row">
-                <td colspan="7">No accounts match your filters.</td>
+                <td colspan="8">No accounts match your filters.</td>
             </tr>
             {% for account in accounts %}
             <tr id="row-{{ account.id }}" data-company="{{ account.company_name }}" data-account-id="{{ account.id }}"
@@ -1704,6 +1715,7 @@
                     <input type="checkbox" class="select-account-checkbox row-select" data-account-id="{{ account.id }}"
                         aria-label="Select {{ account.company_name }}">
                 </td>
+                <td class="row-num-col">{{ loop.index }}</td>
                 <td class="company-cell">
                     <span class="company-cell-content">
                         {% if account.latest_report_id %}
@@ -2504,11 +2516,11 @@
         const tbody = document.querySelector('#accounts-tbody');
 
         if (!accounts || accounts.length === 0) {
-            tbody.innerHTML = '<tr class="table-empty-row"><td colspan="7">No accounts match your filters.</td></tr>';
+            tbody.innerHTML = '<tr class="table-empty-row"><td colspan="8">No accounts match your filters.</td></tr>';
             return;
         }
 
-        const rows = accounts.map(account => {
+        const rows = accounts.map((account, index) => {
             const companyLink = account.latest_report_id
                 ? `<a href="/report/${account.latest_report_id}">${escapeHtml(account.company_name)}</a>`
                 : escapeHtml(account.company_name);
@@ -2539,6 +2551,7 @@
                     <td class="select-col">
                         <input type="checkbox" class="select-account-checkbox row-select" data-account-id="${account.id}" aria-label="Select ${escapeHtml(account.company_name)}">
                     </td>
+                    <td class="row-num-col">${index + 1}</td>
                     <td class="company-cell">
                         <span class="company-cell-content">
                             ${companyLink}
