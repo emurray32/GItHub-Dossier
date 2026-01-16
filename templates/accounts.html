@@ -3192,6 +3192,25 @@
                 return;
             }
 
+            // Handle rate-limited response (scanned recently)
+            if (data.status === 'recent') {
+                buttonEl.classList.remove('scanning');
+                buttonEl.textContent = 'Fresh';
+                buttonEl.style.background = '#3b82f6';  // Blue to indicate already up-to-date
+
+                // Show toast notification
+                showNotification('Scan already fresh - scanned less than 5 minutes ago', 'info');
+
+                // Reset button after 2 seconds
+                setTimeout(() => {
+                    buttonEl.disabled = false;
+                    buttonEl.textContent = 'Rescan';
+                    buttonEl.style.background = '';
+                }, 2000);
+
+                return;
+            }
+
             // Legacy: Handle immediate success response (if any)
             const row = buttonEl.closest('tr');
             if (!row) throw new Error('Could not find table row');

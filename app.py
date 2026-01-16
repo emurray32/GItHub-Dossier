@@ -1387,6 +1387,9 @@ def api_rescan(company_name: str):
     Instead of running synchronously (which blocks and can cause database locks),
     this submits the scan job to the thread pool and returns immediately.
 
+    Rate limiting: If the account was scanned less than 5 minutes ago,
+    returns a 'recent' status without triggering a new scan.
+
     Returns:
         JSON with queued status. The UI should refresh to see updated results.
     """
@@ -1398,6 +1401,28 @@ def api_rescan(company_name: str):
             'company': company_name,
             'message': f'Scan already {current_status.get("scan_status")}'
         })
+
+    # Rate limiting: Check if scanned within the last 5 minutes
+    account = get_account_by_company_case_insensitive(company_name)
+    if account and account.get('last_scanned_at'):
+        try:
+            last_scanned = datetime.fromisoformat(account['last_scanned_at'].replace('Z', '+00:00'))
+            # Handle naive datetime (no timezone info)
+            if last_scanned.tzinfo is None:
+                time_since_scan = datetime.now() - last_scanned
+            else:
+                time_since_scan = datetime.now(last_scanned.tzinfo) - last_scanned
+
+            if time_since_scan.total_seconds() < 300:  # 5 minutes = 300 seconds
+                return jsonify({
+                    'status': 'recent',
+                    'company': company_name,
+                    'message': 'Scan already recent',
+                    'last_scanned_at': account['last_scanned_at']
+                })
+        except (ValueError, TypeError):
+            # If we can't parse the timestamp, proceed with the scan
+            pass
 
     # Submit to thread pool (this also sets status to 'queued' in DB)
     spawn_background_scan(company_name)
