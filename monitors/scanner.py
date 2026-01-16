@@ -18,7 +18,8 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Generator, Optional, List, Dict
 from config import Config
-from .discovery import get_github_headers, discover_organization, get_organization_repos, _get_org_details
+from .discovery import discover_organization, get_organization_repos, _get_org_details
+from utils import get_github_headers
 from database import increment_daily_stat
 from utils import make_github_request
 
