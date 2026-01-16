@@ -1083,6 +1083,7 @@ def api_import():
     Bulk import companies by resolving them to GitHub organizations.
 
     Expects JSON payload: {"companies": ["Shopify", "Stripe", ...]}
+    Or with annual_revenue: {"companies": [{"name": "Shopify", "annual_revenue": "$4.6B"}, ...]}
 
     Returns:
         JSON with: {
@@ -1110,8 +1111,15 @@ def api_import():
     results = []
 
     # Phase 1: Resolve and add all companies to database (no scanning yet)
-    for company_name in companies:
-        company_name = company_name.strip()
+    for company_item in companies:
+        # Support both string format and object format with annual_revenue
+        if isinstance(company_item, dict):
+            company_name = company_item.get('name', '').strip()
+            annual_revenue = company_item.get('annual_revenue')
+        else:
+            company_name = str(company_item).strip()
+            annual_revenue = None
+
         if not company_name:
             continue
 
@@ -1131,8 +1139,8 @@ def api_import():
 
             if org:
                 github_org = org.get('login', '')
-                # Add to monitored_accounts at Tier 0
-                add_account_to_tier_0(company_name, github_org)
+                # Add to monitored_accounts at Tier 0 with optional annual_revenue
+                add_account_to_tier_0(company_name, github_org, annual_revenue)
                 added.append(company_name)
                 results.append({
                     'company': company_name,

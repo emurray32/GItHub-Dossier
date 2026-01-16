@@ -806,7 +806,7 @@
             <div class="bulk-import-tab-content" id="csvTab">
                 <div class="file-upload-area" id="fileUploadArea" onclick="document.getElementById('csvFileInput').click()">
                     <span class="file-upload-label">📁 Choose CSV File or Drag Here</span>
-                    <span class="file-upload-hint">CSV should have a "company_name" or "name" column</span>
+                    <span class="file-upload-hint">CSV should have a "company_name" column. Optional: "annual_revenue"</span>
                     <button type="button" class="csv-upload-btn">Select File</button>
                 </div>
                 <input type="file" id="csvFileInput" accept=".csv" onchange="handleCSVFile(event)">
@@ -982,11 +982,20 @@
             throw new Error('CSV must have a "company_name", "name", or "company" column');
         }
 
+        // Find annual_revenue column (optional)
+        const revenueIndex = header.findIndex(h =>
+            h === 'annual_revenue' || h === 'revenue' || h === 'annual revenue' || h === 'estimated_revenue'
+        );
+
         const companies = [];
         for (let i = 1; i < lines.length; i++) {
             const fields = lines[i].split(',').map(f => f.trim());
             if (fields[companyNameIndex]) {
-                companies.push(fields[companyNameIndex]);
+                const company = {
+                    name: fields[companyNameIndex],
+                    annual_revenue: revenueIndex !== -1 ? fields[revenueIndex] || null : null
+                };
+                companies.push(company);
             }
         }
 
