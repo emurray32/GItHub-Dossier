@@ -55,6 +55,7 @@ def init_db() -> None:
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             company_name TEXT NOT NULL UNIQUE,
             github_org TEXT,
+            annual_revenue TEXT,
             current_tier INTEGER DEFAULT 0,
             last_scanned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             status_changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -65,6 +66,12 @@ def init_db() -> None:
             scan_start_time TIMESTAMP
         )
     ''')
+
+    # Migrate existing tables: add annual_revenue column if it doesn't exist
+    try:
+        cursor.execute('ALTER TABLE monitored_accounts ADD COLUMN annual_revenue TEXT')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
 
     # Migrate existing tables: add scan_status columns if they don't exist
     try:
@@ -763,7 +770,7 @@ def update_account_status(scan_data: dict, report_id: Optional[int] = None) -> d
     }
 
 
-def add_account_to_tier_0(company_name: str, github_org: str) -> dict:
+def add_account_to_tier_0(company_name: str, github_org: str, annual_revenue: Optional[str] = None) -> dict:
     """
     Add or update a company account to Tier 0 (Tracking) status.
 
@@ -773,6 +780,7 @@ def add_account_to_tier_0(company_name: str, github_org: str) -> dict:
     Args:
         company_name: The company name.
         github_org: The GitHub organization login.
+        annual_revenue: Optional annual revenue string (e.g., "$50M", "$4.6B").
 
     Returns:
         Dictionary with account creation/update result.
@@ -810,14 +818,24 @@ def add_account_to_tier_0(company_name: str, github_org: str) -> dict:
 
     if existing:
         # Update existing account - don't change last_scanned_at
-        cursor.execute('''
-            UPDATE monitored_accounts
-            SET github_org = ?,
-                next_scan_due = ?
-            WHERE id = ?
-        ''', (github_org, next_scan_iso, existing['id']))
+        # Only update annual_revenue if a new value is provided
+        if annual_revenue:
+            cursor.execute('''
+                UPDATE monitored_accounts
+                SET github_org = ?,
+                    annual_revenue = ?,
+                    next_scan_due = ?
+                WHERE id = ?
+            ''', (github_org, annual_revenue, next_scan_iso, existing['id']))
+        else:
+            cursor.execute('''
+                UPDATE monitored_accounts
+                SET github_org = ?,
+                    next_scan_due = ?
+                WHERE id = ?
+            ''', (github_org, next_scan_iso, existing['id']))
         account_id = existing['id']
-        
+
         # If we matched by org but name is different, we might want to log it or update name,
         # but changing name could be risky if unique constraint on name validation fails.
         # We'll just update the org / timestamps on the existing record.
@@ -826,10 +844,10 @@ def add_account_to_tier_0(company_name: str, github_org: str) -> dict:
         # Note: last_scanned_at is NULL until a scan actually completes
         cursor.execute('''
             INSERT INTO monitored_accounts (
-                company_name, github_org, current_tier, last_scanned_at,
+                company_name, github_org, annual_revenue, current_tier, last_scanned_at,
                 status_changed_at, evidence_summary, next_scan_due
-            ) VALUES (?, ?, ?, NULL, ?, ?, ?)
-        ''', (company_name_normalized, github_org, TIER_TRACKING, now,
+            ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?)
+        ''', (company_name_normalized, github_org, annual_revenue, TIER_TRACKING, now,
               "Added via Grow pipeline", next_scan_iso))
         account_id = cursor.lastrowid
 
@@ -976,10 +994,11 @@ def get_all_accounts_datatable(draw: int, start: int, length: int, search_value:
     # Column mapping for sorting (must match table column order)
     column_map = {
         0: 'company_name',
-        1: 'github_org',
-        2: 'current_tier',
-        3: 'last_scanned_at',
-        4: 'evidence_summary',
+        1: 'annual_revenue',
+        2: 'github_org',
+        3: 'current_tier',
+        4: 'last_scanned_at',
+        5: 'evidence_summary',
     }
 
     # Get total count without filters

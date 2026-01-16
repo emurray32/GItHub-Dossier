@@ -1639,6 +1639,7 @@
                     </th>
                     <th class="row-num-col">#</th>
                     <th class="sortable" data-sort-key="company">Company <span class="sort-indicator">↕</span></th>
+                    <th class="sortable" data-sort-key="annual_revenue">Annual Revenue <span class="sort-indicator">↕</span></th>
                     <th class="sortable" data-sort-key="github_org">GitHub Org <span class="sort-indicator">↕</span>
                     </th>
                     <th class="sortable" data-sort-key="tier">Tier <span class="sort-indicator">↕</span></th>
@@ -1672,6 +1673,7 @@
                     </button>
                 </span>
             </td>
+            <td class="annual-revenue-cell">{annual_revenue}</td>
             <td class="github-org-cell" data-company="{company_name}" ondblclick="editOrg(this)" data-org="{github_org}">
                 <span class="org-display">
                     {github_org_link}
@@ -1705,7 +1707,7 @@
     <div style="display: none;">
         <tbody id="accounts-tbody-old">
             <tr class="table-empty-row hidden" id="accounts-empty-row">
-                <td colspan="8">No accounts match your filters.</td>
+                <td colspan="9">No accounts match your filters.</td>
             </tr>
             {% for account in accounts %}
             <tr id="row-{{ account.id }}" data-company="{{ account.company_name }}" data-account-id="{{ account.id }}"
@@ -2566,6 +2568,7 @@
                             </button>
                         </span>
                     </td>
+                    <td class="annual-revenue-cell">${escapeHtml(account.annual_revenue || '')}</td>
                     <td class="github-org-cell" data-company="${escapeHtml(account.company_name)}" ondblclick="editOrg(this)" data-org="${escapeHtml(account.github_org || '')}">
                         <span class="org-display">
                             ${githubOrgLink}
@@ -2625,10 +2628,11 @@
         const headers = document.querySelectorAll('th.sortable');
         const sortMap = {
             'company': 0,
-            'github_org': 1,
-            'tier': 2,
-            'last_scanned': 3,
-            'evidence': 4
+            'annual_revenue': 1,
+            'github_org': 2,
+            'tier': 3,
+            'last_scanned': 4,
+            'evidence': 5
         };
 
         headers.forEach(th => {
@@ -2755,17 +2759,18 @@
         const selectedRows = getSelectedRows();
         if (selectedRows.length === 0) return;
 
-        const header = ['Company', 'GitHub Org', 'Tier', 'Last Scanned', 'Evidence Summary'];
+        const header = ['Company', 'Annual Revenue', 'GitHub Org', 'Tier', 'Last Scanned', 'Evidence Summary'];
         const csvRows = [header];
 
         selectedRows.forEach(row => {
             const company = row.querySelector('.company-cell')?.textContent.trim() || '';
+            const annualRevenue = row.querySelector('.annual-revenue-cell')?.textContent.trim() || '';
             const orgCell = row.querySelector('.github-org-cell');
             const org = orgCell?.dataset.org || orgCell?.textContent.trim() || '';
             const tier = row.querySelector('.tier-badge')?.textContent.trim() || '';
             const lastCheck = row.querySelector('.last-check-cell')?.textContent.replace(/\s+/g, ' ').trim() || '';
             const evidence = row.querySelector('.evidence-text')?.textContent.trim() || '';
-            csvRows.push([company, org, tier, lastCheck, evidence]);
+            csvRows.push([company, annualRevenue, org, tier, lastCheck, evidence]);
         });
 
         const csvContent = csvRows
