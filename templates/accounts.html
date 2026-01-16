@@ -2568,7 +2568,7 @@
                             </button>
                         </span>
                     </td>
-                    <td class="annual-revenue-cell">${escapeHtml(account.annual_revenue || '')}</td>
+                    <td class="annual-revenue-cell">${formatRevenue(account.annual_revenue)}</td>
                     <td class="github-org-cell" data-company="${escapeHtml(account.company_name)}" ondblclick="editOrg(this)" data-org="${escapeHtml(account.github_org || '')}">
                         <span class="org-display">
                             ${githubOrgLink}
@@ -2613,6 +2613,26 @@
             "'": '&#039;'
         };
         return text.replace(/[&<>"']/g, m => map[m]);
+    }
+
+    function formatRevenue(value) {
+        if (!value) return '';
+        // If already formatted (contains letters like M, B, K), return as-is
+        if (typeof value === 'string' && /[a-zA-Z$]/.test(value)) {
+            return value;
+        }
+        // Parse the number
+        const num = parseFloat(value);
+        if (isNaN(num)) return value;
+        // Format based on magnitude
+        if (num >= 1000000000) {
+            return '$' + (num / 1000000000).toFixed(num % 1000000000 === 0 ? 0 : 1) + 'B';
+        } else if (num >= 1000000) {
+            return '$' + (num / 1000000).toFixed(num % 1000000 === 0 ? 0 : 1) + 'M';
+        } else if (num >= 1000) {
+            return '$' + (num / 1000).toFixed(num % 1000 === 0 ? 0 : 1) + 'K';
+        }
+        return '$' + num.toLocaleString();
     }
 
     // Initialize on page load
