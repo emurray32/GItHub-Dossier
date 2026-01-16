@@ -866,6 +866,35 @@ def add_account_to_tier_0(company_name: str, github_org: str, annual_revenue: Op
     }
 
 
+def update_account_annual_revenue(company_name: str, annual_revenue: str) -> bool:
+    """
+    Update the annual_revenue field for an existing account.
+
+    Used to enrich existing accounts with revenue data from CSV re-imports.
+
+    Args:
+        company_name: The company name to update.
+        annual_revenue: The annual revenue string (e.g., "$50M", "$4.6B").
+
+    Returns:
+        True if the update was successful, False if account not found.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        UPDATE monitored_accounts
+        SET annual_revenue = ?
+        WHERE LOWER(company_name) = LOWER(?)
+    ''', (annual_revenue, company_name.strip()))
+
+    updated = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+
+    return updated
+
+
 def get_all_accounts(page: int = 1, limit: int = 50, tier_filter: Optional[list] = None, search_query: Optional[str] = None) -> dict:
     """
     Get all monitored accounts with pagination, sorted by tier priority.
