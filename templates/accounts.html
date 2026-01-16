@@ -2670,8 +2670,8 @@
 
         const rows = accounts.map((account, index) => {
             const companyLink = account.latest_report_id
-                ? `<a href="/report/${account.latest_report_id}">${escapeHtml(account.company_name)}</a>`
-                : escapeHtml(account.company_name);
+                ? `<a href="/report/${account.latest_report_id}"><span class="company-name-text">${escapeHtml(account.company_name)}</span></a>`
+                : `<span class="company-name-text">${escapeHtml(account.company_name)}</span>`;
 
             const githubOrgLink = account.github_org
                 ? `<a href="https://github.com/${escapeHtml(account.github_org)}" target="_blank" rel="noopener" class="github-org-link" title="View on GitHub">
@@ -2705,7 +2705,7 @@
                     <td class="company-cell">
                         <span class="company-cell-content">
                             ${companyLink}
-                            <button type="button" class="btn-copy-company" title="Copy company name" data-company="${escapeHtml(account.company_name)}" onclick="copyToClipboard(this.dataset.company, this)">
+                            <button type="button" class="btn-copy-company" title="Copy company name" data-company="${escapeHtml(capitalizeText(account.company_name))}" onclick="copyToClipboard(this.dataset.company, this)">
                                 <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                                     <path d="M16 1H6c-1.1 0-2 .9-2 2v12h2V3h10V1zm3 4H10c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h9c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H10V7h9v14z" />
                                 </svg>
@@ -2767,6 +2767,11 @@
             "'": '&#039;'
         };
         return text.replace(/[&<>"']/g, m => map[m]);
+    }
+
+    function capitalizeText(text) {
+        if (!text) return '';
+        return text.replace(/\b\w/g, char => char.toUpperCase());
     }
 
     function formatRevenue(value) {
