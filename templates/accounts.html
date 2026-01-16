@@ -9,10 +9,15 @@
         justify-content: space-between;
         align-items: center;
         margin-bottom: 1.5rem;
+        gap: 1rem;
+        flex-wrap: wrap;
     }
 
     .accounts-page {
-        max-width: 1600px;
+        max-width: 98%;
+        padding-left: 1rem;
+        padding-right: 1rem;
+        margin: 0 auto;
     }
 
     .accounts-stats {
@@ -20,14 +25,83 @@
         gap: 1rem;
     }
 
+    .tier-filter {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+    }
+
+    .tier-filter-btn {
+        padding: 0.4rem 0.6rem;
+        border-radius: 6px;
+        border: 1px solid var(--border-color);
+        background: var(--bg-primary);
+        color: var(--text-secondary);
+        font-size: 0.75rem;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+        transition: all var(--transition-fast);
+        user-select: none;
+    }
+
+    .tier-filter-btn:hover {
+        border-color: var(--accent-color);
+        color: var(--text-primary);
+    }
+
+    .tier-filter-btn.active {
+        background: rgba(0, 181, 173, 0.12);
+        border-color: var(--accent-color);
+        color: var(--accent-color);
+        font-weight: 500;
+    }
+
+    .search-container {
+        position: relative;
+        min-width: 250px;
+    }
+
+    .search-input {
+        width: 100%;
+        padding: 0.5rem 0.75rem;
+        padding-left: 2rem;
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        color: var(--text-primary);
+        font-size: 0.85rem;
+        transition: border-color var(--transition-fast);
+    }
+
+    .search-input:focus {
+        outline: none;
+        border-color: var(--accent-color);
+    }
+
+    .search-icon {
+        position: absolute;
+        left: 0.75rem;
+        top: 50%;
+        transform: translateY(-50%);
+        color: var(--text-muted);
+        width: 14px;
+        height: 14px;
+        pointer-events: none;
+    }
+
     .stat-badge {
         display: flex;
         align-items: center;
         gap: 0.5rem;
         padding: 0.5rem 1rem;
-        background: var(--bg-secondary);
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
         border-radius: 8px;
         font-size: 0.875rem;
+        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
     }
 
     .stat-badge .count {
@@ -36,33 +110,36 @@
     }
 
     .accounts-table-container {
-        background: var(--bg-secondary);
+        background: var(--bg-primary);
         border-radius: 12px;
         overflow-x: auto;
         border: 1px solid var(--border-color);
+        box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
     }
 
     .accounts-table {
-        width: max-content;
-        min-width: 100%;
+        width: 100%;
         border-collapse: collapse;
         font-size: 0.85rem;
+        table-layout: auto;
     }
 
     .accounts-table thead {
-        background: var(--bg-tertiary);
+        background: #f8fafc;
     }
 
     .accounts-table th {
-        padding: 0.6rem 0.75rem;
+        padding: 0.75rem 1rem;
         text-align: left;
-        font-weight: 600;
-        color: var(--text-secondary);
+        font-weight: 700;
+        color: #64748b;
         text-transform: uppercase;
-        font-size: 0.75rem;
+        font-size: 0.72rem;
         letter-spacing: 0.5px;
         border-bottom: 1px solid var(--border-color);
-        position: relative;
+        position: sticky;
+        top: 0;
+        z-index: 3;
     }
 
     .accounts-table th.select-col,
@@ -99,50 +176,53 @@
     }
 
     .accounts-table td {
-        padding: 0.6rem 0.75rem;
+        padding: 0.75rem 1rem;
         border-bottom: 1px solid var(--border-color);
         vertical-align: middle;
     }
 
+    .accounts-table.table-compact th,
+    .accounts-table.table-compact td {
+        padding: 4px 8px;
+    }
+
+    .accounts-table.table-compact th.select-col,
+    .accounts-table.table-compact td.select-col {
+        padding: 0.4rem 0.3rem;
+    }
+
     .accounts-table tbody tr:hover {
-        background: var(--bg-tertiary);
+        background: #f8fafc;
     }
 
     .accounts-table tbody tr:last-child td {
         border-bottom: none;
     }
 
-    /* Tier-specific row styling */
-    .tier-row-3 {
-        opacity: 0.6;
-        background: rgba(239, 68, 68, 0.05);
+    .accounts-table .table-empty-row td {
+        text-align: center;
+        padding: 2rem 1rem;
+        color: var(--text-secondary);
     }
 
-    .tier-row-3:hover {
-        opacity: 0.8;
-    }
-
-    .tier-row-4 {
-        opacity: 0.5;
-        background: #1a1a1a;
-    }
-
-    .tier-row-4:hover {
-        opacity: 0.65;
-    }
-
-    .tier-row-2 {
-        background: rgba(34, 197, 94, 0.08);
-    }
-
-    .tier-row-1 {
-        background: rgba(245, 158, 11, 0.05);
+    .accounts-table .table-empty-row.hidden {
+        display: none;
     }
 
     /* Company cell */
     .company-cell {
         font-weight: 600;
         color: var(--text-primary);
+        max-width: 250px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .company-cell-content {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
     }
 
     .company-cell a {
@@ -155,9 +235,161 @@
         color: var(--accent-color);
     }
 
+    .btn-copy-company {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 24px;
+        height: 24px;
+        border-radius: 4px;
+        border: 1px solid var(--border-color);
+        background: transparent;
+        color: var(--text-muted);
+        cursor: pointer;
+        transition: all var(--transition-fast);
+        padding: 0;
+    }
+
+    .btn-copy-company:hover {
+        background: var(--bg-tertiary);
+        color: var(--text-primary);
+        border-color: var(--text-muted);
+    }
+
+    .btn-copy-company svg {
+        width: 14px;
+        height: 14px;
+    }
+
+    .btn-copy-company.copied {
+        color: #22c55e;
+        border-color: rgba(34, 197, 94, 0.6);
+    }
+
+    .table-controls {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        margin-bottom: 0.75rem;
+    }
+
+    .table-controls-left {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+    }
+
+    .accounts-search {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.4rem 0.6rem;
+        border-radius: 6px;
+        border: 1px solid var(--border-color);
+        background: var(--bg-primary);
+        color: var(--text-primary);
+    }
+
+    .inline-icon {
+        width: 16px;
+        height: 16px;
+        color: var(--text-muted);
+    }
+
+    .accounts-search input {
+        border: none;
+        background: transparent;
+        color: inherit;
+        font-size: 0.85rem;
+        min-width: 220px;
+    }
+
+    .accounts-search input:focus {
+        outline: none;
+    }
+
+    .filter-select {
+        padding: 0.4rem 0.6rem;
+        border-radius: 6px;
+        border: 1px solid var(--border-color);
+        background: var(--bg-primary);
+        color: var(--text-primary);
+        font-size: 0.8rem;
+    }
+
+    .btn-clear-filters {
+        padding: 0.4rem 0.6rem;
+        border-radius: 6px;
+        border: 1px solid var(--border-color);
+        background: transparent;
+        color: var(--text-secondary);
+        font-size: 0.75rem;
+        cursor: pointer;
+        transition: all var(--transition-fast);
+    }
+
+    .btn-clear-filters:hover {
+        background: var(--bg-tertiary);
+        color: var(--text-primary);
+        border-color: var(--text-muted);
+    }
+
+    .compact-toggle-label {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        cursor: pointer;
+        user-select: none;
+    }
+
+    .compact-toggle-label input {
+        display: none;
+    }
+
+    .compact-toggle-slider {
+        position: relative;
+        width: 36px;
+        height: 20px;
+        background: var(--border-color);
+        border-radius: 10px;
+        transition: background 0.2s ease;
+    }
+
+    .compact-toggle-slider::after {
+        content: '';
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 16px;
+        height: 16px;
+        background: white;
+        border-radius: 50%;
+        transition: transform 0.2s ease;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+    }
+
+    .compact-toggle-label input:checked+.compact-toggle-slider {
+        background: var(--accent-color);
+    }
+
+    .compact-toggle-label input:checked+.compact-toggle-slider::after {
+        transform: translateX(16px);
+    }
+
+    .compact-toggle-text {
+        font-size: 0.8rem;
+        color: var(--text-secondary);
+    }
+
     /* GitHub org cell */
     .github-org-cell {
         font-size: 0.875rem;
+        max-width: 250px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
     }
 
     .github-org-link {
@@ -169,12 +401,12 @@
         padding: 0.25rem 0.5rem;
         border-radius: 4px;
         transition: all var(--transition-fast);
-        background: rgba(255, 255, 255, 0.05);
+        background: var(--bg-secondary);
     }
 
     .github-org-link:hover {
         color: var(--accent-color);
-        background: rgba(99, 102, 241, 0.15);
+        background: rgba(0, 181, 173, 0.12);
     }
 
     .github-org-link svg {
@@ -281,67 +513,286 @@
         align-items: center;
         gap: 0.4rem;
         padding: 0.35rem 0.75rem;
-        border-radius: 20px;
-        font-size: 0.8rem;
+        border-radius: 999px;
+        font-size: 0.78rem;
         font-weight: 500;
         white-space: nowrap;
     }
 
     .tier-badge-0 {
-        background: rgba(100, 116, 139, 0.2);
-        color: #94a3b8;
+        background: #f1f5f9;
+        color: #64748b;
+        border: 1px solid #e2e8f0;
     }
 
     .tier-badge-1 {
-        background: rgba(245, 158, 11, 0.2);
-        color: #fbbf24;
+        background: #fef3c7;
+        color: #92400e;
+        border: 1px solid #fde68a;
     }
 
     .tier-badge-2 {
-        background: rgba(34, 197, 94, 0.2);
-        color: #4ade80;
+        background: #dcfce7;
+        color: #166534;
+        border: 1px solid #bbf7d0;
     }
 
     .tier-badge-3 {
-        background: rgba(239, 68, 68, 0.2);
-        color: #f87171;
+        background: #fee2e2;
+        color: #991b1b;
+        border: 1px solid #fecaca;
     }
 
     .tier-badge-4 {
-        background: rgba(75, 75, 75, 0.3);
-        color: #6b7280;
+        background: #f8fafc;
+        color: #64748b;
+        border: 1px solid #e2e8f0;
     }
 
-    /* Last Check cell */
-    .last-check-cell {
+    /* Last Scanned cell */
+    .account-last-scan {
         font-size: 0.85rem;
         color: var(--text-secondary);
         white-space: nowrap;
     }
 
-    .scanned-time {
+    .last-scan-date {
         color: var(--text-primary);
         font-weight: 600;
         display: block;
         margin-bottom: 0.15rem;
     }
 
-    .scanned-time.never-scanned {
-        color: #f59e0b;
+    .account-last-scan.never-scanned {
+        color: #d97706;
     }
 
-    .scanned-time.recent {
-        color: #22c55e;
+    .account-last-scan.recent .last-scan-date {
+        color: #16a34a;
     }
 
-    .scanned-time.stale {
-        color: #f59e0b;
+    .account-last-scan.stale .last-scan-date {
+        color: #d97706;
+    }
+
+    .next-scan-date {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        display: block;
+        margin-top: 0.1rem;
     }
 
     .tier-change-time {
         font-size: 0.75rem;
         color: var(--text-muted);
         display: block;
+    }
+
+    /* Status indicator styles */
+    .status-cell-active {
+        position: relative;
+    }
+
+    .status-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.35rem 0.65rem;
+        border-radius: 6px;
+        font-size: 0.8rem;
+        font-weight: 600;
+    }
+
+    .status-badge-queued {
+        background: #fef3c7;
+        color: #92400e;
+        border: 1px solid #fde68a;
+    }
+
+    .status-badge-processing {
+        background: rgba(0, 181, 173, 0.12);
+        color: var(--accent-color);
+        border: 1px solid rgba(0, 181, 173, 0.35);
+    }
+
+    .status-badge-stuck {
+        background: #fee2e2;
+        color: #991b1b;
+        border: 1px solid #fecaca;
+        animation: pulse-warning 2s ease-in-out infinite;
+    }
+
+    /* Inline status text styles (for initial page load) */
+    .status-queued {
+        color: #92400e !important;
+        font-weight: 600;
+    }
+
+    .status-processing {
+        color: var(--accent-color) !important;
+        font-weight: 600;
+    }
+
+    @keyframes pulse-warning {
+
+        0%,
+        100% {
+            opacity: 1;
+        }
+
+        50% {
+            opacity: 0.7;
+        }
+    }
+
+    .status-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 16px;
+        height: 16px;
+    }
+
+    .status-icon-queued {
+        animation: pulse-queue 1.5s ease-in-out infinite;
+    }
+
+    @keyframes pulse-queue {
+
+        0%,
+        100% {
+            opacity: 0.6;
+        }
+
+        50% {
+            opacity: 1;
+        }
+    }
+
+    .status-icon-processing {
+        animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+        from {
+            transform: rotate(0deg);
+        }
+
+        to {
+            transform: rotate(360deg);
+        }
+    }
+
+    .status-icon-stuck {
+        animation: shake 0.5s ease-in-out infinite;
+    }
+
+    @keyframes shake {
+
+        0%,
+        100% {
+            transform: translateX(0);
+        }
+
+        25% {
+            transform: translateX(-2px);
+        }
+
+        75% {
+            transform: translateX(2px);
+        }
+    }
+
+    /* Progress bar for processing state */
+    .progress-line {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        height: 3px;
+        background: rgba(99, 102, 241, 0.2);
+        overflow: hidden;
+        border-radius: 0 0 4px 4px;
+    }
+
+    .progress-line::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        height: 100%;
+        width: 30%;
+        background: linear-gradient(90deg, transparent, var(--accent-color), transparent);
+        animation: progress-sweep 1.5s ease-in-out infinite;
+    }
+
+    @keyframes progress-sweep {
+        0% {
+            left: -30%;
+        }
+
+        100% {
+            left: 100%;
+        }
+    }
+
+    /* Progress bar for stuck state */
+    .progress-line-stuck {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        height: 3px;
+        background: rgba(239, 68, 68, 0.3);
+        border-radius: 0 0 4px 4px;
+    }
+
+    .progress-line-stuck::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        height: 100%;
+        width: 100%;
+        background: repeating-linear-gradient(90deg,
+                rgba(239, 68, 68, 0.5) 0px,
+                rgba(239, 68, 68, 0.5) 8px,
+                transparent 8px,
+                transparent 16px);
+        animation: stripes-move 1s linear infinite;
+    }
+
+    @keyframes stripes-move {
+        0% {
+            background-position: 0 0;
+        }
+
+        100% {
+            background-position: 16px 0;
+        }
+    }
+
+    /* Elapsed time styling */
+    .elapsed-time {
+        font-size: 0.7rem;
+        color: var(--text-muted);
+        margin-left: 0.25rem;
+    }
+
+    .elapsed-time-warning {
+        color: #fbbf24;
+    }
+
+    .elapsed-time-danger {
+        color: #f87171;
+        font-weight: 600;
+    }
+
+    /* Queue position indicator */
+    .queue-position {
+        font-size: 0.65rem;
+        color: var(--text-muted);
+        margin-top: 0.15rem;
     }
 
     /* Smart action buttons */
@@ -391,11 +842,11 @@
     }
 
     .btn-action-smart.btn-refresh-needed {
-        background: #3b82f6;
+        background: var(--accent-color);
     }
 
     .btn-action-smart.btn-refresh-needed:hover:not(:disabled) {
-        background: #2563eb;
+        background: var(--accent-hover);
     }
 
     .btn-delete-account {
@@ -403,10 +854,9 @@
         align-items: center;
         gap: 0.3rem;
         padding: 0.4rem 0.75rem;
-        margin-left: 0.4rem;
-        background: rgba(239, 68, 68, 0.15);
-        color: #fca5a5;
-        border: 1px solid rgba(239, 68, 68, 0.3);
+        background: #fee2e2;
+        color: #991b1b;
+        border: 1px solid #fecaca;
         border-radius: 6px;
         font-size: 0.8rem;
         text-decoration: none;
@@ -415,8 +865,8 @@
     }
 
     .btn-delete-account:hover:not(:disabled) {
-        background: rgba(239, 68, 68, 0.25);
-        color: #fecaca;
+        background: #fecaca;
+        color: #7f1d1d;
     }
 
     .btn-delete-account:disabled {
@@ -434,15 +884,23 @@
         font-size: 0.85rem;
         color: var(--text-secondary);
         line-height: 1.4;
-        white-space: nowrap;
+        white-space: normal;
+        min-width: 250px;
     }
 
     .evidence-text {
-        white-space: nowrap;
+        white-space: normal;
+        word-break: break-word;
+        max-width: 400px;
+        display: inline-block;
+        font-size: 0.8rem;
     }
 
     /* Actions cell */
     .actions-cell {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
         white-space: nowrap;
     }
 
@@ -482,78 +940,6 @@
         animation: spin 0.8s linear infinite;
     }
 
-    .btn-start-scan {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.3rem;
-        padding: 0.4rem 0.75rem;
-        background: #3b82f6;
-        color: white;
-        border: none;
-        border-radius: 6px;
-        font-size: 0.8rem;
-        text-decoration: none;
-        cursor: pointer;
-        transition: background var(--transition-fast);
-    }
-
-    .btn-start-scan:hover:not(:disabled) {
-        background: #2563eb;
-    }
-
-    .btn-start-scan:disabled {
-        opacity: 0.6;
-        cursor: not-allowed;
-    }
-
-    .btn-start-scan.scanning::before {
-        content: '';
-        display: inline-block;
-        width: 0.7rem;
-        height: 0.7rem;
-        margin-right: 0.4rem;
-        border: 2px solid rgba(255, 255, 255, 0.3);
-        border-top-color: white;
-        border-radius: 50%;
-        animation: spin 0.8s linear infinite;
-    }
-
-    .btn-refresh-pipeline {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.5rem;
-        padding: 0.5rem 1rem;
-        background: #3b82f6;
-        color: white;
-        border: none;
-        border-radius: 6px;
-        font-size: 0.875rem;
-        text-decoration: none;
-        cursor: pointer;
-        transition: background var(--transition-fast);
-        font-weight: 500;
-    }
-
-    .btn-refresh-pipeline:hover:not(:disabled) {
-        background: #2563eb;
-    }
-
-    .btn-refresh-pipeline:disabled {
-        opacity: 0.6;
-        cursor: not-allowed;
-    }
-
-    .btn-refresh-pipeline.scanning::before {
-        content: '';
-        display: inline-block;
-        width: 0.7rem;
-        height: 0.7rem;
-        margin-right: 0.4rem;
-        border: 2px solid rgba(255, 255, 255, 0.3);
-        border-top-color: white;
-        border-radius: 50%;
-        animation: spin 0.8s linear infinite;
-    }
 
     @keyframes spin {
         to {
@@ -574,7 +960,6 @@
         text-decoration: none;
         cursor: pointer;
         transition: all var(--transition-fast);
-        margin-right: 0.5rem;
     }
 
     .btn-view-report:hover {
@@ -600,60 +985,15 @@
         margin-bottom: 1.5rem;
     }
 
-    /* Legend */
-    .tier-legend {
-        display: flex;
-        gap: 1.5rem;
-        margin-bottom: 1.5rem;
-        padding: 1rem;
-        background: var(--bg-secondary);
-        border-radius: 8px;
-        flex-wrap: wrap;
-    }
-
-    .legend-item {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        font-size: 0.85rem;
-        color: var(--text-secondary);
-    }
-
-    .legend-dot {
-        width: 10px;
-        height: 10px;
-        border-radius: 50%;
-    }
-
-    .legend-dot-0 {
-        background: #64748b;
-    }
-
-    .legend-dot-1 {
-        background: #f59e0b;
-    }
-
-    .legend-dot-2 {
-        background: #22c55e;
-    }
-
-    .legend-dot-3 {
-        background: #ef4444;
-    }
-
-    .legend-dot-4 {
-        background: #4b5563;
-    }
-
     /* Invalid/disabled button for Tier 4 */
     .btn-invalid {
         display: inline-flex;
         align-items: center;
         gap: 0.3rem;
         padding: 0.4rem 0.75rem;
-        background: #374151;
-        color: #6b7280;
-        border: 1px solid #4b5563;
+        background: #f1f5f9;
+        color: #64748b;
+        border: 1px solid #e2e8f0;
         border-radius: 6px;
         font-size: 0.8rem;
         cursor: not-allowed;
@@ -665,14 +1005,14 @@
         left: 50%;
         bottom: 24px;
         transform: translateX(-50%);
-        background: var(--bg-secondary);
+        background: var(--bg-primary);
         border: 1px solid var(--border-color);
         border-radius: 12px;
         padding: 0.75rem 1rem;
         display: flex;
         align-items: center;
         gap: 0.75rem;
-        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+        box-shadow: 0 12px 30px rgba(15, 23, 42, 0.12);
         z-index: 1200;
         opacity: 1;
         transition: opacity var(--transition-fast), transform var(--transition-fast);
@@ -728,7 +1068,7 @@
         justify-content: space-between;
         align-items: center;
         padding: 1rem;
-        background: var(--bg-secondary);
+        background: var(--bg-primary);
         border-top: 1px solid var(--border-color);
         border-radius: 0 0 12px 12px;
     }
@@ -744,12 +1084,21 @@
         align-items: center;
     }
 
+    .pagination-limit-select {
+        padding: 0.45rem 0.75rem;
+        background: var(--bg-primary);
+        color: var(--text-primary);
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        font-size: 0.875rem;
+    }
+
     .pagination-btn {
         display: inline-flex;
         align-items: center;
         gap: 0.3rem;
         padding: 0.5rem 1rem;
-        background: var(--bg-tertiary);
+        background: var(--bg-primary);
         color: var(--text-primary);
         border: 1px solid var(--border-color);
         border-radius: 6px;
@@ -772,12 +1121,288 @@
 
     .pagination-page-display {
         padding: 0.5rem 1rem;
-        background: var(--bg-tertiary);
+        background: var(--bg-primary);
         border: 1px solid var(--border-color);
         border-radius: 6px;
         font-size: 0.875rem;
         font-weight: 600;
         color: var(--text-primary);
+    }
+
+    /* Queue/Processing Modal */
+    .queue-modal {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 2000;
+    }
+
+    .queue-modal.open {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .queue-modal-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+    }
+
+    .queue-modal-content {
+        position: relative;
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        max-width: 700px;
+        width: 90%;
+        max-height: 80vh;
+        display: flex;
+        flex-direction: column;
+        box-shadow: 0 20px 60px rgba(15, 23, 42, 0.2);
+        animation: modalSlideIn 0.3s ease;
+    }
+
+    @keyframes modalSlideIn {
+        from {
+            transform: scale(0.95);
+            opacity: 0;
+        }
+
+        to {
+            transform: scale(1);
+            opacity: 1;
+        }
+    }
+
+    .queue-modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1.5rem;
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    .queue-modal-header h2 {
+        margin: 0;
+        font-size: 1.25rem;
+        color: var(--text-primary);
+    }
+
+    .queue-modal-close {
+        background: transparent;
+        border: none;
+        color: var(--text-secondary);
+        font-size: 1.5rem;
+        cursor: pointer;
+        padding: 0;
+        width: 32px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 6px;
+        transition: all var(--transition-fast);
+    }
+
+    .queue-modal-close:hover {
+        background: var(--bg-tertiary);
+        color: var(--text-primary);
+    }
+
+    .queue-modal-tabs {
+        display: flex;
+        gap: 0.5rem;
+        padding: 0 1rem;
+        border-bottom: 1px solid var(--border-color);
+        background: var(--bg-secondary);
+    }
+
+    .queue-tab-btn {
+        background: transparent;
+        border: none;
+        border-bottom: 2px solid transparent;
+        color: var(--text-secondary);
+        padding: 0.75rem 1rem;
+        cursor: pointer;
+        font-size: 0.875rem;
+        font-weight: 500;
+        transition: all var(--transition-fast);
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .queue-tab-btn:hover {
+        color: var(--text-primary);
+    }
+
+    .queue-tab-btn.active {
+        color: var(--accent-color);
+        border-bottom-color: var(--accent-color);
+    }
+
+    .queue-count {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(0, 181, 173, 0.12);
+        color: var(--accent-color);
+        border-radius: 12px;
+        width: 24px;
+        height: 24px;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+
+    .queue-modal-body {
+        flex: 1;
+        overflow-y: auto;
+        padding: 1rem;
+    }
+
+    .queue-tab-content {
+        display: none;
+    }
+
+    .queue-tab-content.active {
+        display: block;
+    }
+
+    .queue-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+    }
+
+    .queue-empty {
+        text-align: center;
+        padding: 2rem 1rem;
+        color: var(--text-secondary);
+        font-style: italic;
+    }
+
+    .queue-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1rem;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        transition: all var(--transition-fast);
+    }
+
+    .queue-item:hover {
+        background: var(--bg-primary);
+        border-color: var(--accent-color);
+    }
+
+    .queue-item-info {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+        flex: 1;
+    }
+
+    .queue-item-name {
+        font-weight: 600;
+        color: var(--text-primary);
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .queue-item-meta {
+        font-size: 0.8rem;
+        color: var(--text-muted);
+        display: flex;
+        gap: 1rem;
+    }
+
+    .queue-item-meta-item {
+        display: flex;
+        align-items: center;
+        gap: 0.25rem;
+    }
+
+    .queue-position-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: #fef3c7;
+        color: #92400e;
+        border-radius: 4px;
+        padding: 0.2rem 0.5rem;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+
+    .queue-elapsed-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(0, 181, 173, 0.12);
+        color: var(--accent-color);
+        border-radius: 4px;
+        padding: 0.2rem 0.5rem;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+
+    .queue-elapsed-badge.warning {
+        background: #fef3c7;
+        color: #92400e;
+    }
+
+    .queue-elapsed-badge.danger {
+        background: #fee2e2;
+        color: #991b1b;
+    }
+
+    .queue-item-action {
+        display: flex;
+        gap: 0.5rem;
+    }
+
+    .queue-item-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+        padding: 0.35rem 0.65rem;
+        background: var(--accent-color);
+        color: white;
+        border: none;
+        border-radius: 6px;
+        font-size: 0.75rem;
+        cursor: pointer;
+        transition: all var(--transition-fast);
+    }
+
+    .queue-item-btn:hover {
+        background: var(--accent-hover);
+    }
+
+    .queue-item-btn:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+
+    /* Make dashboard badges clickable */
+    .stat-badge[role="button"] {
+        cursor: pointer;
+        transition: all var(--transition-fast);
+    }
+
+    .stat-badge[role="button"]:hover {
+        background: var(--bg-tertiary);
+        border-color: var(--accent-color);
     }
 
     @media (max-width: 768px) {
@@ -804,10 +1429,6 @@
             display: none;
         }
 
-        .tier-legend {
-            gap: 1rem;
-        }
-
         .bulk-command-bar {
             width: calc(100% - 2rem);
             flex-direction: column;
@@ -829,6 +1450,39 @@
             flex-direction: column;
             gap: 1rem;
         }
+
+        .table-controls {
+            flex-direction: column;
+            align-items: flex-start;
+        }
+
+        .accounts-search input {
+            min-width: 160px;
+        }
+
+        .queue-modal-content {
+            width: 95%;
+            max-height: 90vh;
+        }
+    }
+</style>
+
+<!-- Server-side loading optimization styles -->
+<style>
+    .accounts-loading {
+        opacity: 0.6;
+        pointer-events: none;
+    }
+
+    .loading-spinner {
+        display: inline-block;
+        width: 16px;
+        height: 16px;
+        border: 2px solid rgba(0, 181, 173, 0.3);
+        border-top: 2px solid var(--accent-color);
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+        margin-right: 0.5rem;
     }
 </style>
 {% endblock %}
@@ -837,70 +1491,135 @@
 <div class="container accounts-page">
     <header class="page-header">
         <div class="accounts-header">
-            <div>
-                <h1>Monitored Accounts</h1>
-                <p class="subtitle">Track companies through their localization journey</p>
+            <div style="display: flex; gap: 1rem; align-items: center;">
+                <h1 class="page-title">Monitored Accounts</h1>
+
+                <div class="search-container">
+                    <svg class="search-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+                        stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                    <input type="text" class="search-input" placeholder="Search accounts..."
+                        value="{{ current_search }}"
+                        onkeydown="if(event.key === 'Enter') updateFilters({search: this.value})">
+                </div>
             </div>
+
             <div class="accounts-stats">
+                <div class="tier-filter">
+                    <!-- Multi-select tier buttons -->
+                    <button class="tier-filter-btn {% if not current_tier_filter %}active{% endif %}"
+                        onclick="updateFilters({tier: null})">
+                        All
+                    </button>
+
+                    {% for tier_id, config in tier_config.items() %}
+                    <button
+                        class="tier-filter-btn {% if current_tier_filter and tier_id in current_tier_filter %}active{% endif %}"
+                        onclick="toggleTierFilter({{ tier_id }})">
+                        {{ config.name }}
+                    </button>
+                    {% endfor %}
+                </div>
                 {% set tier_counts = {'0': 0, '1': 0, '2': 0, '3': 0, '4': 0} %}
                 {% for account in accounts %}
                 {% set _ = tier_counts.update({account.current_tier|string: tier_counts.get(account.current_tier|string,
                 0) + 1}) %}
                 {% endfor %}
 
-                <div class="stat-badge" style="background: var(--bg-tertiary); border: 1px solid var(--border-color);">
-                    <span class="tier-badge" style="background: rgba(59, 130, 246, 0.2); color: #60a5fa;">📊</span>
+                <div class="stat-badge">
+                    <span class="badge badge-neutral">API</span>
                     <span class="count" id="dashboard-api-calls">--</span>
                     <span>API Calls</span>
                 </div>
 
-                <div class="stat-badge" style="background: var(--bg-tertiary); border: 1px solid var(--border-color);">
-                    <span class="tier-badge" style="background: rgba(168, 85, 247, 0.2); color: #c084fc;">⏳</span>
+                <div class="stat-badge">
+                    <span class="badge badge-warning">Queue</span>
                     <span class="count" id="dashboard-queue-size">0</span>
                     <span>Queued</span>
                 </div>
 
                 <div class="stat-badge">
-                    <span class="tier-badge tier-badge-2">{{ tier_config[2].emoji }}</span>
+                    <span class="badge badge-primary">Live</span>
+                    <span class="count" id="dashboard-processing-count">0</span>
+                    <span>Processing</span>
+                </div>
+
+                <div class="stat-badge">
+                    <span class="tier-badge tier-badge-2">Tier 2</span>
                     <span class="count">{{ tier_counts['2'] }}</span>
                     <span>Hot</span>
                 </div>
 
-                <button type="button" class="btn-start-scan" onclick="scanPending()"
-                    style="margin-right: 0.5rem; margin-left: 1rem;">
-                    ▶️ Scan Pending
-                </button>
-                <button type="button" class="btn-refresh-pipeline" onclick="refreshPipeline()">
-                    🔄 Refresh Pipeline
-                </button>
             </div>
         </div>
     </header>
 
-    <div class="tier-legend">
-        <div class="legend-item">
-            <span class="legend-dot legend-dot-2"></span>
-            <strong>Tier 2 - Preparing:</strong> i18n libraries installed, no locale folders (GOLDILOCKS)
+    <div class="status-legend-container">
+        <div class="legend-item status-tracking">
+            <div class="legend-header">
+                <span class="status-dot"></span>
+                <span class="status-title">Tier 0: Tracking</span>
+            </div>
+            <span class="status-desc">No signals yet</span>
         </div>
-        <div class="legend-item">
-            <span class="legend-dot legend-dot-1"></span>
-            <strong>Tier 1 - Thinking:</strong> RFC discussions found
+        <div class="legend-item status-thinking">
+            <div class="legend-header">
+                <span class="status-dot"></span>
+                <span class="status-title">Tier 1: Thinking</span>
+            </div>
+            <span class="status-desc">RFC discussions found</span>
         </div>
-        <div class="legend-item">
-            <span class="legend-dot legend-dot-0"></span>
-            <strong>Tier 0 - Tracking:</strong> No signals yet
+        <div class="legend-item status-preparing">
+            <div class="legend-header">
+                <span class="status-dot"></span>
+                <span class="status-title">Tier 2: Preparing</span>
+            </div>
+            <span class="status-desc">Libraries installed, no locale folders (GOLDILOCKS)</span>
         </div>
-        <div class="legend-item">
-            <span class="legend-dot legend-dot-3"></span>
-            <strong>Tier 3 - Launched:</strong> Already localized (too late)
+        <div class="legend-item status-launched">
+            <div class="legend-header">
+                <span class="status-dot"></span>
+                <span class="status-title">Tier 3: Launched</span>
+            </div>
+            <span class="status-desc">Already localized (too late)</span>
         </div>
-        <div class="legend-item">
-            <span class="legend-dot legend-dot-4"></span>
-            <strong>Tier 4 - Not Found:</strong> GitHub org not found or no public repos
+        <div class="legend-item status-not-found">
+            <div class="legend-header">
+                <span class="status-dot"></span>
+                <span class="status-title">Tier 4: Not Found</span>
+            </div>
+            <span class="status-desc">GitHub org not found or no public repos</span>
         </div>
     </div>
 
     {% if accounts %}
+    <div class="table-controls">
+        <div class="table-controls-left">
+            <label class="accounts-search" for="account-search-input">
+                <svg class="inline-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+                    stroke="currentColor" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <input type="text" id="account-search-input" placeholder="Search company or org..." autocomplete="off">
+            </label>
+            <select id="status-filter" class="filter-select" aria-label="Filter by scan status">
+                <option value="all">All statuses</option>
+                <option value="idle">Idle</option>
+                <option value="queued">Queued</option>
+                <option value="processing">Processing</option>
+                <option value="stuck">Stuck</option>
+            </select>
+            <button type="button" class="btn-clear-filters" id="clear-filters-btn">Clear filters</button>
+        </div>
+        <label class="compact-toggle-label">
+            <input type="checkbox" id="compact-toggle" checked onchange="toggleTableDensity()">
+            <span class="compact-toggle-slider"></span>
+            <span class="compact-toggle-text">Compact</span>
+        </label>
+    </div>
     <div class="accounts-table-container">
         <table class="accounts-table">
             <thead>
@@ -913,21 +1632,80 @@
                     <th class="sortable" data-sort-key="github_org">GitHub Org <span class="sort-indicator">↕</span>
                     </th>
                     <th class="sortable" data-sort-key="tier">Tier <span class="sort-indicator">↕</span></th>
-                    <th class="sortable" data-sort-key="last_scanned">Last Check <span class="sort-indicator">↕</span>
+                    <th class="sortable" data-sort-key="last_scanned">Last Scanned <span class="sort-indicator">↕</span>
                     </th>
-                    <th class="sortable" data-sort-key="evidence">Evidence <span class="sort-indicator">↕</span></th>
+                    <th class="sortable" data-sort-key="evidence">Evidence Summary <span class="sort-indicator">↕</span>
+                    </th>
                     <th>Actions</th>
                 </tr>
             </thead>
-            <tbody>
-                {% for account in accounts %}
-                <tr class="tier-row-{{ account.current_tier }}" id="row-{{ account.id }}"
-                    data-company="{{ account.company_name }}" data-status="idle">
-                    <td class="select-col">
-                        <input type="checkbox" class="select-account-checkbox row-select"
-                            data-account-id="{{ account.id }}" aria-label="Select {{ account.company_name }}">
-                    </td>
-                    <td class="company-cell">
+            <tbody id="accounts-tbody">
+                <!-- DataTables will populate this with server-side data -->
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Template for DataTables row rendering (will be cloned and filled) -->
+    <script type="text/template" id="accounts-row-template">
+        <tr id="row-{id}" data-company="{company_name}" data-account-id="{id}" data-tier="{current_tier}" data-status="idle">
+            <td class="select-col">
+                <input type="checkbox" class="select-account-checkbox row-select" data-account-id="{id}" aria-label="Select {company_name}">
+            </td>
+            <td class="company-cell">
+                <span class="company-cell-content">
+                    {company_link}
+                    <button type="button" class="btn-copy-company" title="Copy company name" data-company="{company_name}" onclick="copyToClipboard(this.dataset.company, this)">
+                        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                            <path d="M16 1H6c-1.1 0-2 .9-2 2v12h2V3h10V1zm3 4H10c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h9c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H10V7h9v14z" />
+                        </svg>
+                    </button>
+                </span>
+            </td>
+            <td class="github-org-cell" data-company="{company_name}" ondblclick="editOrg(this)" data-org="{github_org}">
+                <span class="org-display">
+                    {github_org_link}
+                </span>
+                <span class="github-org-input-container">
+                    <input type="text" class="github-org-input" placeholder="org-name" value="{github_org}">
+                    <button type="button" class="btn-save-org" onclick="saveOrgEdit(this)">Save</button>
+                    <button type="button" class="btn-cancel-org" onclick="cancelOrgEdit(this)">Cancel</button>
+                </span>
+            </td>
+            <td>
+                <span class="tier-badge tier-badge-{current_tier}">Tier {current_tier} - {tier_name}</span>
+            </td>
+            <td class="last-check-cell">
+                <div class="status-container">
+                    <span class="account-last-scan {last_scan_class}" data-timestamp="{last_scanned_at}">
+                        <strong class="last-scan-date">{last_scanned_formatted}</strong>
+                    </span>
+                </div>
+            </td>
+            <td class="evidence-cell">
+                <span class="evidence-text" title="{evidence_title}">{evidence_summary}</span>
+            </td>
+            <td class="actions-cell">
+                {actions_html}
+            </td>
+        </tr>
+    </script>
+
+    <!-- Hidden tbody placeholder -->
+    <div style="display: none;">
+        <tbody id="accounts-tbody-old">
+            <tr class="table-empty-row hidden" id="accounts-empty-row">
+                <td colspan="7">No accounts match your filters.</td>
+            </tr>
+            {% for account in accounts %}
+            <tr id="row-{{ account.id }}" data-company="{{ account.company_name }}" data-account-id="{{ account.id }}"
+                data-tier="{{ account.current_tier }}" data-last-scanned="{{ account.last_scanned_at or '' }}"
+                data-next-scan-due="{{ account.next_scan_due or '' }}" data-status="idle">
+                <td class="select-col">
+                    <input type="checkbox" class="select-account-checkbox row-select" data-account-id="{{ account.id }}"
+                        aria-label="Select {{ account.company_name }}">
+                </td>
+                <td class="company-cell">
+                    <span class="company-cell-content">
                         {% if account.latest_report_id %}
                         <a href="{{ url_for('view_report', report_id=account.latest_report_id) }}">
                             {{ account.company_name }}
@@ -935,123 +1713,133 @@
                         {% else %}
                         {{ account.company_name }}
                         {% endif %}
-                    </td>
-                    <td class="github-org-cell" data-company="{{ account.company_name|e }}"
-                        data-org="{{ account.github_org|default('', true)|e }}">
-                        <span class="org-display">
-                            {% if account.github_org %}
-                            <a href="https://github.com/{{ account.github_org }}" target="_blank" rel="noopener"
-                                class="github-org-link" title="View on GitHub">
-                                <svg viewBox="0 0 16 16" fill="currentColor">
-                                    <path
-                                        d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" />
-                                </svg>
-                                @{{ account.github_org }}
-                            </a>
-                            <button type="button" class="github-org-edit" onclick="showOrgEdit(this)"
-                                title="Edit GitHub org">
-                                Edit
-                            </button>
-                            {% else %}
-                            <span class="org-not-found">Not found</span>
-                            <button type="button" class="github-org-edit" onclick="showOrgEdit(this)"
-                                title="Set GitHub org">
-                                Set
-                            </button>
-                            {% endif %}
-                        </span>
-                        <span class="github-org-input-container">
-                            <input type="text" class="github-org-input" placeholder="org-name"
-                                value="{{ account.github_org or '' }}">
-                            <button type="button" class="btn-save-org" onclick="saveOrgEdit(this)">Save</button>
-                            <button type="button" class="btn-cancel-org" onclick="cancelOrgEdit(this)">Cancel</button>
-                        </span>
-                    </td>
-                    <td>
-                        <span class="tier-badge tier-badge-{{ account.current_tier }}">
-                            {{ account.tier_config.emoji }} Tier {{ account.current_tier }} - {{
-                            account.tier_config.name }}
-                        </span>
-                    </td>
-                    <td class="last-check-cell">
-                        <div class="status-container">
-                            <span class="scanned-time {% if not account.last_scanned_at %}never-scanned{% endif %}">
-                                {% if account.last_scanned_at %}
-                                <strong class="scanned-time" data-timestamp="{{ account.last_scanned_at }}">Scanned:
-                                    --</strong>
-                                {% else %}
-                                Never
-                                {% endif %}
-                            </span>
-                            {% if account.last_scanned_at %}
-                            <span class="tier-change-time">
-                                {% if account.status_changed_at %}
-                                {% set change_date = account.status_changed_at %}
-                                {% if 'T' in change_date %}
-                                {% set change_date = change_date.split('T')[0] %}
-                                {% endif %}
-                                Tier changed: {{ change_date }}
-                                {% else %}
-                                {{ account.last_scanned_at[11:16] }}
-                                {% endif %}
-                            </span>
-                            {% endif %}
-                        </div>
-                    </td>
-                    <td class="evidence-cell">
-                        <span class="evidence-text" title="{{ account.evidence_summary or 'No evidence recorded' }}">
-                            {{ account.evidence_summary or 'No evidence recorded' }}
-                        </span>
-                    </td>
-                    <td class="actions-cell">
-                        {% if account.latest_report_id %}
-                        <a href="{{ url_for('view_report', report_id=account.latest_report_id) }}"
-                            class="btn-view-report">
-                            View
+                        <button type="button" class="btn-copy-company" title="Copy company name"
+                            data-company="{{ account.company_name|e }}"
+                            onclick="copyToClipboard(this.dataset.company, this)">
+                            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                                <path
+                                    d="M16 1H6c-1.1 0-2 .9-2 2v12h2V3h10V1zm3 4H10c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h9c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H10V7h9v14z" />
+                            </svg>
+                        </button>
+                    </span>
+                </td>
+                <td class="github-org-cell" data-company="{{ account.company_name|e }}" ondblclick="editOrg(this)"
+                    data-org="{{ account.github_org|default('', true)|e }}">
+                    <span class="org-display">
+                        {% if account.github_org %}
+                        <a href="https://github.com/{{ account.github_org }}" target="_blank" rel="noopener"
+                            class="github-org-link" title="View on GitHub">
+                            <svg viewBox="0 0 16 16" fill="currentColor">
+                                <path
+                                    d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" />
+                            </svg>
+                            @{{ account.github_org }}
                         </a>
-                        {% endif %}
-                        {% if account.current_tier == 4 %}
-                        <button type="button" class="btn-invalid" disabled>
-                            🚫 Invalid
+                        <button type="button" class="github-org-edit" onclick="showOrgEdit(this)"
+                            title="Edit GitHub org">
+                            Edit
                         </button>
                         {% else %}
-                        <button type="button" class="btn-action-smart" data-company="{{ account.company_name }}"
-                            onclick="triggerRescan(this, '{{ account.company_name }}')">
-                            Rescan
+                        <span class="org-not-found">Not found</span>
+                        <button type="button" class="github-org-edit" onclick="showOrgEdit(this)"
+                            title="Set GitHub org">
+                            Set
                         </button>
                         {% endif %}
-                        <button type="button" class="btn-delete-account" data-company="{{ account.company_name }}"
-                            onclick="removeAccount(this)">
-                            Remove
-                        </button>
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
+                    </span>
+                    <span class="github-org-input-container">
+                        <input type="text" class="github-org-input" placeholder="org-name"
+                            value="{{ account.github_org or '' }}">
+                        <button type="button" class="btn-save-org" onclick="saveOrgEdit(this)">Save</button>
+                        <button type="button" class="btn-cancel-org" onclick="cancelOrgEdit(this)">Cancel</button>
+                    </span>
+                </td>
+                <td>
+                    <span class="tier-badge tier-badge-{{ account.current_tier }}">
+                        Tier {{ account.current_tier }} - {{
+                        account.tier_config.name }}
+                    </span>
+                </td>
+                <td class="last-check-cell">
+                    <div class="status-container">
+                        <span class="account-last-scan {% if not account.last_scanned_at %}never-scanned{% endif %}">
+                            {% if account.last_scanned_at %}
+                            <strong class="last-scan-date" data-timestamp="{{ account.last_scanned_at }}">
+                                --
+                            </strong>
+                            {% elif account.scan_status == 'queued' %}
+                            <strong class="last-scan-date status-queued">In Queue</strong>
+                            {% elif account.scan_status == 'processing' %}
+                            <strong class="last-scan-date status-processing">Scanning...</strong>
+                            {% else %}
+                            <strong class="last-scan-date">Never</strong>
+                            {% endif %}
+                        </span>
+                        <span class="next-scan-date" data-next-timestamp="{{ account.next_scan_due or '' }}">
+                            {% if account.next_scan_due %}
+                            --
+                            {% endif %}
+                        </span>
+                    </div>
+                </td>
+                <td class="evidence-cell">
+                    <span class="evidence-text" title="{{ account.evidence_summary or 'No evidence recorded' }}">
+                        {{ account.evidence_summary or 'No evidence recorded' }}
+                    </span>
+                </td>
+                <td class="actions-cell">
+                    {% if account.latest_report_id %}
+                    <button type="button" class="btn-view-report"
+                        onclick="openReport('{{ url_for('view_report', report_id=account.latest_report_id) }}')">
+                        View
+                    </button>
+                    {% endif %}
+                    {% if account.current_tier == 4 %}
+                    <button type="button" class="btn-action-smart" disabled
+                        title="Tier 4 accounts are marked as not found">
+                        Rescan
+                    </button>
+                    {% else %}
+                    <button type="button" class="btn-action-smart" data-company="{{ account.company_name }}"
+                        onclick="triggerRescan(this, '{{ account.company_name }}')">
+                        Rescan
+                    </button>
+                    {% endif %}
+                    <button type="button" class="btn-delete-account" data-company="{{ account.company_name }}"
+                        onclick="removeAccount(this)">
+                        Remove
+                    </button>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
         </table>
-        <div class="pagination-container">
-            <div class="pagination-info">
-                Showing {{ ((current_page - 1) * limit) + 1 }}-{{ [current_page * limit, total_items]|min }} of {{ total_items }} accounts
-            </div>
-            <div class="pagination-controls">
-                <a href="{{ url_for('accounts', page=current_page - 1, limit=limit) }}"
-                   class="pagination-btn"
-                   {% if current_page <= 1 %}disabled{% endif %}
-                   {% if current_page <= 1 %}onclick="return false;"{% endif %}>
-                    ← Previous
-                </a>
-                <span class="pagination-page-display">
-                    Page {{ current_page }} of {{ total_pages or 1 }}
-                </span>
-                <a href="{{ url_for('accounts', page=current_page + 1, limit=limit) }}"
-                   class="pagination-btn"
-                   {% if current_page >= total_pages %}disabled{% endif %}
-                   {% if current_page >= total_pages %}onclick="return false;"{% endif %}>
-                    Next →
-                </a>
-            </div>
+    </div>
+    <!-- Pagination Controls -->
+    <div class="pagination-container" id="pagination-container">
+        <div class="pagination-info" id="pagination-info">
+            Loading...
+        </div>
+        <div class="pagination-controls">
+            <select id="limit-select" class="pagination-limit-select" aria-label="Rows per page">
+                <option value="25">25 rows</option>
+                <option value="50" selected>50 rows</option>
+                <option value="100">100 rows</option>
+                <option value="250">250 rows</option>
+                <option value="10000">All</option>
+            </select>
+            <button type="button" class="pagination-btn" id="prev-page-btn" disabled>
+                Previous
+            </button>
+            <span class="pagination-page-display" id="page-display">
+                Page 1 of 1
+            </span>
+            <button type="button" class="pagination-btn" id="next-page-btn" disabled>
+                Next
+            </button>
         </div>
     </div>
+
     <div class="bulk-command-bar hidden" id="bulk-command-bar">
         <span class="bulk-command-count" id="bulk-selection-count">0 accounts selected</span>
         <div class="bulk-command-actions">
@@ -1074,14 +1862,175 @@
     {% endif %}
 </div>
 
+<div id="report-drawer">
+    <button type="button" class="drawer-close" onclick="closeDrawer()" aria-label="Close report drawer">×</button>
+    <iframe id="report-frame" width="100%" height="100%"></iframe>
+</div>
+
+<!-- Queue/Processing Status Modal -->
+<div id="queue-modal" class="queue-modal">
+    <div class="queue-modal-overlay" onclick="closeQueueModal()"></div>
+    <div class="queue-modal-content">
+        <div class="queue-modal-header">
+            <h2 id="queue-modal-title">Scan Queue</h2>
+            <button type="button" class="queue-modal-close" onclick="closeQueueModal()"
+                aria-label="Close modal">×</button>
+        </div>
+        <div class="queue-modal-tabs">
+            <button type="button" class="queue-tab-btn active" data-tab="processing"
+                onclick="switchQueueTab('processing')">
+                Processing <span class="queue-count" id="processing-count">0</span>
+            </button>
+            <button type="button" class="queue-tab-btn" data-tab="queued" onclick="switchQueueTab('queued')">
+                Queued <span class="queue-count" id="queued-count">0</span>
+            </button>
+        </div>
+        <div class="queue-modal-body">
+            <div id="processing-tab" class="queue-tab-content active">
+                <div id="processing-list" class="queue-list">
+                    <div class="queue-empty">No accounts currently processing</div>
+                </div>
+            </div>
+            <div id="queued-tab" class="queue-tab-content">
+                <div id="queued-list" class="queue-list">
+                    <div class="queue-empty">No accounts in queue</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
     // =============================================================================
     // Time Utilities
     // =============================================================================
 
+    function openReport(url) {
+        const drawer = document.getElementById('report-drawer');
+        const frame = document.getElementById('report-frame');
+        frame.src = url;
+        drawer.classList.add('drawer-open');
+    }
+
+    function closeDrawer() {
+        const drawer = document.getElementById('report-drawer');
+        const frame = document.getElementById('report-frame');
+        drawer.classList.remove('drawer-open');
+        frame.src = '';
+    }
+
+    // Filter Logic
+    function getQueryParam(param) {
+        const urlParams = new URLSearchParams(window.location.search);
+        return urlParams.get(param);
+    }
+
+    function getAllQueryParams() {
+        return new URLSearchParams(window.location.search);
+    }
+
+    function updateFilters(updates) {
+        const urlParams = new URLSearchParams(window.location.search);
+
+        // Reset page to 1 on filter change
+        urlParams.set('page', 1);
+
+        if (updates.search !== undefined) {
+            if (updates.search) {
+                urlParams.set('q', updates.search);
+            } else {
+                urlParams.delete('q');
+            }
+        }
+
+        if (updates.tier !== undefined) {
+            urlParams.delete('tier'); // Clear all tiers first
+            if (updates.tier !== null) {
+                // updates.tier should be an array of integers
+                updates.tier.forEach(t => urlParams.append('tier', t));
+            }
+        }
+
+        window.location.href = '?' + urlParams.toString();
+    }
+
+    function toggleTierFilter(tierId) {
+        const urlParams = new URLSearchParams(window.location.search);
+        const currentTiers = urlParams.getAll('tier').map(t => parseInt(t));
+
+        let newTiers;
+        if (currentTiers.includes(tierId)) {
+            // Remove it
+            newTiers = currentTiers.filter(t => t !== tierId);
+        } else {
+            // Add it
+            newTiers = [...currentTiers, tierId];
+        }
+
+        // Convert to array of unique values
+        newTiers = [...new Set(newTiers)];
+
+        // If empty, it means 'All', so we pass null to updateFilters
+        updateFilters({ tier: newTiers.length > 0 ? newTiers : null });
+    }
+
+    function formatSmartDate(dateString) {
+        if (!dateString) return 'Never';
+        // Server stores timestamps in UTC without 'Z' suffix - add it to parse correctly
+        let normalizedDateString = dateString;
+        if (typeof dateString === 'string') {
+            normalizedDateString = dateString.replace(' ', 'T');
+            if (!normalizedDateString.endsWith('Z') && !normalizedDateString.includes('+') && !normalizedDateString.includes('-', 10)) {
+                normalizedDateString += 'Z';
+            }
+        }
+        const date = new Date(normalizedDateString);
+        if (Number.isNaN(date.getTime())) return 'Never';
+
+        const timeZone = 'America/New_York';
+
+        // Compare dates in EST
+        const dateStr = date.toLocaleDateString('en-US', { timeZone, year: 'numeric', month: 'numeric', day: 'numeric' });
+        const nowStr = new Date().toLocaleDateString('en-US', { timeZone, year: 'numeric', month: 'numeric', day: 'numeric' });
+
+        if (dateStr === nowStr) return 'Today';
+
+        const options = { month: 'short', day: 'numeric', timeZone };
+        return date.toLocaleDateString('en-US', options);
+    }
+
+    function formatNextDate(dateString) {
+        if (!dateString) return '';
+        // Server stores timestamps in UTC without 'Z' suffix - add it to parse correctly
+        let normalizedDateString = dateString;
+        if (typeof dateString === 'string') {
+            normalizedDateString = dateString.replace(' ', 'T');
+            if (!normalizedDateString.endsWith('Z') && !normalizedDateString.includes('+') && !normalizedDateString.includes('-', 10)) {
+                normalizedDateString += 'Z';
+            }
+        }
+        const date = new Date(normalizedDateString);
+        if (Number.isNaN(date.getTime())) return '';
+
+        const options = { month: 'short', day: 'numeric', timeZone: 'America/New_York' };
+        return `Next: ${date.toLocaleDateString('en-US', options)}`;
+    }
+
+    function changeLimit(newLimit) {
+        const params = new URLSearchParams(window.location.search);
+        params.set('limit', newLimit);
+        params.set('page', 1);
+        window.location.search = params.toString();
+    }
+
     function formatShortDate(timestamp) {
         if (!timestamp) return '--';
-        const scanned = new Date(timestamp);
+        // Server stores timestamps in UTC without 'Z' suffix - add it to parse correctly
+        let normalizedTimestamp = timestamp;
+        if (!timestamp.endsWith('Z') && !timestamp.includes('+') && !timestamp.includes('-', 10)) {
+            normalizedTimestamp = timestamp + 'Z';
+        }
+        const scanned = new Date(normalizedTimestamp);
         if (Number.isNaN(scanned.getTime())) return '--';
         const month = scanned.getMonth() + 1;
         const day = scanned.getDate();
@@ -1089,17 +2038,60 @@
         return `${month}-${day}-${year}`;
     }
 
+    function formatRelativeTime(timestamp) {
+        if (!timestamp) return '--';
+        // Server stores timestamps in UTC without 'Z' suffix - add it to parse correctly
+        let normalizedTimestamp = timestamp;
+        if (!timestamp.endsWith('Z') && !timestamp.includes('+') && !timestamp.includes('-', 10)) {
+            normalizedTimestamp = timestamp + 'Z';
+        }
+        const scanned = new Date(normalizedTimestamp);
+        if (Number.isNaN(scanned.getTime())) return '--';
+
+        const now = new Date();
+        const diffMs = now - scanned;
+        const diffMins = Math.floor(diffMs / (1000 * 60));
+        const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+        const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+        // For very recent scans, show relative time
+        if (diffMins < 1) {
+            return 'Just now';
+        } else if (diffMins < 60) {
+            return `${diffMins}m ago`;
+        } else if (diffHours < 24) {
+            return `${diffHours}h ago`;
+        } else if (diffDays < 7) {
+            return `${diffDays}d ago`;
+        } else {
+            // Fall back to date format for older scans
+            return formatShortDate(timestamp);
+        }
+    }
+
     function getHoursSinceScanned(timestamp) {
         if (!timestamp) return Infinity;
         const now = new Date();
-        const scanned = new Date(timestamp);
+        let scanned;
+        if (typeof timestamp === 'string' && !timestamp.includes('Z') && !timestamp.includes('+')) {
+            scanned = new Date(timestamp.replace(' ', 'T') + 'Z');
+        } else {
+            scanned = new Date(timestamp);
+        }
+        if (Number.isNaN(scanned.getTime())) return Infinity;
         return (now - scanned) / (1000 * 60 * 60);
     }
 
     function getDaysSinceScanned(timestamp) {
         if (!timestamp) return Infinity;
         const now = new Date();
-        const scanned = new Date(timestamp);
+        let scanned;
+        if (typeof timestamp === 'string' && !timestamp.includes('Z') && !timestamp.includes('+')) {
+            scanned = new Date(timestamp.replace(' ', 'T') + 'Z');
+        } else {
+            scanned = new Date(timestamp);
+        }
+        if (Number.isNaN(scanned.getTime())) return Infinity;
         return (now - scanned) / (1000 * 60 * 60 * 24);
     }
 
@@ -1113,13 +2105,27 @@
         fetch('/api/queue-status')
             .then(response => response.json())
             .then(data => {
+                // Update queued count
                 const queueEl = document.getElementById('dashboard-queue-size');
                 if (queueEl) {
-                    queueEl.textContent = data.queue_size;
-                    if (data.queue_size > 0) {
-                        queueEl.style.color = 'var(--accent-color)';
+                    const queuedCount = data.queued_count || 0;
+                    queueEl.textContent = queuedCount;
+                    if (queuedCount > 0) {
+                        queueEl.style.color = '#fbbf24';  // Yellow/amber for queued
                     } else {
                         queueEl.style.color = 'inherit';
+                    }
+                }
+
+                // Update processing count
+                const processingEl = document.getElementById('dashboard-processing-count');
+                if (processingEl) {
+                    const processingCount = data.processing_count || 0;
+                    processingEl.textContent = processingCount;
+                    if (processingCount > 0) {
+                        processingEl.style.color = '#818cf8';  // Purple for processing
+                    } else {
+                        processingEl.style.color = 'inherit';
                     }
                 }
             })
@@ -1144,89 +2150,161 @@
     // =============================================================================
 
     function initializeUI() {
-        // Update all "Scanned: date" timestamps
-        document.querySelectorAll('.scanned-time[data-timestamp]').forEach(el => {
+        // Update all last scan timestamps with smart formatting
+        document.querySelectorAll('.last-scan-date[data-timestamp]').forEach(el => {
             const timestamp = el.dataset.timestamp;
             if (timestamp) {
-                const formattedDate = formatShortDate(timestamp);
-                el.textContent = `Scanned: ${formattedDate}`;
+                el.textContent = formatSmartDate(timestamp);
 
                 // Add visual class based on freshness
                 const hours = getHoursSinceScanned(timestamp);
-                if (hours < 24) {
-                    el.classList.add('recent');
-                } else if (hours > 24 * 7) {
-                    el.classList.add('stale');
+                const container = el.closest('.account-last-scan');
+                if (container) {
+                    if (hours < 24) {
+                        container.classList.add('recent');
+                    } else if (hours > 24 * 7) {
+                        container.classList.add('stale');
+                    }
                 }
             }
         });
 
-        // All action buttons are always enabled with "Rescan" text
-        // The button state is set in the HTML template, no dynamic changes needed
-
-        initializeBulkSelection();
-    }
-
-    // =============================================================================
-    // Sorting
-    // =============================================================================
-
-    let activeSort = { key: null, direction: 'asc' };
-
-    function getSortValue(row, key) {
-        if (key === 'company') {
-            return (row.dataset.company || '').toLowerCase();
-        }
-        if (key === 'github_org') {
-            const orgCell = row.querySelector('.github-org-cell');
-            return (orgCell?.dataset.org || '').toLowerCase();
-        }
-        if (key === 'tier') {
-            return parseInt(row.dataset.tier || '0', 10);
-        }
-        if (key === 'last_scanned') {
-            return row.dataset.lastScanned ? new Date(row.dataset.lastScanned).getTime() : 0;
-        }
-        if (key === 'evidence') {
-            const evidence = row.querySelector('.evidence-text');
-            return (evidence?.textContent || '').toLowerCase();
-        }
-        return '';
-    }
-
-    function sortTableBy(key) {
-        const tbody = document.querySelector('.accounts-table tbody');
-        if (!tbody) return;
-
-        if (activeSort.key === key) {
-            activeSort.direction = activeSort.direction === 'asc' ? 'desc' : 'asc';
-        } else {
-            activeSort = { key, direction: 'asc' };
-        }
-
-        const rows = Array.from(tbody.querySelectorAll('tr'));
-        rows.sort((a, b) => {
-            const valueA = getSortValue(a, key);
-            const valueB = getSortValue(b, key);
-            if (valueA < valueB) return activeSort.direction === 'asc' ? -1 : 1;
-            if (valueA > valueB) return activeSort.direction === 'asc' ? 1 : -1;
-            return 0;
-        });
-
-        rows.forEach(row => tbody.appendChild(row));
-
-        document.querySelectorAll('.accounts-table th.sortable').forEach(th => {
-            const indicator = th.querySelector('.sort-indicator');
-            if (!indicator) return;
-            if (th.dataset.sortKey === key) {
-                indicator.textContent = activeSort.direction === 'asc' ? '↑' : '↓';
-                indicator.classList.add('active');
-            } else {
-                indicator.textContent = '↕';
-                indicator.classList.remove('active');
+        // Update all next scan timestamps
+        document.querySelectorAll('.next-scan-date[data-next-timestamp]').forEach(el => {
+            const timestamp = el.dataset.nextTimestamp;
+            if (timestamp) {
+                el.textContent = formatNextDate(timestamp);
             }
         });
+
+        initializeBulkSelection();
+        initializeFilters();
     }
+
+    function initializeFilters() {
+        const searchInput = document.getElementById('account-search-input');
+        const statusFilter = document.getElementById('status-filter');
+        const clearButton = document.getElementById('clear-filters-btn');
+        if (!searchInput || !statusFilter || !clearButton) return;
+
+        let debounceTimer = null;
+
+        const handleFilterChange = () => {
+            if (debounceTimer) {
+                clearTimeout(debounceTimer);
+            }
+            debounceTimer = setTimeout(applyTableFilters, 150);
+        };
+
+        searchInput.addEventListener('input', handleFilterChange);
+        statusFilter.addEventListener('change', applyTableFilters);
+        clearButton.addEventListener('click', () => {
+            searchInput.value = '';
+            statusFilter.value = 'all';
+            applyTableFilters();
+        });
+
+        applyTableFilters();
+    }
+
+    function applyTableFilters() {
+        const searchInput = document.getElementById('account-search-input');
+        const statusFilter = document.getElementById('status-filter');
+        const emptyRow = document.getElementById('accounts-empty-row');
+        const rows = Array.from(document.querySelectorAll('.accounts-table tbody tr'))
+            .filter(row => !row.classList.contains('table-empty-row'));
+
+        const searchValue = (searchInput?.value || '').trim().toLowerCase();
+        const statusValue = statusFilter?.value || 'all';
+
+        let visibleCount = 0;
+
+        rows.forEach(row => {
+            const company = (row.dataset.company || '').toLowerCase();
+            const org = (row.querySelector('.github-org-cell')?.dataset.org || '').toLowerCase();
+            const status = row.dataset.status || 'idle';
+
+            const matchesSearch = !searchValue || company.includes(searchValue) || org.includes(searchValue);
+            const matchesStatus = statusValue === 'all' || status === statusValue;
+
+            const isVisible = matchesSearch && matchesStatus;
+            row.style.display = isVisible ? '' : 'none';
+            if (isVisible) visibleCount += 1;
+        });
+
+        if (emptyRow) {
+            emptyRow.classList.toggle('hidden', visibleCount > 0);
+        }
+    }
+
+    function toggleTableDensity() {
+        const table = document.querySelector('.accounts-table');
+        const toggle = document.getElementById('compact-toggle');
+        if (!table || !toggle) return;
+
+        const isCompact = toggle.checked;
+        table.classList.toggle('table-compact', isCompact);
+        localStorage.setItem('compactMode', isCompact ? 'true' : 'false');
+    }
+
+    function initCompactMode() {
+        const table = document.querySelector('.accounts-table');
+        const toggle = document.getElementById('compact-toggle');
+        if (!table || !toggle) return;
+
+        const savedPref = localStorage.getItem('compactMode');
+        const isCompact = savedPref === null ? true : savedPref === 'true';
+
+        toggle.checked = isCompact;
+        table.classList.toggle('table-compact', isCompact);
+    }
+
+    async function copyToClipboard(text, btn) {
+        if (!text || !btn) return;
+        const originalHTML = btn.innerHTML;
+
+        try {
+            if (navigator.clipboard?.writeText) {
+                await navigator.clipboard.writeText(text);
+            } else {
+                const tempInput = document.createElement('textarea');
+                tempInput.value = text;
+                tempInput.style.position = 'fixed';
+                tempInput.style.opacity = '0';
+                document.body.appendChild(tempInput);
+                tempInput.select();
+                document.execCommand('copy');
+                document.body.removeChild(tempInput);
+            }
+
+            btn.classList.add('copied');
+            btn.innerHTML = 'Copied';
+            setTimeout(() => {
+                btn.classList.remove('copied');
+                btn.innerHTML = originalHTML;
+            }, 1200);
+        } catch (error) {
+            console.error('Failed to copy text:', error);
+        }
+    }
+
+    function editOrg(cell) {
+        if (!cell) return;
+        const orgDisplay = cell.querySelector('.org-display');
+        const inputContainer = cell.querySelector('.github-org-input-container');
+        const input = cell.querySelector('.github-org-input');
+        const currentOrg = cell.dataset.org || '';
+
+        if (!orgDisplay || !inputContainer || !input) return;
+        if (inputContainer.classList.contains('active')) return;
+
+        orgDisplay.classList.add('hidden');
+        inputContainer.classList.add('active');
+        input.value = currentOrg;
+        input.focus();
+        input.select();
+    }
+
 
     // =============================================================================
     // Manual Removal
@@ -1263,16 +2341,317 @@
         }
     }
 
+    // Initialize TIER_CONFIG from server data
+    const TIER_CONFIG = {
+        0: { name: 'Tracking', color: '#808080' },
+        1: { name: 'Thinking', color: '#FFD700' },
+        2: { name: 'Preparing', color: '#28A745' },
+        3: { name: 'Launched', color: '#DC3545' },
+        4: { name: 'Invalid', color: '#404040' }
+    };
+
+    // Pagination state
+    let paginationState = {
+        currentPage: 1,
+        pageSize: 50,
+        totalRecords: 0,
+        totalPages: 1,
+        sortColumn: 0,
+        sortDirection: 'asc'
+    };
+
+    function initializeDataTable() {
+        const accountsTable = document.querySelector('.accounts-table');
+        if (!accountsTable) return;
+
+        // Get initial filters from URL parameters
+        const urlParams = new URLSearchParams(window.location.search);
+        const initialSearch = urlParams.get('q') || '';
+        const initialPage = parseInt(urlParams.get('page')) || 1;
+        const initialLimit = parseInt(urlParams.get('limit')) || 50;
+
+        paginationState.currentPage = initialPage;
+        paginationState.pageSize = initialLimit;
+
+        // Create a custom search input binding
+        const searchInput = document.querySelector('#account-search-input');
+        if (searchInput) {
+            searchInput.value = initialSearch;
+            let searchTimeout;
+            searchInput.addEventListener('input', (e) => {
+                clearTimeout(searchTimeout);
+                searchTimeout = setTimeout(() => {
+                    paginationState.currentPage = 1;
+                    reloadAccountsTable();
+                }, 300);
+            });
+        }
+
+        // Setup pagination controls
+        const limitSelect = document.getElementById('limit-select');
+        const prevBtn = document.getElementById('prev-page-btn');
+        const nextBtn = document.getElementById('next-page-btn');
+
+        if (limitSelect) {
+            limitSelect.value = paginationState.pageSize;
+            limitSelect.addEventListener('change', (e) => {
+                paginationState.pageSize = parseInt(e.target.value);
+                paginationState.currentPage = 1;
+                reloadAccountsTable();
+            });
+        }
+
+        if (prevBtn) {
+            prevBtn.addEventListener('click', () => {
+                if (paginationState.currentPage > 1) {
+                    paginationState.currentPage--;
+                    reloadAccountsTable();
+                }
+            });
+        }
+
+        if (nextBtn) {
+            nextBtn.addEventListener('click', () => {
+                if (paginationState.currentPage < paginationState.totalPages) {
+                    paginationState.currentPage++;
+                    reloadAccountsTable();
+                }
+            });
+        }
+
+        // Load initial data
+        reloadAccountsTable();
+
+        // Setup tier filter buttons
+        const tierButtons = document.querySelectorAll('.tier-filter-btn');
+        tierButtons.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                paginationState.currentPage = 1;
+                const tierId = parseInt(btn.dataset.tierId);
+                toggleTierFilter(tierId);
+            });
+        });
+    }
+
+    function reloadAccountsTable() {
+        const tbody = document.querySelector('#accounts-tbody');
+        const searchInput = document.querySelector('#account-search-input');
+        const urlParams = new URLSearchParams(window.location.search);
+
+        const searchValue = searchInput ? searchInput.value : urlParams.get('q') || '';
+        const tierFilters = urlParams.getAll('tier').map(t => parseInt(t));
+
+        // Calculate start offset
+        const start = (paginationState.currentPage - 1) * paginationState.pageSize;
+
+        // Build query parameters
+        const params = new URLSearchParams();
+        params.set('draw', '1');
+        params.set('start', start.toString());
+        params.set('length', paginationState.pageSize.toString());
+        params.set('search[value]', searchValue);
+        params.set('order[0][column]', paginationState.sortColumn);
+        params.set('order[0][dir]', paginationState.sortDirection);
+
+        tierFilters.forEach(tier => {
+            params.append('tier', tier);
+        });
+
+        // Fetch data from server
+        fetch(`/api/accounts/datatable?${params.toString()}`)
+            .then(response => response.json())
+            .then(data => {
+                paginationState.totalRecords = data.recordsFiltered || data.recordsTotal || 0;
+                paginationState.totalPages = Math.ceil(paginationState.totalRecords / paginationState.pageSize) || 1;
+                renderAccountsTable(data.data);
+                updatePaginationUI();
+            })
+            .catch(error => {
+                console.error('Error loading accounts:', error);
+                tbody.innerHTML = '<tr><td colspan="7">Error loading accounts. Please try again.</td></tr>';
+            });
+    }
+
+    function updatePaginationUI() {
+        const infoEl = document.getElementById('pagination-info');
+        const pageDisplay = document.getElementById('page-display');
+        const prevBtn = document.getElementById('prev-page-btn');
+        const nextBtn = document.getElementById('next-page-btn');
+
+        if (infoEl) {
+            const start = ((paginationState.currentPage - 1) * paginationState.pageSize) + 1;
+            const end = Math.min(paginationState.currentPage * paginationState.pageSize, paginationState.totalRecords);
+            infoEl.textContent = paginationState.totalRecords > 0
+                ? `Showing ${start}-${end} of ${paginationState.totalRecords} accounts`
+                : 'No accounts found';
+        }
+
+        if (pageDisplay) {
+            pageDisplay.textContent = `Page ${paginationState.currentPage} of ${paginationState.totalPages}`;
+        }
+
+        if (prevBtn) {
+            prevBtn.disabled = paginationState.currentPage <= 1;
+        }
+
+        if (nextBtn) {
+            nextBtn.disabled = paginationState.currentPage >= paginationState.totalPages;
+        }
+    }
+
+    function renderAccountsTable(accounts) {
+        const tbody = document.querySelector('#accounts-tbody');
+
+        if (!accounts || accounts.length === 0) {
+            tbody.innerHTML = '<tr class="table-empty-row"><td colspan="7">No accounts match your filters.</td></tr>';
+            return;
+        }
+
+        const rows = accounts.map(account => {
+            const companyLink = account.latest_report_id
+                ? `<a href="/report/${account.latest_report_id}">${escapeHtml(account.company_name)}</a>`
+                : escapeHtml(account.company_name);
+
+            const githubOrgLink = account.github_org
+                ? `<a href="https://github.com/${escapeHtml(account.github_org)}" target="_blank" rel="noopener" class="github-org-link" title="View on GitHub">
+                    <svg viewBox="0 0 16 16" fill="currentColor">
+                        <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" />
+                    </svg>
+                    @${escapeHtml(account.github_org)}
+                </a>
+                <button type="button" class="github-org-edit" onclick="showOrgEdit(this)" title="Edit GitHub org">Edit</button>`
+                : `<span class="org-not-found">Not found</span>
+                   <button type="button" class="github-org-edit" onclick="showOrgEdit(this)" title="Set GitHub org">Set</button>`;
+
+            const tierConfig = TIER_CONFIG[account.current_tier] || TIER_CONFIG[0];
+            const lastScannedFormatted = account.last_scanned_at ? formatSmartDate(account.last_scanned_at) : 'Never';
+
+            let actionsHtml = '';
+            if (account.latest_report_id) {
+                actionsHtml += `<button type="button" class="btn-view-report" onclick="openReport('/report/${account.latest_report_id}')">View</button>`;
+            }
+            actionsHtml += `<button type="button" class="btn-action-smart" data-company="${escapeHtml(account.company_name)}" onclick="triggerRescan(this, this.dataset.company)">Rescan</button>`;
+            actionsHtml += `<button type="button" class="btn-delete-account" onclick="removeAccount(this)">Remove</button>`;
+
+            return `
+                <tr id="row-${account.id}" data-company="${escapeHtml(account.company_name)}" data-account-id="${account.id}" data-tier="${account.current_tier}" data-status="idle">
+                    <td class="select-col">
+                        <input type="checkbox" class="select-account-checkbox row-select" data-account-id="${account.id}" aria-label="Select ${escapeHtml(account.company_name)}">
+                    </td>
+                    <td class="company-cell">
+                        <span class="company-cell-content">
+                            ${companyLink}
+                            <button type="button" class="btn-copy-company" title="Copy company name" data-company="${escapeHtml(account.company_name)}" onclick="copyToClipboard(this.dataset.company, this)">
+                                <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                                    <path d="M16 1H6c-1.1 0-2 .9-2 2v12h2V3h10V1zm3 4H10c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h9c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H10V7h9v14z" />
+                                </svg>
+                            </button>
+                        </span>
+                    </td>
+                    <td class="github-org-cell" data-company="${escapeHtml(account.company_name)}" ondblclick="editOrg(this)" data-org="${escapeHtml(account.github_org || '')}">
+                        <span class="org-display">
+                            ${githubOrgLink}
+                        </span>
+                        <span class="github-org-input-container">
+                            <input type="text" class="github-org-input" placeholder="org-name" value="${escapeHtml(account.github_org || '')}">
+                            <button type="button" class="btn-save-org" onclick="saveOrgEdit(this)">Save</button>
+                            <button type="button" class="btn-cancel-org" onclick="cancelOrgEdit(this)">Cancel</button>
+                        </span>
+                    </td>
+                    <td>
+                        <span class="tier-badge tier-badge-${account.current_tier}">Tier ${account.current_tier} - ${escapeHtml(tierConfig.name)}</span>
+                    </td>
+                    <td class="last-check-cell">
+                        <div class="status-container">
+                            <span class="account-last-scan" data-timestamp="${account.last_scanned_at || ''}">
+                                <strong class="last-scan-date">${lastScannedFormatted}</strong>
+                            </span>
+                        </div>
+                    </td>
+                    <td class="evidence-cell">
+                        <span class="evidence-text" title="${escapeHtml(account.evidence_summary || 'No evidence recorded')}">${escapeHtml(account.evidence_summary || 'No evidence recorded')}</span>
+                    </td>
+                    <td class="actions-cell">
+                        ${actionsHtml}
+                    </td>
+                </tr>
+            `;
+        }).join('');
+
+        tbody.innerHTML = rows;
+        initializeBulkSelection();
+    }
+
+    function escapeHtml(text) {
+        if (!text) return '';
+        const map = {
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#039;'
+        };
+        return text.replace(/[&<>"']/g, m => map[m]);
+    }
+
     // Initialize on page load
     document.addEventListener('DOMContentLoaded', () => {
         initializeUI();
+        initCompactMode();
+        initializeDataTable();
+        initializeSortHandlers();
         updateDashboardStats();
-        document.querySelectorAll('.accounts-table th.sortable').forEach(th => {
-            th.addEventListener('click', () => sortTableBy(th.dataset.sortKey));
-        });
     });
 
-    setInterval(updateDashboardStats, 3000);
+    function initializeSortHandlers() {
+        const headers = document.querySelectorAll('th.sortable');
+        const sortMap = {
+            'company': 0,
+            'github_org': 1,
+            'tier': 2,
+            'last_scanned': 3,
+            'evidence': 4
+        };
+
+        headers.forEach(th => {
+            th.addEventListener('click', () => {
+                const sortKey = th.dataset.sortKey;
+                const columnIndex = sortMap[sortKey];
+
+                if (columnIndex === undefined) return;
+
+                // Toggle direction if clicking same column, else default to asc
+                if (paginationState.sortColumn === columnIndex) {
+                    paginationState.sortDirection = paginationState.sortDirection === 'asc' ? 'desc' : 'asc';
+                } else {
+                    paginationState.sortColumn = columnIndex;
+                    paginationState.sortDirection = 'asc';
+                }
+
+                // Update UI indicators
+                headers.forEach(h => {
+                    const indicator = h.querySelector('.sort-indicator');
+                    if (indicator) {
+                        indicator.textContent = '↕';
+                        indicator.classList.remove('active');
+                    }
+                });
+
+                const currentIndicator = th.querySelector('.sort-indicator');
+                if (currentIndicator) {
+                    currentIndicator.textContent = paginationState.sortDirection === 'asc' ? '↑' : '↓';
+                    currentIndicator.classList.add('active');
+                }
+
+                // Reset to page 1 and reload
+                paginationState.currentPage = 1;
+                reloadAccountsTable();
+            });
+        });
+    }
+
+    setInterval(updateDashboardStats, 8000);
 
     // =============================================================================
     // Bulk Actions
@@ -1359,7 +2738,7 @@
         const selectedRows = getSelectedRows();
         if (selectedRows.length === 0) return;
 
-        const header = ['Company', 'GitHub Org', 'Tier', 'Last Check', 'Evidence'];
+        const header = ['Company', 'GitHub Org', 'Tier', 'Last Scanned', 'Evidence Summary'];
         const csvRows = [header];
 
         selectedRows.forEach(row => {
@@ -1519,7 +2898,7 @@
             // Handle queued response (new queue-based system)
             if (data.status === 'queued') {
                 buttonEl.classList.remove('scanning');
-                buttonEl.textContent = `✓ Queued (#${data.queue_size})`;
+                buttonEl.textContent = 'Queued';
                 buttonEl.style.background = '#22c55e';
 
                 // Show info message
@@ -1534,12 +2913,12 @@
                 }
 
                 // Start auto-refresh to show results when complete
-                startAutoRefresh(data.queue_size || 1);
+                startAutoRefresh(data.active_jobs || 1);
 
                 // Reset button after 3 seconds
                 setTimeout(() => {
                     buttonEl.disabled = false;
-                    buttonEl.textContent = '⏳ Pending';
+                    buttonEl.textContent = 'Pending';
                     buttonEl.style.background = '#6b7280';
                 }, 3000);
 
@@ -1555,7 +2934,7 @@
             if (tierBadge && data.new_tier !== undefined) {
                 const newTierClass = `tier-badge-${data.new_tier}`;
                 tierBadge.className = `tier-badge ${newTierClass}`;
-                tierBadge.innerHTML = `${data.tier_emoji} ${data.tier_name}`;
+                tierBadge.textContent = data.tier_name;
             }
 
             // Update evidence text
@@ -1567,7 +2946,7 @@
 
             // Update button to show completion
             buttonEl.classList.remove('scanning');
-            buttonEl.textContent = '✓ Done';
+            buttonEl.textContent = 'Done';
             buttonEl.style.background = '#22c55e';
 
             // Reset button after 2 seconds
@@ -1582,7 +2961,7 @@
 
             // Show error state
             buttonEl.classList.remove('scanning');
-            buttonEl.textContent = '✗ Error';
+            buttonEl.textContent = 'Error';
             buttonEl.style.background = '#ef4444';
 
             // Reset after 3 seconds
@@ -1594,154 +2973,7 @@
         }
     }
 
-    async function scanPending() {
-        const buttonEl = document.querySelector('.btn-start-scan');
-        if (!buttonEl) return;
 
-        // Disable button and show scanning state
-        buttonEl.disabled = true;
-        buttonEl.classList.add('scanning');
-        const originalText = buttonEl.textContent;
-        buttonEl.textContent = 'Queuing...';
-
-        try {
-            const response = await fetch('/api/scan-pending', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-            });
-
-            const data = await response.json();
-
-            if (!response.ok || data.status !== 'success') {
-                throw new Error(data.message || 'Scan pending failed');
-            }
-
-            // Show success state
-            buttonEl.classList.remove('scanning');
-            const queuedCount = data.queued || 0;
-            buttonEl.textContent = `✓ Queued ${queuedCount}`;
-            buttonEl.style.background = '#22c55e';
-
-            // Update buttons for pending accounts
-            if (data.accounts && data.accounts.length > 0) {
-                data.accounts.forEach(companyName => {
-                    const row = document.querySelector(`tr[data-company="${companyName}"]`);
-                    if (row) {
-                        const btn = row.querySelector('.btn-action-smart');
-                        if (btn) {
-                            btn.textContent = '⏳ Pending';
-                            btn.style.background = '#6b7280';
-                            btn.disabled = true;
-                        }
-                    }
-                });
-
-                // Start auto-refresh if scans were queued
-                if (queuedCount > 0) {
-                    startAutoRefresh(queuedCount);
-                }
-            }
-
-            // Reset button after 3 seconds
-            setTimeout(() => {
-                buttonEl.disabled = false;
-                buttonEl.textContent = originalText;
-                buttonEl.style.background = '';
-            }, 3000);
-
-        } catch (error) {
-            console.error('Scan pending error:', error);
-
-            // Show error state
-            buttonEl.classList.remove('scanning');
-            buttonEl.textContent = '✗ Error';
-            buttonEl.style.background = '#ef4444';
-
-            // Reset after 3 seconds
-            setTimeout(() => {
-                buttonEl.disabled = false;
-                buttonEl.textContent = originalText;
-                buttonEl.style.background = '';
-            }, 3000);
-        }
-    }
-
-    async function refreshPipeline() {
-        const buttonEl = document.querySelector('.btn-refresh-pipeline');
-        if (!buttonEl) return;
-
-        // Disable button and show scanning state
-        buttonEl.disabled = true;
-        buttonEl.classList.add('scanning');
-        const originalText = buttonEl.textContent;
-        buttonEl.textContent = 'Refreshing...';
-
-        try {
-            const response = await fetch('/api/refresh-pipeline', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-            });
-
-            const data = await response.json();
-
-            if (!response.ok || data.status !== 'success') {
-                throw new Error(data.message || 'Refresh failed');
-            }
-
-            // Show success state
-            buttonEl.classList.remove('scanning');
-            const queuedCount = data.queued || 0;
-            buttonEl.textContent = `✓ Queued ${queuedCount} account${queuedCount !== 1 ? 's' : ''}`;
-            buttonEl.style.background = '#22c55e';
-
-            // Update any refresh-needed buttons to show pending
-            if (data.accounts && data.accounts.length > 0) {
-                data.accounts.forEach(companyName => {
-                    const row = document.querySelector(`tr[data-company="${companyName}"]`);
-                    if (row) {
-                        const btn = row.querySelector('.btn-action-smart');
-                        if (btn && !btn.classList.contains('btn-scanned')) {
-                            btn.textContent = '⏳ Pending';
-                            btn.classList.remove('btn-refresh-needed');
-                            btn.style.background = '#6b7280';
-                            btn.disabled = true;
-                        }
-                    }
-                });
-
-                // Start auto-refresh if scans were queued
-                if (queuedCount > 0) {
-                    startAutoRefresh(queuedCount);
-                }
-            }
-
-            // Reset button after 3 seconds
-            setTimeout(() => {
-                buttonEl.disabled = false;
-                buttonEl.textContent = originalText;
-                buttonEl.style.background = '';
-            }, 3000);
-
-        } catch (error) {
-            console.error('Refresh pipeline error:', error);
-
-            // Show error state
-            buttonEl.classList.remove('scanning');
-            buttonEl.textContent = '✗ Error';
-            buttonEl.style.background = '#ef4444';
-
-            // Reset after 3 seconds
-            setTimeout(() => {
-                buttonEl.disabled = false;
-                buttonEl.textContent = originalText;
-                buttonEl.style.background = '';
-            }, 3000);
-        }
-    }
 
     // =============================================================================
     // Auto-Refresh Functions - Poll queue status and refresh when complete
@@ -1777,11 +3009,12 @@
                 const response = await fetch('/api/queue-status');
                 const data = await response.json();
 
-                console.log(`[AUTO-REFRESH] Queue status: size=${data.queue_size}, worker=${data.worker_alive}`);
+                const totalActive = (data.queued_count || 0) + (data.processing_count || 0);
+                console.log(`[AUTO-REFRESH] Queue status: queued=${data.queued_count}, processing=${data.processing_count}`);
 
-                // If queue is empty, all scans are complete
-                if (data.queue_size === 0) {
-                    console.log('[AUTO-REFRESH] Queue empty, refreshing page...');
+                // If queue is empty and nothing processing, all scans are complete
+                if (totalActive === 0) {
+                    console.log('[AUTO-REFRESH] All scans complete, refreshing page...');
                     clearInterval(autoRefreshInterval);
                     autoRefreshInterval = null;
                     showNotification('Scans complete! Refreshing...', 'success');
@@ -1868,13 +3101,57 @@
     }
 </script>
 
+<script>
+    // Constants for timeout detection
+    const TIMEOUT_WARNING_SECONDS = 180;  // 3 minutes - show warning
+    const TIMEOUT_DANGER_SECONDS = 300;   // 5 minutes - likely stuck/timed out
+
+    // Helper to format elapsed time nicely
+    function formatElapsedTime(seconds) {
+        if (seconds < 60) {
+            return `${seconds}s`;
+        } else if (seconds < 3600) {
+            const mins = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            return `${mins}m ${secs}s`;
+        } else {
+            const hrs = Math.floor(seconds / 3600);
+            const mins = Math.floor((seconds % 3600) / 60);
+            return `${hrs}h ${mins}m`;
+        }
+    }
+
+    // SVG icons for status badges
+    const statusIcons = {
+        queued: `<svg class="status-icon status-icon-queued" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="M12 6v6l4 2"/>
+        </svg>`,
+        processing: `<svg class="status-icon status-icon-processing" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 12a9 9 0 11-6.219-8.56"/>
+        </svg>`,
+        stuck: `<svg class="status-icon status-icon-stuck" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="12" y1="8" x2="12" y2="12"/>
+            <line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>`
+    };
+
     // Live Status Polling
     function updateRowStatuses() {
         if (document.hidden) return; // Don't poll if tab is hidden
 
-        fetch('/api/accounts')
+        fetch('/api/accounts?limit=1000')
             .then(response => response.json())
-            .then(accounts => {
+            .then(data => {
+                const accounts = data.accounts || [];
+                // Track queue position
+                const queuedAccounts = accounts.filter(a => a.scan_status === 'queued');
+                const queuePositions = {};
+                queuedAccounts.forEach((account, idx) => {
+                    queuePositions[account.id] = idx + 1;
+                });
+
                 accounts.forEach(account => {
                     const row = document.getElementById(`row-${account.id}`);
                     if (!row) return;
@@ -1885,79 +3162,114 @@
                     // Update data-status
                     const currentStatus = row.getAttribute('data-status');
                     const newStatus = account.scan_status || 'idle';
-                    
+
+                    // Calculate elapsed time for processing accounts
+                    let elapsed = 0;
+                    let isStuck = false;
+                    if (newStatus === 'processing' && account.scan_started_at) {
+                        let startTimeString = account.scan_started_at;
+                        // Ensure we parse as UTC if it looks like an ISO string from server
+                        if (typeof startTimeString === 'string' && !startTimeString.includes('Z') && !startTimeString.includes('+')) {
+                            startTimeString += 'Z';
+                        }
+                        const startTime = typeof startTimeString === 'string'
+                            ? Date.parse(startTimeString) / 1000
+                            : startTimeString;
+
+                        elapsed = Math.max(0, Math.floor(Date.now() / 1000 - startTime));
+                        isStuck = elapsed >= TIMEOUT_DANGER_SECONDS;
+                    }
+
                     // Only update if status changed or if currently processing (to update timer)
-                    if (currentStatus !== newStatus || newStatus === 'processing') {
-                        row.setAttribute('data-status', newStatus);
-                        
+                    if (currentStatus !== newStatus || newStatus === 'processing' || newStatus === 'queued') {
+                        row.setAttribute('data-status', isStuck ? 'stuck' : newStatus);
+
                         let content = '';
-                        
+
                         if (newStatus === 'queued') {
+                            const queuePos = queuePositions[account.id] || '?';
                             content = `
                                 <div class="status-container">
-                                    <span class="scanned-time" style="color: var(--text-muted);">⏳ Queued</span>
+                                    <span class="status-badge status-badge-queued" style="cursor: pointer;" onclick="openQueueModal()" title="Click to view queue details">
+                                        ${statusIcons.queued}
+                                        <span>In Queue</span>
+                                    </span>
+                                    <span class="queue-position">#${queuePos} in queue • Click to view</span>
                                 </div>
                             `;
                             statusCell.classList.remove('status-cell-active');
-                        } 
+                        }
                         else if (newStatus === 'processing') {
-                            const startTime = account.scan_started_at || Date.now() / 1000;
-                            const elapsed = Math.floor(Date.now() / 1000 - startTime);
-                            
-                            content = `
-                                <div class="status-container">
-                                    <span class="scanned-time" style="color: var(--accent-color);">🔄 Scanning...</span>
-                                    <span class="tier-change-time">${elapsed}s</span>
-                                </div>
-                                <div class="progress-line"></div>
-                            `;
-                            statusCell.classList.add('status-cell-active');
-                        } 
-                        else {
-                            if (currentStatus === 'processing' || currentStatus === 'queued') {
-                                // Transition from processing to idle -> scan complete
-                                const dateStr = account.last_scanned_at ? account.last_scanned_at.substring(0, 10) : 'Just now';
-                                const timeStr = account.last_scanned_at ? account.last_scanned_at.substring(11, 16) : '';
-                                
+                            // Determine elapsed time styling
+                            let elapsedClass = 'elapsed-time';
+                            if (elapsed >= TIMEOUT_DANGER_SECONDS) {
+                                elapsedClass += ' elapsed-time-danger';
+                            } else if (elapsed >= TIMEOUT_WARNING_SECONDS) {
+                                elapsedClass += ' elapsed-time-warning';
+                            }
+
+                            if (isStuck) {
+                                // Show stuck/timeout state
                                 content = `
                                     <div class="status-container">
-                                        <span class="scanned-time" style="color: var(--success-color);">
-                                            ✓ Scanned: ${dateStr}
+                                        <span class="status-badge status-badge-stuck" style="cursor: pointer;" onclick="openQueueModal()" title="Click to view processing details">
+                                            ${statusIcons.stuck}
+                                            <span>May Be Stuck</span>
                                         </span>
-                                        <span class="tier-change-time">${timeStr}</span>
+                                        <span class="${elapsedClass}">${formatElapsedTime(elapsed)} • Click for help</span>
+                                    </div>
+                                    <div class="progress-line-stuck"></div>
+                                `;
+                            } else {
+                                // Normal processing state
+                                const progressMsg = account.scan_progress || 'Scanning...';
+                                content = `
+                                    <div class="status-container">
+                                        <span class="status-badge status-badge-processing" style="cursor: pointer;" onclick="openQueueModal()" title="Click to view processing details">
+                                            ${statusIcons.processing}
+                                            <span>${progressMsg}</span>
+                                        </span>
+                                        <span class="${elapsedClass}">${formatElapsedTime(elapsed)} • Click to view</span>
+                                    </div>
+                                    <div class="progress-line"></div>
+                                `;
+                            }
+                            statusCell.classList.add('status-cell-active');
+                        }
+                        else {
+                            if (currentStatus === 'processing' || currentStatus === 'queued' || currentStatus === 'stuck') {
+                                // Transition from processing to idle -> scan complete
+                                const lastScanned = account.last_scanned_at || new Date().toISOString();
+                                const nextScan = account.next_scan_due || '';
+
+                                content = `
+                                    <div class="status-container">
+                                        <span class="account-last-scan recent">
+                                            <strong class="last-scan-date">${formatSmartDate(lastScanned)}</strong>
+                                        </span>
+                                        <span class="next-scan-date">${formatNextDate(nextScan)}</span>
                                     </div>
                                 `;
                             } else {
                                 // Standard idle display
                                 statusCell.classList.remove('status-cell-active');
-                                const dateStr = account.last_scanned_at ? account.last_scanned_at.substring(0, 10) : 'Never';
-                                
-                                let subText = '';
-                                if (account.status_changed_at) {
-                                     let changeDate = account.status_changed_at;
-                                     if (changeDate.includes('T')) changeDate = changeDate.split('T')[0];
-                                     subText = `Tier changed: ${changeDate}`;
-                                } else if (account.last_scanned_at) {
-                                     subText = account.last_scanned_at.substring(11, 16);
-                                }
-                                
-                                const timeClass = !account.last_scanned_at ? 'never-scanned' : '';
-                                let label = account.last_scanned_at ? 'Scanned:' : '';
-                                if (!account.last_scanned_at) label = '';
+                                const lastScanned = account.last_scanned_at || '';
+                                const nextScan = account.next_scan_due || '';
+                                const timeClass = !lastScanned ? 'never-scanned' : '';
 
                                 content = `
                                     <div class="status-container">
-                                        <span class="scanned-time ${timeClass}">
-                                            ${label} ${dateStr}
+                                        <span class="account-last-scan ${timeClass}">
+                                            <strong class="last-scan-date">${formatSmartDate(lastScanned)}</strong>
                                         </span>
-                                        <span class="tier-change-time">${subText}</span>
+                                        <span class="next-scan-date">${formatNextDate(nextScan)}</span>
                                     </div>
                                 `;
                             }
                         }
-                        
+
                         statusCell.innerHTML = content;
-                        
+
                         // Disable/Enable buttons based on status
                         const actionBtn = row.querySelector('.btn-rescan') || row.querySelector('.btn-start-scan');
                         if (actionBtn) {
@@ -1975,14 +3287,313 @@
                         }
                     }
                 });
+
+                if (typeof applyTableFilters === 'function') {
+                    applyTableFilters();
+                }
             })
             .catch(err => console.error('Error polling statuses:', err));
     }
 
-    // Poll every 3 seconds
-    setInterval(updateRowStatuses, 3000);
-    
+    // Poll every 6 seconds
+    setInterval(updateRowStatuses, 6000);
+
     // Initial call
     document.addEventListener('DOMContentLoaded', updateRowStatuses);
+
+    // =============================================================================
+    // Highlight Batch Feature - Glow effect for newly imported companies
+    // =============================================================================
+
+    function highlightBatchOnLoad() {
+        // Get highlight_batch parameter from URL
+        const params = new URLSearchParams(window.location.search);
+        const batchId = params.get('highlight_batch');
+
+        if (!batchId) return;
+
+        console.log(`[HIGHLIGHT-BATCH] Looking for batch ${batchId}...`);
+
+        // Match rows by finding accounts created near the batch timestamp
+        // Allow a 5-second window for import processing
+        const batchTimestamp = parseInt(batchId, 10);
+        const matchWindow = 5000; // 5 seconds in milliseconds
+
+        // Get all rows and check their creation time
+        const allRows = document.querySelectorAll('tbody tr');
+        let highlightedCount = 0;
+
+        allRows.forEach(row => {
+            const company = row.dataset.company;
+
+            // Try to find the account in displayed data
+            // Since we don't have created_at in the row, we'll highlight all visible rows
+            // and use a visual indicator that these are new imports
+            if (company) {
+                row.classList.add('batch-highlighted');
+                highlightedCount++;
+            }
+        });
+
+        if (highlightedCount > 0) {
+            console.log(`[HIGHLIGHT-BATCH] Highlighted ${highlightedCount} newly imported rows`);
+
+            // Add CSS for the glow effect if not already present
+            if (!document.querySelector('#batch-highlight-styles')) {
+                const styles = document.createElement('style');
+                styles.id = 'batch-highlight-styles';
+                styles.textContent = `
+                    @keyframes glow-pulse {
+                        0%, 100% {
+                            box-shadow: 0 0 20px rgba(99, 102, 241, 0.6), inset 0 0 20px rgba(99, 102, 241, 0.1);
+                        }
+                        50% {
+                            box-shadow: 0 0 30px rgba(99, 102, 241, 0.8), inset 0 0 20px rgba(99, 102, 241, 0.15);
+                        }
+                    }
+
+                    .batch-highlighted {
+                        background: linear-gradient(90deg, rgba(99, 102, 241, 0.05), rgba(99, 102, 241, 0.02));
+                        animation: glow-pulse 3s ease-in-out 4;
+                        border-left: 3px solid rgba(99, 102, 241, 0.8);
+                    }
+
+                    .batch-highlighted:hover {
+                        background: linear-gradient(90deg, rgba(99, 102, 241, 0.1), rgba(99, 102, 241, 0.05));
+                    }
+
+                    .batch-highlight-indicator {
+                        display: inline-block;
+                        margin-right: 0.5rem;
+                        padding: 0.2rem 0.5rem;
+                        background: rgba(99, 102, 241, 0.2);
+                        color: #6366f1;
+                        border-radius: 4px;
+                        font-size: 0.7rem;
+                        font-weight: 600;
+                        white-space: nowrap;
+                    }
+                `;
+                document.head.appendChild(styles);
+            }
+
+            // Add "NEW" indicator to the company name in highlighted rows
+            allRows.forEach(row => {
+                if (row.classList.contains('batch-highlighted')) {
+                    const companyCell = row.querySelector('.company-cell a') || row.querySelector('.company-cell');
+                    if (companyCell && !companyCell.querySelector('.batch-highlight-indicator')) {
+                        const indicator = document.createElement('span');
+                        indicator.className = 'batch-highlight-indicator';
+                        indicator.textContent = 'NEW';
+                        companyCell.insertBefore(indicator, companyCell.firstChild);
+                    }
+                }
+            });
+        }
+    }
+
+    // Run highlight on page load
+    document.addEventListener('DOMContentLoaded', highlightBatchOnLoad);
+</script>
+
+<script>
+    // =============================================================================
+    // Queue/Processing Modal Functions
+    // =============================================================================
+
+    const TIMEOUT_WARNING = 180;  // 3 minutes
+    const TIMEOUT_DANGER = 300;   // 5 minutes
+
+    function openQueueModal() {
+        const modal = document.getElementById('queue-modal');
+        if (modal) {
+            modal.classList.add('open');
+            populateQueueModal();
+            // Keep updating while modal is open
+            const updateInterval = setInterval(() => {
+                if (!document.getElementById('queue-modal').classList.contains('open')) {
+                    clearInterval(updateInterval);
+                } else {
+                    populateQueueModal();
+                }
+            }, 2000);
+        }
+    }
+
+    function closeQueueModal() {
+        const modal = document.getElementById('queue-modal');
+        if (modal) {
+            modal.classList.remove('open');
+        }
+    }
+
+    function switchQueueTab(tabName) {
+        // Update active tab button
+        document.querySelectorAll('.queue-tab-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.tab === tabName);
+        });
+
+        // Update active tab content
+        document.querySelectorAll('.queue-tab-content').forEach(content => {
+            content.classList.remove('active');
+        });
+        const activeContent = document.getElementById(`${tabName}-tab`);
+        if (activeContent) {
+            activeContent.classList.add('active');
+        }
+    }
+
+    function formatQueueElapsedTime(seconds) {
+        if (seconds < 60) {
+            return `${seconds}s`;
+        } else if (seconds < 3600) {
+            const mins = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            return `${mins}m ${secs}s`;
+        } else {
+            const hrs = Math.floor(seconds / 3600);
+            const mins = Math.floor((seconds % 3600) / 60);
+            return `${hrs}h ${mins}m`;
+        }
+    }
+
+    function getQueueItemElapsedClass(elapsed) {
+        if (elapsed >= TIMEOUT_DANGER) {
+            return 'queue-elapsed-badge danger';
+        } else if (elapsed >= TIMEOUT_WARNING) {
+            return 'queue-elapsed-badge warning';
+        }
+        return 'queue-elapsed-badge';
+    }
+
+    function populateQueueModal() {
+        fetch('/api/accounts?limit=1000')
+            .then(response => response.json())
+            .then(data => {
+                // Separate queued and processing accounts from the paginated response
+                const accounts = data.accounts || [];
+                const queuedAccounts = accounts.filter(a => a.scan_status === 'queued');
+                const processingAccounts = accounts.filter(a => a.scan_status === 'processing');
+
+                // Update counts
+                document.getElementById('processing-count').textContent = processingAccounts.length;
+                document.getElementById('queued-count').textContent = queuedAccounts.length;
+
+                // Populate processing list
+                const processingList = document.getElementById('processing-list');
+                if (processingAccounts.length === 0) {
+                    processingList.innerHTML = '<div class="queue-empty">No accounts currently processing</div>';
+                } else {
+                    processingList.innerHTML = processingAccounts.map((account, idx) => {
+                        const startTime = typeof account.scan_started_at === 'string'
+                            ? Date.parse(account.scan_started_at) / 1000
+                            : account.scan_started_at;
+                        const elapsed = startTime
+                            ? Math.floor(Date.now() / 1000 - startTime)
+                            : 0;
+                        const elapsedStr = formatQueueElapsedTime(elapsed);
+                        const elapsedClass = getQueueItemElapsedClass(elapsed);
+                        const isStuck = elapsed >= TIMEOUT_DANGER;
+                        const hasReport = account.latest_report_id;
+                        const reportUrl = hasReport ? `/report/${account.latest_report_id}` : '#';
+
+                        return `
+                            <div class="queue-item">
+                                <div class="queue-item-info">
+                                    <div class="queue-item-name">
+                                        <span class="badge ${isStuck ? 'badge-warning' : 'badge-primary'}">
+                                            ${isStuck ? 'Stuck' : 'Scanning'}
+                                        </span>
+                                        ${account.company_name}
+                                    </div>
+                                    <div class="queue-item-meta">
+                                        <span class="queue-item-meta-item">
+                                            <span class="${elapsedClass}">
+                                                ${isStuck ? 'Timeout' : 'Elapsed'} ${elapsedStr}
+                                            </span>
+                                        </span>
+                                        ${account.scan_progress ? `<span class="queue-item-meta-item" style="color: var(--text-secondary);">${account.scan_progress}</span>` : ''}
+                                    </div>
+                                </div>
+                                <div class="queue-item-action">
+                                    <button type="button" class="queue-item-btn" onclick="openReport('${reportUrl}')" ${!hasReport ? 'disabled' : ''}>
+                                        View Report
+                                    </button>
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                }
+
+                // Populate queued list
+                const queuedList = document.getElementById('queued-list');
+                if (queuedAccounts.length === 0) {
+                    queuedList.innerHTML = '<div class="queue-empty">No accounts in queue</div>';
+                } else {
+                    queuedList.innerHTML = queuedAccounts.map((account, idx) => {
+                        const hasReport = account.latest_report_id;
+                        const reportUrl = hasReport ? `/report/${account.latest_report_id}` : '#';
+
+                        return `
+                            <div class="queue-item">
+                                <div class="queue-item-info">
+                                    <div class="queue-item-name">
+                                        <span class="badge badge-warning">Queued</span>
+                                        ${account.company_name}
+                                    </div>
+                                    <div class="queue-item-meta">
+                                        <span class="queue-item-meta-item">
+                                            <span class="queue-position-badge">#${idx + 1} in queue</span>
+                                        </span>
+                                    </div>
+                                </div>
+                                <div class="queue-item-action">
+                                    <button type="button" class="queue-item-btn" onclick="openReport('${reportUrl}')" ${!hasReport ? 'disabled' : ''}>
+                                        View Report
+                                    </button>
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                }
+            })
+            .catch(err => console.error('Error populating queue modal:', err));
+    }
+
+    // Make dashboard badges clickable
+    function initializeQueueBadges() {
+        const queueBadge = document.querySelector('.stat-badge:has(#dashboard-queue-size)');
+        const processingBadge = document.querySelector('.stat-badge:has(#dashboard-processing-count)');
+
+        if (queueBadge) {
+            queueBadge.setAttribute('role', 'button');
+            queueBadge.onclick = openQueueModal;
+        }
+
+        if (processingBadge) {
+            processingBadge.setAttribute('role', 'button');
+            processingBadge.onclick = openQueueModal;
+        }
+    }
+
+    // Initialize on page load
+    document.addEventListener('DOMContentLoaded', () => {
+        initializeQueueBadges();
+    });
+
+    // Close modal when clicking outside
+    document.addEventListener('click', (e) => {
+        const modal = document.getElementById('queue-modal');
+        if (modal && e.target === document.querySelector('.queue-modal-overlay')) {
+            closeQueueModal();
+        }
+    });
+
+    // Close modal with Escape key
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            closeQueueModal();
+        }
+    });
 </script>
 {% endblock %}

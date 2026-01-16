@@ -7,9 +7,11 @@ Includes AI-powered Universal Discovery Engine for any industry.
 import json
 import requests
 import threading
-from itertools import cycle
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Generator, List, Dict
+from functools import lru_cache
 from config import Config
+from utils import get_github_headers, make_github_request
 
 try:
     from google import genai
@@ -18,67 +20,6 @@ except ImportError:
     GENAI_AVAILABLE = False
 
 
-# Thread-safe token rotation using round-robin strategy
-class TokenRotator:
-    """Thread-safe token rotator using round-robin selection."""
-
-    def __init__(self):
-        self._lock = threading.Lock()
-        self._tokens = Config.GITHUB_TOKENS or []
-        self._cycle = cycle(self._tokens) if self._tokens else None
-
-    def get_token(self) -> Optional[str]:
-        """
-        Get the next token in round-robin order.
-
-        Thread-safe: uses a lock to ensure consistent rotation
-        across multiple threads.
-
-        Returns:
-            Next token string, or None if no tokens configured.
-        """
-        if not self._cycle:
-            return None
-
-        with self._lock:
-            return next(self._cycle)
-
-    def reload_tokens(self):
-        """Reload tokens from Config (useful if tokens change at runtime)."""
-        with self._lock:
-            self._tokens = Config.GITHUB_TOKENS or []
-            self._cycle = cycle(self._tokens) if self._tokens else None
-
-
-# Global token rotator instance
-_token_rotator = TokenRotator()
-
-
-def get_github_headers() -> dict:
-    """
-    Get headers for GitHub API requests with token rotation.
-
-    Uses round-robin selection from GITHUB_TOKENS if available,
-    otherwise falls back to the single GITHUB_TOKEN for backward
-    compatibility.
-
-    Thread-safe: can be called from multiple threads simultaneously.
-    """
-    headers = {
-        'Accept': 'application/vnd.github.v3+json',
-        'User-Agent': 'Lead-Machine/1.0'
-    }
-
-    # Try to get a token from the rotator (uses GITHUB_TOKENS if available)
-    token = _token_rotator.get_token()
-
-    if token:
-        headers['Authorization'] = f'token {token}'
-    elif Config.GITHUB_TOKEN:
-        # Fallback to single token if rotator has no tokens
-        headers['Authorization'] = f'token {Config.GITHUB_TOKEN}'
-
-    return headers
 
 
 def discover_organization(company_name: str) -> Generator[str, None, Optional[dict]]:
@@ -114,11 +55,11 @@ def discover_organization(company_name: str) -> Generator[str, None, Optional[di
     }
 
     try:
-        response = requests.get(
+        response = make_github_request(
             search_url,
-            headers=get_github_headers(),
             params=params,
-            timeout=30
+            timeout=30,
+            priority='high'
         )
         response.raise_for_status()
         data = response.json()
@@ -145,6 +86,23 @@ def discover_organization(company_name: str) -> Generator[str, None, Optional[di
         return None
 
 
+@lru_cache(maxsize=128)
+def _get_org_details_cached(org_login: str) -> Optional[dict]:
+    """Internal cached version of get_org_details."""
+    try:
+        url = f"{Config.GITHUB_API_BASE}/orgs/{org_login}"
+        response = make_github_request(
+            url,
+            timeout=10,
+            priority='high'
+        )
+        if response.status_code == 200:
+            return response.json()
+    except requests.RequestException:
+        pass
+    return None
+
+
 def _try_direct_lookup(company_name: str) -> Optional[dict]:
     """Try to find org by direct name lookup, preferring those with repositories."""
     # Normalize company name for URL
@@ -164,10 +122,10 @@ def _try_direct_lookup(company_name: str) -> Optional[dict]:
     for variant in variations:
         try:
             url = f"{Config.GITHUB_API_BASE}/orgs/{variant}"
-            response = requests.get(
+            response = make_github_request(
                 url,
-                headers=get_github_headers(),
-                timeout=5
+                timeout=5,
+                priority='high'
             )
             if response.status_code == 200:
                 org_data = response.json()
@@ -190,19 +148,8 @@ def _try_direct_lookup(company_name: str) -> Optional[dict]:
 
 
 def _get_org_details(org_login: str) -> Optional[dict]:
-    """Get full organization details."""
-    try:
-        url = f"{Config.GITHUB_API_BASE}/orgs/{org_login}"
-        response = requests.get(
-            url,
-            headers=get_github_headers(),
-            timeout=10
-        )
-        if response.status_code == 200:
-            return response.json()
-    except requests.RequestException:
-        pass
-    return None
+    """Get full organization details (using internal cache)."""
+    return _get_org_details_cached(org_login)
 
 
 def _find_best_match(company_name: str, items: list) -> Optional[dict]:
@@ -257,8 +204,10 @@ def get_organization_repos(org_login: str) -> Generator[str, None, list]:
     yield f"Fetching repositories for {org_login}..."
 
     all_repos = []
+    all_repos_unfiltered = []  # Keep track of all repos before activity filter
     page = 1
     per_page = 100
+    cutoff_date = datetime.now(timezone.utc) - timedelta(days=Config.REPO_INACTIVITY_DAYS)
 
     while True:
         try:
@@ -271,9 +220,8 @@ def get_organization_repos(org_login: str) -> Generator[str, None, list]:
                 'direction': 'desc'
             }
 
-            response = requests.get(
+            response = make_github_request(
                 url,
-                headers=get_github_headers(),
                 params=params,
                 timeout=30
             )
@@ -283,9 +231,30 @@ def get_organization_repos(org_login: str) -> Generator[str, None, list]:
             if not repos:
                 break
 
-            # Filter out archived repos
-            active_repos = [r for r in repos if not r.get('archived', False)]
+            # Filter out archived repos and inactive repos
+            active_repos = []
+            non_archived_repos = []
+            for repo in repos:
+                if repo.get('archived', False):
+                    continue
+
+                non_archived_repos.append(repo)
+
+                pushed_at = repo.get('pushed_at')
+                if pushed_at:
+                    try:
+                        pushed_date = datetime.strptime(pushed_at, '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=timezone.utc)
+                    except ValueError:
+                        pushed_date = None
+                else:
+                    pushed_date = None
+
+                if pushed_date and pushed_date < cutoff_date:
+                    continue
+
+                active_repos.append(repo)
             all_repos.extend(active_repos)
+            all_repos_unfiltered.extend(non_archived_repos)
 
             yield f"Fetched page {page}: {len(active_repos)} active repos (total: {len(all_repos)})"
 
@@ -302,6 +271,14 @@ def get_organization_repos(org_login: str) -> Generator[str, None, list]:
         except requests.RequestException as e:
             yield f"Error fetching repos (page {page}): {str(e)}"
             break
+
+    # Fallback: if all repos were filtered out due to inactivity, use top N most recent
+    if not all_repos and all_repos_unfiltered:
+        fallback_count = min(Config.REPO_INACTIVITY_FALLBACK, len(all_repos_unfiltered))
+        yield f"All repos inactive for >{Config.REPO_INACTIVITY_DAYS} days. Using top {fallback_count} most recent repos."
+        # Sort by pushed_at descending and take top N
+        all_repos_unfiltered.sort(key=lambda r: r.get('pushed_at', ''), reverse=True)
+        all_repos = all_repos_unfiltered[:fallback_count]
 
     # Sort and prioritize repos
     prioritized = _prioritize_repos(all_repos)
@@ -403,11 +380,11 @@ def search_github_orgs(keyword: str, limit: int = 20) -> list:
     }
 
     try:
-        response = requests.get(
+        response = make_github_request(
             search_url,
-            headers=get_github_headers(),
             params=params,
-            timeout=30
+            timeout=30,
+            priority='high'
         )
         response.raise_for_status()
         data = response.json()
@@ -443,6 +420,12 @@ def resolve_org_fast(company_name: str) -> Optional[dict]:
     Returns:
         Organization data dict or None if not found.
     """
+    return _resolve_org_fast_cached(company_name)
+
+
+@lru_cache(maxsize=64)
+def _resolve_org_fast_cached(company_name: str) -> Optional[dict]:
+    """Inner cached logic for resolve_org_fast."""
     # Try direct lookup first (fast, just API calls)
     direct_result = _try_direct_lookup(company_name)
     if direct_result:
@@ -501,10 +484,10 @@ def _validate_github_org(suggested_org: str) -> Optional[Dict]:
 
     try:
         url = f"{Config.GITHUB_API_BASE}/orgs/{org_handle}"
-        response = requests.get(
+        response = make_github_request(
             url,
-            headers=get_github_headers(),
-            timeout=5
+            timeout=5,
+            priority='high'
         )
 
         if response.status_code == 200:

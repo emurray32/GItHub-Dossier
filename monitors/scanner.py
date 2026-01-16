@@ -15,43 +15,71 @@ import re
 import requests
 import base64
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Generator, Optional, List, Dict
 from config import Config
-from .discovery import get_github_headers, discover_organization, get_organization_repos
+from .discovery import get_github_headers, discover_organization, get_organization_repos, _get_org_details
 from database import increment_daily_stat
+from utils import make_github_request
 
 
-def make_github_request(url: str, params: Optional[dict] = None, timeout: int = 30) -> requests.Response:
-    response = requests.get(
-        url,
-        headers=get_github_headers(),
-        params=params,
-        timeout=timeout,
-    )
 
-    remaining_header = response.headers.get("X-RateLimit-Remaining")
-    if remaining_header is not None:
+
+def _parse_timestamp(timestamp: Optional[object]) -> Optional[datetime]:
+    if not timestamp:
+        return None
+    if isinstance(timestamp, datetime):
+        return timestamp
+    if isinstance(timestamp, str):
+        normalized = timestamp
+        if normalized.endswith('Z'):
+            normalized = normalized.replace('Z', '+00:00')
         try:
-            remaining = int(remaining_header)
+            return datetime.fromisoformat(normalized)
         except ValueError:
-            remaining = None
-
-        if remaining is not None and remaining < 10:
-            reset_header = response.headers.get("X-RateLimit-Reset", "0")
-            try:
-                reset_time = int(reset_header)
-            except ValueError:
-                reset_time = 0
-            sleep_for = max(reset_time - int(time.time()), 0)
-            print(f"Warning: GitHub API rate limit low ({remaining} remaining). Sleeping {sleep_for} seconds.")
-            if sleep_for > 0:
-                time.sleep(sleep_for)
-
-    return response
+            return None
+    return None
 
 
-def deep_scan_generator(company_name: str) -> Generator[str, None, None]:
+def _format_request_exception(error: requests.RequestException) -> str:
+    response = getattr(error, 'response', None)
+    if response is None:
+        return str(error)
+
+    status_code = response.status_code
+    if status_code == 429:
+        reason = 'Rate Limit'
+    else:
+        reason = response.reason or 'Request Failed'
+    return f"Error: {status_code} {reason}"
+
+
+def _is_open_protocol_project(org_description: Optional[str]) -> Optional[str]:
+    """
+    Check if an organization description matches open protocol/decentralized project patterns.
+
+    These are NOT commercial companies with buying intent - they're community-driven
+    open source projects, blockchain protocols, DAOs, etc.
+
+    Args:
+        org_description: The GitHub organization's description field
+
+    Returns:
+        The matched disqualifier pattern if found, None otherwise
+    """
+    if not org_description:
+        return None
+
+    description_lower = org_description.lower()
+
+    for pattern in Config.OPEN_PROTOCOL_DISQUALIFIERS:
+        if pattern.lower() in description_lower:
+            return pattern
+
+    return None
+
+
+def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[object] = None, github_org: Optional[str] = None) -> Generator[str, None, None]:
     """
     Perform a 3-Signal Intent Scan of a company's GitHub presence.
 
@@ -62,34 +90,51 @@ def deep_scan_generator(company_name: str) -> Generator[str, None, None]:
 
     Args:
         company_name: The company name to scan.
+        last_scanned_timestamp: Optional timestamp of the last scan to skip unchanged repos.
+        github_org: Optional pre-linked GitHub organization login. If provided, skips discovery
+                    and uses this org directly. This is critical for accounts that have been
+                    manually linked to a GitHub org that may not match the company name exactly.
 
     Yields:
         SSE-formatted strings for streaming response.
     """
     start_time = datetime.now()
 
-    yield _sse_log(f"🔍 Starting 3-Signal Intent Scan: {company_name}")
+    yield _sse_log(f"Starting 3-Signal Intent Scan: {company_name}")
     yield _sse_log("=" * 60)
     yield _sse_log("Target: Pre-launch internationalization signals")
     yield _sse_log("")
 
-    # Phase 1: Discover Organization
+    # Phase 1: Discover Organization (or use pre-linked org)
     yield _sse_log("PHASE 1: Organization Discovery")
     yield _sse_log("-" * 40)
 
     org_data = None
-    org_generator = discover_organization(company_name)
 
-    try:
-        while True:
-            try:
-                message = next(org_generator)
-                yield _sse_log(message)
-            except StopIteration as e:
-                org_data = e.value
-                break
-    except Exception as e:
-        yield _sse_log(f"Error during discovery: {str(e)}")
+    # If a github_org is pre-linked, use it directly instead of discovery
+    if github_org:
+        yield _sse_log(f"Using pre-linked GitHub organization: @{github_org}")
+        org_data = _get_org_details(github_org)
+        if org_data:
+            yield _sse_log(f"Organization found: @{github_org}")
+        else:
+            yield _sse_log(f"Pre-linked org @{github_org} not found, falling back to discovery...")
+            # Fall through to discovery below
+
+    # Run discovery if no pre-linked org or pre-linked org wasn't found
+    if not org_data:
+        org_generator = discover_organization(company_name)
+
+        try:
+            while True:
+                try:
+                    message = next(org_generator)
+                    yield _sse_log(message)
+                except StopIteration as e:
+                    org_data = e.value
+                    break
+        except Exception as e:
+            yield _sse_log(f"Error during discovery: {str(e)}")
 
     if not org_data:
         yield _sse_error("Could not find GitHub organization. Scan aborted.")
@@ -97,9 +142,21 @@ def deep_scan_generator(company_name: str) -> Generator[str, None, None]:
 
     org_login = org_data.get('login')
     org_name = org_data.get('name') or org_login
+    org_description = org_data.get('description')
 
-    yield _sse_log(f"✓ Organization confirmed: {org_name} (@{org_login})")
+    yield _sse_log(f"Organization confirmed: {org_name} (@{org_login})")
     yield _sse_log(f"  Public repos: {org_data.get('public_repos', 'N/A')}")
+
+    # Check for open protocol / decentralized project disqualifiers
+    # These are NOT commercial companies with buying intent
+    matched_pattern = _is_open_protocol_project(org_description)
+    if matched_pattern:
+        yield _sse_log("")
+        yield _sse_log("⚠️ OPEN PROTOCOL PROJECT DETECTED")
+        yield _sse_log(f"  Description: {org_description}")
+        yield _sse_log(f"  Matched pattern: '{matched_pattern}'")
+        yield _sse_error(f"DISQUALIFIED: Open protocol/decentralized project - not a commercial buyer. Pattern matched: '{matched_pattern}'")
+        return
 
     # Phase 2: Fetch Repositories
     yield _sse_log("")
@@ -121,12 +178,51 @@ def deep_scan_generator(company_name: str) -> Generator[str, None, None]:
         yield _sse_log(f"Error fetching repos: {str(e)}")
 
     if not repos:
-        yield _sse_error("No repositories found. Scan aborted.")
-        return
+        # Don't abort - continue with empty repos so tier calculation can properly classify
+        # This is NOT an error - the org exists but has no public repos (or all filtered)
+        yield _sse_log("No active repositories found. Organization may have private repos only.")
+        repos = []  # Continue with empty list
 
     # Select top repos for deep scan
-    repos_to_scan = repos[:Config.MAX_REPOS_TO_SCAN]
-    yield _sse_log(f"✓ Selected {len(repos_to_scan)} repositories for intent scan")
+    # NEW HEURISTIC: Mega-Corp check to handle massive orgs (PostHog, etc)
+    is_mega_corp = False
+    total_stars_top_10 = sum(r.get('stargazers_count', 0) for r in repos[:10])
+    public_repos_count = org_data.get('public_repos', 0)
+
+    if public_repos_count > 200 or total_stars_top_10 > 5000:
+        is_mega_corp = True
+        yield _sse_log(f"⚠️ MEGA-CORP DETECTED: {org_login} has {public_repos_count} repos and {total_stars_top_10} stars in top 10.")
+        yield _sse_log("Limiting scan to top 30 highest-value repositories to prevent timeout.")
+        repos_to_scan = repos[:30]
+    else:
+        repos_to_scan = repos[:Config.MAX_REPOS_TO_SCAN]
+
+    original_repos_to_scan = repos_to_scan.copy()  # Keep original list for tier calculation
+    last_scanned_at = _parse_timestamp(last_scanned_timestamp)
+
+    if last_scanned_at:
+        filtered_repos = []
+        for repo in repos_to_scan:
+            repo_name = repo.get('name')
+            pushed_at = _parse_timestamp(repo.get('pushed_at'))
+            if pushed_at:
+                if pushed_at.tzinfo and last_scanned_at.tzinfo is None:
+                    last_scanned_at = last_scanned_at.replace(tzinfo=timezone.utc)
+                elif last_scanned_at.tzinfo and pushed_at.tzinfo is None:
+                    pushed_at = pushed_at.replace(tzinfo=last_scanned_at.tzinfo)
+                if pushed_at <= last_scanned_at:
+                    yield _sse_log(f"Skipping unchanged repo {repo_name}...")
+                    continue
+            filtered_repos.append(repo)
+        repos_to_scan = filtered_repos
+
+        # CRITICAL FIX: If all repos were filtered as "unchanged", fall back to original list
+        # This prevents false "Disqualified" status when repos exist but haven't changed
+        if not repos_to_scan and original_repos_to_scan:
+            yield _sse_log("All repos unchanged since last scan, using original repo list for tier calculation")
+            repos_to_scan = original_repos_to_scan
+
+    yield _sse_log(f"Selected {len(repos_to_scan)} repositories for intent scan")
 
     # Initialize scan results with 3-Signal structure
     scan_results = {
@@ -140,7 +236,7 @@ def deep_scan_generator(company_name: str) -> Generator[str, None, None]:
         'scan_timestamp': datetime.now().isoformat(),
         'total_stars': sum(r.get('stargazers_count', 0) for r in repos_to_scan),
 
-        # 3-Signal Intent Results
+        # 3-Signal Intent Results (plus documentation intent)
         'signals': [],  # List of structured signal objects
         'signal_summary': {
             'rfc_discussion': {
@@ -152,13 +248,44 @@ def deep_scan_generator(company_name: str) -> Generator[str, None, None]:
                 'count': 0,
                 'hits': []
             },
+            'smoking_gun_fork': {
+                'count': 0,
+                'hits': []
+            },
             'ghost_branch': {
                 'count': 0,
+                'hits': []
+            },
+            'documentation_intent': {
+                'count': 0,
+                'high_priority_count': 0,
                 'hits': []
             }
         },
         'intent_score': 0,  # Calculated at the end
     }
+
+    # Phase 2b: Smoking Gun Fork Detection
+    # Check if the org has forked any known i18n libraries (uppy, react-intl, etc.)
+    yield _sse_log("")
+    yield _sse_log("PHASE 2b: Smoking Gun Fork Detection")
+    yield _sse_log("-" * 40)
+    yield _sse_log("Checking for forked i18n libraries (uppy, react-intl, i18next, etc.)...")
+
+    for log_msg, signal in _scan_smoking_gun_forks(repos, company_name, org_login):
+        if log_msg:
+            yield _sse_log(f"  {log_msg}")
+        if signal:
+            scan_results['signals'].append(signal)
+            scan_results['signal_summary']['smoking_gun_fork']['hits'].append(signal)
+            scan_results['signal_summary']['smoking_gun_fork']['count'] += 1
+            yield _sse_signal(signal)
+
+    fork_count = scan_results['signal_summary']['smoking_gun_fork']['count']
+    if fork_count > 0:
+        yield _sse_log(f"Smoking Gun Fork detection complete: {fork_count} HIGH intent signals!")
+    else:
+        yield _sse_log("Smoking Gun Fork detection complete: No known i18n library forks found")
 
     # Phase 3: Signal 1 - RFC & Discussion Scan (Thinking Phase)
     yield _sse_log("")
@@ -170,7 +297,7 @@ def deep_scan_generator(company_name: str) -> Generator[str, None, None]:
         repo_name = repo.get('name')
         yield _sse_log(f"  [{idx}/5] Scanning issues in: {repo_name}")
 
-        for log_msg, signal in _scan_rfc_discussion(org_login, repo_name, company_name):
+        for log_msg, signal in _scan_rfc_discussion(org_login, repo_name, company_name, since_timestamp=last_scanned_at):
             if log_msg:
                 yield _sse_log(f"    {log_msg}")
             if signal:
@@ -183,7 +310,7 @@ def deep_scan_generator(company_name: str) -> Generator[str, None, None]:
 
     rfc_count = scan_results['signal_summary']['rfc_discussion']['count']
     high_priority = scan_results['signal_summary']['rfc_discussion']['high_priority_count']
-    yield _sse_log(f"✓ RFC & Discussion scan complete: {rfc_count} signals ({high_priority} HIGH priority)")
+    yield _sse_log(f"RFC & Discussion scan complete: {rfc_count} signals ({high_priority} HIGH priority)")
 
     # Phase 4: Signal 2 - Dependency Injection Scan (Preparing Phase)
     yield _sse_log("")
@@ -193,9 +320,11 @@ def deep_scan_generator(company_name: str) -> Generator[str, None, None]:
 
     for idx, repo in enumerate(repos_to_scan[:5], 1):  # Top 5 repos
         repo_name = repo.get('name')
-        yield _sse_log(f"  [{idx}/5] Scanning dependencies in: {repo_name}")
+        is_fork = repo.get('fork', False)
+        fork_indicator = " (fork)" if is_fork else ""
+        yield _sse_log(f"  [{idx}/5] Scanning dependencies in: {repo_name}{fork_indicator}")
 
-        for log_msg, signal in _scan_dependency_injection(org_login, repo_name, company_name):
+        for log_msg, signal in _scan_dependency_injection(org_login, repo_name, company_name, is_fork=is_fork):
             if log_msg:
                 yield _sse_log(f"    {log_msg}")
             if signal:
@@ -205,7 +334,7 @@ def deep_scan_generator(company_name: str) -> Generator[str, None, None]:
                 yield _sse_signal(signal)
 
     dep_count = scan_results['signal_summary']['dependency_injection']['count']
-    yield _sse_log(f"✓ Dependency Injection scan complete: {dep_count} signals")
+    yield _sse_log(f"Dependency Injection scan complete: {dep_count} signals")
 
     # Phase 4b: Mobile Architecture Scan (iOS & Android Goldilocks)
     yield _sse_log("")
@@ -215,9 +344,11 @@ def deep_scan_generator(company_name: str) -> Generator[str, None, None]:
 
     for idx, repo in enumerate(repos_to_scan[:5], 1):  # Top 5 repos
         repo_name = repo.get('name')
-        yield _sse_log(f"  [{idx}/5] Scanning mobile architecture in: {repo_name}")
+        is_fork = repo.get('fork', False)
+        fork_indicator = " (fork)" if is_fork else ""
+        yield _sse_log(f"  [{idx}/5] Scanning mobile architecture in: {repo_name}{fork_indicator}")
 
-        for log_msg, signal in _scan_mobile_architecture(org_login, repo_name, company_name):
+        for log_msg, signal in _scan_mobile_architecture(org_login, repo_name, company_name, is_fork=is_fork):
             if log_msg:
                 yield _sse_log(f"    {log_msg}")
             if signal:
@@ -227,7 +358,7 @@ def deep_scan_generator(company_name: str) -> Generator[str, None, None]:
                 yield _sse_signal(signal)
 
     mobile_count = scan_results['signal_summary']['dependency_injection']['count'] - dep_count
-    yield _sse_log(f"✓ Mobile Architecture scan complete: {mobile_count} signals")
+    yield _sse_log(f"Mobile Architecture scan complete: {mobile_count} signals")
 
     # Update dep_count to include mobile signals
     dep_count = scan_results['signal_summary']['dependency_injection']['count']
@@ -240,9 +371,11 @@ def deep_scan_generator(company_name: str) -> Generator[str, None, None]:
 
     for idx, repo in enumerate(repos_to_scan[:5], 1):  # Top 5 repos
         repo_name = repo.get('name')
-        yield _sse_log(f"  [{idx}/5] Scanning framework configs in: {repo_name}")
+        is_fork = repo.get('fork', False)
+        fork_indicator = " (fork)" if is_fork else ""
+        yield _sse_log(f"  [{idx}/5] Scanning framework configs in: {repo_name}{fork_indicator}")
 
-        for log_msg, signal in _scan_framework_configs(org_login, repo_name, company_name):
+        for log_msg, signal in _scan_framework_configs(org_login, repo_name, company_name, is_fork=is_fork):
             if log_msg:
                 yield _sse_log(f"    {log_msg}")
             if signal:
@@ -252,10 +385,35 @@ def deep_scan_generator(company_name: str) -> Generator[str, None, None]:
                 yield _sse_signal(signal)
 
     framework_count = scan_results['signal_summary']['dependency_injection']['count'] - dep_count
-    yield _sse_log(f"✓ Framework Configuration scan complete: {framework_count} signals")
+    yield _sse_log(f"Framework Configuration scan complete: {framework_count} signals")
 
     # Update dep_count to include framework config signals
     dep_count = scan_results['signal_summary']['dependency_injection']['count']
+
+    # Phase 4d: Documentation Intent Scan (Thinking Phase)
+    yield _sse_log("")
+    yield _sse_log("PHASE 4d: Documentation Intent Scan")
+    yield _sse_log("-" * 40)
+    yield _sse_log("Checking documentation for i18n intent signals...")
+
+    for idx, repo in enumerate(repos_to_scan[:5], 1):  # Top 5 repos
+        repo_name = repo.get('name')
+        yield _sse_log(f"  [{idx}/5] Scanning documentation in: {repo_name}")
+
+        for log_msg, signal in _scan_documentation_files(org_login, repo_name, company_name):
+            if log_msg:
+                yield _sse_log(f"    {log_msg}")
+            if signal:
+                scan_results['signals'].append(signal)
+                scan_results['signal_summary']['documentation_intent']['hits'].append(signal)
+                scan_results['signal_summary']['documentation_intent']['count'] += 1
+                if signal.get('priority') == 'HIGH':
+                    scan_results['signal_summary']['documentation_intent']['high_priority_count'] += 1
+                yield _sse_signal(signal)
+
+    doc_count = scan_results['signal_summary']['documentation_intent']['count']
+    doc_high = scan_results['signal_summary']['documentation_intent']['high_priority_count']
+    yield _sse_log(f"Documentation Intent scan complete: {doc_count} signals ({doc_high} HIGH priority)")
 
     # Phase 5: Signal 3 - Ghost Branch Scan (Active Phase)
     yield _sse_log("")
@@ -267,7 +425,7 @@ def deep_scan_generator(company_name: str) -> Generator[str, None, None]:
         repo_name = repo.get('name')
         yield _sse_log(f"  [{idx}/5] Scanning branches in: {repo_name}")
 
-        for log_msg, signal in _scan_ghost_branches(org_login, repo_name, company_name):
+        for log_msg, signal in _scan_ghost_branches(org_login, repo_name, company_name, since_timestamp=last_scanned_at):
             if log_msg:
                 yield _sse_log(f"    {log_msg}")
             if signal:
@@ -277,7 +435,7 @@ def deep_scan_generator(company_name: str) -> Generator[str, None, None]:
                 yield _sse_signal(signal)
 
     ghost_count = scan_results['signal_summary']['ghost_branch']['count']
-    yield _sse_log(f"✓ Ghost Branch scan complete: {ghost_count} signals")
+    yield _sse_log(f"Ghost Branch scan complete: {ghost_count} signals")
 
     # Store repo metadata
     for repo in repos_to_scan:
@@ -306,22 +464,23 @@ def deep_scan_generator(company_name: str) -> Generator[str, None, None]:
     scan_results['scan_duration_seconds'] = duration
 
     total_signals = len(scan_results['signals'])
-    yield _sse_log(f"📊 Total Signals Detected: {total_signals}")
+    yield _sse_log(f"Total Signals Detected: {total_signals}")
     yield _sse_log(f"   • RFC & Discussion: {rfc_count} ({high_priority} HIGH)")
     yield _sse_log(f"   • Dependency Injection: {dep_count}")
+    yield _sse_log(f"   • Documentation Intent: {doc_count} ({doc_high} HIGH)")
     yield _sse_log(f"   • Ghost Branches: {ghost_count}")
-    yield _sse_log(f"📊 Intent Score: {scan_results['intent_score']}/100")
-    yield _sse_log(f"📊 Scan Duration: {duration:.1f}s")
+    yield _sse_log(f"Intent Score: {scan_results['intent_score']}/100")
+    yield _sse_log(f"Scan Duration: {duration:.1f}s")
 
     if total_signals > 0:
         yield _sse_log("")
-        yield _sse_log("🎯 INTENT DETECTED: Company is in Thinking/Preparing phase!")
+        yield _sse_log("INTENT DETECTED: Company is in Thinking/Preparing phase!")
     else:
         yield _sse_log("")
         yield _sse_log("⚪ No pre-launch signals detected.")
 
     yield _sse_log("")
-    yield _sse_log("🤖 Generating AI Sales Intelligence...")
+    yield _sse_log("Generating AI Sales Intelligence...")
 
     # Track stats - increment scans_run and estimate API calls
     try:
@@ -336,20 +495,25 @@ def deep_scan_generator(company_name: str) -> Generator[str, None, None]:
     yield _sse_data('SCAN_COMPLETE', scan_results)
 
 
-def _scan_rfc_discussion(org: str, repo: str, company: str) -> Generator[tuple, None, None]:
+def _scan_rfc_discussion(org: str, repo: str, company: str, since_timestamp: datetime = None) -> Generator[tuple, None, None]:
     """
     Signal 1: RFC & Discussion Scan (Thinking Phase)
 
     Target: Issues and Discussions (Open & Closed)
-    Logic: Flag if title or body contains high-intent keywords in last 6 months
+    Logic: Flag if title or body contains high-intent keywords in last 6 months (or since last scan)
     Keywords: 'i18n strategy', 'localization support', 'handle timezones',
-              'currency formatting', 'RTL support', 'translation workflow', 'multi-currency'
+              'currency formatting', 'RTL support', 'translation workflow', 'multi-currency',
+              'internationalization', 'translate', 'global expansion'
     Priority: HIGH if title starts with 'RFC' or 'Proposal'
 
     Yields:
         Tuples of (log_message, signal_object)
     """
-    cutoff_date = datetime.now() - timedelta(days=Config.RFC_LOOKBACK_DAYS)
+    if since_timestamp:
+        cutoff_date = since_timestamp
+    else:
+        cutoff_date = datetime.now() - timedelta(days=Config.RFC_LOOKBACK_DAYS)
+    
     cutoff_str = cutoff_date.strftime('%Y-%m-%dT%H:%M:%SZ')
 
     # Scan Issues
@@ -411,11 +575,12 @@ def _scan_rfc_discussion(org: str, repo: str, company: str) -> Generator[tuple, 
                         'created_at': issue.get('created_at'),
                     }
 
-                    priority_label = "🔴 HIGH" if is_high_priority else "🟡 MEDIUM"
+                    priority_label = "HIGH" if is_high_priority else "MEDIUM"
                     yield (f"{priority_label}: Issue #{issue_number} - {title[:40]}...", signal)
 
     except requests.RequestException as e:
-        yield (f"Error scanning issues: {str(e)}", None)
+        error_detail = _format_request_exception(e)
+        yield (f"Error scanning issues: {error_detail}", None)
 
     # Scan Discussions (if available via GraphQL - simplified to REST search)
     try:
@@ -467,14 +632,68 @@ def _scan_rfc_discussion(org: str, repo: str, company: str) -> Generator[tuple, 
                             'created_at': created_at,
                         }
 
-                        priority_label = "🔴 HIGH" if is_high_priority else "🟡 MEDIUM"
+                        priority_label = "HIGH" if is_high_priority else "MEDIUM"
                         yield (f"{priority_label}: Discussion - {title[:40]}...", signal)
 
     except requests.RequestException:
         pass  # Search API failures are non-fatal
 
 
-def _scan_dependency_injection(org: str, repo: str, company: str) -> Generator[tuple, None, None]:
+def _scan_smoking_gun_forks(repos: list, company: str, org_login: str) -> Generator[tuple, None, None]:
+    """
+    Detect when a company has forked a known i18n-related library.
+    
+    This is a HIGH intent signal - forking uppy/react-intl/i18next/etc.
+    indicates the company is actively customizing i18n infrastructure.
+    This is even stronger than just listing a dependency because they're
+    modifying the source code.
+    
+    Args:
+        repos: List of repository data dicts from the organization.
+        company: Company name for signal records.
+        org_login: GitHub organization login.
+        
+    Yields:
+        Tuple of (log_message, signal_dict or None)
+    """
+    smoking_gun_repos = [r.lower() for r in Config.SMOKING_GUN_FORK_REPOS]
+    
+    for repo in repos:
+        if not repo.get('fork', False):
+            continue
+            
+        repo_name = repo.get('name', '')
+        repo_name_lower = repo_name.lower()
+        
+        if repo_name_lower in smoking_gun_repos:
+            # This is a "Smoking Gun" fork!
+            repo_html_url = repo.get('html_url', f"https://github.com/{org_login}/{repo_name}")
+            repo_description = repo.get('description', 'No description')
+            pushed_at = repo.get('pushed_at', 'Unknown')
+            
+            # Get library-specific messaging from existing config
+            lib_desc = Config.I18N_LIBRARIES.get(repo_name_lower, 'i18n library')
+            lib_meaning = Config.BDR_TRANSLATIONS.get(repo_name_lower, 'i18n infrastructure is being prepared')
+            
+            signal = {
+                'Company': company,
+                'Signal': 'Smoking Gun Fork',
+                'Evidence': f"Company forked '{repo_name}' ({lib_desc}). {lib_meaning}",
+                'Link': repo_html_url,
+                'priority': 'HIGH',
+                'type': 'smoking_gun_fork',
+                'goldilocks_status': 'preparing',
+                'repo': repo_name,
+                'description': repo_description,
+                'pushed_at': pushed_at,
+                'libraries_found': [repo_name_lower],
+                'bdr_summary': f"Forked {repo_name} library - signals active i18n customization work",
+            }
+            
+            yield (f"🎯 SMOKING GUN FORK: '{repo_name}' - known i18n library!", signal)
+
+
+def _scan_dependency_injection(org: str, repo: str, company: str, is_fork: bool = False) -> Generator[tuple, None, None]:
     """
     Signal 2: Dependency Injection Scan (Preparing Phase) - GOLDILOCKS ZONE DETECTION
 
@@ -484,12 +703,19 @@ def _scan_dependency_injection(org: str, repo: str, company: str) -> Generator[t
     THE "GAP" REQUIREMENT (Negative Check):
     - A signal is ONLY valid if the repository has NO localization folders
     - If /locales, /i18n, /translations, or /lang exist -> DISQUALIFY (Already Launched)
+    - EXCEPTION: If is_fork=True, skip the negative check (fork's translations belong to upstream)
 
     TARGET LIBRARIES:
     - babel-plugin-react-intl
     - react-i18next
     - formatjs
     - uppy (only if i18n/locale properties are configured)
+
+    Args:
+        org: GitHub organization login
+        repo: Repository name
+        company: Company name for signal attribution
+        is_fork: If True, skip locale folder checks (fork translations belong to upstream)
 
     Yields:
         Tuples of (log_message, signal_object)
@@ -499,11 +725,19 @@ def _scan_dependency_injection(org: str, repo: str, company: str) -> Generator[t
 
     # ============================================================
     # NEGATIVE CHECK: Verify NO exclusion folders exist (with source-only exception)
+    # FORK EXCEPTION: Skip this check for forks - their translations belong to upstream
     # ============================================================
-    locale_exists, found_folders, source_only, folder_contents = _check_locale_folders_exist_detailed(org, repo)
-
-    # Track if we found source-only folders for evidence logging
+    locale_exists = False
+    found_folders = []
+    source_only = False
+    folder_contents = {}
     source_only_evidence = None
+
+    if is_fork:
+        # Skip locale folder check for forks - translations belong to upstream project
+        yield (f"FORK DETECTED: Skipping locale folder check (upstream translations don't disqualify)", None)
+    else:
+        locale_exists, found_folders, source_only, folder_contents = _check_locale_folders_exist_detailed(org, repo)
 
     if locale_exists:
         if source_only:
@@ -517,11 +751,11 @@ def _scan_dependency_injection(org: str, repo: str, company: str) -> Generator[t
             folders_str = ', '.join(found_folders)
 
             source_only_evidence = f"Found locale folder ({folders_str}) but it only contains source files ({files_str}) - Infrastructure ready, waiting for translation."
-            yield (f"✅ GOLDILOCKS: {folders_str} contains only source files ({files_str}) - Still a valid lead!", None)
+            yield (f"GOLDILOCKS: {folders_str} contains only source files ({files_str}) - Still a valid lead!", None)
             # Continue to positive check - don't return!
         else:
             # Company has ALREADY LAUNCHED - mark as "Too Late"
-            yield (f"⚠️ DISQUALIFIED: Found locale folders ({', '.join(found_folders)}) - Already Launched", None)
+            yield (f"DISQUALIFIED: Found locale folders ({', '.join(found_folders)}) - Already Launched", None)
 
             # Still emit a signal but mark it as "launched" status
             signal = {
@@ -536,190 +770,220 @@ def _scan_dependency_injection(org: str, repo: str, company: str) -> Generator[t
                 'goldilocks_status': 'launched',
                 'bdr_summary': Config.BDR_TRANSLATIONS.get('locale_folder_exists', 'Already has translations'),
             }
-            yield (f"📉 LOW PRIORITY: {repo} already has locale folders", signal)
+            yield (f"LOW PRIORITY: {repo} already has locale folders", signal)
             return
 
     # ============================================================
     # POSITIVE CHECK: Scan for Goldilocks Zone libraries
     # ============================================================
+    # Using Search API instead of recursive tree fetching to handle "Mega-Corp" repos efficiently
     for dep_file in Config.DEPENDENCY_INJECTION_FILES:
+        yield ("Scanning dependencies...", None)
+
+        # Query: q=repo:{org}/{repo} filename:{dep_filename}
+        query = f"repo:{org}/{repo} filename:{dep_file}"
+        search_url = f"{Config.GITHUB_API_BASE}/search/code"
+
+        dep_paths = []
         try:
-            url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}/contents/{dep_file}"
-            response = make_github_request(url, timeout=15)
+            # Note: make_github_request handles rate limits and priority
+            search_response = make_github_request(search_url, params={'q': query}, timeout=15)
 
-            if response.status_code != 200:
-                continue
+            if search_response.status_code == 200:
+                search_data = search_response.json()
+                items = search_data.get('items', [])
+                # Limit to top 20 matches per file type (most common in monorepos)
+                dep_paths = [item.get('path') for item in items[:20]]
+            elif search_response.status_code == 422:
+                # Search sometimes fails on empty repos or if indexing is incomplete
+                dep_paths = [dep_file]
+            else:
+                # Fallback to root for other errors
+                dep_paths = [dep_file]
+        except Exception:
+            dep_paths = [dep_file]
 
-            file_data = response.json()
-            content_b64 = file_data.get('content', '')
-            file_url = file_data.get('html_url')
-
-            if content_b64:
-                try:
-                    content = base64.b64decode(content_b64).decode('utf-8')
-                    content_lower = content.lower()
-
-                    if dep_file == 'package.json':
-                        try:
-                            package_json = json.loads(content)
-                        except json.JSONDecodeError:
-                            package_json = {}
-
-                        scripts = package_json.get('scripts', {})
-                        if isinstance(scripts, dict):
-                            for script_name, script_command in scripts.items():
-                                script_name_text = str(script_name)
-                                script_command_text = str(script_command)
-                                script_name_lower = script_name_text.lower()
-                                script_command_lower = script_command_text.lower()
-
-                                matched_keyword = next(
-                                    (
-                                        keyword for keyword in Config.I18N_SCRIPT_KEYWORDS
-                                        if keyword in script_name_lower or keyword in script_command_lower
-                                    ),
-                                    None
-                                )
-
-                                if matched_keyword:
-                                    signal = {
-                                        'Company': company,
-                                        'Signal': 'NPM Script',
-                                        'Evidence': (
-                                            f"Found automation script '{script_name_text}' in package.json - "
-                                            "Team is building translation pipeline."
-                                        ),
-                                        'Link': file_url,
-                                        'priority': 'MEDIUM',
-                                        'type': 'npm_script',
-                                        'repo': repo,
-                                        'file': dep_file,
-                                        'script_name': script_name_text,
-                                        'script_command': script_command_text,
-                                        'keyword_matched': matched_keyword,
-                                        'goldilocks_status': 'preparing',
-                                    }
-                                    yield (f"🧰 NPM SCRIPT: {script_name_text} in package.json", signal)
-
-                    found_libs = []
-                    bdr_explanations = []
-                    found_linter_libs = []
-                    found_cms_i18n_libs = []
-
-                    # Check for our 4 target SMOKING GUN libraries
-                    for lib in Config.SMOKING_GUN_LIBS:
-                        # --- FIX START: Prevent 'babel' false positives in JS files ---
-                        # Only detect 'babel' in Python dependency files
-                        if lib == 'babel' and dep_file not in ['requirements.txt', 'pyproject.toml', 'setup.py', 'Pipfile']:
-                            continue
-                        # --- FIX END ---
-
-                        # Context-aware matching:
-                        # strict quotes for JSON/Lockfiles, loose matching for others
-                        is_strict_file = dep_file in ['package.json', 'composer.json', 'package-lock.json']
-
-                        found = False
-                        if is_strict_file:
-                            if f'"{lib}"' in content_lower or f"'{lib}'" in content_lower:
-                                found = True
-                        else:
-                            if lib in content_lower:
-                                found = True
-
-                        if found:
-                            found_libs.append(lib)
-                            bdr_explanations.append(Config.BDR_TRANSLATIONS.get(lib, f'Found {lib}'))
-
-                    # Special handling for Uppy - only count if i18n config is present
-                    if Config.UPPY_LIBRARY in content_lower:
-                        # Check if any i18n indicators are present
-                        for indicator in Config.UPPY_I18N_INDICATORS:
-                            if indicator in content_lower:
-                                found_libs.append(f"{Config.UPPY_LIBRARY} (with {indicator} config)")
-                                bdr_explanations.append(Config.BDR_TRANSLATIONS.get('uppy', 'Uppy with i18n'))
-                                break
-
-                    for lib in Config.LINTER_LIBRARIES:
-                        if f'"{lib}"' in content_lower or f"'{lib}'" in content_lower:
-                            found_linter_libs.append(lib)
-
-                    for lib in Config.CMS_I18N_LIBS:
-                        if f'"{lib}"' in content_lower or f"'{lib}'" in content_lower:
-                            found_cms_i18n_libs.append(lib)
-
-                    if found_libs:
-                        # This is the GOLDILOCKS ZONE - Library found + NO locale folders (or source-only)!
-                        if source_only_evidence:
-                            # Source-only case: folder exists but only has source files
-                            evidence = f"🎯 GOLDILOCKS ZONE: Found {', '.join(found_libs)} in {dep_file}. {source_only_evidence}"
-                            gap_explanation = Config.BDR_TRANSLATIONS.get('locale_folder_source_only', 'Infrastructure ready, only source files')
-                        else:
-                            # No folder case: no locale folders at all
-                            evidence = f"🎯 GOLDILOCKS ZONE: Found {', '.join(found_libs)} in {dep_file} but NO locale folders exist!"
-                            gap_explanation = Config.BDR_TRANSLATIONS.get('locale_folder_missing', 'Infrastructure ready, no translations')
-
-                        signal = {
-                            'Company': company,
-                            'Signal': 'Dependency Injection',
-                            'Evidence': evidence,
-                            'Link': file_url,
-                            'priority': 'CRITICAL',
-                            'type': 'dependency_injection',
-                            'repo': repo,
-                            'file': dep_file,
-                            'libraries_found': found_libs,
-                            'goldilocks_status': 'preparing',
-                            'gap_verified': True,  # Negative check passed!
-                            'source_only': source_only_evidence is not None,
-                            'bdr_summary': ' | '.join(bdr_explanations),
-                            'bdr_gap_explanation': gap_explanation,
-                        }
-
-                        yield (f"🎯 GOLDILOCKS ZONE: {', '.join(found_libs)} in {dep_file} - NO TRANSLATIONS YET!", signal)
-
-                    for lib in found_linter_libs:
-                        signal = {
-                            'Company': company,
-                            'Signal': 'Linter Config',
-                            'Evidence': (
-                                f"Found Code Cleaning tool '{lib}' - Team is scrubbing hardcoded strings to "
-                                "prepare for i18n."
-                            ),
-                            'Link': file_url,
-                            'priority': 'MEDIUM',
-                            'type': 'linter_config',
-                            'repo': repo,
-                            'file': dep_file,
-                            'library_found': lib,
-                            'goldilocks_status': 'preparing',
-                        }
-
-                        yield (f"🧹 CODE CLEANING: {lib} found in {dep_file}", signal)
-
-                    for lib in found_cms_i18n_libs:
-                        signal = {
-                            'Company': company,
-                            'Signal': 'CMS Localization',
-                            'Evidence': (
-                                f"Found CMS Localization tool '{lib}' - Preparing content strategy for "
-                                "internationalization."
-                            ),
-                            'Link': file_url,
-                            'priority': 'MEDIUM',
-                            'type': 'cms_config',
-                            'repo': repo,
-                            'file': dep_file,
-                            'library_found': lib,
-                            'goldilocks_status': 'preparing',
-                        }
-
-                        yield (f"🌐 CMS LOCALIZATION: {lib} found in {dep_file}", signal)
-
-                except Exception:
-                    pass
-
-        except requests.RequestException:
+        if not dep_paths:
             continue
+
+        for dep_path in dep_paths:
+            try:
+                url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}/contents/{dep_path}"
+                response = make_github_request(url, timeout=15)
+
+                if response.status_code != 200:
+                    continue
+
+                file_data = response.json()
+                content_b64 = file_data.get('content', '')
+                file_url = file_data.get('html_url')
+
+                if content_b64:
+                    try:
+                        content = base64.b64decode(content_b64).decode('utf-8')
+                        content_lower = content.lower()
+
+                        if dep_file == 'package.json':
+                            try:
+                                package_json = json.loads(content)
+                            except json.JSONDecodeError:
+                                package_json = {}
+
+                            scripts = package_json.get('scripts', {})
+                            if isinstance(scripts, dict):
+                                for script_name, script_command in scripts.items():
+                                    script_name_text = str(script_name)
+                                    script_command_text = str(script_command)
+                                    script_name_lower = script_name_text.lower()
+                                    script_command_lower = script_command_text.lower()
+
+                                    matched_keyword = next(
+                                        (
+                                            keyword for keyword in Config.I18N_SCRIPT_KEYWORDS
+                                            if keyword in script_name_lower or keyword in script_command_lower
+                                        ),
+                                        None
+                                    )
+
+                                    if matched_keyword:
+                                        signal = {
+                                            'Company': company,
+                                            'Signal': 'NPM Script',
+                                            'Evidence': (
+                                                f"Found automation script '{script_name_text}' in package.json - "
+                                                "Team is building translation pipeline."
+                                            ),
+                                            'Link': file_url,
+                                            'priority': 'MEDIUM',
+                                            'type': 'npm_script',
+                                            'repo': repo,
+                                            'file': dep_path,
+                                            'script_name': script_name_text,
+                                            'script_command': script_command_text,
+                                            'keyword_matched': matched_keyword,
+                                            'goldilocks_status': 'preparing',
+                                        }
+                                        yield (f"NPM SCRIPT: {script_name_text} in {dep_path}", signal)
+
+                        found_libs = []
+                        bdr_explanations = []
+                        found_linter_libs = []
+                        found_cms_i18n_libs = []
+
+                        # Check for our 4 target SMOKING GUN libraries
+                        for lib in Config.SMOKING_GUN_LIBS:
+                            # --- FIX START: Prevent 'babel' false positives in JS files ---
+                            # Only detect 'babel' in Python dependency files
+                            if lib == 'babel' and dep_file not in ['requirements.txt', 'pyproject.toml', 'setup.py', 'Pipfile']:
+                                continue
+                            # --- FIX END ---
+
+                            # Context-aware matching:
+                            # strict quotes for JSON/Lockfiles, loose matching for others
+                            is_strict_file = dep_file in ['package.json', 'composer.json', 'package-lock.json']
+
+                            found = False
+                            if is_strict_file:
+                                if f'"{lib}"' in content_lower or f"'{lib}'" in content_lower:
+                                    found = True
+                            else:
+                                if lib in content_lower:
+                                    found = True
+
+                            if found:
+                                found_libs.append(lib)
+                                bdr_explanations.append(Config.BDR_TRANSLATIONS.get(lib, f'Found {lib}'))
+
+                        # Special handling for Uppy - only count if i18n config is present
+                        if Config.UPPY_LIBRARY in content_lower:
+                            # Check if any i18n indicators are present
+                            for indicator in Config.UPPY_I18N_INDICATORS:
+                                if indicator in content_lower:
+                                    found_libs.append(f"{Config.UPPY_LIBRARY} (with {indicator} config)")
+                                    bdr_explanations.append(Config.BDR_TRANSLATIONS.get('uppy', 'Uppy with i18n'))
+                                    break
+
+                        for lib in Config.LINTER_LIBRARIES:
+                            if f'"{lib}"' in content_lower or f"'{lib}'" in content_lower:
+                                found_linter_libs.append(lib)
+
+                        for lib in Config.CMS_I18N_LIBS:
+                            if f'"{lib}"' in content_lower or f"'{lib}'" in content_lower:
+                                found_cms_i18n_libs.append(lib)
+
+                        if found_libs:
+                            # This is the GOLDILOCKS ZONE - Library found + NO locale folders (or source-only)!
+                            if source_only_evidence:
+                                # Source-only case: folder exists but only has source files
+                                evidence = f"GOLDILOCKS ZONE: Found {', '.join(found_libs)} in {dep_path}. {source_only_evidence}"
+                                gap_explanation = Config.BDR_TRANSLATIONS.get('locale_folder_source_only', 'Infrastructure ready, only source files')
+                            else:
+                                # No folder case: no locale folders at all
+                                evidence = f"GOLDILOCKS ZONE: Found {', '.join(found_libs)} in {dep_path} but NO locale folders exist!"
+                                gap_explanation = Config.BDR_TRANSLATIONS.get('locale_folder_missing', 'Infrastructure ready, no translations')
+
+                            signal = {
+                                'Company': company,
+                                'Signal': 'Dependency Injection',
+                                'Evidence': evidence,
+                                'Link': file_url,
+                                'priority': 'CRITICAL',
+                                'type': 'dependency_injection',
+                                'repo': repo,
+                                'file': dep_path,
+                                'libraries_found': found_libs,
+                                'goldilocks_status': 'preparing',
+                                'gap_verified': True,  # Negative check passed!
+                                'source_only': source_only_evidence is not None,
+                                'bdr_summary': ' | '.join(bdr_explanations),
+                                'bdr_gap_explanation': gap_explanation,
+                            }
+
+                            yield (f"GOLDILOCKS ZONE: {', '.join(found_libs)} in {dep_path} - NO TRANSLATIONS YET!", signal)
+
+                        for lib in found_linter_libs:
+                            signal = {
+                                'Company': company,
+                                'Signal': 'Linter Config',
+                                'Evidence': (
+                                    f"Found Code Cleaning tool '{lib}' - Team is scrubbing hardcoded strings to "
+                                    "prepare for i18n."
+                                ),
+                                'Link': file_url,
+                                'priority': 'MEDIUM',
+                                'type': 'linter_config',
+                                'repo': repo,
+                                'file': dep_path,
+                                'library_found': lib,
+                                'goldilocks_status': 'preparing',
+                            }
+
+                            yield (f"CODE CLEANING: {lib} found in {dep_path}", signal)
+
+                        for lib in found_cms_i18n_libs:
+                            signal = {
+                                'Company': company,
+                                'Signal': 'CMS Localization',
+                                'Evidence': (
+                                    f"Found CMS Localization tool '{lib}' - Preparing content strategy for "
+                                    "internationalization."
+                                ),
+                                'Link': file_url,
+                                'priority': 'MEDIUM',
+                                'type': 'cms_config',
+                                'repo': repo,
+                                'file': dep_path,
+                                'library_found': lib,
+                                'goldilocks_status': 'preparing',
+                            }
+
+                            yield (f"CMS LOCALIZATION: {lib} found in {dep_path}", signal)
+
+                    except Exception:
+                        pass
+
+            except requests.RequestException:
+                continue
 
 
 def _scan_pseudo_localization_configs(org: str, repo: str, company: str) -> Generator[tuple, None, None]:
@@ -764,13 +1028,13 @@ def _scan_pseudo_localization_configs(org: str, repo: str, company: str) -> Gene
                         'file': config_file,
                         'pattern': pattern,
                     }
-                    yield (f"🔎 PSEUDO-LOCALIZATION: {pattern} found in {config_file}", signal)
+                    yield (f"PSEUDO-LOCALIZATION: {pattern} found in {config_file}", signal)
 
         except requests.RequestException:
             continue
 
 
-def _scan_mobile_architecture(org: str, repo: str, company: str) -> Generator[tuple, None, None]:
+def _scan_mobile_architecture(org: str, repo: str, company: str, is_fork: bool = False) -> Generator[tuple, None, None]:
     """
     Scan for Mobile Goldilocks Zone signals (iOS and Android).
 
@@ -778,11 +1042,19 @@ def _scan_mobile_architecture(org: str, repo: str, company: str) -> Generator[tu
         - Check if Base.lproj folder exists
         - If YES, search for ANY other folders ending in .lproj
         - Signal if Base.lproj exists AND count of other .lproj folders == 0
+        - EXCEPTION: If is_fork=True, skip translation checks (fork translations belong to upstream)
 
     Android Logic:
         - Check if res/values/strings.xml exists
         - If YES, search for ANY folders matching values-[a-z]{2}
         - Signal if strings.xml exists AND count of values-* folders == 0
+        - EXCEPTION: If is_fork=True, skip translation checks (fork translations belong to upstream)
+
+    Args:
+        org: GitHub organization login
+        repo: Repository name
+        company: Company name for signal attribution
+        is_fork: If True, skip translation folder checks (fork translations belong to upstream)
 
     Yields:
         Tuples of (log_message, signal_object)
@@ -821,38 +1093,46 @@ def _scan_mobile_architecture(org: str, repo: str, company: str) -> Generator[tu
                     break
 
         if base_lproj_found:
-            yield (f"📱 iOS: Found Base.lproj folder", None)
+            yield (f"iOS: Found Base.lproj folder", None)
 
             # Search for other .lproj folders (translations)
+            # FORK EXCEPTION: Skip translation check for forks - translations belong to upstream
             other_lproj_count = 0
-            lproj_search_url = f"{Config.GITHUB_API_BASE}/search/code"
-            lproj_params = {
-                'q': f'repo:{org}/{repo} path:*.lproj',
-                'per_page': 50
-            }
 
-            lproj_response = make_github_request(lproj_search_url, params=lproj_params, timeout=15)
+            if is_fork:
+                yield (f"iOS FORK: Skipping translation check (upstream translations don't disqualify)", None)
+            else:
+                lproj_search_url = f"{Config.GITHUB_API_BASE}/search/code"
+                lproj_params = {
+                    'q': f'repo:{org}/{repo} path:*.lproj',
+                    'per_page': 50
+                }
 
-            if lproj_response.status_code == 200:
-                lproj_results = lproj_response.json().get('items', [])
-                seen_folders = set()
+                lproj_response = make_github_request(lproj_search_url, params=lproj_params, timeout=15)
 
-                for item in lproj_results:
-                    path = item.get('path', '')
-                    # Extract .lproj folder name from path
-                    lproj_match = re.search(r'/([^/]+\.lproj)/', path)
-                    if lproj_match:
-                        folder_name = lproj_match.group(1)
-                        if folder_name != 'Base.lproj' and folder_name not in seen_folders:
-                            seen_folders.add(folder_name)
-                            other_lproj_count += 1
+                if lproj_response.status_code == 200:
+                    lproj_results = lproj_response.json().get('items', [])
+                    seen_folders = set()
 
-            if other_lproj_count == 0:
-                # GOLDILOCKS ZONE: Base.lproj exists but no translations!
+                    for item in lproj_results:
+                        path = item.get('path', '')
+                        # Extract .lproj folder name from path
+                        lproj_match = re.search(r'/([^/]+\.lproj)/', path)
+                        if lproj_match:
+                            folder_name = lproj_match.group(1)
+                            if folder_name != 'Base.lproj' and folder_name not in seen_folders:
+                                seen_folders.add(folder_name)
+                                other_lproj_count += 1
+
+            if other_lproj_count == 0 or is_fork:
+                # GOLDILOCKS ZONE: Base.lproj exists but no translations (or fork - ignore upstream translations)!
+                evidence = "iOS GOLDILOCKS: Base.lproj exists but NO other .lproj folders found - iOS app ready for localization!"
+                if is_fork:
+                    evidence = "iOS GOLDILOCKS (FORK): Base.lproj exists - fork's upstream translations ignored, treating as preparing!"
                 signal = {
                     'Company': company,
                     'Signal': 'Mobile Architecture (iOS)',
-                    'Evidence': f"🎯 iOS GOLDILOCKS: Base.lproj exists but NO other .lproj folders found - iOS app ready for localization!",
+                    'Evidence': evidence,
                     'Link': f"https://github.com/{org}/{repo}",
                     'priority': 'CRITICAL',
                     'type': 'mobile_architecture',
@@ -860,14 +1140,16 @@ def _scan_mobile_architecture(org: str, repo: str, company: str) -> Generator[tu
                     'repo': repo,
                     'goldilocks_status': 'preparing',
                     'gap_verified': True,
+                    'is_fork': is_fork,
                     'bdr_summary': 'iOS Base Architecture ready, no translations',
                 }
-                yield (f"🎯 iOS GOLDILOCKS: Base.lproj found, no translations yet!", signal)
+                yield (f"iOS GOLDILOCKS: Base.lproj found, no translations yet!", signal)
             else:
-                yield (f"📱 iOS: Found {other_lproj_count} translation .lproj folders - Already localized", None)
+                yield (f"iOS: Found {other_lproj_count} translation .lproj folders - Already localized", None)
 
     except requests.RequestException as e:
-        yield (f"iOS scan error: {str(e)}", None)
+        error_detail = _format_request_exception(e)
+        yield (f"iOS scan error: {error_detail}", None)
 
     # ============================================================
     # ANDROID DETECTION: strings.xml without translations
@@ -881,31 +1163,38 @@ def _scan_mobile_architecture(org: str, repo: str, company: str) -> Generator[tu
         response = make_github_request(url, timeout=15)
 
         if response.status_code == 200:
-            yield (f"📱 Android: Found {strings_xml_path}", None)
+            yield (f"Android: Found {strings_xml_path}", None)
 
             # Search for values-XX folders (language variants)
+            # FORK EXCEPTION: Skip translation check for forks - translations belong to upstream
             values_folder_count = 0
 
-            # Get contents of res/ folder to check for values-* folders
-            res_url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}/contents/res"
-            res_response = make_github_request(res_url, timeout=15)
+            if is_fork:
+                yield (f"Android FORK: Skipping translation check (upstream translations don't disqualify)", None)
+            else:
+                # Get contents of res/ folder to check for values-* folders
+                res_url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}/contents/res"
+                res_response = make_github_request(res_url, timeout=15)
 
-            if res_response.status_code == 200:
-                res_contents = res_response.json()
-                if isinstance(res_contents, list):
-                    for item in res_contents:
-                        item_name = item.get('name', '')
-                        item_type = item.get('type', '')
-                        # Match values-XX pattern (e.g., values-fr, values-de)
-                        if item_type == 'dir' and re.match(r'^values-[a-z]{2}(-[a-zA-Z]+)?$', item_name):
-                            values_folder_count += 1
+                if res_response.status_code == 200:
+                    res_contents = res_response.json()
+                    if isinstance(res_contents, list):
+                        for item in res_contents:
+                            item_name = item.get('name', '')
+                            item_type = item.get('type', '')
+                            # Match values-XX pattern (e.g., values-fr, values-de)
+                            if item_type == 'dir' and re.match(r'^values-[a-z]{2}(-[a-zA-Z]+)?$', item_name):
+                                values_folder_count += 1
 
-            if values_folder_count == 0:
-                # GOLDILOCKS ZONE: strings.xml exists but no translations!
+            if values_folder_count == 0 or is_fork:
+                # GOLDILOCKS ZONE: strings.xml exists but no translations (or fork - ignore upstream translations)!
+                evidence = "Android GOLDILOCKS: res/values/strings.xml exists but NO values-* folders found - Android app ready for localization!"
+                if is_fork:
+                    evidence = "Android GOLDILOCKS (FORK): res/values/strings.xml exists - fork's upstream translations ignored, treating as preparing!"
                 signal = {
                     'Company': company,
                     'Signal': 'Mobile Architecture (Android)',
-                    'Evidence': f"🎯 Android GOLDILOCKS: res/values/strings.xml exists but NO values-* folders found - Android app ready for localization!",
+                    'Evidence': evidence,
                     'Link': f"https://github.com/{org}/{repo}",
                     'priority': 'CRITICAL',
                     'type': 'mobile_architecture',
@@ -913,17 +1202,19 @@ def _scan_mobile_architecture(org: str, repo: str, company: str) -> Generator[tu
                     'repo': repo,
                     'goldilocks_status': 'preparing',
                     'gap_verified': True,
+                    'is_fork': is_fork,
                     'bdr_summary': 'Android Strings architecture ready, no translations',
                 }
-                yield (f"🎯 Android GOLDILOCKS: strings.xml found, no translations yet!", signal)
+                yield (f"Android GOLDILOCKS: strings.xml found, no translations yet!", signal)
             else:
-                yield (f"📱 Android: Found {values_folder_count} translation values-* folders - Already localized", None)
+                yield (f"Android: Found {values_folder_count} translation values-* folders - Already localized", None)
 
     except requests.RequestException as e:
-        yield (f"Android scan error: {str(e)}", None)
+        error_detail = _format_request_exception(e)
+        yield (f"Android scan error: {error_detail}", None)
 
 
-def _scan_framework_configs(org: str, repo: str, company: str) -> Generator[tuple, None, None]:
+def _scan_framework_configs(org: str, repo: str, company: str, is_fork: bool = False) -> Generator[tuple, None, None]:
     """
     Scan framework configuration files for i18n routing configuration.
 
@@ -934,17 +1225,45 @@ def _scan_framework_configs(org: str, repo: str, company: str) -> Generator[tupl
     Logic: Look for active i18n configuration blocks while ignoring comments.
     Gap Requirement: Only signal if locale folders don't exist.
 
+    Args:
+        org: GitHub organization login
+        repo: Repository name
+        company: Company name for signal attribution
+        is_fork: If True, skip locale folder checks (fork translations belong to upstream)
+
     Yields:
         Tuples of (log_message, signal_object)
     """
     # ============================================================
-    # NEGATIVE CHECK: Verify NO locale folders exist
+    # NEGATIVE CHECK: Verify NO locale folders exist (with source-only exception)
+    # FORK EXCEPTION: Skip this check for forks - their translations belong to upstream
     # ============================================================
-    locale_exists = _check_locale_folders_exist(org, repo)
+    locale_exists = False
+    found_folders = []
+    source_only = False
+    folder_contents = {}
+
+    if is_fork:
+        # Skip locale folder check for forks - translations belong to upstream project
+        yield (f"FORK DETECTED: Skipping locale folder check (upstream translations don't disqualify)", None)
+    else:
+        locale_exists, found_folders, source_only, folder_contents = _check_locale_folders_exist_detailed(org, repo)
 
     if locale_exists:
-        yield ("Framework config scan skipped - locale folders already exist", None)
-        return
+        if source_only:
+            # SOURCE-ONLY EXCEPTION: Folder exists but ONLY contains source files (en.json, etc.)
+            # This means infrastructure is ready, but no translations yet - still a valid lead!
+            all_files = []
+            for folder, files in folder_contents.items():
+                all_files.extend(files)
+            files_str = ', '.join(all_files) if all_files else 'empty'
+            folders_str = ', '.join(found_folders)
+            yield (f"Found locale folder ({folders_str}), but it appears to be source-only ({files_str}) - marking as PREPARING, not LAUNCHED", None)
+            # Continue to positive check - don't return!
+        else:
+            # Locale folders with actual translations exist - skip framework config scan
+            yield (f"Framework config scan skipped - locale folders already exist ({', '.join(found_folders)})", None)
+            return
 
     # ============================================================
     # POSITIVE CHECK: Scan framework config files for i18n patterns
@@ -1003,11 +1322,122 @@ def _scan_framework_configs(org: str, repo: str, company: str) -> Generator[tupl
                         'gap_verified': True,
                         'bdr_summary': f'i18n routing enabled in {config_file}, no translations yet',
                     }
-                    yield (f"🔧 FRAMEWORK CONFIG: i18n routing found in {config_file}", signal)
+                    yield (f"FRAMEWORK CONFIG: i18n routing found in {config_file}", signal)
                     break  # Only one signal per file
 
         except requests.RequestException:
             continue
+
+
+def _scan_documentation_files(org: str, repo: str, company: str) -> Generator[tuple, None, None]:
+    """
+    Signal 4: Documentation Intent Scan (Thinking Phase)
+
+    Target: CHANGELOG.md, CONTRIBUTING.md, README.md, ROADMAP.md
+    Logic: Flag if i18n keywords are found NEAR context words indicating
+           future or in-progress work (e.g., "beta", "roadmap", "upcoming")
+
+    This catches companies mentioning i18n in their documentation before
+    the code is fully live - an early intent signal.
+
+    Gap Requirement: Also checks for "launched" indicators to avoid
+    false positives on companies that already have i18n.
+
+    Yields:
+        Tuples of (log_message, signal_object)
+    """
+    for doc_file in Config.DOCUMENTATION_FILES:
+        try:
+            url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}/contents/{doc_file}"
+            response = make_github_request(url, timeout=15)
+
+            if response.status_code != 200:
+                continue
+
+            file_data = response.json()
+            content_b64 = file_data.get('content', '')
+            file_url = file_data.get('html_url')
+
+            if not content_b64:
+                continue
+
+            try:
+                content = base64.b64decode(content_b64).decode('utf-8')
+            except Exception:
+                continue
+
+            content_lower = content.lower()
+
+            # Determine file priority based on filename
+            file_basename = doc_file.lower().replace('.md', '')
+            file_priority = Config.DOCUMENTATION_FILE_WEIGHTS.get(file_basename, 'MEDIUM')
+
+            # Check for "already launched" indicators first (negative check)
+            has_launched_indicator = False
+            for indicator in Config.DOCUMENTATION_LAUNCHED_INDICATORS:
+                if indicator.lower() in content_lower:
+                    has_launched_indicator = True
+                    break
+
+            if has_launched_indicator:
+                yield (f"Skipping {doc_file} - contains launched indicators", None)
+                continue
+
+            # Search for intent keywords
+            for keyword in Config.DOCUMENTATION_INTENT_KEYWORDS:
+                keyword_lower = keyword.lower()
+                keyword_pos = content_lower.find(keyword_lower)
+
+                while keyword_pos != -1:
+                    # Extract context window around the keyword
+                    window_start = max(0, keyword_pos - Config.DOCUMENTATION_PROXIMITY_CHARS)
+                    window_end = min(len(content_lower), keyword_pos + len(keyword_lower) + Config.DOCUMENTATION_PROXIMITY_CHARS)
+                    context_window = content_lower[window_start:window_end]
+
+                    # Check if any context keyword is within the proximity window
+                    matched_context = None
+                    for context_kw in Config.DOCUMENTATION_CONTEXT_KEYWORDS:
+                        if context_kw.lower() in context_window:
+                            matched_context = context_kw
+                            break
+
+                    if matched_context:
+                        # Extract the actual line containing the keyword for evidence
+                        line_start = content.rfind('\n', 0, keyword_pos) + 1
+                        line_end = content.find('\n', keyword_pos)
+                        if line_end == -1:
+                            line_end = len(content)
+                        matched_line = content[line_start:line_end].strip()
+
+                        # Truncate long lines for readability
+                        if len(matched_line) > 120:
+                            matched_line = matched_line[:117] + '...'
+
+                        signal = {
+                            'Company': company,
+                            'Signal': 'Documentation Intent',
+                            'Evidence': f"Found '{keyword}' near '{matched_context}' in {doc_file}: \"{matched_line}\"",
+                            'Link': file_url,
+                            'priority': file_priority,
+                            'type': 'documentation_intent',
+                            'repo': repo,
+                            'file': doc_file,
+                            'keyword_matched': keyword,
+                            'context_matched': matched_context,
+                            'matched_line': matched_line,
+                            'goldilocks_status': 'thinking',
+                        }
+
+                        yield (f"DOC INTENT ({file_priority}): '{keyword}' + '{matched_context}' in {doc_file}", signal)
+                        # Only one signal per keyword per file to avoid spam
+                        break
+
+                    # Search for next occurrence of the keyword
+                    keyword_pos = content_lower.find(keyword_lower, keyword_pos + 1)
+
+        except requests.RequestException as e:
+            error_detail = _format_request_exception(e)
+            yield (f"Error scanning {doc_file}: {error_detail}", None)
 
 
 def _strip_comments(content: str) -> str:
@@ -1066,44 +1496,248 @@ def _check_locale_folders_exist_detailed(org: str, repo: str) -> tuple:
 
     Source-only folders (e.g., containing just en.json) indicate infrastructure
     is ready but translations haven't started - this is still a GOLDILOCKS ZONE.
+
+    IMPORTANT: Ignores locale folders found inside test/vendor directories
+    (node_modules, vendor, test, tests, fixtures, __tests__) as these are
+    typically test fixtures, not production translation files.
     """
+    # Directories to ignore when searching for locale folders
+    # Test fixtures, documentation, examples, and dependency directories should not count as "launched"
+    IGNORED_PARENT_DIRS = [
+        'node_modules', 'vendor', 'test', 'tests', 'fixtures',
+        '__tests__', '__mocks__', 'spec', 'e2e', 'cypress',
+        'examples', 'example', 'demo', 'demos', 'sample', 'samples',
+        'docs', 'documentation', 'site', 'website', 'temp', 'tmp',
+        'dist', 'build', 'out', 'deps', 'third_party', 'third-party',
+        'external', 'lib', 'libs', 'plugins'
+    ]
+    
+    # Specific path patterns that are NOT i18n locale folders (false positives)
+    # These are editor/syntax files, library internals, etc.
+    # NOTE: Avoid overly broad patterns like 'languages/' which could match legitimate i18n
+    IGNORED_PATH_PATTERNS = [
+        'monaco/languages',      # Monaco editor syntax highlighting
+        'monaco-editor/esm',     # Monaco editor package internal
+        'codemirror/lang',       # CodeMirror language modes
+        'ace/lib/ace/mode',      # Ace editor language modes
+        'prismjs/components',    # Prism syntax highlighting
+        'highlight.js/lib/languages',  # Highlight.js syntax (specific path)
+        'syntaxes/',             # TextMate/VS Code syntax grammars
+        'grammars/',             # Generic grammar definitions
+    ]
+
+    def _is_in_ignored_directory(path: str) -> bool:
+        """Check if a path is inside an ignored directory or a third-party library."""
+        path_lower = path.lower()
+        path_parts = path_lower.split('/')
+        
+        # 1. Check for standard ignored directories
+        for part in path_parts[:-1]:  # Check all parent directories
+            if part in IGNORED_PARENT_DIRS:
+                return True
+        
+        # 2. Check for specific false-positive path patterns (editor syntax files, etc.)
+        for pattern in IGNORED_PATH_PATTERNS:
+            if pattern in path_lower:
+                return True
+                
+        # 3. Check for third-party library patterns in monorepos
+        for i, part in enumerate(path_parts):
+            # Scoped npm packages (e.g., packages/@uppy/locales, packages/@company/lib)
+            if part.startswith('@'):
+                return True
+            
+            # Common monorepo third-party package patterns
+            if part == 'packages' and i < len(path_parts) - 2:
+                # packages/some-library/locales - likely a library's locales, not the main app
+                next_part = path_parts[i + 1]
+                # Allow if it looks like a main app package (common names: app, web, frontend, main, core)
+                main_app_names = ['app', 'web', 'frontend', 'main', 'core', 'client', 'server', 'api']
+                if next_part not in main_app_names:
+                    return True
+        
+        # 4. Skip programming language mode folders (for editors) - but NOT generic 'languages'
+        #    since 'languages' is a legitimate i18n folder in WordPress, Drupal, etc.
+        folder_name = path_parts[-1] if path_parts else ''
+        programming_mode_folders = ['modes', 'syntaxes', 'grammars']  # Exclude 'languages' - it's often legitimate i18n
+        if folder_name in programming_mode_folders:
+            return True
+
+        return False
+
     found_folders = []
     folder_contents = {}
     all_source_only = True  # Assume source-only until proven otherwise
 
+    # First, check root-level locale folders
     for path in Config.EXCLUSION_FOLDERS:
         try:
             url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}/contents/{path}"
             response = make_github_request(url, timeout=10)
             if response.status_code == 200:
-                found_folders.append(path)
-
-                # Parse the folder contents
+                # Parse the folder contents (files AND directories)
                 contents = response.json()
-                files_in_folder = []
+                entries_in_folder = []
+                entry_types = []
 
                 if isinstance(contents, list):
                     for item in contents:
                         item_name = item.get('name', '')
-                        item_type = item.get('type', '')
+                        item_type = item.get('type', '')  # 'file' or 'dir'
+                        entries_in_folder.append(item_name)
+                        entry_types.append(item_type)
 
-                        # Only consider files, not subdirectories
-                        if item_type == 'file':
-                            files_in_folder.append(item_name)
+                # CRITICAL: Validate folder contains actual translation files or locale subdirs
+                # Skip folders with code files that don't look like translations
+                if not _looks_like_translation_folder(entries_in_folder, entry_types):
+                    continue
+                
+                # Separate files and locale subdirectories
+                files_in_folder = [e for e, t in zip(entries_in_folder, entry_types) if t == 'file']
+                locale_subdirs = [e for e, t in zip(entries_in_folder, entry_types) 
+                                  if t == 'dir' and _is_locale_name(e)]
 
+                found_folders.append(path)
                 folder_contents[path] = files_in_folder
 
                 # Check if this folder contains ONLY source locale files
-                if files_in_folder:
+                # For folders with locale subdirs, fetch their contents to verify translations
+                if locale_subdirs:
+                    # Aggregate files from locale subdirs to check for actual translations
+                    source_locales = ['en', 'en-us', 'en-gb', 'en_us', 'en_gb', 'base', 'source']
+                    aggregated_files = list(files_in_folder)  # Start with top-level files
+                    
+                    for subdir in locale_subdirs:
+                        try:
+                            subdir_url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}/contents/{path}/{subdir}"
+                            subdir_response = make_github_request(subdir_url, timeout=10)
+                            if subdir_response.status_code == 200:
+                                subdir_contents = subdir_response.json()
+                                if isinstance(subdir_contents, list):
+                                    # Add files with locale prefix preserved
+                                    for item in subdir_contents:
+                                        if item.get('type') == 'file':
+                                            file_name = item.get('name', '')
+                                            # Always preserve locale prefix for proper evaluation
+                                            aggregated_files.append(f"{subdir}/{file_name}")
+                        except requests.RequestException:
+                            pass
+                    
+                    # Check if aggregated files contain non-source translations
+                    folder_contents[path] = aggregated_files
+                    if aggregated_files:
+                        folder_is_source_only = _is_source_only_folder_with_subdirs(aggregated_files, source_locales)
+                        if not folder_is_source_only:
+                            all_source_only = False
+                elif files_in_folder:
                     folder_is_source_only = _is_source_only_folder(files_in_folder)
                     if not folder_is_source_only:
                         all_source_only = False
-                else:
-                    # Empty folder - treat as source-only (infrastructure ready)
-                    pass
+                # else: Empty folder - treat as source-only (infrastructure ready)
 
         except requests.RequestException:
             continue
+
+    # Also search the repo tree for locale folders in subdirectories
+    # (e.g., app/locales, src/i18n, packages/web/translations)
+    try:
+        repo_url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}"
+        repo_response = make_github_request(repo_url, timeout=15)
+        default_branch = repo_response.json().get('default_branch', 'main') if repo_response.status_code == 200 else 'main'
+
+        tree_url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}/git/trees/{default_branch}"
+        tree_response = make_github_request(tree_url, params={'recursive': 1}, timeout=30)
+
+        if tree_response.status_code == 200:
+            tree_entries = tree_response.json().get('tree', [])
+            locale_folder_names = set(Config.EXCLUSION_FOLDERS)
+
+            for entry in tree_entries:
+                if entry.get('type') != 'tree':  # Only look at directories
+                    continue
+
+                entry_path = entry.get('path', '')
+                folder_name = entry_path.split('/')[-1].lower()
+
+                # Check if this is a locale folder by name
+                if folder_name not in locale_folder_names:
+                    continue
+
+                # Skip if already found at root level
+                if entry_path in found_folders:
+                    continue
+
+                # CRITICAL: Skip if inside an ignored directory (test fixtures, node_modules, etc.)
+                if _is_in_ignored_directory(entry_path):
+                    continue
+
+                # Fetch folder contents to validate it's actually a translation folder
+                try:
+                    folder_url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}/contents/{entry_path}"
+                    folder_response = make_github_request(folder_url, timeout=10)
+
+                    if folder_response.status_code == 200:
+                        contents = folder_response.json()
+                        entries_in_folder = []
+                        entry_types_list = []
+
+                        if isinstance(contents, list):
+                            for item in contents:
+                                item_name = item.get('name', '')
+                                item_type = item.get('type', '')  # 'file' or 'dir'
+                                entries_in_folder.append(item_name)
+                                entry_types_list.append(item_type)
+
+                        # CRITICAL: Validate folder contains actual translation files or locale subdirs
+                        # Skip folders with code files that don't look like translations
+                        if not _looks_like_translation_folder(entries_in_folder, entry_types_list):
+                            continue
+
+                        # Separate files and locale subdirectories
+                        files_in_folder = [e for e, t in zip(entries_in_folder, entry_types_list) if t == 'file']
+                        locale_subdirs = [e for e, t in zip(entries_in_folder, entry_types_list) 
+                                          if t == 'dir' and _is_locale_name(e)]
+
+                        # Valid locale folder with translation files
+                        found_folders.append(entry_path)
+                        folder_contents[entry_path] = files_in_folder
+
+                        # Check if this folder contains ONLY source locale files
+                        # For folders with locale subdirs, fetch their contents to verify translations
+                        if locale_subdirs:
+                            source_locales = ['en', 'en-us', 'en-gb', 'en_us', 'en_gb', 'base', 'source']
+                            aggregated_files = list(files_in_folder)
+                            
+                            for subdir in locale_subdirs:
+                                try:
+                                    subdir_url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}/contents/{entry_path}/{subdir}"
+                                    subdir_response = make_github_request(subdir_url, timeout=10)
+                                    if subdir_response.status_code == 200:
+                                        subdir_contents = subdir_response.json()
+                                        if isinstance(subdir_contents, list):
+                                            for item in subdir_contents:
+                                                if item.get('type') == 'file':
+                                                    file_name = item.get('name', '')
+                                                    # Always preserve locale prefix for proper evaluation
+                                                    aggregated_files.append(f"{subdir}/{file_name}")
+                                except requests.RequestException:
+                                    pass
+                            
+                            folder_contents[entry_path] = aggregated_files
+                            if aggregated_files:
+                                folder_is_source_only = _is_source_only_folder_with_subdirs(aggregated_files, source_locales)
+                                if not folder_is_source_only:
+                                    all_source_only = False
+                        elif files_in_folder:
+                            folder_is_source_only = _is_source_only_folder(files_in_folder)
+                            if not folder_is_source_only:
+                                all_source_only = False
+
+                except requests.RequestException:
+                    pass
+
+    except requests.RequestException:
+        pass  # Tree search failure is non-fatal
 
     folders_exist = len(found_folders) > 0
 
@@ -1111,6 +1745,133 @@ def _check_locale_folders_exist_detailed(org: str, repo: str) -> tuple:
     source_only = all_source_only if folders_exist else False
 
     return (folders_exist, found_folders, source_only, folder_contents)
+
+
+def _looks_like_translation_folder(files_and_dirs: list, entry_types: list = None) -> bool:
+    """
+    Check if folder contents look like actual translation files (not code/syntax files).
+    
+    Translation files typically have patterns like:
+    - Locale-named JSON/YAML: en.json, fr.json, de-DE.json, zh_CN.yml
+    - Standard translation formats: messages.po, translations.xliff, strings.xml
+    - gettext files: *.pot, *.po, *.mo
+    - Locale-named SUBDIRECTORIES: en/, fr/, de-DE/, zh_CN/ (common in React, Rails, etc.)
+    
+    Non-translation "messages" folders typically contain:
+    - JavaScript/TypeScript files: MessageHandler.js, ChatMessage.tsx
+    - Generic code files without locale patterns
+    
+    Args:
+        files_and_dirs: List of filenames/directory names in the folder
+        entry_types: Optional list of types ('file' or 'dir') matching files_and_dirs
+    
+    Returns:
+        True if the folder looks like it contains actual translations
+    """
+    if not files_and_dirs:
+        return False  # Empty folder is not a translation folder
+    
+    # Known translation file extensions
+    TRANSLATION_EXTENSIONS = ['.po', '.pot', '.mo', '.xliff', '.xlf', '.arb', '.properties']
+    
+    # Locale-pattern regex: matches files/dirs like en.json, fr-FR.json, zh_CN.yml, or just 'en', 'fr-FR'
+    locale_pattern = re.compile(r'^[a-z]{2}([_-][a-z]{2,4})?(\.[a-z]+)?$', re.IGNORECASE)
+    
+    translation_indicator_count = 0
+    total_relevant_entries = 0
+    
+    for i, entry_name in enumerate(files_and_dirs):
+        entry_name_lower = entry_name.lower()
+        entry_type = entry_types[i] if entry_types and i < len(entry_types) else None
+        
+        # Skip obvious non-translation entries
+        if entry_name_lower.startswith('.') or entry_name_lower == 'readme.md':
+            continue
+        
+        # Handle directories (locale-named subdirs like 'en/', 'fr-FR/')
+        if entry_type == 'dir':
+            total_relevant_entries += 1
+            # Check if directory name matches locale pattern (e.g., 'en', 'fr', 'de-DE', 'zh_CN')
+            if locale_pattern.match(entry_name_lower):
+                translation_indicator_count += 1
+            continue
+            
+        # Check for known translation extensions (files only)
+        for ext in TRANSLATION_EXTENSIONS:
+            if entry_name_lower.endswith(ext):
+                translation_indicator_count += 1
+                total_relevant_entries += 1
+                break
+        else:
+            # Check if it's a JSON/YAML/JS file with locale-like name
+            if entry_name_lower.endswith(('.json', '.yml', '.yaml')):
+                total_relevant_entries += 1
+                # Check if filename matches locale pattern (e.g., en.json, fr-CA.json)
+                if locale_pattern.match(entry_name_lower):
+                    translation_indicator_count += 1
+                # Also check for common translation file names
+                elif any(name in entry_name_lower for name in ['translation', 'message', 'string', 'locale']):
+                    translation_indicator_count += 1
+            elif entry_name_lower.endswith(('.js', '.ts', '.jsx', '.tsx')):
+                # JS/TS files - only count if they match locale patterns
+                total_relevant_entries += 1
+                if locale_pattern.match(entry_name_lower):
+                    translation_indicator_count += 1
+    
+    # Folder looks like translations if at least one translation indicator exists
+    # and a reasonable portion of contents are translation-like
+    if total_relevant_entries == 0:
+        return False
+    
+    return translation_indicator_count >= 1 and (translation_indicator_count / total_relevant_entries) >= 0.3
+
+
+def _is_locale_name(name: str) -> bool:
+    """
+    Check if a directory name looks like a locale identifier.
+    
+    Examples: en, fr, de-DE, zh_CN, pt-BR
+    """
+    locale_pattern = re.compile(r'^[a-z]{2}([_-][a-z]{2,4})?$', re.IGNORECASE)
+    return bool(locale_pattern.match(name))
+
+
+def _is_source_only_folder_with_subdirs(files: list, source_locales: list) -> bool:
+    """
+    Check if aggregated files from locale subdirs contain ONLY source language files.
+    
+    Files are in format: "locale/filename" where locale is the subdir name.
+    If any file has a non-source locale prefix, folder has translations.
+    
+    The key insight: the locale SUBDIR NAME determines if it's source or not.
+    The actual filename inside the subdir doesn't matter for classification.
+    
+    Examples:
+    - ["en/messages.json"] -> True (source-only: "en" is source locale)
+    - ["en/messages.json", "fr/messages.json"] -> False (has "fr" which is not source)
+    - ["en.json", "base.json"] -> True (top-level source files)
+    - ["en.json", "fr.json"] -> False (has "fr" which is not source)
+    """
+    if not files:
+        return True  # Empty = source-only
+    
+    for filename in files:
+        # Check if file is from a locale subdir (has prefix)
+        if '/' in filename:
+            # Has subdir prefix (e.g., "en/messages.json" or "fr/messages.json")
+            # The SUBDIR NAME determines if it's source - not the filename inside
+            locale_prefix = filename.split('/')[0].lower()
+            if locale_prefix not in source_locales:
+                # File from non-source locale (fr, de, etc.) = has translations
+                return False
+            # File from source locale (en, en-us, etc.) is source-only, continue
+        else:
+            # Top-level file - check against known source patterns (en.json, base.json, etc.)
+            if filename.lower() not in Config.SOURCE_LOCALE_PATTERNS:
+                # Not a recognized source file - could be a translation (like fr.json)
+                return False
+    
+    return True
 
 
 def _is_source_only_folder(files: list) -> bool:
@@ -1162,7 +1923,7 @@ def _check_locale_folders_exist(org: str, repo: str) -> bool:
     return False
 
 
-def _scan_ghost_branches(org: str, repo: str, company: str) -> Generator[tuple, None, None]:
+def _scan_ghost_branches(org: str, repo: str, company: str, since_timestamp: datetime = None) -> Generator[tuple, None, None]:
     """
     Signal 3: Ghost Branch Scan (Active Phase)
 
@@ -1174,6 +1935,11 @@ def _scan_ghost_branches(org: str, repo: str, company: str) -> Generator[tuple, 
     Yields:
         Tuples of (log_message, signal_object)
     """
+    if since_timestamp:
+        cutoff_date = since_timestamp.replace(tzinfo=timezone.utc) if since_timestamp.tzinfo is None else since_timestamp
+    else:
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=90)
+
     # Scan branches
     try:
         url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}/branches"
@@ -1186,6 +1952,12 @@ def _scan_ghost_branches(org: str, repo: str, company: str) -> Generator[tuple, 
 
             for branch in branches:
                 branch_name = branch.get('name', '').lower()
+                commit_date = _parse_github_datetime(
+                    branch.get('commit', {}).get('commit', {}).get('committer', {}).get('date')
+                    or branch.get('commit', {}).get('commit', {}).get('author', {}).get('date')
+                )
+                if commit_date and commit_date < cutoff_date:
+                    continue
 
                 # Check against ghost branch patterns
                 for pattern in Config.GHOST_BRANCH_PATTERNS:
@@ -1204,11 +1976,12 @@ def _scan_ghost_branches(org: str, repo: str, company: str) -> Generator[tuple, 
                             'pattern_matched': pattern,
                         }
 
-                        yield (f"👻 GHOST BRANCH: {branch.get('name')}", signal)
+                        yield (f"GHOST BRANCH: {branch.get('name')}", signal)
                         break  # Only match once per branch
 
     except requests.RequestException as e:
-        yield (f"Error scanning branches: {str(e)}", None)
+        error_detail = _format_request_exception(e)
+        yield (f"Error scanning branches: {error_detail}", None)
 
     # Scan unmerged PRs
     try:
@@ -1230,6 +2003,9 @@ def _scan_ghost_branches(org: str, repo: str, company: str) -> Generator[tuple, 
                 head_branch = pr.get('head', {}).get('ref', '').lower()
                 pr_url = pr.get('html_url')
                 pr_number = pr.get('number')
+                updated_at = _parse_github_datetime(pr.get('updated_at') or pr.get('created_at'))
+                if updated_at and updated_at < cutoff_date:
+                    continue
 
                 # Check title and branch for ghost patterns
                 text_to_check = f"{title} {head_branch}"
@@ -1252,11 +2028,21 @@ def _scan_ghost_branches(org: str, repo: str, company: str) -> Generator[tuple, 
                             'created_at': pr.get('created_at'),
                         }
 
-                        yield (f"👻 UNMERGED PR: #{pr_number} - {pr.get('title')[:40]}...", signal)
+                        yield (f"UNMERGED PR: #{pr_number} - {pr.get('title')[:40]}...", signal)
                         break  # Only match once per PR
 
     except requests.RequestException as e:
-        yield (f"Error scanning PRs: {str(e)}", None)
+        error_detail = _format_request_exception(e)
+        yield (f"Error scanning PRs: {error_detail}", None)
+
+
+def _parse_github_datetime(value: Optional[str]) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        return datetime.strptime(value, '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
 
 
 def _calculate_intent_score(scan_results: dict) -> int:
@@ -1276,17 +2062,111 @@ def _calculate_intent_score(scan_results: dict) -> int:
     signals = scan_results.get('signals', [])
 
     # ============================================================
-    # MEGA-CORP HEURISTIC: Detect high-maturity orgs without Preparing signals
+    # Check for PREPARING status (Goldilocks Zone!) - HIGHEST PRIORITY
+    # ============================================================
+    # This check MUST come before "Already Launched" to ensure that if a company
+    # has ONE localized repo but is actively preparing another (Smoking Gun),
+    # we don't disqualify them based on the single localized repo.
+    # We want to capture the NEW opportunity.
+    dep_hits = summary.get('dependency_injection', {}).get('hits', [])
+    goldilocks_hits = [h for h in dep_hits if h.get('goldilocks_status') == 'preparing' or h.get('gap_verified')]
+
+    # SMOKING GUN FORKS are ALWAYS PREPARING status - forking an i18n library
+    # is even stronger intent than just using it as a dependency!
+    smoking_gun_hits = summary.get('smoking_gun_fork', {}).get('hits', [])
+    
+    # Combine both types of PREPARING signals
+    all_preparing_hits = goldilocks_hits + smoking_gun_hits
+
+    if all_preparing_hits:
+        # This is the GOLDILOCKS ZONE!
+        # Library found + No locale folders = PERFECT TIMING
+        # OR forked i18n library = ACTIVE CUSTOMIZATION
+        scan_results['goldilocks_status'] = 'preparing'
+        scan_results['lead_status'] = Config.LEAD_STATUS_LABELS.get('preparing', 'HOT LEAD')
+
+        # Score based on number of signals (90-100 range)
+        base_score = Config.GOLDILOCKS_SCORES.get('preparing_min', 90)
+        bonus = min(len(all_preparing_hits) * 5, 10)  # Up to +10 bonus
+
+        # Smoking gun forks get extra bonus - they're forking the source!
+        if smoking_gun_hits:
+            bonus = max(bonus, 8)  # At least +8 for any smoking gun fork
+
+        # Add bonus for ghost branches (active work)
+        ghost_count = summary.get('ghost_branch', {}).get('count', 0)
+        if ghost_count > 0:
+            bonus = 10  # Max bonus if actively working on it
+
+        return min(base_score + bonus, Config.GOLDILOCKS_SCORES.get('preparing_max', 100))
+
+    # ============================================================
+    # Check for LAUNCHED status (disqualifying condition)
+    # ============================================================
+    # Only if NO preparing signals were found, does a launched signal disqualify.
+    already_launched_signals = [s for s in signals if s.get('type') == 'already_launched']
+    if already_launched_signals:
+        # They have locale folders - TOO LATE
+        scan_results['goldilocks_status'] = 'launched'
+        scan_results['lead_status'] = Config.LEAD_STATUS_LABELS.get('launched', 'LOW PRIORITY')
+        return Config.GOLDILOCKS_SCORES.get('launched', 10)
+
+    # ============================================================
+    # Check for THINKING status (RFC/Discussion OR Documentation Intent)
+    # ============================================================
+    # This check MUST come before the Mega-Corp heuristic to ensure
+    # valid thinking signals (RFCs/Discussions/Documentation) take precedence
+    rfc_count = summary.get('rfc_discussion', {}).get('count', 0)
+    doc_count = summary.get('documentation_intent', {}).get('count', 0)
+
+    if rfc_count > 0 or doc_count > 0:
+        scan_results['goldilocks_status'] = 'thinking'
+        scan_results['lead_status'] = Config.LEAD_STATUS_LABELS.get('thinking', 'WARM LEAD')
+
+        # Base score for thinking
+        base_score = Config.GOLDILOCKS_SCORES.get('thinking', 40)
+
+        # Bonus for HIGH priority discussions
+        rfc_high_priority = summary.get('rfc_discussion', {}).get('high_priority_count', 0)
+        rfc_bonus = min(rfc_high_priority * 10, 15)  # Up to +15 for RFC high priority
+
+        # Bonus for HIGH priority documentation signals (CHANGELOG, ROADMAP)
+        doc_high_priority = summary.get('documentation_intent', {}).get('high_priority_count', 0)
+        doc_bonus = min(doc_high_priority * 8, 15)  # Up to +15 for doc high priority
+
+        # Combined bonus (cap at +25)
+        total_bonus = min(rfc_bonus + doc_bonus, 25)
+
+        return min(base_score + total_bonus, 65)  # Cap at 65 for thinking
+
+    # ============================================================
+    # Check for Ghost Branches only (Active experimentation)
+    # ============================================================
+    ghost_count = summary.get('ghost_branch', {}).get('count', 0)
+    if ghost_count > 0:
+        scan_results['goldilocks_status'] = 'thinking'
+        scan_results['lead_status'] = Config.LEAD_STATUS_LABELS.get('thinking', 'WARM LEAD')
+        return min(35 + ghost_count * 5, 50)
+
+    # ============================================================
+    # MEGA-CORP HEURISTIC: Detect high-maturity orgs without any other signals
     # ============================================================
     # Large engineering orgs (Airbnb, Uber, Facebook, etc.) often use custom/internal
     # i18n solutions that won't appear in our standard library scans. If they have
-    # significant GitHub presence but no Preparing signals, they've likely already
+    # significant GitHub presence but no other signals, they've likely already
     # launched with proprietary tooling.
+    #
+    # IMPORTANT: This check runs LAST after all other signals (Preparing, Thinking, Ghost)
+    # to ensure valid intent signals take precedence.
     total_stars = scan_results.get('total_stars', 0)
     public_repos = scan_results.get('org_public_repos', 0)
+    repos_scanned = len(scan_results.get('repos_scanned', []))
 
-    if total_stars > 5000 or public_repos > 100:
-        # High-maturity org with no Preparing signals = Already Launched
+    # Only apply mega-corp heuristic if:
+    # 1. We actually scanned repos (repos_scanned > 0)
+    # 2. The org has very high activity (stars > 20000 OR repos > 400)
+    if repos_scanned > 0 and (total_stars > 20000 or public_repos > 400):
+        # High-maturity org with no Preparing/Thinking signals = Already Launched
         scan_results['goldilocks_status'] = 'launched'
         scan_results['lead_status'] = Config.LEAD_STATUS_LABELS.get('launched', 'LOW PRIORITY')
         scan_results['mega_corp_heuristic'] = True
@@ -1307,63 +2187,6 @@ def _calculate_intent_score(scan_results: dict) -> int:
         signals.append(mega_corp_signal)
 
         return Config.GOLDILOCKS_SCORES.get('launched', 10)
-
-    # ============================================================
-    # Check for LAUNCHED status (disqualifying condition)
-    # ============================================================
-    already_launched_signals = [s for s in signals if s.get('type') == 'already_launched']
-    if already_launched_signals:
-        # They have locale folders - TOO LATE
-        scan_results['goldilocks_status'] = 'launched'
-        scan_results['lead_status'] = Config.LEAD_STATUS_LABELS.get('launched', 'LOW PRIORITY')
-        return Config.GOLDILOCKS_SCORES.get('launched', 10)
-
-    # ============================================================
-    # Check for PREPARING status (Goldilocks Zone!)
-    # ============================================================
-    dep_hits = summary.get('dependency_injection', {}).get('hits', [])
-    goldilocks_hits = [h for h in dep_hits if h.get('goldilocks_status') == 'preparing' or h.get('gap_verified')]
-
-    if goldilocks_hits:
-        # This is the GOLDILOCKS ZONE!
-        # Library found + No locale folders = PERFECT TIMING
-        scan_results['goldilocks_status'] = 'preparing'
-        scan_results['lead_status'] = Config.LEAD_STATUS_LABELS.get('preparing', 'HOT LEAD')
-
-        # Score based on number of libraries found (90-100 range)
-        base_score = Config.GOLDILOCKS_SCORES.get('preparing_min', 90)
-        bonus = min(len(goldilocks_hits) * 5, 10)  # Up to +10 bonus
-
-        # Add bonus for ghost branches (active work)
-        ghost_count = summary.get('ghost_branch', {}).get('count', 0)
-        if ghost_count > 0:
-            bonus = 10  # Max bonus if actively working on it
-
-        return min(base_score + bonus, Config.GOLDILOCKS_SCORES.get('preparing_max', 100))
-
-    # ============================================================
-    # Check for THINKING status
-    # ============================================================
-    rfc_count = summary.get('rfc_discussion', {}).get('count', 0)
-    if rfc_count > 0:
-        scan_results['goldilocks_status'] = 'thinking'
-        scan_results['lead_status'] = Config.LEAD_STATUS_LABELS.get('thinking', 'WARM LEAD')
-
-        # Base score for thinking + bonus for HIGH priority discussions
-        base_score = Config.GOLDILOCKS_SCORES.get('thinking', 40)
-        high_priority_count = summary.get('rfc_discussion', {}).get('high_priority_count', 0)
-        bonus = min(high_priority_count * 10, 20)  # Up to +20 for high priority
-
-        return min(base_score + bonus, 60)  # Cap at 60 for thinking
-
-    # ============================================================
-    # Check for Ghost Branches only (Active experimentation)
-    # ============================================================
-    ghost_count = summary.get('ghost_branch', {}).get('count', 0)
-    if ghost_count > 0:
-        scan_results['goldilocks_status'] = 'thinking'
-        scan_results['lead_status'] = Config.LEAD_STATUS_LABELS.get('thinking', 'WARM LEAD')
-        return min(35 + ghost_count * 5, 50)
 
     # ============================================================
     # No signals found

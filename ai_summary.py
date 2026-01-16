@@ -7,8 +7,69 @@ Generates actionable sales intelligence from pre-launch i18n signals:
 - Ghost Branch (Active Phase)
 """
 import json
+import os
 from typing import Generator
 from config import Config
+
+
+def _load_cold_outreach_skill() -> str:
+    """Load the cold-outreach SKILL.md file if it exists."""
+    skill_paths = [
+        '.agent/skills/cold-outreach/SKILL.md',
+        'skills/cold-outreach/SKILL.md',
+        '.agent/skill/cold-outreach/SKILL.md',
+    ]
+    
+    for path in skill_paths:
+        if os.path.exists(path):
+            try:
+                with open(path, 'r') as f:
+                    content = f.read()
+                    print(f"[AI] Loaded cold outreach skill from: {path}")
+                    return content
+            except Exception as e:
+                print(f"[AI] Failed to load skill from {path}: {e}")
+    
+    print("[AI] No cold-outreach skill file found, using defaults")
+    return ""
+
+
+def _get_cold_email_instructions() -> str:
+    """Get cold email instructions from SKILL.md or use defaults."""
+    skill_content = _load_cold_outreach_skill()
+    
+    if skill_content:
+        return f"""
+   *** COLD OUTREACH SKILL INSTRUCTIONS (FROM SKILL.md) ***
+   Follow these instructions EXACTLY when drafting the cold email:
+   
+{skill_content}
+   
+   *** END OF SKILL INSTRUCTIONS ***
+"""
+    
+    return """
+   FORMATTING RULES:
+   - Total body MUST be under 120 words
+   - NEVER write a paragraph longer than 2 sentences
+   - Use double line breaks between thoughts (visual spacing matters)
+   - Tone: peer-to-peer, technical, helpful - NOT "salesy" or enthusiastic
+   
+   STRUCTURE (3 parts):
+   a) "subject": Short, references specific library/file/signal found (e.g., "Saw you added react-i18next")
+   b) "body": Follow this exact structure:
+      - THE HOOK: Start IMMEDIATELY with the specific library, file, or branch you found.
+        Do NOT use "I hope you are well" or pleasantries.
+        Example: "I noticed you recently added `react-i18next` to your `package.json`."
+      - THE PAIN/VALUE: Connect that signal to the pain of manual localization.
+        Mention GitHub Actions/API integration and automation.
+      - THE SOFT CTA: Ask for INTEREST, not time. Low friction.
+        Examples: "Worth a chat?" or "Open to seeing how we fit into your CI/CD?"
+   
+   PHRASE MESSAGING:
+   - DO mention: automation, API, GitHub integration, "infrastructure," "continuous localization"
+   - DO NOT mention: "high quality translations," "professional linguists" (devs care about process, not linguists)
+"""
 
 try:
     from google import genai
@@ -63,7 +124,7 @@ def generate_analysis(scan_data: dict) -> Generator[str, None, dict]:
 
         analysis = _parse_gemini_response(response.text, scan_data)
 
-        yield _sse_log("✅ AI Sales Intelligence Complete")
+        yield _sse_log("AI Sales Intelligence Complete")
         yield _sse_data('ANALYSIS_COMPLETE', analysis)
 
         return analysis
@@ -165,8 +226,11 @@ Generate a JSON response with these fields. USE BOLD, PUNCHY, NON-TECHNICAL LANG
    Example: {{"finding": "Found react-i18next - Infrastructure is READY but no translations exist yet", "significance": "critical", "sales_angle": "They built the car but have no gas. Offer to fill the tank."}}
 
 5. "cold_email_draft":
-   - "subject": Short, punchy, references their specific situation
-   - "body": 3 sentences max. Reference what you found. Non-technical.
+   Generate a hyper-personalized cold email following these STRICT rules:
+   
+{_get_cold_email_instructions()}
+
+   Return as: {{"subject": "...", "body": "..."}}
 
 6. "conversation_starters": (list of 3 questions BDRs can ask)
    - Non-technical, open-ended questions
@@ -320,44 +384,44 @@ def _generate_fallback_analysis(scan_data: dict) -> dict:
     else:
         executive_summary = f"COLD LEAD - No significant i18n signals detected for {company}. Consider for future outreach or skip."
 
-    # Build email draft based on Goldilocks status
+    # Build email draft based on Goldilocks status (following Cold Outreach Skill rules)
     if goldilocks_status == 'preparing':
         lib = dep_hits[0].get('libraries_found', ['i18n library'])[0] if dep_hits else 'i18n library'
-        email_subject = f"Saw you added {lib} - ready to help you launch globally"
+        email_subject = f"{lib} in {org_name} / {company}"
         email_body = (
-            f"Hi! I noticed you've added {lib} to your codebase but don't have any locale files yet. "
-            f"This is actually the perfect timing - you can set up the architecture right before any technical debt builds up. "
-            f"Quick 15-min call to share what's worked for similar teams?"
+            f"I noticed you recently added {lib} to your codebase, but haven't started on the locale files yet.\n\n"
+            f"Usually, this is when the manual JSON file management headache begins. We've built Phrase to automate that infrastructure via GitHub Sync, so your team never has to touch a translation file manually.\n\n"
+            f"Worth a look to see how we fit into your workflow?"
         )
     elif goldilocks_status == 'launched':
-        email_subject = f"Quick question about your localization setup"
+        email_subject = f"Localization scale in {company}"
         email_body = (
-            f"Hi, I saw you already have localization set up. "
-            f"Curious if you're happy with your current workflow or exploring improvements? "
-            f"Either way, no pressure - just reaching out."
+            f"I was doing some forensics on {company}'s GitHub footprint and saw you already have a mature localization setup.\n\n"
+            f"Curious if the team is feeling any pain around manual file handoffs or sync bottlenecks? We help teams like yours remove that friction via our CI/CD integrations.\n\n"
+            f"Worth a 5-minute chat to see if we can save your team some technical debt?"
         )
     elif dominant_phase == 'Active':
         branch = ghost_hits[0].get('branch_name', 'i18n branch') if ghost_hits else 'i18n branch'
         email_subject = f"Saw your {branch} work - can we help?"
         email_body = (
-            f"Hi, I noticed your team has been working on internationalization (saw the {branch} branch). "
-            f"Many teams hit unexpected complexity during this phase - translation sync, key management, workflow automation. "
-            f"Happy to share how we help teams ship i18n faster - interested in a quick conversation?"
+            f"I noticed your team has been actively working on internationalization in the {branch} branch.\n\n"
+            f"Many teams hit unexpected complexity during this phase with key management and automation. We've built Phrase specifically to handle the infrastructure so your devs can focus on the code.\n\n"
+            f"Open to seeing how we fit into your CI/CD?"
         )
     elif dominant_phase == 'Thinking':
         keyword = rfc_hits[0].get('keywords_matched', ['i18n'])[0] if rfc_hits else 'internationalization'
-        email_subject = f"Re: {keyword} - thoughts from the trenches"
+        email_subject = f"Re: {keyword} - automated infrastructure for {company}"
         email_body = (
-            f"Hi, I came across your team's discussion about {keyword}. "
-            f"We've helped many teams navigate this decision - happy to share learnings on what approaches work best. "
-            f"Would a quick call be useful before you finalize your strategy?"
+            f"I came across your team's discussion about {keyword} in your repositories.\n\n"
+            f"We've helped many teams automate the handoff between developers and translators before the first file is even created. It saves a massive amount of technical debt down the line.\n\n"
+            f"Worth a chat to see how to automate the file handoff?"
         )
     else:
-        email_subject = f"Internationalization opportunities at {company}"
+        email_subject = f"Localization infrastructure at {company}"
         email_body = (
-            f"Hi, I've been researching {company}'s technical stack. "
-            f"Many companies at your stage start thinking about international expansion. "
-            f"Would you be open to a quick chat about your roadmap?"
+            f"I've been researching {company}'s technical stack and noticed you're at the perfect stage to think about localization automation.\n\n"
+            f"Most teams wait until they have a manual mess of files before looking at Phrase, but setting up the GitHub Sync now prevents the headache entirely.\n\n"
+            f"Open to a quick tactical assessment of your global readiness?"
         )
 
     # Build key findings - BDR-friendly language

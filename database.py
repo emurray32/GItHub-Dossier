@@ -4,7 +4,8 @@ SQLite database module for storing Lead Machine reports.
 import sqlite3
 import json
 import os
-from datetime import datetime
+import time
+from datetime import datetime, timedelta
 from typing import Optional
 from config import Config
 
@@ -89,6 +90,20 @@ def init_db() -> None:
         ON monitored_accounts(company_name)
     ''')
 
+    # Case-insensitive indices for faster JOINs and lookups
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_accounts_company_lower
+        ON monitored_accounts(LOWER(company_name))
+    ''')
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_accounts_org_lower
+        ON monitored_accounts(LOWER(github_org))
+    ''')
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_reports_company_lower
+        ON reports(LOWER(company_name))
+    ''')
+
     # System Settings table - key-value store
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS system_settings (
@@ -154,6 +169,101 @@ def init_db() -> None:
 
     conn.commit()
     conn.close()
+
+    # Run duplicate cleanup on initialization
+    cleanup_duplicate_accounts()
+
+
+def cleanup_duplicate_accounts() -> dict:
+    """
+    Remove duplicate accounts based on both Company Name and GitHub Organization.
+    Keeps the 'best' account: Highest Tier > Most Recent Scan > Newest ID.
+    
+    Returns:
+        Dictionary with cleanup results: {deleted: int, kept: int, groups: list}
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    deleted_count = 0
+    kept_count = 0
+    groups_cleaned = []
+
+    try:
+        # Step 1: Find duplicates by Company Name (case-insensitive)
+        cursor.execute('''
+            SELECT LOWER(company_name) as normalized_name, COUNT(*) as count
+            FROM monitored_accounts
+            GROUP BY LOWER(company_name)
+            HAVING count > 1
+        ''')
+        name_duplicates = cursor.fetchall()
+        
+        for row in name_duplicates:
+            name = row['normalized_name']
+            
+            cursor.execute('''
+                SELECT * FROM monitored_accounts 
+                WHERE LOWER(company_name) = ?
+                ORDER BY current_tier DESC, last_scanned_at DESC, id DESC
+            ''', (name,))
+            
+            accounts = cursor.fetchall()
+            if len(accounts) > 1:
+                keep_id = accounts[0]['id']
+                remove_ids = [acc['id'] for acc in accounts[1:]]
+                
+                placeholders = ','.join('?' * len(remove_ids))
+                cursor.execute(f'DELETE FROM monitored_accounts WHERE id IN ({placeholders})', remove_ids)
+                
+                deleted_count += len(remove_ids)
+                kept_count += 1
+                groups_cleaned.append({'name': name, 'type': 'name', 'kept_id': keep_id, 'removed_count': len(remove_ids)})
+
+        # Step 2: Find duplicates by GitHub Org (case-insensitive)
+        cursor.execute('''
+            SELECT github_org, COUNT(*) as count
+            FROM monitored_accounts
+            WHERE github_org IS NOT NULL AND github_org != ''
+            GROUP BY LOWER(github_org)
+            HAVING count > 1
+        ''')
+        org_duplicates = cursor.fetchall()
+        
+        for row in org_duplicates:
+            org = row['github_org']
+            
+            cursor.execute('''
+                SELECT * FROM monitored_accounts 
+                WHERE LOWER(github_org) = LOWER(?)
+                ORDER BY current_tier DESC, last_scanned_at DESC, id DESC
+            ''', (org,))
+            
+            accounts = cursor.fetchall()
+            if len(accounts) > 1:
+                keep_id = accounts[0]['id']
+                # Filter out accounts that might have already been deleted in Step 1
+                # (though usually they would have been deleted already if they shared a name)
+                remove_ids = [acc['id'] for acc in accounts[1:]]
+                
+                placeholders = ','.join('?' * len(remove_ids))
+                cursor.execute(f'DELETE FROM monitored_accounts WHERE id IN ({placeholders})', remove_ids)
+                
+                deleted_count += len(remove_ids)
+                kept_count += 1
+                groups_cleaned.append({'org': org, 'type': 'org', 'kept_id': keep_id, 'removed_count': len(remove_ids)})
+                
+        conn.commit()
+    except Exception as e:
+        print(f"[CLEANUP] Error removing duplicates: {e}")
+        conn.rollback()
+    finally:
+        conn.close()
+        
+    return {
+        'deleted': deleted_count,
+        'kept': kept_count,
+        'groups': groups_cleaned
+    }
 
 
 def save_report(
@@ -382,11 +492,11 @@ TIER_LAUNCHED = 3    # Too Late - Already launched
 TIER_INVALID = 4     # Disqualified - GitHub org not found or no public repos
 
 TIER_CONFIG = {
-    TIER_TRACKING: {'name': 'Tracking', 'status': 'Cold', 'color': 'grey', 'emoji': '⚪'},
-    TIER_THINKING: {'name': 'Thinking', 'status': 'Warm', 'color': 'yellow', 'emoji': '🟡'},
-    TIER_PREPARING: {'name': 'Preparing', 'status': 'Hot Lead', 'color': 'green', 'emoji': '🟢'},
-    TIER_LAUNCHED: {'name': 'Launched', 'status': 'Too Late', 'color': 'red', 'emoji': '🔴'},
-    TIER_INVALID: {'name': 'Not Found', 'status': 'Disqualified', 'color': 'dark-grey', 'emoji': '🚫'},
+    TIER_TRACKING: {'name': 'Tracking', 'status': 'Cold', 'color': 'grey', 'emoji': ''},
+    TIER_THINKING: {'name': 'Thinking', 'status': 'Warm', 'color': 'yellow', 'emoji': ''},
+    TIER_PREPARING: {'name': 'Preparing', 'status': 'Hot Lead', 'color': 'green', 'emoji': ''},
+    TIER_LAUNCHED: {'name': 'Launched', 'status': 'Too Late', 'color': 'red', 'emoji': ''},
+    TIER_INVALID: {'name': 'Not Found', 'status': 'Disqualified', 'color': 'dark-grey', 'emoji': ''},
 }
 
 
@@ -426,7 +536,9 @@ def calculate_tier_from_scan(scan_data: dict) -> tuple[int, str]:
     1. Tier 3 (Launched) - Locale folders exist = Too Late
     2. Tier 2 (Preparing) - i18n libraries WITHOUT locale folders = Hot Lead
     3. Tier 1 (Thinking) - RFCs or Ghost Branches = Warm Lead
-    4. Tier 0 vs Tier 4 Split - Based on star count (>1000 = Greenfield, <1000 = Disqualified)
+    4. Tier 0 vs Tier 4 Split - Based on repos scanned:
+       - repos_scanned > 0 → Tier 0 (Tracking) - Monitor for future changes
+       - repos_scanned == 0 → Tier 4 (Disqualified) - Empty org or no access
 
     Returns:
         Tuple of (tier_number, evidence_summary)
@@ -464,7 +576,7 @@ def calculate_tier_from_scan(scan_data: dict) -> tuple[int, str]:
     # TIER 3: LAUNCHED - Locale folders detected (Too Late)
     # =========================================================================
     if locale_folders_found:
-        return TIER_LAUNCHED, "🚫 Too Late: Translation files already exist in codebase."
+        return TIER_LAUNCHED, "Too Late: Translation files already exist in codebase."
 
     # =========================================================================
     # TIER 2: PREPARING (GOLDILOCKS) - i18n libraries WITHOUT locale folders
@@ -495,9 +607,9 @@ def calculate_tier_from_scan(scan_data: dict) -> tuple[int, str]:
         if dep_names:
             # Convert first library to sales-friendly name
             sales_name = _convert_library_to_sales_name(dep_names[0])
-            evidence = f"🔥 INFRASTRUCTURE READY: Installed {sales_name} but NO translations found."
+            evidence = f"INFRASTRUCTURE READY: Installed {sales_name} but NO translations found."
         else:
-            evidence = "🔥 INFRASTRUCTURE READY: i18n library installed but NO translations found."
+            evidence = "INFRASTRUCTURE READY: i18n library installed but NO translations found."
         return TIER_PREPARING, evidence
 
     # =========================================================================
@@ -510,29 +622,41 @@ def calculate_tier_from_scan(scan_data: dict) -> tuple[int, str]:
             rfc_hits = signal_summary.get('rfc_discussion', {}).get('hits', [])
             if rfc_hits and isinstance(rfc_hits[0], dict):
                 title = rfc_hits[0].get('title', 'i18n discussion')[:50]
-                evidence_parts.append(f"💭 STRATEGY SIGNAL: {title}")
+                evidence_parts.append(f"STRATEGY SIGNAL: {title}")
             else:
-                evidence_parts.append(f"💭 STRATEGY SIGNAL: {rfc_count} i18n RFC/discussion(s)")
+                evidence_parts.append(f"STRATEGY SIGNAL: {rfc_count} i18n RFC/discussion(s)")
 
         if ghost_count > 0:
             ghost_hits = signal_summary.get('ghost_branch', {}).get('hits', [])
             if ghost_hits and isinstance(ghost_hits[0], dict):
                 branch_name = ghost_hits[0].get('name', ghost_hits[0].get('ref', 'i18n branch'))[:40]
-                evidence_parts.append(f"🛠️ ACTIVE BUILD: {branch_name}")
+                evidence_parts.append(f"ACTIVE BUILD: {branch_name}")
             else:
-                evidence_parts.append(f"🛠️ ACTIVE BUILD: {ghost_count} i18n branch(es)")
+                evidence_parts.append(f"ACTIVE BUILD: {ghost_count} i18n branch(es)")
 
         return TIER_THINKING, "; ".join(evidence_parts)
 
     # =========================================================================
-    # TIER 0 vs TIER 4: No signals found - Split based on star count
+    # TIER 0 vs TIER 4: No signals found - Split based on repos scanned and org status
     # =========================================================================
-    if total_stars > 1000:
-        # Major open source project with zero localization = Greenfield opportunity
-        return TIER_TRACKING, f"⭐ GREENFIELD: Major Open Source Project ({total_stars:,} stars) with ZERO localization."
+    # Get repos_scanned count and check if org was found
+    repos_scanned = len(scan_data.get('repos_scanned', []))
+    org_login = scan_data.get('org_login', '')
+    org_public_repos = scan_data.get('org_public_repos', 0)
+
+    if repos_scanned > 0:
+        # We scanned valid repos but found no i18n signals - track for future changes
+        return TIER_TRACKING, "No active signals detected. Monitoring for future changes."
+    elif org_login:
+        # Org was found but no repos were scanned - still track it
+        # This could be due to: all private repos, all inactive repos, or repo fetch issues
+        if org_public_repos > 0:
+            return TIER_TRACKING, f"No active repositories to scan ({org_public_repos} public repos all inactive). Monitoring for future changes."
+        else:
+            return TIER_TRACKING, "Organization found but no public repositories. Monitoring for future changes."
     else:
-        # Low star count with no signals = Likely private codebase, disqualify
-        return TIER_INVALID, "🚫 DISQUALIFIED: No public code signals found (Main codebase likely private)."
+        # No org was found - this shouldn't happen if scan completed, but handle it
+        return TIER_INVALID, "DISQUALIFIED: Unable to complete scan (Organization not found or API error)."
 
 
 def update_account_status(scan_data: dict, report_id: Optional[int] = None) -> dict:
@@ -554,14 +678,20 @@ def update_account_status(scan_data: dict, report_id: Optional[int] = None) -> d
     if not company_name:
         return {'error': 'No company name in scan data'}
 
+    # Normalize company name to lowercase to prevent duplicates
+    company_name_normalized = company_name.lower().strip()
+
     # Calculate tier and evidence
     new_tier, evidence_summary = calculate_tier_from_scan(scan_data)
 
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Check if account exists
-    cursor.execute('SELECT * FROM monitored_accounts WHERE company_name = ?', (company_name,))
+    # Check if account exists (case-insensitive)
+    cursor.execute(
+        'SELECT * FROM monitored_accounts WHERE LOWER(company_name) = ?',
+        (company_name_normalized,)
+    )
     existing = cursor.fetchone()
 
     now = datetime.now().isoformat()
@@ -586,8 +716,8 @@ def update_account_status(scan_data: dict, report_id: Optional[int] = None) -> d
                     status_changed_at = ?,
                     evidence_summary = ?,
                     next_scan_due = ?
-                WHERE company_name = ?
-            ''', (github_org, new_tier, now, now, evidence_summary, next_scan_iso, company_name))
+                WHERE LOWER(company_name) = ?
+            ''', (github_org, new_tier, now, now, evidence_summary, next_scan_iso, company_name_normalized))
         else:
             # Same tier - only update scan timestamp, NOT status_changed_at
             cursor.execute('''
@@ -596,18 +726,18 @@ def update_account_status(scan_data: dict, report_id: Optional[int] = None) -> d
                     last_scanned_at = ?,
                     evidence_summary = ?,
                     next_scan_due = ?
-                WHERE company_name = ?
-            ''', (github_org, now, evidence_summary, next_scan_iso, company_name))
+                WHERE LOWER(company_name) = ?
+            ''', (github_org, now, evidence_summary, next_scan_iso, company_name_normalized))
 
         account_id = existing['id']
     else:
-        # New account - create record
+        # New account - create record (use normalized name)
         cursor.execute('''
             INSERT INTO monitored_accounts (
                 company_name, github_org, current_tier, last_scanned_at,
                 status_changed_at, evidence_summary, next_scan_due
             ) VALUES (?, ?, ?, ?, ?, ?, ?)
-        ''', (company_name, github_org, new_tier, now, now, evidence_summary, next_scan_iso))
+        ''', (company_name_normalized, github_org, new_tier, now, now, evidence_summary, next_scan_iso))
         account_id = cursor.lastrowid
         tier_changed = True  # New account is considered a "change"
 
@@ -622,7 +752,7 @@ def update_account_status(scan_data: dict, report_id: Optional[int] = None) -> d
 
     return {
         'account_id': account_id,
-        'company_name': company_name,
+        'company_name': company_name_normalized,
         'tier': new_tier,
         'tier_name': tier_config['name'],
         'tier_status': tier_config['status'],
@@ -647,6 +777,9 @@ def add_account_to_tier_0(company_name: str, github_org: str) -> dict:
     Returns:
         Dictionary with account creation/update result.
     """
+    # Normalize company name to lowercase to prevent duplicates
+    company_name_normalized = company_name.lower().strip()
+
     conn = get_db_connection()
     cursor = conn.cursor()
 
@@ -656,9 +789,24 @@ def add_account_to_tier_0(company_name: str, github_org: str) -> dict:
     next_scan = next_scan.replace(day=next_scan.day + 7) if next_scan.day <= 24 else next_scan.replace(month=next_scan.month + 1, day=1)
     next_scan_iso = next_scan.isoformat()
 
-    # Check if account exists
-    cursor.execute('SELECT * FROM monitored_accounts WHERE company_name = ?', (company_name,))
-    existing = cursor.fetchone()
+    # Check if account exists by COMPANY NAME (case-insensitive)
+    cursor.execute(
+        'SELECT * FROM monitored_accounts WHERE LOWER(company_name) = ?',
+        (company_name_normalized,)
+    )
+    existing_by_name = cursor.fetchone()
+
+    # Check if account exists by GITHUB ORG (case-insensitive)
+    existing_by_org = None
+    if github_org:
+        cursor.execute(
+            'SELECT * FROM monitored_accounts WHERE LOWER(github_org) = ?',
+            (github_org.lower(),)
+        )
+        existing_by_org = cursor.fetchone()
+
+    # Determine which account to use (prioritize existing record)
+    existing = existing_by_name or existing_by_org
 
     if existing:
         # Update existing account - don't change last_scanned_at
@@ -666,18 +814,22 @@ def add_account_to_tier_0(company_name: str, github_org: str) -> dict:
             UPDATE monitored_accounts
             SET github_org = ?,
                 next_scan_due = ?
-            WHERE company_name = ?
-        ''', (github_org, next_scan_iso, company_name))
+            WHERE id = ?
+        ''', (github_org, next_scan_iso, existing['id']))
         account_id = existing['id']
+        
+        # If we matched by org but name is different, we might want to log it or update name,
+        # but changing name could be risky if unique constraint on name validation fails.
+        # We'll just update the org / timestamps on the existing record.
     else:
-        # Create new account at Tier 0
+        # Create new account at Tier 0 (use normalized name)
         # Note: last_scanned_at is NULL until a scan actually completes
         cursor.execute('''
             INSERT INTO monitored_accounts (
                 company_name, github_org, current_tier, last_scanned_at,
                 status_changed_at, evidence_summary, next_scan_due
             ) VALUES (?, ?, ?, NULL, ?, ?, ?)
-        ''', (company_name, github_org, TIER_TRACKING, now,
+        ''', (company_name_normalized, github_org, TIER_TRACKING, now,
               "Added via Grow pipeline", next_scan_iso))
         account_id = cursor.lastrowid
 
@@ -688,15 +840,15 @@ def add_account_to_tier_0(company_name: str, github_org: str) -> dict:
 
     return {
         'account_id': account_id,
-        'company_name': company_name,
+        'company_name': existing['company_name'] if existing else company_name_normalized,
         'github_org': github_org,
-        'tier': TIER_TRACKING,
+        'tier': existing['current_tier'] if existing else TIER_TRACKING,
         'tier_name': tier_config['name'],
         'tier_status': tier_config['status']
     }
 
 
-def get_all_accounts(page: int = 1, limit: int = 50) -> dict:
+def get_all_accounts(page: int = 1, limit: int = 50, tier_filter: Optional[list] = None, search_query: Optional[str] = None) -> dict:
     """
     Get all monitored accounts with pagination, sorted by tier priority.
 
@@ -705,6 +857,8 @@ def get_all_accounts(page: int = 1, limit: int = 50) -> dict:
     Args:
         page: Page number (1-indexed, default 1)
         limit: Number of accounts per page (default 50)
+        tier_filter: List of tier integers to include (optional)
+        search_query: Search string for company name (optional)
 
     Returns:
         Dictionary with:
@@ -717,8 +871,26 @@ def get_all_accounts(page: int = 1, limit: int = 50) -> dict:
     conn = get_db_connection()
     cursor = conn.cursor()
 
+    # Build WHERE clause
+    where_clauses = []
+    params = []
+
+    if tier_filter:
+        placeholders = ','.join(['?'] * len(tier_filter))
+        where_clauses.append(f'current_tier IN ({placeholders})')
+        params.extend(tier_filter)
+    
+    if search_query:
+        where_clauses.append('company_name LIKE ?')
+        params.append(f'%{search_query}%')
+
+    where_sql = ''
+    if where_clauses:
+        where_sql = ' WHERE ' + ' AND '.join(where_clauses)
+
     # Get total count
-    cursor.execute('SELECT COUNT(*) as total FROM monitored_accounts')
+    count_query = f'SELECT COUNT(*) as total FROM monitored_accounts{where_sql}'
+    cursor.execute(count_query, params)
     total_items = cursor.fetchone()['total']
 
     # Calculate pagination
@@ -727,11 +899,12 @@ def get_all_accounts(page: int = 1, limit: int = 50) -> dict:
     offset = (current_page - 1) * limit
 
     # Custom sort: Tier 2 first (priority 1), Tier 1 (priority 2), Tier 0 (priority 3), Tier 3 (priority 4), Tier 4 last (priority 5)
-    cursor.execute('''
+    select_query = f'''
         SELECT
             ma.*,
-            (SELECT r.id FROM reports r WHERE r.company_name = ma.company_name ORDER BY r.created_at DESC LIMIT 1) as latest_report_id
+            (SELECT r.id FROM reports r WHERE LOWER(r.company_name) = LOWER(ma.company_name) ORDER BY r.created_at DESC LIMIT 1) as latest_report_id
         FROM monitored_accounts ma
+        {where_sql}
         ORDER BY
             CASE ma.current_tier
                 WHEN 2 THEN 1
@@ -743,7 +916,12 @@ def get_all_accounts(page: int = 1, limit: int = 50) -> dict:
             END,
             ma.status_changed_at DESC
         LIMIT ? OFFSET ?
-    ''', (limit, offset))
+    '''
+    # We need to duplicate params for the second query execution or just reuse the list + limit/offset
+    # Since we execute a new query, we need to pass the params again + limit/offset
+    select_params = list(params) + [limit, offset]
+    
+    cursor.execute(select_query, select_params)
 
     rows = cursor.fetchall()
     conn.close()
@@ -761,6 +939,123 @@ def get_all_accounts(page: int = 1, limit: int = 50) -> dict:
         'total_pages': total_pages,
         'current_page': current_page,
         'limit': limit
+    }
+
+
+def get_all_accounts_datatable(draw: int, start: int, length: int, search_value: str = '',
+                               tier_filter: Optional[list] = None, order_column: int = 0,
+                               order_dir: str = 'asc') -> dict:
+    """
+    Get accounts data in DataTables format for server-side processing.
+
+    This function supports DataTables server-side processing with:
+    - Pagination (start, length)
+    - Global search (search_value)
+    - Tier filtering
+    - Sorting
+
+    Args:
+        draw: DataTables draw counter (for pagination)
+        start: Start row index
+        length: Number of rows to return
+        search_value: Global search string (searches company_name and github_org)
+        tier_filter: List of tier integers to include (optional)
+        order_column: Column index for sorting (0=company, 1=org, 2=tier, etc.)
+        order_dir: Sort direction ('asc' or 'desc')
+
+    Returns:
+        Dictionary with DataTables format:
+        - draw: Same draw counter
+        - recordsTotal: Total records in database
+        - recordsFiltered: Total records after filtering
+        - data: Array of account objects
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Column mapping for sorting (must match table column order)
+    column_map = {
+        0: 'company_name',
+        1: 'github_org',
+        2: 'current_tier',
+        3: 'last_scanned_at',
+        4: 'evidence_summary',
+    }
+
+    # Get total count without filters
+    cursor.execute('SELECT COUNT(*) as total FROM monitored_accounts')
+    total_records = cursor.fetchone()['total']
+
+    # Build WHERE clause for filtering
+    where_clauses = []
+    params = []
+
+    # Tier filter
+    if tier_filter:
+        placeholders = ','.join(['?'] * len(tier_filter))
+        where_clauses.append(f'current_tier IN ({placeholders})')
+        params.extend(tier_filter)
+
+    # Global search - searches both company_name and github_org
+    if search_value:
+        where_clauses.append('(LOWER(company_name) LIKE ? OR LOWER(github_org) LIKE ?)')
+        search_param = f'%{search_value.lower()}%'
+        params.extend([search_param, search_param])
+
+    where_sql = ''
+    if where_clauses:
+        where_sql = ' WHERE ' + ' AND '.join(where_clauses)
+
+    # Get filtered count
+    count_query = f'SELECT COUNT(*) as total FROM monitored_accounts{where_sql}'
+    cursor.execute(count_query, params)
+    filtered_records = cursor.fetchone()['total']
+
+    # Determine sort column
+    sort_column = column_map.get(order_column, 'company_name')
+    sort_order = 'DESC' if order_dir.lower() == 'desc' else 'ASC'
+
+    # Validate sort order
+    if sort_order not in ('ASC', 'DESC'):
+        sort_order = 'ASC'
+
+    # Get paginated and sorted data
+    select_query = f'''
+        SELECT
+            ma.*,
+            (SELECT r.id FROM reports r WHERE LOWER(r.company_name) = LOWER(ma.company_name) ORDER BY r.created_at DESC LIMIT 1) as latest_report_id
+        FROM monitored_accounts ma
+        {where_sql}
+        ORDER BY
+            CASE ma.current_tier
+                WHEN 2 THEN 1
+                WHEN 1 THEN 2
+                WHEN 0 THEN 3
+                WHEN 3 THEN 4
+                WHEN 4 THEN 5
+                ELSE 6
+            END,
+            ma.status_changed_at DESC
+        LIMIT ? OFFSET ?
+    '''
+
+    select_params = list(params) + [length, start]
+    cursor.execute(select_query, select_params)
+    rows = cursor.fetchall()
+    conn.close()
+
+    accounts = []
+    for row in rows:
+        account = dict(row)
+        tier = account.get('current_tier', 0)
+        account['tier_config'] = TIER_CONFIG.get(tier, TIER_CONFIG[TIER_TRACKING])
+        accounts.append(account)
+
+    return {
+        'draw': draw,
+        'recordsTotal': total_records,
+        'recordsFiltered': filtered_records,
+        'data': accounts
     }
 
 
@@ -850,13 +1145,19 @@ def mark_account_as_invalid(company_name: str, reason: str) -> dict:
     Returns:
         Dictionary with the update result.
     """
+    # Normalize company name to lowercase to prevent duplicates
+    company_name_normalized = company_name.lower().strip()
+
     conn = get_db_connection()
     cursor = conn.cursor()
 
     now = datetime.now().isoformat()
 
-    # Check if account exists
-    cursor.execute('SELECT * FROM monitored_accounts WHERE company_name = ?', (company_name,))
+    # Check if account exists (case-insensitive)
+    cursor.execute(
+        'SELECT * FROM monitored_accounts WHERE LOWER(company_name) = ?',
+        (company_name_normalized,)
+    )
     existing = cursor.fetchone()
 
     if existing:
@@ -868,17 +1169,17 @@ def mark_account_as_invalid(company_name: str, reason: str) -> dict:
                 status_changed_at = ?,
                 evidence_summary = ?,
                 next_scan_due = NULL
-            WHERE company_name = ?
-        ''', (TIER_INVALID, now, now, reason, company_name))
+            WHERE LOWER(company_name) = ?
+        ''', (TIER_INVALID, now, now, reason, company_name_normalized))
         account_id = existing['id']
     else:
-        # Create new account at Tier 4
+        # Create new account at Tier 4 (use normalized name)
         cursor.execute('''
             INSERT INTO monitored_accounts (
                 company_name, github_org, current_tier, last_scanned_at,
                 status_changed_at, evidence_summary, next_scan_due
             ) VALUES (?, ?, ?, ?, ?, ?, NULL)
-        ''', (company_name, '', TIER_INVALID, now, now, reason))
+        ''', (company_name_normalized, '', TIER_INVALID, now, now, reason))
         account_id = cursor.lastrowid
 
     conn.commit()
@@ -888,7 +1189,7 @@ def mark_account_as_invalid(company_name: str, reason: str) -> dict:
 
     return {
         'account_id': account_id,
-        'company_name': company_name,
+        'company_name': company_name_normalized,
         'tier': TIER_INVALID,
         'tier_name': tier_config['name'],
         'tier_status': tier_config['status'],
@@ -918,7 +1219,7 @@ def get_refreshable_accounts() -> list:
     cursor.execute('''
         SELECT
             ma.*,
-            (SELECT r.id FROM reports r WHERE r.company_name = ma.company_name ORDER BY r.created_at DESC LIMIT 1) as latest_report_id
+            (SELECT r.id FROM reports r WHERE LOWER(r.company_name) = LOWER(ma.company_name) ORDER BY r.created_at DESC LIMIT 1) as latest_report_id
         FROM monitored_accounts ma
         WHERE ma.current_tier IN (0, 1, 2)
           AND (
@@ -1103,7 +1404,8 @@ def set_scan_status(company_name: str, status: str, progress: str = None) -> boo
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    now = datetime.now().isoformat() if status == SCAN_STATUS_PROCESSING else None
+    # Track time for both 'processing' and 'queued' statuses for watchdog recovery
+    now = datetime.now().isoformat() if status in (SCAN_STATUS_PROCESSING, SCAN_STATUS_QUEUED) else None
 
     if status == SCAN_STATUS_PROCESSING:
         cursor.execute('''
@@ -1117,6 +1419,13 @@ def set_scan_status(company_name: str, status: str, progress: str = None) -> boo
             SET scan_status = ?, scan_progress = NULL, scan_start_time = NULL
             WHERE company_name = ?
         ''', (status, company_name))
+    elif status == SCAN_STATUS_QUEUED:
+        # Track queue time for watchdog to recover stale queued accounts
+        cursor.execute('''
+            UPDATE monitored_accounts
+            SET scan_status = ?, scan_progress = ?, scan_start_time = ?
+            WHERE company_name = ?
+        ''', (status, progress, now, company_name))
     else:
         cursor.execute('''
             UPDATE monitored_accounts
@@ -1248,5 +1557,205 @@ def reset_all_scan_statuses() -> int:
     return reset_count
 
 
+def batch_set_scan_status_queued(company_names: list) -> int:
+    """
+    Batch update multiple accounts to 'queued' status in a single transaction.
+
+    This is much faster than calling set_scan_status individually for each account.
+
+    Args:
+        company_names: List of company names to queue.
+
+    Returns:
+        Number of accounts successfully queued.
+    """
+    if not company_names:
+        return 0
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Track queue time for watchdog recovery of stale queued accounts
+    now = datetime.now().isoformat()
+
+    # Use parameterized query with placeholders for all company names
+    placeholders = ','.join(['?' for _ in company_names])
+    cursor.execute(f'''
+        UPDATE monitored_accounts
+        SET scan_status = ?, scan_progress = NULL, scan_start_time = ?
+        WHERE company_name IN ({placeholders})
+    ''', [SCAN_STATUS_QUEUED, now] + list(company_names))
+
+    updated_count = cursor.rowcount
+    conn.commit()
+    conn.close()
+
+    return updated_count
+
+
+# Duplicate cleanup check complete
+
+
 # Initialize database on module import
 init_db()
+
+
+def clear_stale_scan_statuses(timeout_minutes: int = 15) -> int:
+    """
+    Reset accounts that have been 'processing' for too long.
+    This acts as a watchdog to recover from crashed worker threads.
+
+    Args:
+        timeout_minutes: Minutes after which a scan is considered 'stale'
+
+    Returns:
+        Number of accounts recovered
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Calculate cutoff time: now - timeout_minutes
+    cutoff_time = (datetime.now() - timedelta(minutes=timeout_minutes)).isoformat()
+
+    # Find accounts that are 'processing' but started before the cutoff
+    cursor.execute('''
+        UPDATE monitored_accounts
+        SET scan_status = 'idle',
+            scan_progress = 'Timed out (automatically recovered)',
+            scan_start_time = NULL
+        WHERE scan_status = 'processing'
+          AND scan_start_time < ?
+    ''', (cutoff_time,))
+
+    count = cursor.rowcount
+    conn.commit()
+    conn.close()
+
+    return count
+
+
+def get_stale_queued_accounts(timeout_minutes: int = 30) -> list:
+    """
+    Get accounts that have been stuck in 'queued' status for too long.
+
+    This retrieves accounts that were queued but never picked up by a worker,
+    possibly due to executor saturation, deadlock, or app restart.
+
+    Args:
+        timeout_minutes: Minutes after which a queued account is considered 'stale'
+
+    Returns:
+        List of company names that are stale-queued
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Calculate cutoff time: now - timeout_minutes
+    cutoff_time = (datetime.now() - timedelta(minutes=timeout_minutes)).isoformat()
+
+    # Find accounts that have been 'queued' for too long
+    cursor.execute('''
+        SELECT company_name FROM monitored_accounts
+        WHERE scan_status = 'queued'
+          AND scan_start_time IS NOT NULL
+          AND scan_start_time < ?
+    ''', (cutoff_time,))
+
+    accounts = [row[0] for row in cursor.fetchall()]
+    conn.close()
+
+    return accounts
+
+
+def reset_stale_queued_accounts(timeout_minutes: int = 30) -> list:
+    """
+    Reset accounts that have been stuck in 'queued' status for too long.
+    Returns the list of reset account names so they can be re-queued.
+
+    Args:
+        timeout_minutes: Minutes after which a queued account is considered 'stale'
+
+    Returns:
+        List of company names that were reset (for re-queueing)
+    """
+    # First get the list of accounts that will be reset
+    accounts = get_stale_queued_accounts(timeout_minutes)
+
+    if not accounts:
+        return []
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Calculate cutoff time: now - timeout_minutes
+    cutoff_time = (datetime.now() - timedelta(minutes=timeout_minutes)).isoformat()
+
+    # Reset these accounts to 'idle' so they can be re-queued
+    cursor.execute('''
+        UPDATE monitored_accounts
+        SET scan_status = 'idle',
+            scan_progress = 'Re-queued (was stuck in queue)',
+            scan_start_time = NULL
+        WHERE scan_status = 'queued'
+          AND scan_start_time IS NOT NULL
+          AND scan_start_time < ?
+    ''', (cutoff_time,))
+
+    conn.commit()
+    conn.close()
+
+    return accounts
+
+
+def get_all_queued_accounts() -> list:
+    """
+    Get all accounts currently in 'queued' status.
+    Used for startup recovery of stuck accounts.
+
+    Returns:
+        List of company names that are currently queued
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT company_name FROM monitored_accounts
+        WHERE scan_status = 'queued'
+    ''')
+
+    accounts = [row[0] for row in cursor.fetchall()]
+    conn.close()
+
+    return accounts
+
+
+def reset_all_queued_to_idle() -> list:
+    """
+    Reset all queued accounts to idle status.
+    Returns the list of accounts that were reset so they can be re-queued.
+
+    This is used at startup to recover accounts stuck in queue from previous run.
+
+    Returns:
+        List of company names that were reset
+    """
+    accounts = get_all_queued_accounts()
+
+    if not accounts:
+        return []
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        UPDATE monitored_accounts
+        SET scan_status = 'idle',
+            scan_progress = 'Reset at startup',
+            scan_start_time = NULL
+        WHERE scan_status = 'queued'
+    ''')
+
+    conn.commit()
+    conn.close()
+
+    return accounts

@@ -10,15 +10,18 @@
 <body>
     <nav class="navbar">
         <div class="nav-container">
-            <a href="{{ url_for('index') }}" class="nav-brand">
-                <span class="brand-icon">&#x1F50D;</span>
+            <a href="{{ url_for('accounts') }}" class="nav-brand">
+                <svg class="brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <circle cx="11" cy="11" r="7"></circle>
+                    <line x1="16.65" y1="16.65" x2="21" y2="21"></line>
+                </svg>
                 Lead Machine
             </a>
             <div class="nav-links">
-                <a href="{{ url_for('index') }}">Search</a>
-                <a href="{{ url_for('grow') }}">Grow</a>
-                <a href="{{ url_for('accounts') }}">Accounts</a>
-                <a href="{{ url_for('history') }}">History</a>
+                <a href="{{ url_for('accounts') }}" class="{% if request.endpoint == 'accounts' %}active{% endif %}">Accounts</a>
+                <a href="{{ url_for('grow') }}" class="{% if request.endpoint == 'grow' %}active{% endif %}">Grow</a>
+                <a href="{{ url_for('history') }}" class="{% if request.endpoint == 'history' %}active{% endif %}">History</a>
             </div>
         </div>
     </nav>
@@ -32,6 +35,57 @@
             <p>Lead Machine - Deep-Dive Research Engine</p>
         </div>
     </footer>
+
+    <script>
+        function timeAgo(dateString) {
+            const date = new Date(dateString);
+            if (Number.isNaN(date.getTime())) {
+                return dateString;
+            }
+
+            const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
+            if (seconds < 60) return `${Math.max(seconds, 1)} sec${seconds === 1 ? '' : 's'} ago`;
+
+            const minutes = Math.floor(seconds / 60);
+            if (minutes < 60) return `${minutes} min${minutes === 1 ? '' : 's'} ago`;
+
+            const hours = Math.floor(minutes / 60);
+            if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+
+            const days = Math.floor(hours / 24);
+            if (days < 30) return `${days} day${days === 1 ? '' : 's'} ago`;
+
+            const months = Math.floor(days / 30);
+            if (months < 12) return `${months} month${months === 1 ? '' : 's'} ago`;
+
+            const years = Math.floor(months / 12);
+            return `${years} year${years === 1 ? '' : 's'} ago`;
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            document.querySelectorAll('.scanned-time').forEach((element) => {
+                const dateString = element.dataset.iso || element.textContent.trim();
+                element.textContent = timeAgo(dateString);
+            });
+        });
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key !== '/' || event.defaultPrevented) return;
+
+            const target = event.target;
+            const isEditable = target instanceof HTMLElement
+                && (target.isContentEditable
+                    || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName));
+
+            if (isEditable) return;
+
+            const searchInput = document.querySelector("input[name='q']");
+            if (searchInput) {
+                event.preventDefault();
+                searchInput.focus();
+            }
+        });
+    </script>
 
     {% block scripts %}{% endblock %}
 </body>

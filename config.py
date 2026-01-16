@@ -17,40 +17,98 @@ class Config:
     SECRET_KEY = os.getenv('FLASK_SECRET_KEY', 'dev-secret-key-change-in-production')
     DEBUG = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
 
-    # GitHub API
+    # ============================================================
+    # GITHUB TOKEN POOL - Crowdsourced Rate Limit Evasion
+    # ============================================================
+    #
+    # The Problem: GitHub's API limit is 5,000 requests/hour per token.
+    # Scanning a "Mega-Corp" uses ~100-200 requests. You hit the wall
+    # at ~25 companies per hour with a single token.
+    #
+    # The Solution: Token Pool with intelligent rotation.
+    #
+    # Setup:
+    #   1. Ask every BDR on the team to generate a Personal Access Token
+    #   2. Set GITHUB_TOKENS=token1,token2,token3,... in your .env file
+    #   3. The system automatically rotates through tokens, selecting the
+    #      one with the highest remaining rate limit.
+    #
+    # BDR Benefit:
+    #   - 1 token  =  5,000 req/hr =  ~25 companies/hour
+    #   - 5 tokens = 25,000 req/hr = ~125 companies/hour
+    #   - 10 tokens = 50,000 req/hr = ~250 companies/hour
+    #
+    # Token Requirements (minimum permissions):
+    #   - public_repo (read public repositories)
+    #   - read:org (read organization info) - optional but recommended
+    #
+    # ============================================================
+
     GITHUB_TOKEN = os.getenv('GITHUB_TOKEN')
     GITHUB_API_BASE = 'https://api.github.com'
 
-    # Multiple tokens for rotation (comma-separated in environment variable)
-    # If GITHUB_TOKENS is set, it takes precedence over GITHUB_TOKEN for rotation
-    # Maintains backward compatibility: if only GITHUB_TOKEN is set, it will be used
+    # Token pool configuration
+    TOKEN_POOL_LOW_THRESHOLD = 50     # Start considering other tokens when below this
+    TOKEN_POOL_CRITICAL_THRESHOLD = 10  # Definitely switch tokens when below this
+
     @staticmethod
     def get_github_tokens() -> list:
         """
         Load GitHub tokens from environment variables.
 
-        Priority:
-        1. GITHUB_TOKENS (comma-separated list)
+        Auto-discovers tokens matching these patterns:
+        1. GITHUB_TOKENS (comma-separated list for token pool)
         2. GITHUB_TOKEN (single token, for backward compatibility)
+        3. GITHUB_TOKEN_* (e.g., GITHUB_TOKEN_2, GITHUB_TOKEN_BDR)
+        4. GitHubToken_* (e.g., GitHubToken_Michael, GitHubToken_Sales)
+
+        This allows BDRs to add their own tokens without modifying config.
 
         Returns:
-            List of tokens, or empty list if none configured.
+            List of unique tokens, or empty list if none configured.
         """
+        tokens = []
+        seen = set()
+
+        def add_token(token):
+            if token and token.strip() and token.strip() not in seen:
+                seen.add(token.strip())
+                tokens.append(token.strip())
+
         tokens_str = os.getenv('GITHUB_TOKENS', '')
         if tokens_str:
-            # Parse comma-separated tokens, strip whitespace, filter empty
-            tokens = [t.strip() for t in tokens_str.split(',') if t.strip()]
-            if tokens:
-                return tokens
+            for t in tokens_str.split(','):
+                add_token(t)
 
-        # Fall back to single token for backward compatibility
-        single_token = os.getenv('GITHUB_TOKEN')
-        if single_token:
-            return [single_token]
+        add_token(os.getenv('GITHUB_TOKEN'))
 
-        return []
+        for key, value in os.environ.items():
+            key_upper = key.upper()
+            if key_upper.startswith('GITHUB_TOKEN_') or key_upper.startswith('GITHUBTOKEN_'):
+                add_token(value)
+
+        return tokens
 
     GITHUB_TOKENS = get_github_tokens.__func__()  # Initialize at class load time
+
+    @staticmethod
+    def get_token_pool_capacity() -> dict:
+        """
+        Calculate the theoretical capacity of the token pool.
+
+        Returns:
+            Dict with capacity metrics.
+        """
+        tokens = Config.get_github_tokens()
+        token_count = len(tokens)
+        hourly_capacity = token_count * 5000
+        companies_per_hour = hourly_capacity // 200  # ~200 requests per company scan
+
+        return {
+            'token_count': token_count,
+            'hourly_requests': hourly_capacity,
+            'estimated_companies_per_hour': companies_per_hour,
+        }
 
     # Gemini AI
     GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
@@ -66,6 +124,8 @@ class Config:
 
     # Scan Configuration
     MAX_REPOS_TO_SCAN = 50  # Top N most active repos
+    REPO_INACTIVITY_DAYS = 730  # Skip repos not pushed in this many days (2 years)
+    REPO_INACTIVITY_FALLBACK = 10  # If all repos filtered, take top N anyway
 
     # Priority keywords for repo selection
     PRIORITY_KEYWORDS = [
@@ -77,14 +137,16 @@ class Config:
     # +1000 points if repo name contains any of these
     HIGH_VALUE_PATTERNS = [
         'web', 'app', 'frontend', 'mobile', 'ios', 'android',
-        'server', 'api', 'ui', 'client', 'monorepo'
+        'server', 'api', 'ui', 'client', 'monorepo',
+        'website', 'marketing', 'dashboard', 'console'
     ]
 
     # Low-value repository patterns (non-core repos to deprioritize)
     # -500 points if repo name contains any of these
+    # Note: 'docs' and 'documentation' intentionally excluded - they can be
+    # early indicators of i18n work (especially with Docusaurus/Astro)
     LOW_VALUE_PATTERNS = [
-        'docs', 'documentation', 'tool', 'script', 'demo',
-        'example', 'test', 'fork'
+        'tool', 'script', 'demo', 'example', 'test', 'fork'
     ]
 
     # High-value programming languages for i18n scanning
@@ -112,6 +174,9 @@ class Config:
         'RTL support',
         'translation workflow',
         'multi-currency',
+        'internationalization',
+        'translate',
+        'global expansion',
     ]
 
     # ============================================================
@@ -127,6 +192,13 @@ class Config:
         'requirements.txt',
         'composer.json',
         'mix.exs',
+        'pubspec.yaml',
+        'Podfile',
+        'build.gradle',
+        'build.gradle.kts',
+        'go.mod',
+        'pom.xml',
+        'pyproject.toml',
     ]
 
     I18N_SCRIPT_KEYWORDS = [
@@ -150,10 +222,28 @@ class Config:
         # TIER 1: Primary Targets (High-Intent Pre-Launch Signals)
         'babel-plugin-react-intl',   # React string extraction - infrastructure setup
         'react-i18next',             # React i18n framework - preparing for translations
+        'react-intl',                # React i18n framework - core library
+        'i18next',                   # i18n framework core
         'formatjs',                  # ICU message formatting - building the foundation
+        'vue-i18n',                  # Vue i18n framework - core library
+        'next-i18next',              # Next.js i18n wrapper - core library
+        'next-intl',                 # Modern Next.js i18n library
+        '@lingui/core',              # LinguiJS core
+        '@lingui/react',             # LinguiJS React bindings
+        '@lingui/macro',             # LinguiJS Macro
+        '@formatjs/intl',            # FormatJS Intl library
         'try-pseudo-localization',   # Pseudo-localization for UI layout testing
         'react-pseudo',              # Pseudo-localization for React
         'i18next-pseudo',            # Pseudo-localization for i18next
+        'i18n-js',                   # JavaScript i18n library - general purpose
+        'typesafe-i18n',             # TypeScript-first i18n library - type-safe translations
+
+        # Backend / Other Languages
+        'django-babel', 'flask-babel', 'python-i18n', 'babel',
+        'rails-i18n', 'i18n-tasks', 'globalize',
+        'go-i18n', 'golang.org/x/text',
+        'icu4j', 'messageformat',
+
         # Note: 'uppy' is checked separately for i18n/locale properties
     ]
 
@@ -182,6 +272,44 @@ class Config:
     UPPY_LIBRARY = 'uppy'
     UPPY_I18N_INDICATORS = ['locale', 'i18n', 'locales', 'strings']
 
+    # =========================================================================
+    # SMOKING GUN FORK DETECTION
+    # =========================================================================
+    # When a company FORKS these repositories (not just uses them as deps),
+    # it's a strong signal they're customizing i18n infrastructure for their use case.
+    # This is even stronger than dependency injection since they're modifying the source.
+    SMOKING_GUN_FORK_REPOS = [
+        'uppy',                      # File uploader with built-in i18n
+        'react-intl',                # React i18n - forking = deep customization
+        'i18next',                   # i18n framework - forking = extending
+        'formatjs',                  # ICU message formatting
+        'vue-i18n',                  # Vue i18n solution
+        'next-i18next',              # Next.js i18n wrapper
+        'react-i18next',             # React wrapper for i18next
+        'lingui',                    # Lingui i18n framework  
+        'typesafe-i18n',             # TypeScript-first i18n
+        'polyglot.js',               # Airbnb's i18n library
+        'ttag',                      # gettext-based i18n
+        'rosetta',                   # i18n library
+        'globalize',                 # jQuery Foundation i18n
+        'messageformat',             # ICU MessageFormat
+    ]
+
+    # Keywords in package.json "scripts" that indicate i18n preparation
+    BUILD_SCRIPT_I18N_KEYWORDS = [
+        'locale',
+        'i18n',
+        'translation',
+        'translations',
+        'messages',
+        'intl',
+        'localize',
+        'localization',
+        'l10n',
+        'extract-messages',
+        'compile-messages',
+    ]
+
     # Pseudo-localization config patterns
     PSEUDO_CONFIG_PATTERNS = [
         'pseudo: true',
@@ -197,6 +325,10 @@ class Config:
         'nuxt.config.ts',
         'remix.config.js',
         'angular.json',
+        # Static site generators with i18n support
+        'docusaurus.config.js',
+        'docusaurus.config.ts',
+        'astro.config.mjs',
     ]
 
     # ============================================================
@@ -286,6 +418,90 @@ class Config:
     ]
 
     # ============================================================
+    # SIGNAL 4: DOCUMENTATION INTENT (Thinking Phase)
+    # ============================================================
+    # Target: Documentation files that may mention planned i18n work
+    # Logic: Flag if i18n keywords are found NEAR context words
+    #        indicating future/in-progress work
+    # This catches companies mentioning i18n in changelogs/roadmaps
+    # BEFORE the code is fully live.
+
+    DOCUMENTATION_FILES = [
+        'CHANGELOG.md',
+        'CONTRIBUTING.md',
+        'README.md',
+        'ROADMAP.md',
+        'changelog.md',
+        'contributing.md',
+        'readme.md',
+        'roadmap.md',
+        'HISTORY.md',
+        'history.md',
+    ]
+
+    # Intent keywords - these indicate i18n planning
+    DOCUMENTATION_INTENT_KEYWORDS = [
+        'i18n support',
+        'localization support',
+        'translation',
+        'internationalization',
+        'feat(i18n)',
+        'chore(i18n)',
+        'i18n:',
+        'l10n support',
+        'multi-language',
+        'multilingual',
+    ]
+
+    # Context keywords - these indicate future/in-progress work
+    # A match requires BOTH an intent keyword AND a context keyword nearby
+    DOCUMENTATION_CONTEXT_KEYWORDS = [
+        'beta',
+        'roadmap',
+        'upcoming',
+        'help wanted',
+        'best effort',
+        'planned',
+        'todo',
+        'wip',
+        'in progress',
+        'in-progress',
+        'unreleased',
+        'experimental',
+        'coming soon',
+        'future',
+        'proposal',
+        'rfc',
+        'draft',
+        'milestone',
+    ]
+
+    # Negative indicators - if found near the keyword, it's likely already launched
+    DOCUMENTATION_LAUNCHED_INDICATORS = [
+        'available in',
+        'supported languages',
+        'translated to',
+        'translations available',
+        'localized for',
+        'supports the following languages',
+        'language support includes',
+        'currently translated',
+        'fully localized',
+    ]
+
+    # Proximity threshold - how close (in characters) context words must be
+    DOCUMENTATION_PROXIMITY_CHARS = 200
+
+    # File priority weights - CHANGELOG is higher signal than README
+    DOCUMENTATION_FILE_WEIGHTS = {
+        'changelog': 'HIGH',
+        'roadmap': 'HIGH',
+        'history': 'HIGH',
+        'contributing': 'MEDIUM',
+        'readme': 'MEDIUM',
+    }
+
+    # ============================================================
     # INTENT SCORE WEIGHTS - GOLDILOCKS ZONE SCORING
     # ============================================================
     # New scoring model focused on PRE-LAUNCH detection.
@@ -296,6 +512,8 @@ class Config:
         'rfc_discussion_medium': 15,  # MEDIUM priority discussion
         'dependency_injection': 40,   # Smoking gun - highest value
         'ghost_branch': 25,           # WIP branch/PR
+        'documentation_intent_high': 20,    # HIGH priority (CHANGELOG, ROADMAP)
+        'documentation_intent_medium': 10,  # MEDIUM priority (README, CONTRIBUTING)
     }
 
     # ============================================================
@@ -345,6 +563,26 @@ class Config:
         'react-i18next': 'React i18n Framework',
         'formatjs': 'Message Formatting Library',
         'uppy': 'File Uploader with i18n Config',
+        'next-intl': 'Next.js Internationalization',
+        '@lingui/core': 'LinguiJS Implementation',
+        '@lingui/react': 'LinguiJS React Bindings',
+        '@lingui/macro': 'LinguiJS Macro',
+        '@formatjs/intl': 'FormatJS Core',
+
+        # Python
+        'django-babel': 'Django Translation',
+        'flask-babel': 'Flask Translation',
+        'python-i18n': 'Python i18n',
+        # Ruby
+        'rails-i18n': 'Rails I18n',
+        'i18n-tasks': 'Ruby i18n Tasks',
+        # Go
+        'go-i18n': 'Go Localization',
+        'golang.org/x/text': 'Go Text Library',
+        # Java/Kotlin
+        'icu4j': 'Java ICU Library',
+        'messageformat': 'Java MessageFormat',
+
         # Legacy mappings
         'react-intl': 'React',
         'i18next': 'JS/React',
@@ -364,9 +602,27 @@ class Config:
         'react-i18next': 'The team has installed the TRANSLATION ENGINE but hasnt loaded any languages yet. The car is built, but theres no gas.',
         'formatjs': 'The team is setting up MESSAGE FORMATTING - how dates, numbers, and plurals will display in different languages.',
         'uppy': 'The file uploader is being prepared for MULTIPLE LANGUAGES. International users are expected.',
-        'locale_folder_missing': '🔥 GOLDILOCKS: They built the shelves, but have no books. Call now!',
-        'locale_folder_source_only': '🔥 GOLDILOCKS: They have a locale folder but ONLY source files. Infrastructure ready, waiting for translation!',
-        'locale_folder_exists': '🚫 BLOCKED: They already have translation files. We are too late.',
+        'next-intl': 'They are preparing their Next.js app for global markets. This is a modern, high-growth stack.',
+        '@lingui/core': 'They are using LinguiJS, a powerful i18n library. They care about bundle size and performance.',
+        '@lingui/react': 'They are integrating LinguiJS into their React components.',
+        '@formatjs/intl': 'They are using the core FormatJS standards library. Highly technical implementation.',
+
+        # Backend Libraries
+        'django-babel': 'Found backend localization library. Infrastructure is active.',
+        'flask-babel': 'Found backend localization library. Infrastructure is active.',
+        'python-i18n': 'Found backend localization library. Infrastructure is active.',
+        'babel': 'Found backend localization library. Infrastructure is active.',
+        'rails-i18n': 'Found backend localization library. Infrastructure is active.',
+        'i18n-tasks': 'Found backend localization library. Infrastructure is active.',
+        'globalize': 'Found backend localization library. Infrastructure is active.',
+        'go-i18n': 'Found backend localization library. Infrastructure is active.',
+        'golang.org/x/text': 'Found backend localization library. Infrastructure is active.',
+        'icu4j': 'Found backend localization library. Infrastructure is active.',
+        'messageformat': 'Found backend localization library. Infrastructure is active.',
+
+        'locale_folder_missing': 'GOLDILOCKS: They built the shelves, but have no books. Call now!',
+        'locale_folder_source_only': 'GOLDILOCKS: They have a locale folder but ONLY source files. Infrastructure ready, waiting for translation!',
+        'locale_folder_exists': 'BLOCKED: They already have translation files. We are too late.',
         'unknown': 'Generic Localization Software',
     }
 
@@ -377,9 +633,53 @@ class Config:
         'snyk-bot', 'codecov', 'codecov[bot]', 'vercel[bot]', 'netlify[bot]',
     ]
 
+    # ============================================================
+    # OPEN PROTOCOL / DECENTRALIZED PROJECT DISQUALIFIERS
+    # ============================================================
+    # These patterns identify open-source protocol projects and decentralized
+    # community projects that are NOT commercial companies with buying intent.
+    #
+    # Examples: Status (decentralized messenger), Protocol Labs, various DAOs
+    #
+    # If ANY of these patterns match the org description (case-insensitive),
+    # the account is disqualified as a false positive.
+
+    OPEN_PROTOCOL_DISQUALIFIERS = [
+        # Decentralized / Web3 indicators
+        'decentralized',
+        'decentralised',
+        'open protocol',
+        'open-protocol',
+        'community project',
+        'community-driven',
+        'community owned',
+        'community-owned',
+        'powered by the community',
+        'powered by its members',
+        'powered by their members',
+        'anyone can fork',
+        'anyone can build',
+        'anyone can contribute',
+
+        # Blockchain / Crypto indicators (typically not commercial buyers)
+        'blockchain protocol',
+        'web3 protocol',
+        'defi protocol',
+        'dao ',  # Note: space to avoid matching "dao" in words like "shadow"
+        ' dao',
+        'decentralized autonomous',
+
+        # Open source protocol indicators
+        'protocol specification',
+        'reference implementation',
+        'open standard',
+        'open-standard',
+    ]
+
     # Legacy confidence weights (mapped to intent score)
     CONFIDENCE_WEIGHTS = {
         'rfc_discussion': 25,
         'dependency_injection': 40,
         'ghost_branch': 25,
+        'documentation_intent': 15,
     }

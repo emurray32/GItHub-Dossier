@@ -105,36 +105,36 @@ class StreamHandler {
                 item.className = `finding-item finding-${signal.significance || 'medium'}`;
 
                 // Format based on signal type
-                let icon = '📌';
+                let iconClass = 'info';
                 let description = '';
 
                 switch (signal.type) {
                     case 'competitor_config':
-                        icon = '⚠️';
+                        iconClass = 'warning';
                         description = `Competitor TMS: ${signal.file}`;
                         break;
                     case 'frustration':
-                        icon = '😤';
+                        iconClass = 'danger';
                         description = `Pain Point: "${signal.message}..."`;
                         break;
                     case 'new_locale_file':
-                        icon = '🌍';
+                        iconClass = 'success';
                         description = `New locale: ${signal.file}`;
                         break;
                     case 'locale_inventory':
-                        icon = '📁';
+                        iconClass = 'info';
                         description = `${signal.count} locales in ${signal.repo}`;
                         break;
                     case 'seo_i18n_config':
-                        icon = '🎯';
+                        iconClass = 'success';
                         description = `SEO i18n: ${signal.source} (${signal.locales?.length || 0} locales)`;
                         break;
                     case 'greenfield_opportunity':
-                        icon = '💎';
+                        iconClass = 'success';
                         description = `Greenfield! ${signal.total_stars}+ stars, no i18n`;
                         break;
                     case 'i18n_pr':
-                        icon = '📝';
+                        iconClass = 'info';
                         description = `PR #${signal.pr_number}: ${signal.title}`;
                         break;
                     default:
@@ -142,7 +142,7 @@ class StreamHandler {
                 }
 
                 item.innerHTML = `
-                    <span class="finding-icon">${icon}</span>
+                    <span class="finding-icon ${iconClass}" aria-hidden="true"></span>
                     <span class="finding-text">${this.escapeHtml(description)}</span>
                     ${signal.repo ? `<span class="finding-repo">${this.escapeHtml(signal.repo)}</span>` : ''}
                 `;
@@ -332,13 +332,28 @@ class StreamHandler {
             preview.innerHTML += `
                 <div class="preview-section">
                     <h3>Assessment</h3>
-                    <p>
-                        <strong>Maturity:</strong>
+                    <div style="display: flex; gap: 1rem; align-items: center;">
                         <span class="maturity-badge maturity-${maturity}">${maturity}</span>
-                    </p>
-                    <p>
-                        <strong>Opportunity Score:</strong> ${score}/10
-                    </p>
+                        <span style="font-weight: 600;">Opportunity Score: ${score}/10</span>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Email Draft Preview
+        if (this.analysisData.email_draft) {
+            preview.innerHTML += `
+                <div class="preview-section" style="background: var(--bg-primary); border: 1px solid var(--border-color); padding: 1rem; border-radius: 8px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                        <h3 style="margin: 0;">Email Draft Generated</h3>
+                        <span class="badge badge-primary">Skill: Cold Outreach</span>
+                    </div>
+                    <div style="font-size: 0.875rem; color: var(--text-secondary); margin-bottom: 0.5rem;">
+                        <strong>Subject:</strong> ${this.escapeHtml(this.analysisData.email_draft.subject)}
+                    </div>
+                    <div style="font-size: 0.875rem; white-space: pre-line; line-height: 1.5; color: var(--text-primary); max-height: 150px; overflow-y: auto; padding: 0.75rem; background: var(--bg-secondary); border-radius: 4px;">
+                        ${this.escapeHtml(this.analysisData.email_draft.body)}
+                    </div>
                 </div>
             `;
         }
