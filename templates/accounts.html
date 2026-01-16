@@ -2577,7 +2577,7 @@
                         </span>
                     </td>
                     <td>
-                        <span class="tier-badge tier-badge-${account.current_tier}">Tier ${account.current_tier} - ${escapeHtml(tierConfig.name)}</span>
+                        <span class="tier-badge tier-badge-${account.current_tier}">Tier ${account.current_tier}</span>
                     </td>
                     <td class="last-check-cell">
                         <div class="status-container">
@@ -2951,7 +2951,7 @@
             if (tierBadge && data.new_tier !== undefined) {
                 const newTierClass = `tier-badge-${data.new_tier}`;
                 tierBadge.className = `tier-badge ${newTierClass}`;
-                tierBadge.textContent = data.tier_name;
+                tierBadge.textContent = `Tier ${data.new_tier}`;
             }
 
             // Update evidence text
