@@ -24,7 +24,7 @@ from database import (
     clear_stale_scan_statuses, reset_all_scan_statuses, batch_set_scan_status_queued,
     reset_stale_queued_accounts, reset_all_queued_to_idle,
     SCAN_STATUS_IDLE, SCAN_STATUS_QUEUED, SCAN_STATUS_PROCESSING,
-    save_signals, cleanup_duplicate_accounts
+    save_signals, cleanup_duplicate_accounts, update_account_annual_revenue
 )
 from monitors.scanner import deep_scan_generator
 from monitors.discovery import search_github_orgs, resolve_org_fast, discover_companies_via_ai
@@ -1126,12 +1126,21 @@ def api_import():
         try:
             existing = get_account_by_company_case_insensitive(company_name)
             if existing:
-                skipped.append(company_name)
-                results.append({
-                    'company': company_name,
-                    'github_org': existing.get('github_org'),
-                    'status': 'already_indexed'
-                })
+                # If annual_revenue provided and account exists, enrich it
+                if annual_revenue:
+                    update_account_annual_revenue(company_name, annual_revenue)
+                    results.append({
+                        'company': company_name,
+                        'github_org': existing.get('github_org'),
+                        'status': 'enriched'
+                    })
+                else:
+                    skipped.append(company_name)
+                    results.append({
+                        'company': company_name,
+                        'github_org': existing.get('github_org'),
+                        'status': 'already_indexed'
+                    })
                 continue
 
             # Try to resolve the company to a GitHub org
