@@ -56,6 +56,7 @@ def init_db() -> None:
             company_name TEXT NOT NULL UNIQUE,
             github_org TEXT,
             annual_revenue TEXT,
+            notes TEXT,
             current_tier INTEGER DEFAULT 0,
             last_scanned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             status_changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -70,6 +71,12 @@ def init_db() -> None:
     # Migrate existing tables: add annual_revenue column if it doesn't exist
     try:
         cursor.execute('ALTER TABLE monitored_accounts ADD COLUMN annual_revenue TEXT')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
+    # Migrate existing tables: add notes column if it doesn't exist
+    try:
+        cursor.execute('ALTER TABLE monitored_accounts ADD COLUMN notes TEXT')
     except sqlite3.OperationalError:
         pass  # Column already exists
 
@@ -887,6 +894,35 @@ def update_account_annual_revenue(company_name: str, annual_revenue: str) -> boo
         SET annual_revenue = ?
         WHERE LOWER(company_name) = LOWER(?)
     ''', (annual_revenue, company_name.strip()))
+
+    updated = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+
+    return updated
+
+
+def update_account_notes(account_id: int, notes: str) -> bool:
+    """
+    Update the notes field for an existing account.
+
+    Used by BDRs to track outreach status, meetings, etc.
+
+    Args:
+        account_id: The account ID to update.
+        notes: The notes text.
+
+    Returns:
+        True if the update was successful, False if account not found.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        UPDATE monitored_accounts
+        SET notes = ?
+        WHERE id = ?
+    ''', (notes, account_id))
 
     updated = cursor.rowcount > 0
     conn.commit()

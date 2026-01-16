@@ -905,6 +905,89 @@
         font-size: 0.8rem;
     }
 
+    /* Notes cell */
+    .notes-cell {
+        min-width: 150px;
+        max-width: 250px;
+        font-size: 0.85rem;
+        color: var(--text-secondary);
+    }
+
+    .notes-display {
+        cursor: pointer;
+        white-space: normal;
+        word-break: break-word;
+        display: block;
+        min-height: 1.5em;
+        padding: 0.25rem;
+        border-radius: 4px;
+    }
+
+    .notes-display:hover {
+        background: var(--bg-tertiary);
+    }
+
+    .notes-display:empty::before {
+        content: 'Click to add notes...';
+        color: var(--text-muted);
+        font-style: italic;
+        font-size: 0.8rem;
+    }
+
+    .notes-edit-container {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    .notes-input {
+        width: 100%;
+        min-height: 60px;
+        padding: 0.5rem;
+        border: 1px solid var(--border-color);
+        border-radius: 4px;
+        background: var(--bg-secondary);
+        color: var(--text-primary);
+        font-size: 0.85rem;
+        resize: vertical;
+    }
+
+    .notes-input:focus {
+        outline: none;
+        border-color: var(--accent-color);
+    }
+
+    .notes-edit-buttons {
+        display: flex;
+        gap: 0.5rem;
+    }
+
+    .btn-save-notes, .btn-cancel-notes {
+        padding: 0.3rem 0.6rem;
+        font-size: 0.75rem;
+        border-radius: 4px;
+        cursor: pointer;
+        border: none;
+    }
+
+    .btn-save-notes {
+        background: var(--accent-color);
+        color: white;
+    }
+
+    .btn-save-notes:hover {
+        background: var(--accent-hover);
+    }
+
+    .btn-cancel-notes {
+        background: var(--bg-tertiary);
+        color: var(--text-secondary);
+    }
+
+    .btn-cancel-notes:hover {
+        background: var(--border-color);
+    }
+
     /* Actions cell */
     .actions-cell {
         display: flex;
@@ -1648,6 +1731,7 @@
                     <th class="sortable" data-sort-key="evidence">Evidence Summary <span class="sort-indicator">↕</span>
                     </th>
                     <th>Actions</th>
+                    <th class="notes-col">Notes</th>
                 </tr>
             </thead>
             <tbody id="accounts-tbody">
@@ -1700,6 +1784,16 @@
             <td class="actions-cell">
                 {actions_html}
             </td>
+            <td class="notes-cell" data-account-id="{id}">
+                <span class="notes-display" ondblclick="editNotes(this)">{notes}</span>
+                <div class="notes-edit-container" style="display: none;">
+                    <textarea class="notes-input" placeholder="Add notes...">{notes}</textarea>
+                    <div class="notes-edit-buttons">
+                        <button type="button" class="btn-save-notes" onclick="saveNotes(this)">Save</button>
+                        <button type="button" class="btn-cancel-notes" onclick="cancelNotesEdit(this)">Cancel</button>
+                    </div>
+                </div>
+            </td>
         </tr>
     </script>
 
@@ -1707,7 +1801,7 @@
     <div style="display: none;">
         <tbody id="accounts-tbody-old">
             <tr class="table-empty-row hidden" id="accounts-empty-row">
-                <td colspan="9">No accounts match your filters.</td>
+                <td colspan="10">No accounts match your filters.</td>
             </tr>
             {% for account in accounts %}
             <tr id="row-{{ account.id }}" data-company="{{ account.company_name }}" data-account-id="{{ account.id }}"
@@ -2595,6 +2689,16 @@
                     <td class="actions-cell">
                         ${actionsHtml}
                     </td>
+                    <td class="notes-cell" data-account-id="${account.id}">
+                        <span class="notes-display" ondblclick="editNotes(this)">${escapeHtml(account.notes || '')}</span>
+                        <div class="notes-edit-container" style="display: none;">
+                            <textarea class="notes-input" placeholder="Add notes...">${escapeHtml(account.notes || '')}</textarea>
+                            <div class="notes-edit-buttons">
+                                <button type="button" class="btn-save-notes" onclick="saveNotes(this)">Save</button>
+                                <button type="button" class="btn-cancel-notes" onclick="cancelNotesEdit(this)">Cancel</button>
+                            </div>
+                        </div>
+                    </td>
                 </tr>
             `;
         }).join('');
@@ -2902,6 +3006,72 @@
         } catch (error) {
             console.error('Update org error:', error);
             alert('Failed to update GitHub org: ' + error.message);
+            buttonEl.disabled = false;
+            buttonEl.textContent = 'Save';
+        }
+    }
+
+    // =============================================================================
+    // Notes Editing Functions
+    // =============================================================================
+
+    function editNotes(displayEl) {
+        const cell = displayEl.closest('.notes-cell');
+        const editContainer = cell.querySelector('.notes-edit-container');
+        const textarea = cell.querySelector('.notes-input');
+
+        displayEl.style.display = 'none';
+        editContainer.style.display = 'block';
+        textarea.focus();
+    }
+
+    function cancelNotesEdit(buttonEl) {
+        const cell = buttonEl.closest('.notes-cell');
+        const displayEl = cell.querySelector('.notes-display');
+        const editContainer = cell.querySelector('.notes-edit-container');
+        const textarea = cell.querySelector('.notes-input');
+
+        // Reset textarea to original value
+        textarea.value = displayEl.textContent || '';
+        editContainer.style.display = 'none';
+        displayEl.style.display = 'block';
+    }
+
+    async function saveNotes(buttonEl) {
+        const cell = buttonEl.closest('.notes-cell');
+        const accountId = cell.dataset.accountId;
+        const displayEl = cell.querySelector('.notes-display');
+        const editContainer = cell.querySelector('.notes-edit-container');
+        const textarea = cell.querySelector('.notes-input');
+        const newNotes = textarea.value.trim();
+
+        buttonEl.disabled = true;
+        buttonEl.textContent = 'Saving...';
+
+        try {
+            const response = await fetch(`/api/accounts/${accountId}/notes`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ notes: newNotes })
+            });
+
+            const data = await response.json();
+
+            if (!response.ok || data.status !== 'success') {
+                throw new Error(data.error || 'Failed to save notes');
+            }
+
+            // Update display and hide edit container
+            displayEl.textContent = newNotes;
+            editContainer.style.display = 'none';
+            displayEl.style.display = 'block';
+
+        } catch (error) {
+            console.error('Save notes error:', error);
+            alert('Failed to save notes: ' + error.message);
+        } finally {
             buttonEl.disabled = false;
             buttonEl.textContent = 'Save';
         }

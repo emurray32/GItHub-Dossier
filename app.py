@@ -24,7 +24,8 @@ from database import (
     clear_stale_scan_statuses, reset_all_scan_statuses, batch_set_scan_status_queued,
     reset_stale_queued_accounts, reset_all_queued_to_idle,
     SCAN_STATUS_IDLE, SCAN_STATUS_QUEUED, SCAN_STATUS_PROCESSING,
-    save_signals, cleanup_duplicate_accounts, update_account_annual_revenue
+    save_signals, cleanup_duplicate_accounts, update_account_annual_revenue,
+    update_account_notes
 )
 from monitors.scanner import deep_scan_generator
 from monitors.discovery import search_github_orgs, resolve_org_fast, discover_companies_via_ai
@@ -920,6 +921,18 @@ def api_delete_account(account_id: int):
     if not deleted:
         return jsonify({'error': 'Account not found'}), 404
     return jsonify({'status': 'success'})
+
+
+@app.route('/api/accounts/<int:account_id>/notes', methods=['PUT'])
+def api_update_account_notes(account_id: int):
+    """Update the notes field for an account."""
+    data = request.get_json() or {}
+    notes = data.get('notes', '')
+
+    updated = update_account_notes(account_id, notes)
+    if not updated:
+        return jsonify({'error': 'Account not found'}), 404
+    return jsonify({'status': 'success', 'notes': notes})
 
 
 @app.route('/grow')
