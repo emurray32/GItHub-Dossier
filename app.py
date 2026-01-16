@@ -547,6 +547,30 @@ def spawn_background_scan(company_name: str):
     print(f"[EXECUTOR] Submitted scan for {company_name}")
 
 
+def validate_revenue_value(value):
+    """
+    Validate that a value looks like a revenue number.
+
+    Returns the value if it matches revenue patterns (e.g., "$50M", "4.6B", "50000000"),
+    or None if it appears to be plain text (e.g., "Inc.", "Company Name").
+    """
+    import re
+    if not value or not isinstance(value, str):
+        return None
+    trimmed = value.strip()
+    if not trimmed:
+        return None
+
+    # Pattern matches revenue formats like: $50M, $4.6B, 50000000, $50,000,000, 500K, €50M
+    # Must contain at least one digit to be considered a revenue value
+    revenue_pattern = r'^[$€£¥]?\s*[\d,.]+\s*[KkMmBbTt]?$'
+
+    if re.match(revenue_pattern, trimmed):
+        return trimmed
+
+    return None
+
+
 def process_import_batch_worker(batch_id: int):
     """
     Process an import batch from the database.
@@ -591,7 +615,8 @@ def process_import_batch_worker(batch_id: int):
             # Support both string format and object format with annual_revenue
             if isinstance(company_item, dict):
                 company_name = company_item.get('name', '').strip()
-                annual_revenue = company_item.get('annual_revenue')
+                # Validate revenue - ignore text that doesn't look like a number
+                annual_revenue = validate_revenue_value(company_item.get('annual_revenue'))
             else:
                 company_name = str(company_item).strip()
                 annual_revenue = None
