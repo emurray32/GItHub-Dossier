@@ -68,10 +68,18 @@ def format_slack_message(event_type: str, company_data: dict) -> dict:
     github_org = company_data.get('github_org', '')
     report_id = company_data.get('report_id')
     signals_summary = company_data.get('signals_summary', [])
+    revenue = company_data.get('revenue')
 
-    # Get base URL from Flask request context
-    from flask import request
-    base_url = request.host_url.rstrip('/')
+    # Get base URL from Flask request context or environment/config
+    try:
+        from flask import request, has_request_context
+        if has_request_context():
+            base_url = request.host_url.rstrip('/')
+        else:
+            # Fallback for background threads without request context
+            base_url = os.environ.get('BASE_URL', 'http://localhost:5000')
+    except Exception:
+        base_url = os.environ.get('BASE_URL', 'http://localhost:5000')
 
     # Determine color and emoji based on tier
     tier_colors = {
@@ -111,6 +119,10 @@ def format_slack_message(event_type: str, company_data: dict) -> dict:
                 {
                     "type": "mrkdwn",
                     "text": f"*Company:*\n{company}"
+                },
+                {
+                    "type": "mrkdwn",
+                    "text": f"*Revenue:*\n{revenue if revenue else 'N/A'}"
                 },
                 {
                     "type": "mrkdwn",
@@ -321,8 +333,12 @@ def trigger_webhook(event_type: str, company_data: dict) -> None:
             try:
                 payload = format_slack_message(event_type, company_data)
             except Exception as e:
-                print(f"[WEBHOOK] Error formatting Slack message: {str(e)}, falling back to generic payload")
+                print(f"[WEBHOOK] Error formatting Slack message: {str(e)}, falling back to simple Slack payload")
+                # Slack requires 'text' field as fallback
+                tier_name = company_data.get('tier_name', 'Unknown')
+                evidence = company_data.get('evidence', '')
                 payload = {
+                    'text': f"New {tier_name} Lead: {company_name}\n{evidence}",
                     'event_type': event_type,
                     'timestamp': datetime.now().isoformat(),
                     **company_data
@@ -512,7 +528,8 @@ def perform_background_scan(company_name: str):
                     'tier': result.get('tier'),
                     'tier_name': tier_name,
                     'evidence': result.get('evidence', ''),
-                    'github_org': scan_data.get('org_login', '')
+                    'github_org': scan_data.get('org_login', ''),
+                    'revenue': result.get('revenue')
                 }
                 # Enrich with report details and signals
                 webhook_data = enrich_webhook_data(webhook_data, report_id)
@@ -781,7 +798,8 @@ def stream_scan(company: str):
                     'tier': account_result.get('tier'),
                     'tier_name': tier_name,
                     'evidence': account_result.get('evidence', ''),
-                    'github_org': scan_data.get('org_login', '')
+                    'github_org': scan_data.get('org_login', ''),
+                    'revenue': account_result.get('revenue')
                 }
                 # Enrich with report details and signals
                 webhook_data = enrich_webhook_data(webhook_data, report_id)
