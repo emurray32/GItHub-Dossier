@@ -1519,14 +1519,14 @@
                 <div class="tier-filter">
                     <!-- Multi-select tier buttons -->
                     <button class="tier-filter-btn {% if not current_tier_filter %}active{% endif %}"
-                        onclick="updateFilters({tier: null})">
+                        data-tier-id="all">
                         All
                     </button>
 
                     {% for tier_id, config in tier_config.items() %}
                     <button
                         class="tier-filter-btn {% if current_tier_filter and tier_id in current_tier_filter %}active{% endif %}"
-                        onclick="toggleTierFilter({{ tier_id }})">
+                        data-tier-id="{{ tier_id }}">
                         {{ config.name }}
                     </button>
                     {% endfor %}
@@ -2440,8 +2440,13 @@
             btn.addEventListener('click', (e) => {
                 e.preventDefault();
                 paginationState.currentPage = 1;
-                const tierId = parseInt(btn.dataset.tierId);
-                toggleTierFilter(tierId);
+                const tierIdStr = btn.dataset.tierId;
+                if (tierIdStr === 'all') {
+                    updateFilters({tier: null});
+                } else {
+                    const tierId = parseInt(tierIdStr);
+                    toggleTierFilter(tierId);
+                }
             });
         });
     }
