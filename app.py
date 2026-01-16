@@ -25,7 +25,8 @@ from database import (
     reset_stale_queued_accounts, reset_all_queued_to_idle,
     SCAN_STATUS_IDLE, SCAN_STATUS_QUEUED, SCAN_STATUS_PROCESSING,
     save_signals, cleanup_duplicate_accounts, update_account_annual_revenue,
-    update_account_notes
+    update_account_notes,
+    create_import_batch, get_pending_import_batches, update_batch_progress, get_import_batch
 )
 from monitors.scanner import deep_scan_generator
 from monitors.discovery import search_github_orgs, resolve_org_fast, discover_companies_via_ai
@@ -544,6 +545,111 @@ def spawn_background_scan(company_name: str):
     executor = get_executor()
     future = executor.submit(perform_background_scan, company_name)
     print(f"[EXECUTOR] Submitted scan for {company_name}")
+
+
+def process_import_batch_worker(batch_id: int):
+    """
+    Process an import batch from the database.
+
+    This worker function:
+    1. Fetches the batch data from DB
+    2. Updates status to 'processing'
+    3. Loops through companies, processing each item
+    4. For each item: check if exists (idempotency), resolve org, add to tier 0, spawn scan
+    5. Updates progress every 10 items
+    6. Marks batch as 'completed' when done
+
+    This is resilient to restarts - progress is persisted and can be resumed.
+    """
+    print(f"[BATCH-WORKER] Starting batch {batch_id}")
+
+    try:
+        # Fetch batch data from DB
+        batch = get_import_batch(batch_id)
+        if not batch:
+            print(f"[BATCH-WORKER] Batch {batch_id} not found")
+            return
+
+        companies = batch.get('companies', [])
+        processed_count = batch.get('processed_count', 0)
+        total_count = batch.get('total_count', len(companies))
+
+        print(f"[BATCH-WORKER] Batch {batch_id}: {total_count} companies, resuming from {processed_count}")
+
+        # Update status to 'processing'
+        update_batch_progress(batch_id, processed_count, status='processing')
+
+        # Track results for logging
+        added = []
+        failed = []
+        skipped = []
+
+        # Process each company starting from where we left off
+        for i, company_item in enumerate(companies[processed_count:], start=processed_count):
+            # Support both string format and object format with annual_revenue
+            if isinstance(company_item, dict):
+                company_name = company_item.get('name', '').strip()
+                annual_revenue = company_item.get('annual_revenue')
+            else:
+                company_name = str(company_item).strip()
+                annual_revenue = None
+
+            if not company_name:
+                processed_count = i + 1
+                continue
+
+            try:
+                # Check if account already exists (idempotency)
+                existing = get_account_by_company_case_insensitive(company_name)
+                if existing:
+                    # If annual_revenue provided and account exists, enrich it
+                    if annual_revenue:
+                        update_account_annual_revenue(company_name, annual_revenue)
+                        skipped.append(company_name)
+                    else:
+                        skipped.append(company_name)
+                    processed_count = i + 1
+                    # Update progress every 10 items
+                    if processed_count % 10 == 0:
+                        update_batch_progress(batch_id, processed_count)
+                        print(f"[BATCH-WORKER] Batch {batch_id}: processed {processed_count}/{total_count}")
+                    continue
+
+                # Try to resolve the company to a GitHub org
+                org = resolve_org_fast(company_name)
+
+                if org:
+                    github_org = org.get('login', '')
+                    # Add to monitored_accounts at Tier 0 with optional annual_revenue
+                    add_account_to_tier_0(company_name, github_org, annual_revenue)
+                    added.append(company_name)
+                    # Spawn background scan for this company
+                    spawn_background_scan(company_name)
+                else:
+                    failed.append(company_name)
+
+            except Exception as e:
+                print(f"[BATCH-WORKER] Error processing {company_name}: {str(e)}")
+                failed.append(company_name)
+
+            processed_count = i + 1
+
+            # Update progress every 10 items
+            if processed_count % 10 == 0:
+                update_batch_progress(batch_id, processed_count)
+                print(f"[BATCH-WORKER] Batch {batch_id}: processed {processed_count}/{total_count}")
+
+        # Mark batch as completed
+        update_batch_progress(batch_id, processed_count, status='completed')
+        print(f"[BATCH-WORKER] Batch {batch_id} completed: {len(added)} added, {len(failed)} failed, {len(skipped)} skipped")
+
+    except Exception as e:
+        print(f"[BATCH-WORKER] Batch {batch_id} failed with error: {str(e)}")
+        # Mark as failed but preserve progress
+        try:
+            update_batch_progress(batch_id, processed_count, status='failed')
+        except Exception:
+            pass
 
 
 @app.route('/')
@@ -1095,19 +1201,25 @@ def api_import():
     """
     Bulk import companies by resolving them to GitHub organizations.
 
+    This endpoint is resilient to server restarts:
+    1. Saves the import data to a persistent database batch
+    2. Submits the batch to the thread pool for background processing
+    3. Returns immediately with the batch_id
+
+    The batch worker processes each company, checking for duplicates,
+    resolving GitHub orgs, and spawning scans. Progress is persisted
+    so interrupted batches can be resumed on restart.
+
     Expects JSON payload: {"companies": ["Shopify", "Stripe", ...]}
     Or with annual_revenue: {"companies": [{"name": "Shopify", "annual_revenue": "$4.6B"}, ...]}
 
     Returns:
         JSON with: {
-            "added": ["Shopify", ...],
-            "failed": ["MomPop", ...],
-            "results": [{"company": "...", "github_org": "...", "status": "..."}],
-            "batch_id": timestamp
+            "batch_id": <int>,
+            "total_count": <int>,
+            "status": "queued",
+            "message": "Import batch created and queued for processing"
         }
-
-    After adding companies to the database, batch-queues them for scanning.
-    This is optimized for bulk imports - all accounts are queued at once.
     """
     data = request.get_json() or {}
     companies = data.get('companies', [])
@@ -1115,94 +1227,20 @@ def api_import():
     if not isinstance(companies, list) or not companies:
         return jsonify({'error': 'Invalid payload: expected {"companies": [...]}'}), 400
 
-    # Generate batch ID using current timestamp
-    batch_id = int(time.time())
+    # Create persistent batch in database
+    batch_id = create_import_batch(companies)
+    print(f"[IMPORT] Created batch {batch_id} with {len(companies)} companies")
 
-    added = []
-    failed = []
-    skipped = []
-    results = []
-
-    # Phase 1: Resolve and add all companies to database (no scanning yet)
-    for company_item in companies:
-        # Support both string format and object format with annual_revenue
-        if isinstance(company_item, dict):
-            company_name = company_item.get('name', '').strip()
-            annual_revenue = company_item.get('annual_revenue')
-        else:
-            company_name = str(company_item).strip()
-            annual_revenue = None
-
-        if not company_name:
-            continue
-
-        try:
-            existing = get_account_by_company_case_insensitive(company_name)
-            if existing:
-                # If annual_revenue provided and account exists, enrich it
-                if annual_revenue:
-                    update_account_annual_revenue(company_name, annual_revenue)
-                    results.append({
-                        'company': company_name,
-                        'github_org': existing.get('github_org'),
-                        'status': 'enriched'
-                    })
-                else:
-                    skipped.append(company_name)
-                    results.append({
-                        'company': company_name,
-                        'github_org': existing.get('github_org'),
-                        'status': 'already_indexed'
-                    })
-                continue
-
-            # Try to resolve the company to a GitHub org
-            org = resolve_org_fast(company_name)
-
-            if org:
-                github_org = org.get('login', '')
-                # Add to monitored_accounts at Tier 0 with optional annual_revenue
-                add_account_to_tier_0(company_name, github_org, annual_revenue)
-                added.append(company_name)
-                results.append({
-                    'company': company_name,
-                    'github_org': github_org,
-                    'status': 'added'
-                })
-            else:
-                failed.append(company_name)
-                results.append({
-                    'company': company_name,
-                    'github_org': None,
-                    'status': 'not_found'
-                })
-        except Exception as e:
-            failed.append(company_name)
-            results.append({
-                'company': company_name,
-                'github_org': None,
-                'status': f'error: {str(e)}'
-            })
-
-    # Phase 2: Batch update all added accounts to 'queued' status at once
-    # This makes the queue populate instantly rather than trickling in
-    if added:
-        batch_set_scan_status_queued(added)
-        print(f"[IMPORT] Batch queued {len(added)} accounts")
-
-        # Phase 3: Submit all to executor for background scanning
-        executor = get_executor()
-        for company_name in added:
-            executor.submit(perform_background_scan, company_name)
-            print(f"[EXECUTOR] Submitted scan for {company_name}")
+    # Submit batch to thread pool for background processing
+    executor = get_executor()
+    executor.submit(process_import_batch_worker, batch_id)
+    print(f"[EXECUTOR] Submitted batch {batch_id} for processing")
 
     return jsonify({
-        'added': added,
-        'failed': failed,
-        'skipped': skipped,
-        'total_processed': len(companies),
-        'results': results,
-        'batch_id': batch_id
+        'batch_id': batch_id,
+        'total_count': len(companies),
+        'status': 'queued',
+        'message': 'Import batch created and queued for processing'
     })
 
 
@@ -1520,6 +1558,7 @@ def initialize_on_first_request():
     This provides resilience against app restarts:
     - Recovers accounts stuck in 'queued' status and re-queues them
     - Resets any scan statuses that were stuck in 'processing'
+    - Resumes interrupted import batches
     - Auto-scans any accounts that were imported but never scanned
     """
     global _app_initialized
@@ -1536,6 +1575,9 @@ def initialize_on_first_request():
         reset_count = reset_all_scan_statuses()
         if reset_count > 0:
             print(f"[APP] Reset {reset_count} stale processing statuses from previous run")
+
+        # Resume any interrupted import batches
+        _resume_interrupted_import_batches()
 
         # Auto-scan any accounts that were imported but never scanned
         _auto_scan_pending_accounts()
@@ -1572,6 +1614,37 @@ def _recover_stuck_queued_accounts():
 
     except Exception as e:
         print(f"[APP] Error recovering stuck queued accounts: {str(e)}")
+
+
+def _resume_interrupted_import_batches():
+    """
+    Resume any import batches that were interrupted by a server restart.
+
+    This checks for batches with status 'pending' or 'processing' and
+    submits them to the executor to continue processing from where they left off.
+    """
+    try:
+        pending_batches = get_pending_import_batches()
+
+        if pending_batches:
+            print(f"[APP] Found {len(pending_batches)} interrupted import batches to resume")
+
+            executor = get_executor()
+            for batch in pending_batches:
+                batch_id = batch.get('id')
+                processed = batch.get('processed_count', 0)
+                total = batch.get('total_count', 0)
+                status = batch.get('status', 'unknown')
+
+                print(f"[APP] Resuming batch {batch_id}: {processed}/{total} processed (was {status})")
+                executor.submit(process_import_batch_worker, batch_id)
+
+            print(f"[APP] Submitted {len(pending_batches)} batches for resumption")
+        else:
+            print("[APP] No interrupted import batches to resume")
+
+    except Exception as e:
+        print(f"[APP] Error resuming interrupted import batches: {str(e)}")
 
 
 def _auto_scan_pending_accounts():
@@ -1805,6 +1878,9 @@ if __name__ == '__main__':
     reset_count = reset_all_scan_statuses()
     if reset_count > 0:
         print(f"[APP] Reset {reset_count} stale processing statuses from previous run")
+
+    # Resume any interrupted import batches
+    _resume_interrupted_import_batches()
 
     # Auto-scan any accounts that were never scanned
     _auto_scan_pending_accounts()

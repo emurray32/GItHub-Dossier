@@ -152,6 +152,24 @@ def init_db() -> None:
         ON webhook_logs(timestamp DESC)
     ''')
 
+    # Import Batches table - persistent queue for bulk imports
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS import_batches (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            status TEXT DEFAULT 'pending',
+            total_count INTEGER,
+            processed_count INTEGER DEFAULT 0,
+            companies_json TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_import_batches_status
+        ON import_batches(status)
+    ''')
+
     # Scan Signals table - stores individual signals detected during scans
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS scan_signals (
@@ -1678,6 +1696,144 @@ def batch_set_scan_status_queued(company_names: list) -> int:
 
 
 # Duplicate cleanup check complete
+
+
+# =============================================================================
+# IMPORT BATCH FUNCTIONS - Persistent bulk import queue
+# =============================================================================
+
+def create_import_batch(companies_list: list) -> int:
+    """
+    Create a new import batch and persist it to the database.
+
+    Args:
+        companies_list: List of company items (strings or dicts with name/annual_revenue)
+
+    Returns:
+        The batch_id (integer) of the newly created batch
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    now = datetime.now().isoformat()
+    companies_json = json.dumps(companies_list)
+    total_count = len(companies_list)
+
+    cursor.execute('''
+        INSERT INTO import_batches (status, total_count, processed_count, companies_json, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+    ''', ('pending', total_count, 0, companies_json, now, now))
+
+    batch_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+
+    return batch_id
+
+
+def get_pending_import_batches() -> list:
+    """
+    Get all import batches that are pending or processing.
+
+    Used at startup to resume interrupted batches.
+
+    Returns:
+        List of batch dictionaries with id, status, total_count, processed_count, companies_json
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT id, status, total_count, processed_count, companies_json, created_at, updated_at
+        FROM import_batches
+        WHERE status IN ('pending', 'processing')
+        ORDER BY created_at ASC
+    ''')
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    batches = []
+    for row in rows:
+        batch = dict(row)
+        # Parse the companies_json back to a list
+        if batch.get('companies_json'):
+            batch['companies'] = json.loads(batch['companies_json'])
+        else:
+            batch['companies'] = []
+        batches.append(batch)
+
+    return batches
+
+
+def update_batch_progress(batch_id: int, processed_count: int, status: Optional[str] = None) -> bool:
+    """
+    Update the progress and optionally the status of an import batch.
+
+    Args:
+        batch_id: The ID of the batch to update
+        processed_count: The new processed count
+        status: Optional new status ('pending', 'processing', 'completed', 'failed')
+
+    Returns:
+        True if the update was successful, False otherwise
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    now = datetime.now().isoformat()
+
+    if status:
+        cursor.execute('''
+            UPDATE import_batches
+            SET processed_count = ?, status = ?, updated_at = ?
+            WHERE id = ?
+        ''', (processed_count, status, now, batch_id))
+    else:
+        cursor.execute('''
+            UPDATE import_batches
+            SET processed_count = ?, updated_at = ?
+            WHERE id = ?
+        ''', (processed_count, now, batch_id))
+
+    updated = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+
+    return updated
+
+
+def get_import_batch(batch_id: int) -> Optional[dict]:
+    """
+    Get a single import batch by ID.
+
+    Args:
+        batch_id: The ID of the batch to retrieve
+
+    Returns:
+        Batch dictionary or None if not found
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT id, status, total_count, processed_count, companies_json, created_at, updated_at
+        FROM import_batches
+        WHERE id = ?
+    ''', (batch_id,))
+
+    row = cursor.fetchone()
+    conn.close()
+
+    if row:
+        batch = dict(row)
+        if batch.get('companies_json'):
+            batch['companies'] = json.loads(batch['companies_json'])
+        else:
+            batch['companies'] = []
+        return batch
+
+    return None
 
 
 # Initialize database on module import
