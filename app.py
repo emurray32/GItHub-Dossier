@@ -1244,6 +1244,37 @@ def api_import():
     })
 
 
+@app.route('/api/import-batch/<int:batch_id>', methods=['GET'])
+def api_import_batch_status(batch_id):
+    """
+    Get the status and progress of an import batch.
+
+    Returns:
+        JSON with: {
+            "batch_id": <int>,
+            "status": "pending" | "processing" | "completed" | "failed",
+            "total_count": <int>,
+            "processed_count": <int>,
+            "progress_percent": <int>
+        }
+    """
+    batch = get_import_batch(batch_id)
+    if not batch:
+        return jsonify({'error': 'Batch not found'}), 404
+
+    total = batch.get('total_count', 0)
+    processed = batch.get('processed_count', 0)
+    progress_percent = int((processed / total * 100) if total > 0 else 0)
+
+    return jsonify({
+        'batch_id': batch_id,
+        'status': batch.get('status', 'unknown'),
+        'total_count': total,
+        'processed_count': processed,
+        'progress_percent': progress_percent
+    })
+
+
 @app.route('/api/track', methods=['POST'])
 def api_track():
     """

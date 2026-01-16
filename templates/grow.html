@@ -1024,42 +1024,29 @@
             const data = await response.json();
 
             if (response.ok) {
-                addConsoleEntry('', 'info');
-                addConsoleEntry(`═══════════════════════════════════`, 'info');
-                addConsoleEntry(`Import Complete`, 'success');
-                addConsoleEntry(`═══════════════════════════════════`, 'info');
-                const enrichedCount = data.results.filter(r => r.status === 'enriched').length;
-                addConsoleEntry(`Added: ${data.added.length} / ${data.total_processed}`, 'success');
-                if (enrichedCount > 0) {
-                    addConsoleEntry(`Enriched: ${enrichedCount} / ${data.total_processed}`, 'success');
-                }
-                addConsoleEntry(`Failed: ${data.failed.length} / ${data.total_processed}`, 'error');
-                addConsoleEntry('', 'info');
+                // Handle async batch import response
+                if (data.status === 'queued' && data.batch_id) {
+                    addConsoleEntry(`Import batch #${data.batch_id} queued (${data.total_count} companies)`, 'info');
+                    addConsoleEntry('Processing in background...', 'info');
 
-                // Show results
-                data.results.forEach(result => {
-                    if (result.status === 'added') {
-                        addConsoleEntry(`Added ${result.company} → ${result.github_org}`, 'success');
-                    } else if (result.status === 'enriched') {
-                        addConsoleEntry(`Enriched ${result.company} with revenue data`, 'success');
-                    } else {
-                        addConsoleEntry(`${result.company} (${result.status})`, 'error');
+                    // Reset CSV immediately
+                    selectedCSVData = null;
+                    document.getElementById('csvFileInput').value = '';
+                    document.getElementById('fileSelectedInfo').style.display = 'none';
+                    document.getElementById('processCSVBtn').style.display = 'none';
+
+                    // Poll for batch completion
+                    await pollBatchProgress(data.batch_id, data.total_count);
+                } else if (data.results) {
+                    // Legacy synchronous response format (if ever used)
+                    handleLegacyImportResponse(data);
+                } else {
+                    addConsoleEntry('Import started successfully', 'success');
+                    if (data.batch_id) {
+                        setTimeout(() => {
+                            window.location.href = `/accounts?highlight_batch=${data.batch_id}`;
+                        }, 2000);
                     }
-                });
-
-                // Reset CSV
-                selectedCSVData = null;
-                document.getElementById('csvFileInput').value = '';
-                document.getElementById('fileSelectedInfo').style.display = 'none';
-                document.getElementById('processCSVBtn').style.display = 'none';
-
-                // Redirect to accounts page with batch_id
-                if (data.batch_id) {
-                    addConsoleEntry('', 'info');
-                    addConsoleEntry('Redirecting to results...', 'info');
-                    setTimeout(() => {
-                        window.location.href = `/accounts?highlight_batch=${data.batch_id}`;
-                    }, 2000);
                 }
             } else {
                 addConsoleEntry(`Error: ${data.error}`, 'error');
@@ -1068,6 +1055,113 @@
             addConsoleEntry(`Network Error: ${error.message}`, 'error');
         } finally {
             btn.disabled = false;
+        }
+    }
+
+    async function pollBatchProgress(batchId, totalCount) {
+        let lastProcessed = 0;
+        const pollInterval = 2000; // 2 seconds
+        const maxPolls = 600; // Max 20 minutes of polling
+        let pollCount = 0;
+
+        const poll = async () => {
+            try {
+                const response = await fetch(`/api/import-batch/${batchId}`);
+                const data = await response.json();
+
+                if (!response.ok) {
+                    addConsoleEntry(`Error checking batch status: ${data.error}`, 'error');
+                    return;
+                }
+
+                const processed = data.processed_count || 0;
+                const total = data.total_count || totalCount;
+                const status = data.status;
+
+                // Update progress if changed
+                if (processed > lastProcessed) {
+                    const progressBar = '█'.repeat(Math.floor(processed / total * 20)) + '░'.repeat(20 - Math.floor(processed / total * 20));
+                    addConsoleEntry(`[${progressBar}] ${processed}/${total} (${data.progress_percent}%)`, 'info');
+                    lastProcessed = processed;
+                }
+
+                if (status === 'completed') {
+                    addConsoleEntry('', 'info');
+                    addConsoleEntry(`═══════════════════════════════════`, 'info');
+                    addConsoleEntry(`Import Complete`, 'success');
+                    addConsoleEntry(`═══════════════════════════════════`, 'info');
+                    addConsoleEntry(`Processed: ${processed} / ${total}`, 'success');
+                    addConsoleEntry('', 'info');
+                    addConsoleEntry('Redirecting to results...', 'info');
+                    setTimeout(() => {
+                        window.location.href = `/accounts?highlight_batch=${batchId}`;
+                    }, 2000);
+                    return;
+                } else if (status === 'failed') {
+                    addConsoleEntry('Import batch failed', 'error');
+                    return;
+                } else if (pollCount < maxPolls) {
+                    pollCount++;
+                    setTimeout(poll, pollInterval);
+                } else {
+                    addConsoleEntry('Import is still processing. Check accounts page for results.', 'info');
+                    setTimeout(() => {
+                        window.location.href = `/accounts?highlight_batch=${batchId}`;
+                    }, 2000);
+                }
+            } catch (error) {
+                addConsoleEntry(`Error polling batch status: ${error.message}`, 'error');
+            }
+        };
+
+        // Start polling
+        setTimeout(poll, pollInterval);
+    }
+
+    function handleLegacyImportResponse(data) {
+        // Handle legacy synchronous response format
+        addConsoleEntry('', 'info');
+        addConsoleEntry(`═══════════════════════════════════`, 'info');
+        addConsoleEntry(`Import Complete`, 'success');
+        addConsoleEntry(`═══════════════════════════════════`, 'info');
+
+        const results = data.results || [];
+        const added = data.added || [];
+        const failed = data.failed || [];
+        const totalProcessed = data.total_processed || results.length;
+
+        const enrichedCount = results.filter(r => r.status === 'enriched').length;
+        addConsoleEntry(`Added: ${added.length} / ${totalProcessed}`, 'success');
+        if (enrichedCount > 0) {
+            addConsoleEntry(`Enriched: ${enrichedCount} / ${totalProcessed}`, 'success');
+        }
+        addConsoleEntry(`Failed: ${failed.length} / ${totalProcessed}`, 'error');
+        addConsoleEntry('', 'info');
+
+        // Show results
+        results.forEach(result => {
+            if (result.status === 'added') {
+                addConsoleEntry(`Added ${result.company} → ${result.github_org}`, 'success');
+            } else if (result.status === 'enriched') {
+                addConsoleEntry(`Enriched ${result.company} with revenue data`, 'success');
+            } else {
+                addConsoleEntry(`${result.company} (${result.status})`, 'error');
+            }
+        });
+
+        // Reset CSV
+        selectedCSVData = null;
+        document.getElementById('csvFileInput').value = '';
+        document.getElementById('fileSelectedInfo').style.display = 'none';
+        document.getElementById('processCSVBtn').style.display = 'none';
+
+        // Redirect to accounts page with batch_id
+        if (data.batch_id) {
+            addConsoleEntry('', 'info');
+            addConsoleEntry('Redirecting to results...', 'info');
+            setTimeout(() => {
+                window.location.href = `/accounts?highlight_batch=${data.batch_id}`;
+            }, 2000);
         }
     }
 
