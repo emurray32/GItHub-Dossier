@@ -791,7 +791,8 @@ def update_account_status(scan_data: dict, report_id: Optional[int] = None) -> d
         'tier_changed': tier_changed,
         'evidence': evidence_summary,
         'report_id': report_id,
-        'webhook_event': webhook_event
+        'webhook_event': webhook_event,
+        'revenue': existing['annual_revenue'] if existing else None
     }
 
 
