@@ -1000,11 +1000,21 @@ def get_all_accounts(page: int = 1, limit: int = 50, tier_filter: Optional[list]
     offset = (current_page - 1) * limit
 
     # Custom sort: Tier 2 first (priority 1), Tier 1 (priority 2), Tier 0 (priority 3), Tier 3 (priority 4), Tier 4 last (priority 5)
+    # Use LEFT JOIN with ROW_NUMBER() to efficiently fetch latest report per company
     select_query = f'''
         SELECT
             ma.*,
-            (SELECT r.id FROM reports r WHERE LOWER(r.company_name) = LOWER(ma.company_name) ORDER BY r.created_at DESC LIMIT 1) as latest_report_id
+            lr.id as latest_report_id
         FROM monitored_accounts ma
+        LEFT JOIN (
+            SELECT id, company_name
+            FROM (
+                SELECT id, company_name,
+                       ROW_NUMBER() OVER (PARTITION BY LOWER(company_name) ORDER BY created_at DESC) as rn
+                FROM reports
+            )
+            WHERE rn = 1
+        ) lr ON LOWER(lr.company_name) = LOWER(ma.company_name)
         {where_sql}
         ORDER BY
             CASE ma.current_tier
@@ -1122,11 +1132,21 @@ def get_all_accounts_datatable(draw: int, start: int, length: int, search_value:
         sort_order = 'ASC'
 
     # Get paginated and sorted data
+    # Use LEFT JOIN with ROW_NUMBER() to efficiently fetch latest report per company
     select_query = f'''
         SELECT
             ma.*,
-            (SELECT r.id FROM reports r WHERE LOWER(r.company_name) = LOWER(ma.company_name) ORDER BY r.created_at DESC LIMIT 1) as latest_report_id
+            lr.id as latest_report_id
         FROM monitored_accounts ma
+        LEFT JOIN (
+            SELECT id, company_name
+            FROM (
+                SELECT id, company_name,
+                       ROW_NUMBER() OVER (PARTITION BY LOWER(company_name) ORDER BY created_at DESC) as rn
+                FROM reports
+            )
+            WHERE rn = 1
+        ) lr ON LOWER(lr.company_name) = LOWER(ma.company_name)
         {where_sql}
         ORDER BY
             CASE ma.current_tier
@@ -1318,11 +1338,21 @@ def get_refreshable_accounts() -> list:
     cursor = conn.cursor()
 
     # Select accounts in Tiers 0, 1, 2 that haven't been scanned in 7+ days
+    # Use LEFT JOIN with ROW_NUMBER() to efficiently fetch latest report per company
     cursor.execute('''
         SELECT
             ma.*,
-            (SELECT r.id FROM reports r WHERE LOWER(r.company_name) = LOWER(ma.company_name) ORDER BY r.created_at DESC LIMIT 1) as latest_report_id
+            lr.id as latest_report_id
         FROM monitored_accounts ma
+        LEFT JOIN (
+            SELECT id, company_name
+            FROM (
+                SELECT id, company_name,
+                       ROW_NUMBER() OVER (PARTITION BY LOWER(company_name) ORDER BY created_at DESC) as rn
+                FROM reports
+            )
+            WHERE rn = 1
+        ) lr ON LOWER(lr.company_name) = LOWER(ma.company_name)
         WHERE ma.current_tier IN (0, 1, 2)
           AND (
               ma.last_scanned_at IS NULL
