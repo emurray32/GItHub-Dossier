@@ -121,7 +121,7 @@
         width: 100%;
         border-collapse: collapse;
         font-size: 0.85rem;
-        table-layout: auto;
+        table-layout: fixed;
     }
 
     .accounts-table thead {
@@ -156,6 +156,46 @@
         padding: 0.6rem 0.4rem;
         color: var(--text-muted);
         font-size: 0.85rem;
+    }
+
+    /* Fixed column widths for table-layout: fixed */
+    .accounts-table th.company-col,
+    .accounts-table td.company-cell {
+        width: 140px;
+    }
+
+    .accounts-table th.revenue-col,
+    .accounts-table td.annual-revenue-cell {
+        width: 90px;
+    }
+
+    .accounts-table th.org-col,
+    .accounts-table td.github-org-cell {
+        width: 140px;
+    }
+
+    .accounts-table th.tier-col {
+        width: 60px;
+    }
+
+    .accounts-table th.last-scanned-col,
+    .accounts-table td.last-check-cell {
+        width: 100px;
+    }
+
+    .accounts-table th.evidence-col,
+    .accounts-table td.evidence-cell {
+        width: 280px;
+    }
+
+    .accounts-table th.actions-col,
+    .accounts-table td.actions-cell {
+        width: 180px;
+    }
+
+    .accounts-table th.notes-col,
+    .accounts-table td.notes-cell {
+        width: 130px;
     }
 
     .select-account-checkbox {
@@ -222,7 +262,6 @@
     .company-cell {
         font-weight: 600;
         color: var(--text-primary);
-        max-width: 250px;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
@@ -395,7 +434,6 @@
     /* GitHub org cell */
     .github-org-cell {
         font-size: 0.875rem;
-        max-width: 250px;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
@@ -894,23 +932,23 @@
         color: var(--text-secondary);
         line-height: 1.4;
         white-space: normal;
-        min-width: 250px;
+        overflow: hidden;
     }
 
     .evidence-text {
         white-space: normal;
         word-break: break-word;
-        max-width: 400px;
-        display: inline-block;
+        display: block;
         font-size: 0.8rem;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
 
     /* Notes cell */
     .notes-cell {
-        min-width: 150px;
-        max-width: 250px;
         font-size: 0.85rem;
         color: var(--text-secondary);
+        overflow: hidden;
     }
 
     .notes-display {
@@ -1721,16 +1759,16 @@
                             aria-label="Select all accounts">
                     </th>
                     <th class="row-num-col">#</th>
-                    <th class="sortable" data-sort-key="company">Company <span class="sort-indicator">↕</span></th>
-                    <th class="sortable" data-sort-key="annual_revenue">Annual Revenue <span class="sort-indicator">↕</span></th>
-                    <th class="sortable" data-sort-key="github_org">GitHub Org <span class="sort-indicator">↕</span>
+                    <th class="sortable company-col" data-sort-key="company">Company <span class="sort-indicator">↕</span></th>
+                    <th class="sortable revenue-col" data-sort-key="annual_revenue">Annual Revenue <span class="sort-indicator">↕</span></th>
+                    <th class="sortable org-col" data-sort-key="github_org">GitHub Org <span class="sort-indicator">↕</span>
                     </th>
-                    <th class="sortable" data-sort-key="tier">Tier <span class="sort-indicator">↕</span></th>
-                    <th class="sortable" data-sort-key="last_scanned">Last Scanned <span class="sort-indicator">↕</span>
+                    <th class="sortable tier-col" data-sort-key="tier">Tier <span class="sort-indicator">↕</span></th>
+                    <th class="sortable last-scanned-col" data-sort-key="last_scanned">Last Scanned <span class="sort-indicator">↕</span>
                     </th>
-                    <th class="sortable" data-sort-key="evidence">Evidence Summary <span class="sort-indicator">↕</span>
+                    <th class="sortable evidence-col" data-sort-key="evidence">Evidence Summary <span class="sort-indicator">↕</span>
                     </th>
-                    <th>Actions</th>
+                    <th class="actions-col">Actions</th>
                     <th class="notes-col">Notes</th>
                 </tr>
             </thead>
