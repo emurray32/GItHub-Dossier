@@ -190,7 +190,7 @@
 
     .accounts-table th.actions-col,
     .accounts-table td.actions-cell {
-        width: 180px;
+        width: 100px;
     }
 
     .accounts-table th.notes-col,
@@ -1774,7 +1774,7 @@
                     </th>
                     <th class="sortable evidence-col" style="width: 20%;" data-sort-key="evidence">Evidence Summary <span class="sort-indicator">↕</span>
                     </th>
-                    <th class="actions-col" style="width: 12%;">Actions</th>
+                    <th class="actions-col" style="width: 8%;">Repo Report</th>
                     <th class="notes-col" style="width: 8%;">Notes</th>
                 </tr>
             </thead>
@@ -1949,21 +1949,6 @@
                         View
                     </button>
                     {% endif %}
-                    {% if account.current_tier == 4 %}
-                    <button type="button" class="btn-action-smart" disabled
-                        title="Tier 4 accounts are marked as not found">
-                        Rescan
-                    </button>
-                    {% else %}
-                    <button type="button" class="btn-action-smart" data-company="{{ account.company_name }}"
-                        onclick="triggerRescan(this, '{{ account.company_name }}')">
-                        Rescan
-                    </button>
-                    {% endif %}
-                    <button type="button" class="btn-delete-account" data-company="{{ account.company_name }}"
-                        onclick="removeAccount(this)">
-                        Remove
-                    </button>
                 </td>
             </tr>
             {% endfor %}
@@ -2693,8 +2678,6 @@
             } else {
                 actionsHtml += `<button type="button" class="btn-view-report" disabled style="visibility: hidden;">View</button>`;
             }
-            actionsHtml += `<button type="button" class="btn-action-smart" data-company="${escapeHtml(account.company_name)}" onclick="triggerRescan(this, this.dataset.company)">Rescan</button>`;
-            actionsHtml += `<button type="button" class="btn-delete-account" onclick="removeAccount(this)">Remove</button>`;
 
             return `
                 <tr id="row-${account.id}" data-company="${escapeHtml(account.company_name)}" data-account-id="${account.id}" data-tier="${account.current_tier}" data-status="idle">
