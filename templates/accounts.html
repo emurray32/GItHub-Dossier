@@ -1900,6 +1900,10 @@
                         onclick="openReport('{{ url_for('view_report', report_id=account.latest_report_id) }}')">
                         View
                     </button>
+                    {% else %}
+                    <button type="button" class="btn-view-report" disabled style="visibility: hidden;">
+                        View
+                    </button>
                     {% endif %}
                     {% if account.current_tier == 4 %}
                     <button type="button" class="btn-action-smart" disabled
@@ -2642,6 +2646,8 @@
             let actionsHtml = '';
             if (account.latest_report_id) {
                 actionsHtml += `<button type="button" class="btn-view-report" onclick="openReport('/report/${account.latest_report_id}')">View</button>`;
+            } else {
+                actionsHtml += `<button type="button" class="btn-view-report" disabled style="visibility: hidden;">View</button>`;
             }
             actionsHtml += `<button type="button" class="btn-action-smart" data-company="${escapeHtml(account.company_name)}" onclick="triggerRescan(this, this.dataset.company)">Rescan</button>`;
             actionsHtml += `<button type="button" class="btn-delete-account" onclick="removeAccount(this)">Remove</button>`;
