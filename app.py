@@ -29,6 +29,7 @@ from database import (
     create_import_batch, get_pending_import_batches, update_batch_progress, get_import_batch
 )
 from monitors.scanner import deep_scan_generator
+from monitors.discovery import search_github_orgs, resolve_org_fast, discover_companies_via_ai
 from ai_summary import generate_analysis
 from pdf_generator import generate_report_pdf
 from agentmail_client import is_agentmail_configured, send_email_draft
@@ -1031,6 +1032,161 @@ def api_update_account_notes(account_id: int):
     if not updated:
         return jsonify({'error': 'Account not found'}), 404
     return jsonify({'status': 'success', 'notes': notes})
+
+
+@app.route('/grow')
+def grow():
+    """Render the Grow pipeline dashboard."""
+    return render_template('grow.html')
+
+
+@app.route('/api/discover')
+def api_discover():
+    """
+    Search for GitHub organizations by keyword.
+
+    Query parameters:
+        q: Search keyword (required)
+        limit: Maximum results (default 20)
+
+    Returns JSON list of organization candidates not already in monitored_accounts.
+    """
+    keyword = request.args.get('q', '').strip()
+    limit = request.args.get('limit', 20, type=int)
+
+    if not keyword:
+        return jsonify({'error': 'Missing query parameter: q'}), 400
+
+    # Search for orgs matching the keyword
+    results = search_github_orgs(keyword, limit=limit)
+
+    # Get existing accounts to filter them out (use large limit to get all)
+    existing_accounts_result = get_all_accounts(page=1, limit=10000)
+    existing_logins = {acc['github_org'].lower() for acc in existing_accounts_result['accounts'] if acc.get('github_org')}
+
+    # Filter out orgs already being monitored
+    fresh_candidates = [
+        org for org in results
+        if org['login'].lower() not in existing_logins
+    ]
+
+    return jsonify(fresh_candidates)
+
+
+@app.route('/api/ai-discover')
+def api_ai_discover():
+    """
+    AI-powered Universal Discovery Engine for any industry.
+
+    Uses AI to find companies that:
+    - Have an internal engineering team (likely to use GitHub)
+    - Are growing companies (Series B+ or >$10M Revenue)
+    - Have a need for Internationalization (global customer base)
+
+    Query parameters:
+        q: Industry/sector keyword (e.g., "Fintech", "DTC Retail", "HealthTech")
+        limit: Maximum results (default 15)
+
+    Returns JSON list of AI-discovered companies with validated GitHub orgs.
+    Each result includes:
+    - name: Company name
+    - revenue: Estimated revenue
+    - industry: Specific niche
+    - description: Tech/product summary
+    - suggested_github_org: GitHub handle
+    - github_validated: Boolean (True = confirmed GitHub org)
+    - github_data: GitHub org details if validated
+    """
+    keyword = request.args.get('q', '').strip()
+    limit = request.args.get('limit', 15, type=int)
+
+    if not keyword:
+        return jsonify({'error': 'Missing query parameter: q'}), 400
+
+    # Use AI to discover companies in this sector
+    companies = discover_companies_via_ai(keyword, limit=limit)
+
+    # Get existing accounts to filter them out (use large limit to get all)
+    existing_accounts_result = get_all_accounts(page=1, limit=10000)
+    existing_logins = {acc['github_org'].lower() for acc in existing_accounts_result['accounts'] if acc.get('github_org')}
+
+    # Filter out companies already being monitored
+    fresh_candidates = []
+    for company in companies:
+        github_login = company.get('github_data', {}).get('login', '')
+        if github_login and github_login.lower() not in existing_logins:
+            fresh_candidates.append(company)
+
+    return jsonify(fresh_candidates)
+
+
+@app.route('/api/lead-stream')
+def api_lead_stream():
+    """
+    Rapid lead discovery stream for Technology and SaaS companies with GitHub repos.
+
+    Serves a continuous stream of leads filtered to the Goldilocks Zone ICP:
+    - Technology and SaaS industries ONLY
+    - Must have verified GitHub organization
+    - Prioritizes companies not yet in monitoring pipeline
+
+    Query parameters:
+        offset: Starting position (default 0, for pagination)
+        limit: Number of results per request (default 10, max 30)
+
+    Returns JSON list of pre-filtered leads ready for rapid approval/tracking.
+    """
+    offset = request.args.get('offset', 0, type=int)
+    limit = request.args.get('limit', 10, type=int)
+
+    # Enforce max limit
+    if limit > 30:
+        limit = 30
+    if offset < 0:
+        offset = 0
+
+    try:
+        # Discover Technology companies
+        tech_companies = discover_companies_via_ai("Technology Software Development", limit=15)
+
+        # Discover SaaS companies
+        saas_companies = discover_companies_via_ai("SaaS B2B Software", limit=15)
+
+        # Combine and deduplicate by GitHub login
+        all_companies = tech_companies + saas_companies
+        seen = set()
+        unique_companies = []
+
+        for company in all_companies:
+            github_login = company.get('github_data', {}).get('login', '')
+            if github_login and github_login.lower() not in seen:
+                seen.add(github_login.lower())
+                unique_companies.append(company)
+
+        # Filter out companies already being monitored
+        existing_accounts_result = get_all_accounts(page=1, limit=10000)
+        existing_logins = {acc['github_org'].lower() for acc in existing_accounts_result['accounts'] if acc.get('github_org')}
+
+        # Only return companies with validated GitHub and not already tracked
+        fresh_leads = []
+        for company in unique_companies:
+            github_login = company.get('github_data', {}).get('login', '')
+            if company.get('github_validated') and github_login and github_login.lower() not in existing_logins:
+                fresh_leads.append(company)
+
+        # Apply pagination
+        paginated_leads = fresh_leads[offset:offset + limit]
+
+        return jsonify({
+            'leads': paginated_leads,
+            'total': len(fresh_leads),
+            'offset': offset,
+            'limit': limit,
+            'has_more': offset + limit < len(fresh_leads)
+        })
+
+    except Exception as e:
+        return jsonify({'error': f'Failed to generate lead stream: {str(e)}'}), 500
 
 
 @app.route('/api/import', methods=['POST'])
