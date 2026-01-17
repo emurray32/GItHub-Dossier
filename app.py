@@ -25,7 +25,7 @@ from database import (
     reset_stale_queued_accounts, reset_all_queued_to_idle,
     SCAN_STATUS_IDLE, SCAN_STATUS_QUEUED, SCAN_STATUS_PROCESSING,
     save_signals, cleanup_duplicate_accounts, update_account_annual_revenue,
-    update_account_notes,
+    update_account_website, update_account_notes,
     create_import_batch, get_pending_import_batches, update_batch_progress, get_import_batch
 )
 from monitors.scanner import deep_scan_generator
@@ -629,14 +629,16 @@ def process_import_batch_worker(batch_id: int):
 
         # Process each company starting from where we left off
         for i, company_item in enumerate(companies[processed_count:], start=processed_count):
-            # Support both string format and object format with annual_revenue
+            # Support both string format and object format with annual_revenue/website
             if isinstance(company_item, dict):
                 company_name = company_item.get('name', '').strip()
                 # Validate revenue - ignore text that doesn't look like a number
                 annual_revenue = validate_revenue_value(company_item.get('annual_revenue'))
+                website = company_item.get('website', '').strip() if company_item.get('website') else None
             else:
                 company_name = str(company_item).strip()
                 annual_revenue = None
+                website = None
 
             if not company_name:
                 processed_count = i + 1
@@ -646,12 +648,12 @@ def process_import_batch_worker(batch_id: int):
                 # Check if account already exists (idempotency)
                 existing = get_account_by_company_case_insensitive(company_name)
                 if existing:
-                    # If annual_revenue provided and account exists, enrich it
+                    # If annual_revenue or website provided and account exists, enrich it
                     if annual_revenue:
                         update_account_annual_revenue(company_name, annual_revenue)
-                        skipped.append(company_name)
-                    else:
-                        skipped.append(company_name)
+                    if website:
+                        update_account_website(company_name, website)
+                    skipped.append(company_name)
                     processed_count = i + 1
                     # Update progress every 10 items
                     if processed_count % 10 == 0:
@@ -661,7 +663,7 @@ def process_import_batch_worker(batch_id: int):
 
                 # Add to monitored_accounts at Tier 0 without GitHub org
                 # Users can manually link GitHub orgs via /api/update-org
-                add_account_to_tier_0(company_name, '', annual_revenue)
+                add_account_to_tier_0(company_name, '', annual_revenue, website)
                 added.append(company_name)
 
             except Exception as e:

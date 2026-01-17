@@ -56,6 +56,7 @@ def init_db() -> None:
             company_name TEXT NOT NULL UNIQUE,
             github_org TEXT,
             annual_revenue TEXT,
+            website TEXT,
             notes TEXT,
             current_tier INTEGER DEFAULT 0,
             last_scanned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -77,6 +78,12 @@ def init_db() -> None:
     # Migrate existing tables: add notes column if it doesn't exist
     try:
         cursor.execute('ALTER TABLE monitored_accounts ADD COLUMN notes TEXT')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
+    # Migrate existing tables: add website column if it doesn't exist
+    try:
+        cursor.execute('ALTER TABLE monitored_accounts ADD COLUMN website TEXT')
     except sqlite3.OperationalError:
         pass  # Column already exists
 
@@ -796,7 +803,7 @@ def update_account_status(scan_data: dict, report_id: Optional[int] = None) -> d
     }
 
 
-def add_account_to_tier_0(company_name: str, github_org: str, annual_revenue: Optional[str] = None) -> dict:
+def add_account_to_tier_0(company_name: str, github_org: str, annual_revenue: Optional[str] = None, website: Optional[str] = None) -> dict:
     """
     Add or update a company account to Tier 0 (Tracking) status.
 
@@ -807,6 +814,7 @@ def add_account_to_tier_0(company_name: str, github_org: str, annual_revenue: Op
         company_name: The company name.
         github_org: The GitHub organization login.
         annual_revenue: Optional annual revenue string (e.g., "$50M", "$4.6B").
+        website: Optional company website URL.
 
     Returns:
         Dictionary with account creation/update result.
@@ -844,15 +852,23 @@ def add_account_to_tier_0(company_name: str, github_org: str, annual_revenue: Op
 
     if existing:
         # Update existing account - don't change last_scanned_at
-        # Only update annual_revenue if a new value is provided
-        if annual_revenue:
-            cursor.execute('''
+        # Only update annual_revenue/website if new values are provided
+        if annual_revenue or website:
+            # Build dynamic update based on what's provided
+            update_fields = ['github_org = ?', 'next_scan_due = ?']
+            update_params = [github_org, next_scan_iso]
+            if annual_revenue:
+                update_fields.append('annual_revenue = ?')
+                update_params.append(annual_revenue)
+            if website:
+                update_fields.append('website = ?')
+                update_params.append(website)
+            update_params.append(existing['id'])
+            cursor.execute(f'''
                 UPDATE monitored_accounts
-                SET github_org = ?,
-                    annual_revenue = ?,
-                    next_scan_due = ?
+                SET {', '.join(update_fields)}
                 WHERE id = ?
-            ''', (github_org, annual_revenue, next_scan_iso, existing['id']))
+            ''', update_params)
         else:
             cursor.execute('''
                 UPDATE monitored_accounts
@@ -870,10 +886,10 @@ def add_account_to_tier_0(company_name: str, github_org: str, annual_revenue: Op
         # Note: last_scanned_at is NULL until a scan actually completes
         cursor.execute('''
             INSERT INTO monitored_accounts (
-                company_name, github_org, annual_revenue, current_tier, last_scanned_at,
+                company_name, github_org, annual_revenue, website, current_tier, last_scanned_at,
                 status_changed_at, evidence_summary, next_scan_due
-            ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?)
-        ''', (company_name_normalized, github_org, annual_revenue, TIER_TRACKING, now,
+            ) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?)
+        ''', (company_name_normalized, github_org, annual_revenue, website, TIER_TRACKING, now,
               "Added via Grow pipeline", next_scan_iso))
         account_id = cursor.lastrowid
 
@@ -913,6 +929,35 @@ def update_account_annual_revenue(company_name: str, annual_revenue: str) -> boo
         SET annual_revenue = ?
         WHERE LOWER(company_name) = LOWER(?)
     ''', (annual_revenue, company_name.strip()))
+
+    updated = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+
+    return updated
+
+
+def update_account_website(company_name: str, website: str) -> bool:
+    """
+    Update the website field for an existing account.
+
+    Used to enrich existing accounts with website data from CSV re-imports.
+
+    Args:
+        company_name: The company name to update.
+        website: The company website URL.
+
+    Returns:
+        True if the update was successful, False if account not found.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        UPDATE monitored_accounts
+        SET website = ?
+        WHERE LOWER(company_name) = LOWER(?)
+    ''', (website, company_name.strip()))
 
     updated = cursor.rowcount > 0
     conn.commit()
