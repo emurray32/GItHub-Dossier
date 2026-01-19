@@ -72,8 +72,7 @@ def get_top_contributors(org_login: str, repo_name: str, limit: int = 5) -> list
                     contributors.append({
                         'login': c['login'],
                         'github_url': c['html_url'],
-                        'name': c['login'],  # Fallback for Apollo search
-                        'avatar_url': c['avatar_url']
+                        'name': c['login']  # Fallback for Apollo search
                     })
             return contributors[:limit]
     except Exception as e:
