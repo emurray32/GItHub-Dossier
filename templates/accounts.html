@@ -690,6 +690,24 @@
         animation: pulse-warning 2s ease-in-out infinite;
     }
 
+    .status-badge-error {
+        background: #fef2f2;
+        color: #dc2626;
+        border: 1px solid #fecaca;
+    }
+
+    .scan-error-hint {
+        display: block;
+        font-size: 0.7rem;
+        color: #dc2626;
+        margin-top: 2px;
+        max-width: 200px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        cursor: help;
+    }
+
     /* Inline status text styles (for initial page load) */
     .status-queued {
         color: #92400e !important;
@@ -769,6 +787,10 @@
         75% {
             transform: translateX(2px);
         }
+    }
+
+    .status-icon-error {
+        color: #dc2626;
     }
 
     /* Progress bar for processing state */
@@ -3478,6 +3500,11 @@
             <circle cx="12" cy="12" r="10"/>
             <line x1="12" y1="8" x2="12" y2="12"/>
             <line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>`,
+        error: `<svg class="status-icon status-icon-error" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="12" y1="8" x2="12" y2="12"/>
+            <line x1="12" y1="16" x2="12.01" y2="16"/>
         </svg>`
     };
 
@@ -3581,8 +3608,32 @@
                             statusCell.classList.add('status-cell-active');
                         }
                         else {
-                            if (currentStatus === 'processing' || currentStatus === 'queued' || currentStatus === 'stuck') {
-                                // Transition from processing to idle -> scan complete
+                            // Check for scan errors
+                            const scanError = account.last_scan_error;
+
+                            if (scanError) {
+                                // Display error state with warning icon
+                                statusCell.classList.remove('status-cell-active');
+                                const lastScanned = account.last_scanned_at || '';
+                                const nextScan = account.next_scan_due || '';
+
+                                content = `
+                                    <div class="status-container">
+                                        <span class="status-badge status-badge-error" title="${scanError.replace(/"/g, '&quot;')}">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                <circle cx="12" cy="12" r="10"/>
+                                                <line x1="12" y1="8" x2="12" y2="12"/>
+                                                <line x1="12" y1="16" x2="12.01" y2="16"/>
+                                            </svg>
+                                            <span>Error</span>
+                                        </span>
+                                        <span class="scan-error-hint" title="${scanError.replace(/"/g, '&quot;')}">
+                                            ${scanError.length > 40 ? scanError.substring(0, 40) + '...' : scanError}
+                                        </span>
+                                    </div>
+                                `;
+                            } else if (currentStatus === 'processing' || currentStatus === 'queued' || currentStatus === 'stuck') {
+                                // Transition from processing to idle -> scan complete (no error)
                                 const lastScanned = account.last_scanned_at || new Date().toISOString();
                                 const nextScan = account.next_scan_due || '';
 
