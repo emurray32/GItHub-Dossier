@@ -1722,12 +1722,6 @@
                     <span>Processing</span>
                 </div>
 
-                <div class="stat-badge">
-                    <span class="tier-badge tier-badge-2">Tier 2</span>
-                    <span class="count">{{ tier_counts['2'] }}</span>
-                    <span>Hot</span>
-                </div>
-
             </div>
         </div>
     </header>
@@ -1736,35 +1730,35 @@
         <div class="legend-item status-tracking">
             <div class="legend-header">
                 <span class="status-dot"></span>
-                <span class="status-title">Tier 0: Tracking</span>
+                <span class="status-title">Tier 0: Tracking - {{ tier_counts['0'] }}</span>
             </div>
             <span class="status-desc">No signals yet</span>
         </div>
         <div class="legend-item status-thinking">
             <div class="legend-header">
                 <span class="status-dot"></span>
-                <span class="status-title">Tier 1: Thinking</span>
+                <span class="status-title">Tier 1: Thinking - {{ tier_counts['1'] }}</span>
             </div>
             <span class="status-desc">RFC discussions found</span>
         </div>
         <div class="legend-item status-preparing">
             <div class="legend-header">
                 <span class="status-dot"></span>
-                <span class="status-title">Tier 2: Preparing</span>
+                <span class="status-title">Tier 2: Preparing - {{ tier_counts['2'] }}</span>
             </div>
             <span class="status-desc">Libraries installed, no locale folders (GOLDILOCKS)</span>
         </div>
         <div class="legend-item status-launched">
             <div class="legend-header">
                 <span class="status-dot"></span>
-                <span class="status-title">Tier 3: Launched</span>
+                <span class="status-title">Tier 3: Launched - {{ tier_counts['3'] }}</span>
             </div>
             <span class="status-desc">Already localized (too late)</span>
         </div>
         <div class="legend-item status-not-found">
             <div class="legend-header">
                 <span class="status-dot"></span>
-                <span class="status-title">Tier 4: Not Found</span>
+                <span class="status-title">Tier 4: Not Found - {{ tier_counts['4'] }}</span>
             </div>
             <span class="status-desc">GitHub org not found or no public repos</span>
         </div>
