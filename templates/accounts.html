@@ -2264,6 +2264,39 @@
     // Dashboard Stats Polling
     // =============================================================================
 
+    function updateStatusFilterCounts() {
+        fetch('/api/status-counts')
+            .then(response => response.json())
+            .then(data => {
+                const statusFilter = document.getElementById('status-filter');
+                if (!statusFilter) return;
+
+                // Store current selection
+                const currentValue = statusFilter.value;
+
+                // Update each option with count
+                const options = statusFilter.querySelectorAll('option');
+                options.forEach(option => {
+                    const status = option.value;
+                    let count = 0;
+
+                    if (status === 'all') {
+                        count = data.total || 0;
+                    } else if (data[status] !== undefined) {
+                        count = data[status];
+                    }
+
+                    // Update option text with count
+                    const baseText = option.textContent.replace(/\s*\(\d+\)$/, '');
+                    option.textContent = `${baseText} (${count})`;
+                });
+
+                // Restore selection
+                statusFilter.value = currentValue;
+            })
+            .catch(err => console.error('Error fetching status counts:', err));
+    }
+
     function updateDashboardStats() {
         if (document.hidden) return;
 
@@ -2295,6 +2328,9 @@
                 }
             })
             .catch(err => console.error('Error fetching queue status:', err));
+
+        // Update status filter dropdown counts
+        updateStatusFilterCounts();
 
         fetch('/api/stats?days=1')
             .then(response => response.json())
