@@ -328,6 +328,12 @@ def trigger_webhook(event_type: str, company_data: dict) -> None:
         event_type: Type of event (e.g., 'tier_change', 'scan_complete')
         company_data: Dictionary containing company information to send
     """
+    # Check if webhooks are enabled
+    webhook_enabled = get_setting('webhook_enabled')
+    if webhook_enabled != 'true':
+        print("[WEBHOOK] Webhooks are paused, skipping notification")
+        return
+
     webhook_url = get_setting('webhook_url')
     if not webhook_url:
         print("[WEBHOOK] No webhook_url configured in settings, skipping notification")
@@ -1835,12 +1841,14 @@ def api_settings():
     """
     Get or update system settings.
 
-    GET: Returns current settings (webhook_url, etc.)
-    POST: Updates settings from JSON payload {"webhook_url": "..."}
+    GET: Returns current settings (webhook_url, webhook_enabled, etc.)
+    POST: Updates settings from JSON payload {"webhook_url": "...", "webhook_enabled": true}
     """
     if request.method == 'GET':
+        webhook_enabled = get_setting('webhook_enabled')
         return jsonify({
-            'webhook_url': get_setting('webhook_url') or ''
+            'webhook_url': get_setting('webhook_url') or '',
+            'webhook_enabled': webhook_enabled == 'true'
         })
 
     # POST - update settings
@@ -1857,9 +1865,16 @@ def api_settings():
             }), 400
         set_setting('webhook_url', webhook_url)
 
+    # Update webhook enabled if provided
+    if 'webhook_enabled' in data:
+        webhook_enabled = data['webhook_enabled']
+        set_setting('webhook_enabled', 'true' if webhook_enabled else 'false')
+
+    webhook_enabled = get_setting('webhook_enabled')
     return jsonify({
         'status': 'success',
-        'webhook_url': get_setting('webhook_url') or ''
+        'webhook_url': get_setting('webhook_url') or '',
+        'webhook_enabled': webhook_enabled == 'true'
     })
 
 
