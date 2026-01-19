@@ -871,14 +871,8 @@ def _scan_dependency_injection(org: str, repo: str, company: str, is_fork: bool 
                         found_linter_libs = []
                         found_cms_i18n_libs = []
 
-                        # Check for our 4 target SMOKING GUN libraries
+                        # Check for SMOKING GUN libraries (high-intent i18n signals)
                         for lib in Config.SMOKING_GUN_LIBS:
-                            # --- FIX START: Prevent 'babel' false positives in JS files ---
-                            # Only detect 'babel' in Python dependency files
-                            if lib == 'babel' and dep_file not in ['requirements.txt', 'pyproject.toml', 'setup.py', 'Pipfile']:
-                                continue
-                            # --- FIX END ---
-
                             # Context-aware matching:
                             # strict quotes for JSON/Lockfiles, loose matching for others
                             is_strict_file = dep_file in ['package.json', 'composer.json', 'package-lock.json']

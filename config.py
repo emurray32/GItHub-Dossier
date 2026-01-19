@@ -280,11 +280,10 @@ class Config:
         'i18n-js',                   # JavaScript i18n library - general purpose
         'typesafe-i18n',             # TypeScript-first i18n library - type-safe translations
 
-        # Backend / Other Languages
-        'django-babel', 'flask-babel', 'python-i18n', 'babel',
-        'rails-i18n', 'i18n-tasks', 'globalize',
-        'go-i18n', 'golang.org/x/text',
-        'icu4j', 'messageformat',
+        # Backend / Other Languages (high-intent only)
+        'django-babel', 'flask-babel', 'python-i18n',
+        'rails-i18n', 'i18n-tasks',
+        'go-i18n', 'messageformat',
 
         # Note: 'uppy' is checked separately for i18n/locale properties
     ]
