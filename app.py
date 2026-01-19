@@ -40,6 +40,47 @@ app = Flask(__name__)
 app.config.from_object(Config)
 
 
+# =============================================================================
+# HELPER FUNCTIONS
+# =============================================================================
+
+def get_top_contributors(org_login: str, repo_name: str, limit: int = 5) -> list:
+    """
+    Fetch top contributors for a repository.
+
+    Uses the GitHub Contributors API to get the top contributors,
+    filtering out bots and returning enriched data for Apollo/Zapier integration.
+
+    Args:
+        org_login: GitHub organization login name
+        repo_name: Repository name
+        limit: Maximum number of contributors to return (default 5)
+
+    Returns:
+        List of contributor dicts with: login, github_url, name, avatar_url
+    """
+    from utils import make_github_request
+
+    try:
+        url = f"{Config.GITHUB_API_BASE}/repos/{org_login}/{repo_name}/contributors"
+        response = make_github_request(url, params={'per_page': limit}, timeout=10)
+        if response.status_code == 200:
+            contributors = []
+            for c in response.json():
+                # Filter out bots
+                if c['type'] != 'Bot' and '[bot]' not in c['login']:
+                    contributors.append({
+                        'login': c['login'],
+                        'github_url': c['html_url'],
+                        'name': c['login'],  # Fallback for Apollo search
+                        'avatar_url': c['avatar_url']
+                    })
+            return contributors[:limit]
+    except Exception as e:
+        print(f"[ZAPIER] Contributor fetch failed for {org_login}/{repo_name}: {e}")
+    return []
+
+
 # Custom Jinja2 filter to normalize URLs
 @app.template_filter('normalize_url')
 def normalize_url_filter(url):
@@ -1893,6 +1934,202 @@ def api_settings():
         'webhook_url': get_setting('webhook_url') or '',
         'webhook_enabled': webhook_enabled == 'true'
     })
+
+
+@app.route('/api/settings/zapier', methods=['POST'])
+def api_settings_zapier():
+    """
+    Save the Zapier webhook URL for Smart Enrollment.
+
+    POST payload: {"zapier_url": "https://hooks.zapier.com/..."}
+
+    Returns:
+        JSON with status and saved URL.
+    """
+    data = request.get_json() or {}
+    zapier_url = data.get('zapier_url', '').strip()
+
+    if not zapier_url:
+        return jsonify({
+            'status': 'error',
+            'message': 'Missing zapier_url field'
+        }), 400
+
+    # Validate URL format
+    if not (zapier_url.startswith('http://') or zapier_url.startswith('https://')):
+        return jsonify({
+            'status': 'error',
+            'message': 'Zapier URL must start with http:// or https://'
+        }), 400
+
+    set_setting('zapier_webhook_url', zapier_url)
+
+    return jsonify({
+        'status': 'success',
+        'zapier_url': zapier_url
+    })
+
+
+@app.route('/api/integrations/zapier/trigger', methods=['POST'])
+def api_zapier_trigger():
+    """
+    Trigger a Zapier webhook to enroll a lead into Apollo/outreach sequence.
+
+    This endpoint:
+    1. Loads report data by report_id or account data by company_name
+    2. Finds the "best" repository (highest stars) from scan_data
+    3. Fetches top contributors for that repository
+    4. Sends enriched payload to Zapier webhook
+
+    POST payload: {"report_id": 123} or {"company_name": "Shopify"}
+
+    Returns:
+        JSON with trigger status and payload summary.
+    """
+    # Check for Zapier webhook URL
+    zapier_url = get_setting('zapier_webhook_url')
+    if not zapier_url:
+        return jsonify({
+            'status': 'error',
+            'code': 'MISSING_URL',
+            'message': 'Zapier webhook URL not configured. Please set it first.'
+        }), 400
+
+    data = request.get_json() or {}
+    report_id = data.get('report_id')
+    company_name = data.get('company_name')
+
+    # Load report or account data
+    report = None
+    account = None
+
+    if report_id:
+        report = get_report(report_id)
+        if not report:
+            return jsonify({
+                'status': 'error',
+                'message': f'Report {report_id} not found'
+            }), 404
+        company_name = report.get('company_name')
+    elif company_name:
+        account = get_account_by_company_case_insensitive(company_name)
+        if not account:
+            return jsonify({
+                'status': 'error',
+                'message': f'Account "{company_name}" not found'
+            }), 404
+        # Try to get the most recent report for this company
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT id FROM reports
+                WHERE company_name = ?
+                ORDER BY created_at DESC
+                LIMIT 1
+            ''', (company_name,))
+            row = cursor.fetchone()
+            if row:
+                report = get_report(row['id'])
+        finally:
+            conn.close()
+    else:
+        return jsonify({
+            'status': 'error',
+            'message': 'Either report_id or company_name is required'
+        }), 400
+
+    # Extract data from report or account
+    scan_data = report.get('scan_data', {}) if report else {}
+    ai_analysis = report.get('ai_analysis', {}) if report else {}
+    github_org = report.get('github_org') if report else (account.get('github_org') if account else '')
+    tier = account.get('current_tier', 0) if account else 0
+    tier_name = TIER_CONFIG.get(tier, TIER_CONFIG[0])['name']
+    revenue = account.get('annual_revenue') if account else None
+
+    # Get domain from website if available
+    domain = ''
+    if account and account.get('website'):
+        website = account.get('website', '')
+        # Extract domain from URL
+        domain = website.replace('https://', '').replace('http://', '').replace('www.', '').split('/')[0]
+
+    # Find best repo (highest stars) from scan_data
+    best_repo = None
+    repos_scanned = scan_data.get('repos_scanned', [])
+    if repos_scanned:
+        # Sort by stars descending and get the first one
+        sorted_repos = sorted(repos_scanned, key=lambda r: r.get('stars', 0), reverse=True)
+        if sorted_repos:
+            best_repo = sorted_repos[0]
+
+    # Fetch top contributors for the best repo
+    contributors = []
+    if best_repo and github_org:
+        repo_name = best_repo.get('name', '')
+        if repo_name:
+            contributors = get_top_contributors(github_org, repo_name, limit=5)
+
+    # Build report URL
+    try:
+        from flask import request as flask_request, has_request_context
+        if has_request_context():
+            base_url = flask_request.host_url.rstrip('/')
+        else:
+            base_url = os.environ.get('BASE_URL', 'http://localhost:5000')
+    except Exception:
+        base_url = os.environ.get('BASE_URL', 'http://localhost:5000')
+
+    report_url = f"{base_url}/report/{report_id}" if report_id else ''
+
+    # Construct payload for Zapier
+    payload = {
+        'event': 'enroll_lead',
+        'company': company_name,
+        'domain': domain,
+        'revenue': revenue or '',
+        'github_org': github_org,
+        'tier': tier_name,
+        'contributors': contributors,
+        'report_url': report_url,
+        'timestamp': datetime.now().isoformat()
+    }
+
+    # Send to Zapier
+    try:
+        response = requests.post(
+            zapier_url,
+            json=payload,
+            headers={'Content-Type': 'application/json'},
+            timeout=15
+        )
+
+        if response.status_code >= 200 and response.status_code < 300:
+            print(f"[ZAPIER] Successfully triggered enrollment for {company_name}")
+            return jsonify({
+                'status': 'success',
+                'message': f'Successfully enrolled {company_name}',
+                'contributors_count': len(contributors),
+                'zapier_response_status': response.status_code
+            })
+        else:
+            print(f"[ZAPIER] Failed to trigger for {company_name}: HTTP {response.status_code}")
+            return jsonify({
+                'status': 'error',
+                'message': f'Zapier webhook returned status {response.status_code}',
+                'zapier_response': response.text[:500] if response.text else ''
+            }), 500
+
+    except requests.exceptions.Timeout:
+        return jsonify({
+            'status': 'error',
+            'message': 'Zapier webhook timed out'
+        }), 504
+    except requests.exceptions.RequestException as e:
+        return jsonify({
+            'status': 'error',
+            'message': f'Failed to call Zapier webhook: {str(e)}'
+        }), 500
 
 
 @app.route('/api/stats')
