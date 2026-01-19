@@ -46,10 +46,11 @@ app.config.from_object(Config)
 
 def get_top_contributors(org_login: str, repo_name: str, limit: int = 5) -> list:
     """
-    Fetch top contributors for a repository.
+    Fetch top contributors for a repository with resolved real names.
 
     Uses the GitHub Contributors API to get the top contributors,
-    filtering out bots and returning enriched data for Apollo/Zapier integration.
+    then makes a second API call to /users/{username} for each to fetch
+    their real name, public email, and website.
 
     Args:
         org_login: GitHub organization login name
@@ -57,24 +58,46 @@ def get_top_contributors(org_login: str, repo_name: str, limit: int = 5) -> list
         limit: Maximum number of contributors to return (default 5)
 
     Returns:
-        List of contributor dicts with: login, github_url, name, avatar_url
+        List of contributor dicts with: login, name, email, blog, github_url
     """
     from utils import make_github_request
 
     try:
         url = f"{Config.GITHUB_API_BASE}/repos/{org_login}/{repo_name}/contributors"
-        response = make_github_request(url, params={'per_page': limit}, timeout=10)
+        response = make_github_request(url, params={'per_page': limit + 5}, timeout=10)
         if response.status_code == 200:
             contributors = []
             for c in response.json():
                 # Filter out bots
                 if c['type'] != 'Bot' and '[bot]' not in c['login']:
-                    contributors.append({
-                        'login': c['login'],
+                    login = c['login']
+
+                    # Fetch full user profile to get real name, email, blog
+                    user_data = {
+                        'login': login,
                         'github_url': c['html_url'],
-                        'name': c['login']  # Fallback for Apollo search
-                    })
-            return contributors[:limit]
+                        'name': login,  # Fallback
+                        'email': '',
+                        'blog': ''
+                    }
+
+                    try:
+                        user_url = f"{Config.GITHUB_API_BASE}/users/{login}"
+                        user_response = make_github_request(user_url, timeout=10)
+                        if user_response.status_code == 200:
+                            user_info = user_response.json()
+                            user_data['name'] = user_info.get('name') or login
+                            user_data['email'] = user_info.get('email') or ''
+                            user_data['blog'] = user_info.get('blog') or ''
+                    except Exception as e:
+                        print(f"[ZAPIER] Failed to fetch user profile for {login}: {e}")
+
+                    contributors.append(user_data)
+
+                    if len(contributors) >= limit:
+                        break
+
+            return contributors
     except Exception as e:
         print(f"[ZAPIER] Contributor fetch failed for {org_login}/{repo_name}: {e}")
     return []
@@ -2046,12 +2069,10 @@ def api_zapier_trigger():
     tier_name = TIER_CONFIG.get(tier, TIER_CONFIG[0])['name']
     revenue = account.get('annual_revenue') if account else None
 
-    # Get domain from website if available
-    domain = ''
+    # Get company website
+    website = ''
     if account and account.get('website'):
         website = account.get('website', '')
-        # Extract domain from URL
-        domain = website.replace('https://', '').replace('http://', '').replace('www.', '').split('/')[0]
 
     # Find best repo (highest stars) from scan_data
     best_repo = None
@@ -2085,11 +2106,10 @@ def api_zapier_trigger():
     payload = {
         'event': 'enroll_lead',
         'company': company_name,
-        'domain': domain,
-        'revenue': revenue or '',
+        'website': website,
         'github_org': github_org,
-        'tier': tier_name,
         'contributors': contributors,
+        'fallback_role': 'Engineering Manager',
         'report_url': report_url,
         'timestamp': datetime.now().isoformat()
     }
