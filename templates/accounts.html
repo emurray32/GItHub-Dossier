@@ -3012,18 +3012,44 @@
         const selectedRows = getSelectedRows();
         if (selectedRows.length === 0) return;
 
-        const header = ['Company', 'Annual Revenue', 'GitHub Org', 'Tier', 'Last Scanned', 'Evidence Summary'];
+        const header = ['Company', 'Annual Revenue', 'GitHub Org', 'Tier', 'Last Scanned', 'Signal Status', 'Signal Detail'];
         const csvRows = [header];
 
         selectedRows.forEach(row => {
-            const company = row.querySelector('.company-cell')?.textContent.trim() || '';
+            // Clean company name: use data attribute and convert to Title Case
+            const rawCompany = row.dataset.company || '';
+            const company = capitalizeText(rawCompany);
+
             const annualRevenue = row.querySelector('.annual-revenue-cell')?.textContent.trim() || '';
             const orgCell = row.querySelector('.github-org-cell');
             const org = orgCell?.dataset.org || orgCell?.textContent.trim() || '';
             const tier = row.querySelector('.tier-badge')?.textContent.trim() || '';
-            const lastCheck = row.querySelector('.last-check-cell')?.textContent.replace(/\s+/g, ' ').trim() || '';
+
+            // Format date as YYYY-MM-DD from raw timestamp
+            const rawTimestamp = row.dataset.lastScanned || '';
+            let lastScanned = '';
+            if (rawTimestamp) {
+                const date = new Date(rawTimestamp);
+                if (!isNaN(date.getTime())) {
+                    lastScanned = date.toISOString().split('T')[0];
+                }
+            }
+
+            // Split evidence into Signal Status and Signal Detail
             const evidence = row.querySelector('.evidence-text')?.textContent.trim() || '';
-            csvRows.push([company, annualRevenue, org, tier, lastCheck, evidence]);
+            let signalStatus = '';
+            let signalDetail = '';
+            if (evidence) {
+                const colonIndex = evidence.indexOf(':');
+                if (colonIndex > -1) {
+                    signalStatus = evidence.substring(0, colonIndex).trim();
+                    signalDetail = evidence.substring(colonIndex + 1).trim();
+                } else {
+                    signalStatus = evidence;
+                }
+            }
+
+            csvRows.push([company, annualRevenue, org, tier, lastScanned, signalStatus, signalDetail]);
         });
 
         const csvContent = csvRows
