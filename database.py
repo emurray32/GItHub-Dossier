@@ -222,8 +222,9 @@ def init_db() -> None:
     conn.commit()
     conn.close()
 
-    # Run duplicate cleanup on initialization
+    # Run cleanup tasks on initialization
     cleanup_duplicate_accounts()
+    cleanup_quote_characters()
 
 
 def cleanup_duplicate_accounts() -> dict:
@@ -316,6 +317,47 @@ def cleanup_duplicate_accounts() -> dict:
         'kept': kept_count,
         'groups': groups_cleaned
     }
+
+
+def cleanup_quote_characters() -> int:
+    """
+    Remove leading/trailing quote characters from company names.
+    This fixes data imported from CSV files where quotes weren't properly stripped.
+
+    Returns:
+        Number of records updated.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    updated_count = 0
+
+    try:
+        # Find company names with leading or trailing quotes
+        cursor.execute('''
+            SELECT id, company_name FROM monitored_accounts
+            WHERE company_name LIKE '"%' OR company_name LIKE '%"'
+        ''')
+        rows = cursor.fetchall()
+
+        for row in rows:
+            old_name = row['company_name']
+            # Strip leading and trailing quotes
+            new_name = old_name.strip('"').strip()
+            if new_name != old_name:
+                cursor.execute('''
+                    UPDATE monitored_accounts SET company_name = ? WHERE id = ?
+                ''', (new_name, row['id']))
+                updated_count += 1
+                print(f"[CLEANUP] Fixed company name: '{old_name}' -> '{new_name}'")
+
+        conn.commit()
+    except Exception as e:
+        print(f"[CLEANUP] Error cleaning quote characters: {e}")
+        conn.rollback()
+    finally:
+        conn.close()
+
+    return updated_count
 
 
 def save_report(
