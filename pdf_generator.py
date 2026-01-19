@@ -180,11 +180,11 @@ def generate_report_pdf(report, output_path):
         for finding in ai['key_findings']:
             pdf.set_font('helvetica', 'B', 11)
             pdf.set_text_color(0, 0, 0)
-            pdf.cell(5, 6, '-', ln=False)
+            pdf.cell(8, 6, '-', ln=False)
             pdf.multi_cell(0, 6, finding['finding'])
             pdf.set_font('helvetica', 'I', 9)
             pdf.set_text_color(100, 100, 100)
-            pdf.cell(5)
+            pdf.cell(8)
             pdf.multi_cell(0, 5, f"Sales Angle: {finding.get('sales_angle', finding.get('evidence', ''))}")
             pdf.ln(2)
         pdf.ln(5)
@@ -248,7 +248,7 @@ def generate_report_pdf(report, output_path):
         for step in ai['next_steps']:
             pdf.set_font('helvetica', '', 11)
             pdf.set_text_color(0, 0, 0)
-            pdf.cell(10, 8, ' [ ] ', ln=False)
+            pdf.cell(15, 8, ' [ ] ', ln=False)
             pdf.cell(0, 8, step, ln=True)
         pdf.ln(10)
 
@@ -262,8 +262,8 @@ def generate_report_pdf(report, output_path):
         
         pdf.set_font('helvetica', 'B', 9)
         pdf.set_fill_color(230, 230, 230)
-        pdf.cell(40, 8, ' Type', border=1, fill=True)
-        pdf.cell(150, 8, ' Content/File', border=1, fill=True, ln=True)
+        pdf.cell(35, 8, ' Type', border=1, fill=True)
+        pdf.cell(140, 8, ' Content/File', border=1, fill=True, ln=True)
         
         pdf.set_font('helvetica', '', 8)
         for sig in signals[:15]: # Show top 15
@@ -276,9 +276,9 @@ def generate_report_pdf(report, output_path):
             
             # Truncate content for PDF table
             if len(content) > 85: content = content[:82] + "..."
-            
-            pdf.cell(40, 7, f" {sig_type}", border=1)
-            pdf.cell(150, 7, f" {content}", border=1, ln=True)
+
+            pdf.cell(35, 7, f" {sig_type}", border=1)
+            pdf.cell(140, 7, f" {content}", border=1, ln=True)
 
     pdf.output(output_path)
     return output_path
