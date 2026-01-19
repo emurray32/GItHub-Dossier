@@ -208,20 +208,104 @@
     .accounts-table th.sortable {
         cursor: pointer;
         user-select: none;
+        position: relative;
+        transition: background-color 0.15s ease;
     }
 
     .accounts-table th.sortable:hover {
         color: var(--text-primary);
+        background-color: rgba(0, 181, 173, 0.06);
+    }
+
+    .accounts-table th.sortable.sort-active {
+        background-color: rgba(0, 181, 173, 0.08);
     }
 
     .sort-indicator {
-        margin-left: 0.35rem;
-        font-size: 0.7rem;
-        color: var(--text-muted);
+        display: inline-flex;
+        flex-direction: column;
+        align-items: center;
+        margin-left: 0.4rem;
+        font-size: 0.6rem;
+        line-height: 0.7;
+        vertical-align: middle;
     }
 
-    .sort-indicator.active {
+    .sort-indicator .sort-asc,
+    .sort-indicator .sort-desc {
+        display: block;
+        color: var(--text-muted);
+        opacity: 0.4;
+        transition: all 0.15s ease;
+    }
+
+    .sort-indicator .sort-asc {
+        margin-bottom: -2px;
+    }
+
+    .accounts-table th.sortable:hover .sort-indicator .sort-asc,
+    .accounts-table th.sortable:hover .sort-indicator .sort-desc {
+        opacity: 0.7;
+    }
+
+    .sort-indicator.sort-asc-active .sort-asc {
         color: var(--accent-color);
+        opacity: 1;
+        transform: scale(1.2);
+    }
+
+    .sort-indicator.sort-desc-active .sort-desc {
+        color: var(--accent-color);
+        opacity: 1;
+        transform: scale(1.2);
+    }
+
+    /* Column resize handles */
+    .accounts-table th.resizable {
+        position: relative;
+    }
+
+    .resize-handle {
+        position: absolute;
+        right: 0;
+        top: 0;
+        bottom: 0;
+        width: 6px;
+        cursor: col-resize;
+        background: transparent;
+        transition: background-color 0.15s ease;
+        z-index: 10;
+    }
+
+    .resize-handle:hover,
+    .resize-handle.resizing {
+        background: var(--accent-color);
+    }
+
+    .resize-handle::after {
+        content: '';
+        position: absolute;
+        right: 2px;
+        top: 25%;
+        bottom: 25%;
+        width: 2px;
+        background: var(--border-color);
+        border-radius: 1px;
+        transition: background-color 0.15s ease;
+    }
+
+    .resize-handle:hover::after,
+    .resize-handle.resizing::after {
+        background: white;
+    }
+
+    .accounts-table.resizing {
+        cursor: col-resize;
+        user-select: none;
+    }
+
+    .accounts-table.resizing * {
+        cursor: col-resize !important;
     }
 
     .accounts-table td {
@@ -1743,17 +1827,14 @@
                             aria-label="Select all accounts">
                     </th>
                     <th class="row-num-col">#</th>
-                    <th class="sortable company-col" data-sort-key="company">Company <span class="sort-indicator">↕</span></th>
-                    <th class="sortable revenue-col" data-sort-key="annual_revenue">Annual Revenue <span class="sort-indicator">↕</span></th>
-                    <th class="sortable org-col" data-sort-key="github_org">GitHub Org <span class="sort-indicator">↕</span>
-                    </th>
-                    <th class="sortable tier-col" data-sort-key="tier">Tier <span class="sort-indicator">↕</span></th>
-                    <th class="sortable last-scanned-col" data-sort-key="last_scanned">Last Scanned <span class="sort-indicator">↕</span>
-                    </th>
-                    <th class="sortable evidence-col" data-sort-key="evidence">Evidence Summary <span class="sort-indicator">↕</span>
-                    </th>
-                    <th class="actions-col">Repo Report</th>
-                    <th class="notes-col">Notes</th>
+                    <th class="sortable company-col resizable" data-sort-key="company">Company <span class="sort-indicator"><span class="sort-asc">▲</span><span class="sort-desc">▼</span></span><div class="resize-handle"></div></th>
+                    <th class="sortable revenue-col resizable" data-sort-key="annual_revenue">Annual Revenue <span class="sort-indicator"><span class="sort-asc">▲</span><span class="sort-desc">▼</span></span><div class="resize-handle"></div></th>
+                    <th class="sortable org-col resizable" data-sort-key="github_org">GitHub Org <span class="sort-indicator"><span class="sort-asc">▲</span><span class="sort-desc">▼</span></span><div class="resize-handle"></div></th>
+                    <th class="sortable tier-col resizable" data-sort-key="tier">Tier <span class="sort-indicator"><span class="sort-asc">▲</span><span class="sort-desc">▼</span></span><div class="resize-handle"></div></th>
+                    <th class="sortable last-scanned-col resizable" data-sort-key="last_scanned">Last Scanned <span class="sort-indicator"><span class="sort-asc">▲</span><span class="sort-desc">▼</span></span><div class="resize-handle"></div></th>
+                    <th class="sortable evidence-col resizable" data-sort-key="evidence">Evidence Summary <span class="sort-indicator"><span class="sort-asc">▲</span><span class="sort-desc">▼</span></span><div class="resize-handle"></div></th>
+                    <th class="actions-col resizable">Repo Report<div class="resize-handle"></div></th>
+                    <th class="notes-col resizable">Notes<div class="resize-handle"></div></th>
                 </tr>
             </thead>
             <tbody id="accounts-tbody">
@@ -2800,6 +2881,7 @@
         initializeUI();
         initializeDataTable();
         initializeSortHandlers();
+        initializeColumnResize();
         updateDashboardStats();
     });
 
@@ -2815,7 +2897,10 @@
         };
 
         headers.forEach(th => {
-            th.addEventListener('click', () => {
+            th.addEventListener('click', (e) => {
+                // Don't trigger sort when clicking on resize handle
+                if (e.target.classList.contains('resize-handle')) return;
+
                 const sortKey = th.dataset.sortKey;
                 const columnIndex = sortMap[sortKey];
 
@@ -2833,22 +2918,96 @@
                 headers.forEach(h => {
                     const indicator = h.querySelector('.sort-indicator');
                     if (indicator) {
-                        indicator.textContent = '↕';
-                        indicator.classList.remove('active');
+                        indicator.classList.remove('sort-asc-active', 'sort-desc-active');
                     }
+                    h.classList.remove('sort-active');
                 });
 
                 const currentIndicator = th.querySelector('.sort-indicator');
                 if (currentIndicator) {
-                    currentIndicator.textContent = paginationState.sortDirection === 'asc' ? '↑' : '↓';
-                    currentIndicator.classList.add('active');
+                    currentIndicator.classList.add(paginationState.sortDirection === 'asc' ? 'sort-asc-active' : 'sort-desc-active');
                 }
+                th.classList.add('sort-active');
 
                 // Reset to page 1 and reload
                 paginationState.currentPage = 1;
                 reloadAccountsTable();
             });
         });
+    }
+
+    function initializeColumnResize() {
+        const table = document.querySelector('.accounts-table');
+        const resizeHandles = document.querySelectorAll('.resize-handle');
+
+        resizeHandles.forEach(handle => {
+            let startX, startWidth, th;
+
+            handle.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+
+                th = handle.parentElement;
+                startX = e.pageX;
+                startWidth = th.offsetWidth;
+
+                handle.classList.add('resizing');
+                table.classList.add('resizing');
+
+                document.addEventListener('mousemove', onMouseMove);
+                document.addEventListener('mouseup', onMouseUp);
+            });
+
+            function onMouseMove(e) {
+                const diff = e.pageX - startX;
+                const newWidth = Math.max(60, startWidth + diff);
+                th.style.width = newWidth + 'px';
+            }
+
+            function onMouseUp() {
+                handle.classList.remove('resizing');
+                table.classList.remove('resizing');
+
+                document.removeEventListener('mousemove', onMouseMove);
+                document.removeEventListener('mouseup', onMouseUp);
+
+                // Save column widths to localStorage
+                saveColumnWidths();
+            }
+        });
+
+        // Restore saved column widths
+        restoreColumnWidths();
+    }
+
+    function saveColumnWidths() {
+        const headers = document.querySelectorAll('.accounts-table th.resizable');
+        const widths = {};
+        headers.forEach(th => {
+            const key = th.dataset.sortKey || th.className;
+            if (th.style.width) {
+                widths[key] = th.style.width;
+            }
+        });
+        localStorage.setItem('accountsTableColumnWidths', JSON.stringify(widths));
+    }
+
+    function restoreColumnWidths() {
+        try {
+            const saved = localStorage.getItem('accountsTableColumnWidths');
+            if (saved) {
+                const widths = JSON.parse(saved);
+                const headers = document.querySelectorAll('.accounts-table th.resizable');
+                headers.forEach(th => {
+                    const key = th.dataset.sortKey || th.className;
+                    if (widths[key]) {
+                        th.style.width = widths[key];
+                    }
+                });
+            }
+        } catch (e) {
+            console.warn('Could not restore column widths:', e);
+        }
     }
 
     setInterval(updateDashboardStats, 8000);
