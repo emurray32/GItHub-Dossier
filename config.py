@@ -283,7 +283,7 @@ class Config:
         # Backend / Other Languages
         'django-babel', 'flask-babel', 'python-i18n', 'babel',
         'rails-i18n', 'i18n-tasks', 'globalize',
-        'go-i18n', 'golang.org/x/text',
+        'go-i18n',  # Removed 'golang.org/x/text' - too generic, used for string normalization not translation
         'icu4j', 'messageformat',
 
         # Note: 'uppy' is checked separately for i18n/locale properties
