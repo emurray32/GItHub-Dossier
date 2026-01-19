@@ -1160,6 +1160,38 @@ def get_all_accounts(page: int = 1, limit: int = 50, tier_filter: Optional[list]
     }
 
 
+def get_tier_counts() -> dict:
+    """
+    Get the count of accounts in each tier.
+
+    Returns:
+        Dictionary with tier numbers as string keys and counts as values:
+        {'0': count, '1': count, '2': count, '3': count, '4': count}
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT current_tier, COUNT(*) as count
+        FROM monitored_accounts
+        GROUP BY current_tier
+    ''')
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    # Initialize with zeros for all tiers
+    tier_counts = {'0': 0, '1': 0, '2': 0, '3': 0, '4': 0}
+
+    # Populate with actual counts
+    for row in rows:
+        tier = str(row['current_tier'])
+        if tier in tier_counts:
+            tier_counts[tier] = row['count']
+
+    return tier_counts
+
+
 def get_all_accounts_datatable(draw: int, start: int, length: int, search_value: str = '',
                                tier_filter: Optional[list] = None, order_column: int = 0,
                                order_dir: str = 'asc') -> dict:

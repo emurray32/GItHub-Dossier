@@ -1651,11 +1651,7 @@
                     </button>
                     {% endfor %}
                 </div>
-                {% set tier_counts = {'0': 0, '1': 0, '2': 0, '3': 0, '4': 0} %}
-                {% for account in accounts %}
-                {% set _ = tier_counts.update({account.current_tier|string: tier_counts.get(account.current_tier|string,
-                0) + 1}) %}
-                {% endfor %}
+                {# tier_counts is now passed from the backend with counts for ALL accounts #}
 
                 <div class="stat-badge">
                     <span class="badge badge-neutral">API</span>
