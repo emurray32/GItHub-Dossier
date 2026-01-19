@@ -987,11 +987,26 @@
         return null;
     }
 
+    // Strip surrounding quotes from a CSV field value
+    function stripQuotes(value) {
+        if (!value) return value;
+        const trimmed = value.trim();
+        // Remove surrounding double quotes (standard CSV format)
+        if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
+            return trimmed.slice(1, -1);
+        }
+        // Also handle single leading quote (malformed data)
+        if (trimmed.startsWith('"')) {
+            return trimmed.slice(1);
+        }
+        return trimmed;
+    }
+
     function parseCSV(csv) {
         const lines = csv.trim().split('\n');
         if (lines.length === 0) return [];
 
-        const header = lines[0].split(',').map(h => h.trim().toLowerCase());
+        const header = lines[0].split(',').map(h => stripQuotes(h).toLowerCase());
         const companyNameIndex = header.findIndex(h =>
             h === 'company_name' || h === 'name' || h === 'company' || h === 'company name'
         );
@@ -1012,7 +1027,7 @@
 
         const companies = [];
         for (let i = 1; i < lines.length; i++) {
-            const fields = lines[i].split(',').map(f => f.trim());
+            const fields = lines[i].split(',').map(f => stripQuotes(f));
             if (fields[companyNameIndex]) {
                 // Validate revenue value - ignore text that doesn't look like a number
                 const rawRevenue = revenueIndex !== -1 ? fields[revenueIndex] : null;
