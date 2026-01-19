@@ -39,6 +39,18 @@ app = Flask(__name__)
 app.config.from_object(Config)
 
 
+# Custom Jinja2 filter to normalize URLs
+@app.template_filter('normalize_url')
+def normalize_url_filter(url):
+    """Ensure URL has a protocol prefix (https://) for proper linking."""
+    if not url:
+        return ''
+    url = url.strip()
+    if not url.lower().startswith(('http://', 'https://')):
+        return 'https://' + url
+    return url
+
+
 # =============================================================================
 # WEBHOOK NOTIFICATIONS - Push leads to Slack/Zapier/Salesforce
 # =============================================================================
