@@ -15,7 +15,7 @@ from flask import Flask, render_template, Response, request, jsonify, redirect, 
 from config import Config
 from database import (
     save_report, get_report, get_recent_reports, search_reports,
-    update_account_status, get_all_accounts, get_all_accounts_datatable, add_account_to_tier_0, TIER_CONFIG,
+    update_account_status, get_all_accounts, get_all_accounts_datatable, get_tier_counts, add_account_to_tier_0, TIER_CONFIG,
     get_account_by_company, get_account_by_company_case_insensitive,
     mark_account_as_invalid, get_refreshable_accounts, delete_account,
     get_db_connection, get_setting, set_setting, increment_daily_stat,
@@ -1056,6 +1056,9 @@ def accounts():
     # Get paginated accounts
     result = get_all_accounts(page=page, limit=limit, tier_filter=tiers, search_query=search_query)
 
+    # Get tier counts for ALL accounts (not just current page)
+    tier_counts = get_tier_counts()
+
     return render_template(
         'accounts.html',
         accounts=result['accounts'],
@@ -1065,7 +1068,8 @@ def accounts():
         limit=result['limit'],
         current_tier_filter=tiers,
         current_search=search_query or '',
-        tier_config=TIER_CONFIG
+        tier_config=TIER_CONFIG,
+        tier_counts=tier_counts
     )
 
 
