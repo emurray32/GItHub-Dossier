@@ -2063,21 +2063,41 @@ def _calculate_intent_score(scan_results: dict) -> int:
     signals = scan_results.get('signals', [])
 
     # ============================================================
+    # EARLY MEGA-CORP DETECTION
+    # ============================================================
+    # Large engineering orgs (Docker, Airbnb, Uber, etc.) often use custom/internal
+    # i18n solutions. We need to detect them early to apply different signal weighting.
+    # For mega-corps, weak signals (just dependency injection) are not reliable -
+    # one small repo with i18next doesn't mean the company is "preparing" to i18n.
+    total_stars = scan_results.get('total_stars', 0)
+    public_repos = scan_results.get('org_public_repos', 0)
+    repos_scanned = len(scan_results.get('repos_scanned', []))
+    is_mega_corp = repos_scanned > 0 and (total_stars > 20000 or public_repos > 400)
+
+    # ============================================================
     # Check for PREPARING status (Goldilocks Zone!) - HIGHEST PRIORITY
     # ============================================================
     # This check MUST come before "Already Launched" to ensure that if a company
     # has ONE localized repo but is actively preparing another (Smoking Gun),
     # we don't disqualify them based on the single localized repo.
     # We want to capture the NEW opportunity.
+
+    # STRONG SIGNALS: Smoking gun forks are high-intent - forking an i18n library
+    # means they're actively customizing it. Trust this signal for ALL companies.
+    smoking_gun_hits = summary.get('smoking_gun_fork', {}).get('hits', [])
+
+    # WEAK SIGNALS: Dependency injection (i18n library in deps, no locale folders yet)
+    # This is reliable for small/medium companies, but NOT for mega-corps where
+    # one small repo with i18next doesn't indicate company-wide intent.
     dep_hits = summary.get('dependency_injection', {}).get('hits', [])
     goldilocks_hits = [h for h in dep_hits if h.get('goldilocks_status') == 'preparing' or h.get('gap_verified')]
 
-    # SMOKING GUN FORKS are ALWAYS PREPARING status - forking an i18n library
-    # is even stronger intent than just using it as a dependency!
-    smoking_gun_hits = summary.get('smoking_gun_fork', {}).get('hits', [])
-    
-    # Combine both types of PREPARING signals
-    all_preparing_hits = goldilocks_hits + smoking_gun_hits
+    # For mega-corps: Only trust STRONG signals (smoking gun forks)
+    # For regular companies: Trust both strong and weak signals
+    if is_mega_corp:
+        all_preparing_hits = smoking_gun_hits  # Only strong signals for mega-corps
+    else:
+        all_preparing_hits = goldilocks_hits + smoking_gun_hits  # All signals for regular companies
 
     if all_preparing_hits:
         # This is the GOLDILOCKS ZONE!
@@ -2100,6 +2120,41 @@ def _calculate_intent_score(scan_results: dict) -> int:
             bonus = 10  # Max bonus if actively working on it
 
         return min(base_score + bonus, Config.GOLDILOCKS_SCORES.get('preparing_max', 100))
+
+    # ============================================================
+    # MEGA-CORP WITH WEAK SIGNALS ONLY
+    # ============================================================
+    # If a mega-corp has weak signals (dependency injection) but NO strong signals
+    # (no smoking gun forks), we treat them as "launched" rather than "preparing".
+    # Rationale: One small repo with i18next in a 500-repo org doesn't indicate
+    # company-wide i18n intent - they likely have internal/proprietary tooling.
+    if is_mega_corp and goldilocks_hits and not smoking_gun_hits:
+        scan_results['goldilocks_status'] = 'launched'
+        scan_results['lead_status'] = Config.LEAD_STATUS_LABELS.get('launched', 'LOW PRIORITY')
+        scan_results['mega_corp_heuristic'] = True
+        scan_results['mega_corp_weak_signals'] = True
+        scan_results['mega_corp_evidence'] = (
+            f'Mega-corp with only weak i18n signals. Found {len(goldilocks_hits)} repo(s) with '
+            f'i18n dependencies but no locale folders - insufficient for an org with '
+            f'{total_stars:,} stars and {public_repos} repos. Likely has internal i18n tooling.'
+        )
+
+        # Add a synthetic signal to explain the classification
+        mega_corp_signal = {
+            'Company': scan_results.get('company_name', 'Unknown'),
+            'Signal': 'Mega-Corp Weak Signal Discount',
+            'Evidence': scan_results['mega_corp_evidence'],
+            'Link': scan_results.get('org_url', ''),
+            'priority': 'LOW',
+            'type': 'mega_corp_weak_signals',
+            'goldilocks_status': 'launched',
+            'total_stars': total_stars,
+            'public_repos': public_repos,
+            'weak_signal_count': len(goldilocks_hits),
+        }
+        signals.append(mega_corp_signal)
+
+        return Config.GOLDILOCKS_SCORES.get('launched', 10)
 
     # ============================================================
     # Check for LAUNCHED status (disqualifying condition)
@@ -2150,34 +2205,29 @@ def _calculate_intent_score(scan_results: dict) -> int:
         return min(35 + ghost_count * 5, 50)
 
     # ============================================================
-    # MEGA-CORP HEURISTIC: Detect high-maturity orgs without any other signals
+    # MEGA-CORP HEURISTIC: Detect high-maturity orgs without any signals at all
     # ============================================================
-    # Large engineering orgs (Airbnb, Uber, Facebook, etc.) often use custom/internal
-    # i18n solutions that won't appear in our standard library scans. If they have
-    # significant GitHub presence but no other signals, they've likely already
-    # launched with proprietary tooling.
+    # If we reach here, the mega-corp had NO signals (not even weak ones).
+    # They likely have internal/proprietary i18n tooling.
     #
-    # IMPORTANT: This check runs LAST after all other signals (Preparing, Thinking, Ghost)
-    # to ensure valid intent signals take precedence.
-    total_stars = scan_results.get('total_stars', 0)
-    public_repos = scan_results.get('org_public_repos', 0)
-    repos_scanned = len(scan_results.get('repos_scanned', []))
-
-    # Only apply mega-corp heuristic if:
-    # 1. We actually scanned repos (repos_scanned > 0)
-    # 2. The org has very high activity (stars > 20000 OR repos > 400)
-    if repos_scanned > 0 and (total_stars > 20000 or public_repos > 400):
+    # NOTE: is_mega_corp was computed at the start of this function.
+    # Mega-corps with weak signals were already handled above.
+    if is_mega_corp:
         # High-maturity org with no Preparing/Thinking signals = Already Launched
         scan_results['goldilocks_status'] = 'launched'
         scan_results['lead_status'] = Config.LEAD_STATUS_LABELS.get('launched', 'LOW PRIORITY')
         scan_results['mega_corp_heuristic'] = True
-        scan_results['mega_corp_evidence'] = 'High-maturity engineering org (likely custom/internal i18n)'
+        scan_results['mega_corp_no_signals'] = True
+        scan_results['mega_corp_evidence'] = (
+            f'High-maturity engineering org with no detectable i18n signals. '
+            f'Stars: {total_stars:,}, Repos: {public_repos}. Likely has internal i18n tooling.'
+        )
 
         # Add a synthetic signal to explain the classification
         mega_corp_signal = {
             'Company': scan_results.get('company_name', 'Unknown'),
-            'Signal': 'Mega-Corp Heuristic',
-            'Evidence': f'High-maturity engineering org (likely custom/internal i18n). Stars: {total_stars:,}, Repos: {public_repos}',
+            'Signal': 'Mega-Corp No Signals',
+            'Evidence': scan_results['mega_corp_evidence'],
             'Link': scan_results.get('org_url', ''),
             'priority': 'LOW',
             'type': 'mega_corp_launched',
