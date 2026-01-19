@@ -2078,6 +2078,20 @@ def api_zapier_trigger():
     if account and account.get('website'):
         website = account.get('website', '')
 
+    # Extract domain from website for Apollo API searches
+    domain = ''
+    if website:
+        try:
+            from urllib.parse import urlparse
+            parsed = urlparse(website if website.startswith('http') else f'https://{website}')
+            domain = parsed.netloc or parsed.path.split('/')[0]
+            # Remove www. prefix if present
+            if domain.startswith('www.'):
+                domain = domain[4:]
+        except Exception:
+            # Fallback: try to extract domain directly
+            domain = website.replace('https://', '').replace('http://', '').replace('www.', '').split('/')[0]
+
     # Find best repo (highest stars) from scan_data
     best_repo = None
     repos_scanned = scan_data.get('repos_scanned', [])
@@ -2107,12 +2121,34 @@ def api_zapier_trigger():
     report_url = f"{base_url}/report/{report_id}" if report_id else ''
 
     # Construct payload for Zapier
+    # Format contributors to ensure consistent structure for Zapier workflow
+    formatted_contributors = []
+    for c in contributors:
+        # Parse name into first/last if possible
+        full_name = c.get('name', '') or c.get('login', '')
+        name_parts = full_name.split(' ', 1) if full_name else ['', '']
+        first_name = name_parts[0] if name_parts else ''
+        last_name = name_parts[1] if len(name_parts) > 1 else ''
+
+        formatted_contributors.append({
+            'login': c.get('login', ''),
+            'name': full_name,
+            'first_name': first_name,
+            'last_name': last_name,
+            'email': c.get('email', ''),
+            'blog': c.get('blog', ''),
+            'github_url': c.get('github_url', ''),
+            # Include a flag to help Zapier's Path A filter identify real persons
+            'has_real_name': bool(c.get('name') and c.get('name') != c.get('login'))
+        })
+
     payload = {
         'event': 'enroll_lead',
         'company': company_name,
         'website': website,
+        'domain': domain,  # Required for Apollo API search in Path B
         'github_org': github_org,
-        'contributors': contributors,
+        'contributors': formatted_contributors,
         'fallback_role': 'Engineering Manager',
         'report_url': report_url,
         'timestamp': datetime.now().isoformat()
