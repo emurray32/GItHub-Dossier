@@ -440,11 +440,13 @@ def perform_background_scan(company_name: str):
 
     Updates the database scan_status at start ('processing') and end ('idle').
     Handles all exceptions to ensure status is always reset.
+    Stores any errors in last_scan_error for user visibility.
     """
     print(f"[WORKER] Starting background scan for: {company_name}")
+    scan_error = None  # Track errors for user visibility
 
     try:
-        # Update database status to 'processing'
+        # Update database status to 'processing' (clears any previous error)
         set_scan_status(company_name, SCAN_STATUS_PROCESSING, 'Starting scan...')
 
         start_time = time.time()
@@ -515,7 +517,8 @@ def perform_background_scan(company_name: str):
             )
             print(f"[WORKER] Report saved for {company_name} (ID: {report_id})")
         except Exception as e:
-            print(f"[WORKER] Failed to save report for {company_name}: {str(e)}")
+            scan_error = f"Failed to save report: {str(e)}"
+            print(f"[WORKER] {scan_error}")
             return
 
         # Phase 3b: Save signals detected during the scan
@@ -525,7 +528,9 @@ def perform_background_scan(company_name: str):
                 signals_count = save_signals(report_id, company_name, signals)
                 print(f"[WORKER] Saved {signals_count} signals for {company_name}")
         except Exception as e:
-            print(f"[WORKER] Failed to save signals for {company_name}: {str(e)}")
+            # Non-fatal error - continue but record for visibility
+            scan_error = f"Warning: Failed to save signals: {str(e)}"
+            print(f"[WORKER] {scan_error}")
 
         # Phase 4: Update monitored account status and tier
         try:
@@ -548,15 +553,19 @@ def perform_background_scan(company_name: str):
                 trigger_webhook('tier_change', webhook_data)
                 print(f"[WORKER] Webhook triggered for {company_name} (Tier {result.get('tier')})")
         except Exception as e:
-            print(f"[WORKER] Failed to update account status for {company_name}: {str(e)}")
+            # Store the error for user visibility instead of silently failing
+            scan_error = f"Tier classification failed: {str(e)}"
+            print(f"[WORKER] {scan_error}")
 
         print(f"[WORKER] Completed scan for {company_name} in {duration:.1f}s")
 
     except Exception as e:
+        scan_error = f"Scan failed: {str(e)}"
         print(f"[WORKER] Background scan failed for {company_name}: {str(e)}")
     finally:
         # ALWAYS reset scan status to idle when done (success or failure)
-        set_scan_status(company_name, SCAN_STATUS_IDLE)
+        # Pass any error that occurred so it's stored for user visibility
+        set_scan_status(company_name, SCAN_STATUS_IDLE, error=scan_error)
 
 
 def spawn_background_scan(company_name: str):

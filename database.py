@@ -101,6 +101,12 @@ def init_db() -> None:
     except sqlite3.OperationalError:
         pass  # Column already exists
 
+    # Migrate existing tables: add last_scan_error column if it doesn't exist
+    try:
+        cursor.execute('ALTER TABLE monitored_accounts ADD COLUMN last_scan_error TEXT')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
     cursor.execute('''
         CREATE INDEX IF NOT EXISTS idx_accounts_tier
         ON monitored_accounts(current_tier DESC)
@@ -1567,7 +1573,7 @@ SCAN_STATUS_QUEUED = 'queued'
 SCAN_STATUS_PROCESSING = 'processing'
 
 
-def set_scan_status(company_name: str, status: str, progress: str = None) -> bool:
+def set_scan_status(company_name: str, status: str, progress: str = None, error: str = None) -> bool:
     """
     Update the scan status for a company.
 
@@ -1575,6 +1581,7 @@ def set_scan_status(company_name: str, status: str, progress: str = None) -> boo
         company_name: The company name to update.
         status: One of 'idle', 'queued', 'processing'.
         progress: Optional progress message.
+        error: Optional error message to store (clears previous error if None and status is not idle with error).
 
     Returns:
         True if the update was successful, False otherwise.
@@ -1586,17 +1593,27 @@ def set_scan_status(company_name: str, status: str, progress: str = None) -> boo
     now = datetime.now().isoformat() if status in (SCAN_STATUS_PROCESSING, SCAN_STATUS_QUEUED) else None
 
     if status == SCAN_STATUS_PROCESSING:
+        # Clear any previous error when starting a new scan
         cursor.execute('''
             UPDATE monitored_accounts
-            SET scan_status = ?, scan_progress = ?, scan_start_time = ?
+            SET scan_status = ?, scan_progress = ?, scan_start_time = ?, last_scan_error = NULL
             WHERE company_name = ?
         ''', (status, progress, now, company_name))
     elif status == SCAN_STATUS_IDLE:
-        cursor.execute('''
-            UPDATE monitored_accounts
-            SET scan_status = ?, scan_progress = NULL, scan_start_time = NULL
-            WHERE company_name = ?
-        ''', (status, company_name))
+        if error:
+            # Store the error when setting to idle with an error
+            cursor.execute('''
+                UPDATE monitored_accounts
+                SET scan_status = ?, scan_progress = NULL, scan_start_time = NULL, last_scan_error = ?
+                WHERE company_name = ?
+            ''', (status, error, company_name))
+        else:
+            # Clear error on successful completion
+            cursor.execute('''
+                UPDATE monitored_accounts
+                SET scan_status = ?, scan_progress = NULL, scan_start_time = NULL, last_scan_error = NULL
+                WHERE company_name = ?
+            ''', (status, company_name))
     elif status == SCAN_STATUS_QUEUED:
         # Track queue time for watchdog to recover stale queued accounts
         cursor.execute('''
@@ -1626,13 +1643,13 @@ def get_scan_status(company_name: str) -> Optional[dict]:
         company_name: The company name to check.
 
     Returns:
-        Dictionary with scan_status, scan_progress, scan_start_time or None.
+        Dictionary with scan_status, scan_progress, scan_start_time, last_scan_error or None.
     """
     conn = get_db_connection()
     cursor = conn.cursor()
 
     cursor.execute('''
-        SELECT scan_status, scan_progress, scan_start_time
+        SELECT scan_status, scan_progress, scan_start_time, last_scan_error
         FROM monitored_accounts
         WHERE company_name = ?
     ''', (company_name,))
@@ -1644,7 +1661,8 @@ def get_scan_status(company_name: str) -> Optional[dict]:
         return {
             'scan_status': row['scan_status'] or SCAN_STATUS_IDLE,
             'scan_progress': row['scan_progress'],
-            'scan_start_time': row['scan_start_time']
+            'scan_start_time': row['scan_start_time'],
+            'last_scan_error': row['last_scan_error']
         }
     return None
 
