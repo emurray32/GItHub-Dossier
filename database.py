@@ -11,9 +11,10 @@ from config import Config
 
 
 def get_db_connection() -> sqlite3.Connection:
-    """Create a database connection with row factory."""
+    """Create a database connection with row factory and timeout."""
     os.makedirs(os.path.dirname(Config.DATABASE_PATH), exist_ok=True)
-    conn = sqlite3.connect(Config.DATABASE_PATH)
+    # Use a 30-second timeout to handle concurrent access gracefully
+    conn = sqlite3.connect(Config.DATABASE_PATH, timeout=30.0)
     conn.row_factory = sqlite3.Row
     return conn
 
