@@ -1605,6 +1605,26 @@ def api_queue_status():
     })
 
 
+@app.route('/api/status-counts')
+def api_status_counts():
+    """
+    Get counts of accounts by scan status.
+
+    Returns:
+        JSON with counts for idle, queued, processing, and stuck accounts.
+    """
+    from database import get_status_counts
+    counts = get_status_counts(stuck_timeout_minutes=5)
+
+    return jsonify({
+        'idle': counts['idle'],
+        'queued': counts['queued'],
+        'processing': counts['processing'],
+        'stuck': counts['stuck'],
+        'total': sum(counts.values())
+    })
+
+
 @app.route('/api/worker-restart', methods=['POST'])
 def api_worker_restart():
     """

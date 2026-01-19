@@ -1681,6 +1681,65 @@ def get_queued_and_processing_accounts() -> dict:
     return result
 
 
+def get_status_counts(stuck_timeout_minutes: int = 5) -> dict:
+    """
+    Get counts of accounts by scan status, including stuck accounts.
+
+    Args:
+        stuck_timeout_minutes: Minutes after which a processing scan is considered stuck.
+
+    Returns:
+        Dictionary with counts for each status: idle, queued, processing, stuck.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Get counts for all statuses
+    cursor.execute('''
+        SELECT scan_status, COUNT(*) as count
+        FROM monitored_accounts
+        GROUP BY scan_status
+    ''')
+
+    rows = cursor.fetchall()
+
+    # Initialize counts
+    counts = {
+        'idle': 0,
+        'queued': 0,
+        'processing': 0,
+        'stuck': 0
+    }
+
+    # Populate basic counts
+    for row in rows:
+        status = row['scan_status'] or SCAN_STATUS_IDLE
+        if status in counts:
+            counts[status] = row['count']
+
+    # Calculate stuck accounts (processing for too long)
+    from datetime import datetime, timedelta
+    stuck_threshold = (datetime.now() - timedelta(minutes=stuck_timeout_minutes)).isoformat()
+
+    cursor.execute('''
+        SELECT COUNT(*) as count
+        FROM monitored_accounts
+        WHERE scan_status = ?
+        AND scan_start_time IS NOT NULL
+        AND scan_start_time < ?
+    ''', (SCAN_STATUS_PROCESSING, stuck_threshold))
+
+    stuck_row = cursor.fetchone()
+    if stuck_row:
+        counts['stuck'] = stuck_row['count']
+        # Subtract stuck from processing count
+        counts['processing'] = max(0, counts['processing'] - counts['stuck'])
+
+    conn.close()
+
+    return counts
+
+
 def clear_stale_scan_statuses(timeout_minutes: int = 30) -> int:
     """
     Clear scan statuses that have been stuck in 'processing' or 'queued' state.
