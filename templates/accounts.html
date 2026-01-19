@@ -1892,7 +1892,7 @@
                             </svg>
                         </button>
                         {% if account.website %}
-                        <a href="{{ account.website }}" target="_blank" rel="noopener" class="btn-website-link" title="Visit website">
+                        <a href="{{ account.website|normalize_url }}" target="_blank" rel="noopener" class="btn-website-link" title="Visit website">
                             🔗
                         </a>
                         {% endif %}
@@ -2682,7 +2682,7 @@
                 : `<span class="company-name-text">${escapeHtml(account.company_name)}</span>`;
 
             const websiteLink = account.website
-                ? `<a href="${escapeHtml(account.website)}" target="_blank" rel="noopener" class="btn-website-link" title="Visit website">🔗</a>`
+                ? `<a href="${normalizeUrl(account.website)}" target="_blank" rel="noopener" class="btn-website-link" title="Visit website">🔗</a>`
                 : '';
 
             const githubOrgLink = account.github_org
@@ -2778,6 +2778,15 @@
             "'": '&#039;'
         };
         return text.replace(/[&<>"']/g, m => map[m]);
+    }
+
+    function normalizeUrl(url) {
+        if (!url) return '';
+        url = url.trim();
+        if (!/^https?:\/\//i.test(url)) {
+            return 'https://' + url;
+        }
+        return url;
     }
 
     function capitalizeText(text) {
