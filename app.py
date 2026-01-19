@@ -1046,7 +1046,7 @@ def api_accounts_datatable():
     order_dir = request.args.get('order[0][dir]', 'asc').lower()
 
     # Validate parameters
-    length = max(1, min(length, 500))  # Limit to max 500 rows per request
+    length = max(1, min(length, 10000))  # Limit to max 10000 rows per request
     start = max(0, start)
 
     # Get data from database
