@@ -865,6 +865,45 @@
         height: 16px;
     }
 
+    /* Apollo Enrollment Button */
+    .btn-apollo {
+        background: #1a1a1a;
+        color: white;
+        border: none;
+        padding: 0.5rem 1rem;
+        border-radius: 6px;
+        font-weight: 600;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        transition: all 0.2s;
+    }
+
+    .btn-apollo:hover {
+        background: #333;
+        transform: scale(1.02);
+    }
+
+    .btn-apollo:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+        transform: none;
+    }
+
+    .btn-apollo.loading {
+        background: #444;
+    }
+
+    .btn-apollo.success {
+        background: #166534;
+    }
+
+    .btn-apollo svg {
+        width: 16px;
+        height: 16px;
+    }
+
     /* BDR Modal */
     .bdr-modal {
         display: none;
@@ -1166,22 +1205,32 @@
                 <h3 style="margin: 0;">Ready-to-Send Cold Email</h3>
                 <span class="badge badge-primary">Skill Applied: Cold Outreach</span>
             </div>
-            <button class="copy-email-btn" onclick="copyEmailDraft(this)" id="copyEmailBtn">
-                <span class="copy-icon copy-icon--default" aria-hidden="true">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                        stroke-linejoin="round">
-                        <rect x="9" y="9" width="13" height="13" rx="2"></rect>
-                        <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"></path>
+            <div class="email-actions">
+                <button class="copy-email-btn" onclick="copyEmailDraft(this)" id="copyEmailBtn">
+                    <span class="copy-icon copy-icon--default" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                            stroke-linejoin="round">
+                            <rect x="9" y="9" width="13" height="13" rx="2"></rect>
+                            <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"></path>
+                        </svg>
+                    </span>
+                    <span class="copy-icon copy-icon--success" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                            stroke-linejoin="round">
+                            <path d="M20 6L9 17l-5-5"></path>
+                        </svg>
+                    </span>
+                    <span class="btn-text">Copy Email</span>
+                </button>
+                <button class="btn-apollo" onclick="triggerApolloEnroll(this)" id="enrollApolloBtn" data-report-id="{{ report.id }}">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <path d="M12 8v8"></path>
+                        <path d="M8 12h8"></path>
                     </svg>
-                </span>
-                <span class="copy-icon copy-icon--success" aria-hidden="true">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                        stroke-linejoin="round">
-                        <path d="M20 6L9 17l-5-5"></path>
-                    </svg>
-                </span>
-                <span class="btn-text">Copy Email</span>
-            </button>
+                    <span class="btn-text">Enroll in Apollo</span>
+                </button>
+            </div>
         </div>
         <div class="email-draft-content">
             <div class="email-edit-hint">Personalized draft following Expert BDR rules.</div>
@@ -1778,6 +1827,111 @@
             console.error('Failed to copy:', err);
             alert('Failed to copy email. Please select and copy manually.');
         });
+    }
+
+    async function triggerApolloEnroll(button) {
+        const reportId = button.dataset.reportId;
+        const btnText = button.querySelector('.btn-text');
+        const originalText = btnText.textContent;
+
+        // Disable button and show loading state
+        button.disabled = true;
+        button.classList.add('loading');
+        btnText.textContent = 'Enrolling...';
+
+        try {
+            const response = await fetch('/api/integrations/zapier/trigger', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    report_id: parseInt(reportId)
+                })
+            });
+
+            const data = await response.json();
+
+            if (data.code === 'MISSING_URL') {
+                // Prompt user for Zapier URL
+                const zapierUrl = prompt(
+                    'Zapier webhook URL not configured.\n\n' +
+                    'Please enter your Zapier webhook URL:\n' +
+                    '(e.g., https://hooks.zapier.com/hooks/catch/...)'
+                );
+
+                if (zapierUrl && zapierUrl.trim()) {
+                    // Save the URL
+                    const saveResponse = await fetch('/api/settings/zapier', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            zapier_url: zapierUrl.trim()
+                        })
+                    });
+
+                    const saveData = await saveResponse.json();
+
+                    if (saveData.status === 'success') {
+                        // Retry the trigger
+                        btnText.textContent = 'Retrying...';
+                        const retryResponse = await fetch('/api/integrations/zapier/trigger', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                report_id: parseInt(reportId)
+                            })
+                        });
+
+                        const retryData = await retryResponse.json();
+
+                        if (retryData.status === 'success') {
+                            button.classList.remove('loading');
+                            button.classList.add('success');
+                            btnText.textContent = 'Enrolled!';
+                            setTimeout(() => {
+                                button.classList.remove('success');
+                                button.disabled = false;
+                                btnText.textContent = originalText;
+                            }, 3000);
+                        } else {
+                            throw new Error(retryData.message || 'Failed to enroll after saving URL');
+                        }
+                    } else {
+                        throw new Error(saveData.message || 'Failed to save Zapier URL');
+                    }
+                } else {
+                    // User cancelled or empty input
+                    button.classList.remove('loading');
+                    button.disabled = false;
+                    btnText.textContent = originalText;
+                    return;
+                }
+            } else if (data.status === 'success') {
+                // Success!
+                button.classList.remove('loading');
+                button.classList.add('success');
+                btnText.textContent = 'Enrolled!';
+                setTimeout(() => {
+                    button.classList.remove('success');
+                    button.disabled = false;
+                    btnText.textContent = originalText;
+                }, 3000);
+            } else {
+                throw new Error(data.message || 'Failed to enroll lead');
+            }
+
+        } catch (error) {
+            console.error('Apollo enrollment error:', error);
+            alert('Failed to enroll in Apollo: ' + error.message);
+            button.classList.remove('loading');
+            button.disabled = false;
+            btnText.textContent = originalText;
+        }
     }
 
     function showSendToBDRModal() {
