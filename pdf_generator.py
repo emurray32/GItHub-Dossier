@@ -26,15 +26,18 @@ def generate_report_pdf(report, output_path):
     """
     pdf = ReportPDF()
     pdf.add_page()
-    
+
+    # Ensure scan_data is a dict (may be None or empty from database)
+    scan_data = report.get('scan_data') or {}
+
     # 1. Company Info Header
     pdf.set_font('helvetica', 'B', 24)
     pdf.set_text_color(0, 0, 0)
     pdf.cell(0, 15, report['company_name'], ln=True)
-    
+
     pdf.set_font('helvetica', '', 12)
     pdf.set_text_color(0, 100, 255)
-    pdf.cell(0, 8, f"github.com/{report['github_org']}", ln=True, link=report['scan_data'].get('org_url', ''))
+    pdf.cell(0, 8, f"github.com/{report['github_org']}", ln=True, link=scan_data.get('org_url', ''))
     
     pdf.ln(5)
     pdf.set_font('helvetica', '', 10)
@@ -253,7 +256,7 @@ def generate_report_pdf(report, output_path):
         pdf.ln(10)
 
     # 8. Signals (Top 10)
-    signals = report['scan_data'].get('signals', [])
+    signals = scan_data.get('signals', [])
     if signals:
         pdf.set_font('helvetica', 'B', 14)
         pdf.set_text_color(26, 35, 126)
