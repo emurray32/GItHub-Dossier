@@ -15,6 +15,9 @@ from config import Config
 # Import caching layer
 from cache import get_github_cache, CacheKeyBuilder
 
+# Import database functions for hourly API tracking
+from database import increment_hourly_api_calls
+
 
 @dataclass
 class TokenStatus:
@@ -489,6 +492,12 @@ def make_github_request(url: str, params: Optional[dict] = None, timeout: int = 
         params=params,
         timeout=timeout,
     )
+
+    # 4.5. Track this API call for hourly stats (only for actual requests, not cached)
+    try:
+        increment_hourly_api_calls(1)
+    except Exception:
+        pass  # Don't let stats tracking break requests
 
     # 5. Extract rate limit info from response headers
     remaining_header = response.headers.get("X-RateLimit-Remaining")

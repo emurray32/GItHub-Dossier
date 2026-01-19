@@ -150,6 +150,14 @@ def init_db() -> None:
         )
     ''')
 
+    # Hourly API Stats table - tracks API calls per hour for rate limit display
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS hourly_api_stats (
+            hour_key TEXT PRIMARY KEY,
+            api_calls INTEGER DEFAULT 0
+        )
+    ''')
+
     # Webhook Logs table - webhook delivery history
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS webhook_logs (
@@ -1565,6 +1573,93 @@ def get_stats_last_n_days(days: int = 30) -> list:
     conn.close()
     
     return [dict(row) for row in rows]
+
+
+def increment_hourly_api_calls(amount: int = 1) -> None:
+    """
+    Increment the API calls counter for the current hour.
+
+    The counter resets automatically at the top of each hour by using
+    a unique hour_key (YYYY-MM-DD-HH format).
+
+    Args:
+        amount: Number of API calls to add (default 1)
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Generate hour key in format: YYYY-MM-DD-HH
+    hour_key = datetime.now().strftime('%Y-%m-%d-%H')
+
+    # Try to update existing row for this hour
+    cursor.execute('''
+        UPDATE hourly_api_stats
+        SET api_calls = api_calls + ?
+        WHERE hour_key = ?
+    ''', (amount, hour_key))
+
+    if cursor.rowcount == 0:
+        # No row for this hour yet, create one
+        cursor.execute('''
+            INSERT INTO hourly_api_stats (hour_key, api_calls)
+            VALUES (?, ?)
+        ''', (hour_key, amount))
+
+    conn.commit()
+    conn.close()
+
+
+def get_current_hour_api_calls() -> int:
+    """
+    Get the number of API calls made in the current hour.
+
+    Returns:
+        Number of API calls this hour (0 if no calls yet)
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Generate hour key for current hour
+    hour_key = datetime.now().strftime('%Y-%m-%d-%H')
+
+    cursor.execute('''
+        SELECT api_calls FROM hourly_api_stats
+        WHERE hour_key = ?
+    ''', (hour_key,))
+
+    row = cursor.fetchone()
+    conn.close()
+
+    return row['api_calls'] if row else 0
+
+
+def cleanup_old_hourly_stats(hours_to_keep: int = 24) -> int:
+    """
+    Clean up old hourly stats entries to prevent table from growing indefinitely.
+
+    Args:
+        hours_to_keep: Number of hours of history to retain (default 24)
+
+    Returns:
+        Number of rows deleted
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Calculate cutoff hour_key
+    cutoff_time = datetime.now() - timedelta(hours=hours_to_keep)
+    cutoff_key = cutoff_time.strftime('%Y-%m-%d-%H')
+
+    cursor.execute('''
+        DELETE FROM hourly_api_stats
+        WHERE hour_key < ?
+    ''', (cutoff_key,))
+
+    deleted = cursor.rowcount
+    conn.commit()
+    conn.close()
+
+    return deleted
 
 
 def log_webhook(event_type: str, company: str, status: str) -> int:

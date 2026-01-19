@@ -26,7 +26,8 @@ from database import (
     SCAN_STATUS_IDLE, SCAN_STATUS_QUEUED, SCAN_STATUS_PROCESSING,
     save_signals, cleanup_duplicate_accounts, update_account_annual_revenue,
     update_account_website, update_account_notes,
-    create_import_batch, get_pending_import_batches, update_batch_progress, get_import_batch
+    create_import_batch, get_pending_import_batches, update_batch_progress, get_import_batch,
+    increment_hourly_api_calls, get_current_hour_api_calls, cleanup_old_hourly_stats
 )
 from monitors.scanner import deep_scan_generator
 from monitors.discovery import search_github_orgs, resolve_org_fast, discover_companies_via_ai
@@ -1909,6 +1910,47 @@ def api_stats():
     return jsonify({
         'stats': stats,
         'days': days
+    })
+
+
+@app.route('/api/hourly-api-stats')
+def api_hourly_stats():
+    """
+    Get API call statistics for the current hour.
+
+    Returns:
+        JSON with hourly API usage:
+        {
+            "api_calls_this_hour": 1234,
+            "hourly_limit": 10000,
+            "token_count": 2,
+            "rate_per_token": 5000
+        }
+
+    The hourly_limit is calculated as: token_count * 5000 (GitHub's per-token limit)
+    This allows the frontend to display: "1,234 / 10,000 per hour"
+    """
+    from utils import get_token_pool
+
+    # Get current hour's API calls
+    api_calls = get_current_hour_api_calls()
+
+    # Get token count from the pool
+    token_pool = get_token_pool()
+    token_count = token_pool.get_token_count()
+
+    # Calculate hourly limit (5,000 per token)
+    rate_per_token = 5000
+    hourly_limit = token_count * rate_per_token
+
+    # Clean up old hourly stats periodically (keep 24 hours)
+    cleanup_old_hourly_stats(hours_to_keep=24)
+
+    return jsonify({
+        'api_calls_this_hour': api_calls,
+        'hourly_limit': hourly_limit,
+        'token_count': token_count,
+        'rate_per_token': rate_per_token
     })
 
 

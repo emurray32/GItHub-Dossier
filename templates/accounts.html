@@ -1660,7 +1660,7 @@
                 <div class="stat-badge">
                     <span class="badge badge-neutral">API</span>
                     <span class="count" id="dashboard-api-calls">--</span>
-                    <span>API Calls</span>
+                    <span id="dashboard-api-label">API Calls</span>
                 </div>
 
                 <div class="stat-badge">
@@ -2296,18 +2296,23 @@
         // Update status filter dropdown counts
         updateStatusFilterCounts();
 
-        fetch('/api/stats?days=1')
+        // Fetch hourly API stats for accurate rate limit display
+        fetch('/api/hourly-api-stats')
             .then(response => response.json())
             .then(data => {
                 const apiEl = document.getElementById('dashboard-api-calls');
-                if (apiEl && data.stats && data.stats.length > 0) {
-                    const todayStats = data.stats[data.stats.length - 1];
-                    apiEl.textContent = todayStats.api_calls_estimated.toLocaleString();
-                } else if (apiEl) {
-                    apiEl.textContent = '0';
+                const labelEl = document.getElementById('dashboard-api-label');
+                if (apiEl) {
+                    const calls = data.api_calls_this_hour || 0;
+                    const limit = data.hourly_limit || 10000;
+                    // Format as "X / Y" with thousands separators
+                    apiEl.textContent = `${calls.toLocaleString()} / ${limit.toLocaleString()}`;
+                }
+                if (labelEl) {
+                    labelEl.textContent = 'per hour';
                 }
             })
-            .catch(err => console.error('Error fetching stats:', err));
+            .catch(err => console.error('Error fetching hourly API stats:', err));
     }
 
     // =============================================================================
