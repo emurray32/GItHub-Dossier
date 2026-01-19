@@ -493,12 +493,6 @@ def make_github_request(url: str, params: Optional[dict] = None, timeout: int = 
         timeout=timeout,
     )
 
-    # 4.5. Track this API call for hourly stats (only for actual requests, not cached)
-    try:
-        increment_hourly_api_calls(1)
-    except Exception:
-        pass  # Don't let stats tracking break requests
-
     # 5. Extract rate limit info from response headers
     remaining_header = response.headers.get("X-RateLimit-Remaining")
     limit_header = response.headers.get("X-RateLimit-Limit")
@@ -546,14 +540,21 @@ def make_github_request(url: str, params: Optional[dict] = None, timeout: int = 
 
         return response
 
-    # 8. Cache successful responses
-    if response.status_code == 200 and cache.is_available():
+    # 8. Cache successful responses and track API calls
+    if response.status_code == 200:
+        # Only count successful API calls (not 429s, 404s, etc.)
         try:
-            body = response.json()
-            cache.set(url, params, response.status_code, dict(response.headers), body)
+            increment_hourly_api_calls(1)
         except Exception:
-            # Don't fail if caching fails - just continue
-            pass
+            pass  # Don't let stats tracking break requests
+
+        if cache.is_available():
+            try:
+                body = response.json()
+                cache.set(url, params, response.status_code, dict(response.headers), body)
+            except Exception:
+                # Don't fail if caching fails - just continue
+                pass
 
     # 9. Soft buffering when approaching limit (only if we're running low)
     if remaining is not None and remaining < 10:
