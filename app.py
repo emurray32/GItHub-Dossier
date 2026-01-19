@@ -2138,6 +2138,7 @@ def api_zapier_trigger():
             'email': c.get('email', ''),
             'blog': c.get('blog', ''),
             'github_url': c.get('github_url', ''),
+            'organization_name': company_name,  # Include company name for Zapier mapping
             # Include a flag to help Zapier's Path A filter identify real persons
             'has_real_name': bool(c.get('name') and c.get('name') != c.get('login'))
         })
