@@ -212,6 +212,12 @@ def init_db() -> None:
         ON scan_signals(timestamp DESC)
     ''')
 
+    # Set default webhook_enabled to false (paused) if not already set
+    cursor.execute('''
+        INSERT OR IGNORE INTO system_settings (key, value)
+        VALUES ('webhook_enabled', 'false')
+    ''')
+
     conn.commit()
     conn.close()
 
