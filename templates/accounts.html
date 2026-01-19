@@ -1884,7 +1884,7 @@
             {% for account in accounts %}
             <tr id="row-{{ account.id }}" data-company="{{ account.company_name }}" data-account-id="{{ account.id }}"
                 data-tier="{{ account.current_tier }}" data-last-scanned="{{ account.last_scanned_at or '' }}"
-                data-next-scan-due="{{ account.next_scan_due or '' }}" data-status="idle">
+                data-next-scan-due="{{ account.next_scan_due or '' }}" data-website="{{ account.website or '' }}" data-status="idle">
                 <td class="select-col">
                     <input type="checkbox" class="select-account-checkbox row-select" data-account-id="{{ account.id }}"
                         aria-label="Select {{ account.company_name }}">
@@ -2761,7 +2761,7 @@
             }
 
             return `
-                <tr id="row-${account.id}" data-company="${escapeHtml(account.company_name)}" data-account-id="${account.id}" data-tier="${account.current_tier}" data-status="idle">
+                <tr id="row-${account.id}" data-company="${escapeHtml(account.company_name)}" data-account-id="${account.id}" data-tier="${account.current_tier}" data-last-scanned="${account.last_scanned_at || ''}" data-website="${escapeHtml(account.website || '')}" data-status="idle">
                     <td class="select-col">
                         <input type="checkbox" class="select-account-checkbox row-select" data-account-id="${account.id}" aria-label="Select ${escapeHtml(account.company_name)}">
                     </td>
@@ -3012,7 +3012,7 @@
         const selectedRows = getSelectedRows();
         if (selectedRows.length === 0) return;
 
-        const header = ['Company', 'Annual Revenue', 'GitHub Org', 'Tier', 'Last Scanned', 'Signal Status', 'Signal Detail'];
+        const header = ['Company', 'Annual Revenue', 'GitHub Org', 'Website', 'Tier', 'Last Scanned', 'Signal Status', 'Signal Detail'];
         const csvRows = [header];
 
         selectedRows.forEach(row => {
@@ -3022,7 +3022,9 @@
 
             const annualRevenue = row.querySelector('.annual-revenue-cell')?.textContent.trim() || '';
             const orgCell = row.querySelector('.github-org-cell');
-            const org = orgCell?.dataset.org || orgCell?.textContent.trim() || '';
+            const orgName = orgCell?.dataset.org || orgCell?.textContent.trim() || '';
+            const githubOrgUrl = orgName ? `https://github.com/${orgName}` : '';
+            const website = row.dataset.website || '';
             const tier = row.querySelector('.tier-badge')?.textContent.trim() || '';
 
             // Format date as YYYY-MM-DD from raw timestamp
@@ -3049,7 +3051,7 @@
                 }
             }
 
-            csvRows.push([company, annualRevenue, org, tier, lastScanned, signalStatus, signalDetail]);
+            csvRows.push([company, annualRevenue, githubOrgUrl, website, tier, lastScanned, signalStatus, signalDetail]);
         });
 
         const csvContent = csvRows
