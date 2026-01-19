@@ -314,6 +314,24 @@
         border-color: rgba(34, 197, 94, 0.6);
     }
 
+    .btn-website-link {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 24px;
+        height: 24px;
+        border-radius: 4px;
+        text-decoration: none;
+        font-size: 14px;
+        transition: all var(--transition-fast);
+        opacity: 0.7;
+    }
+
+    .btn-website-link:hover {
+        opacity: 1;
+        transform: scale(1.1);
+    }
+
     .table-controls {
         display: flex;
         align-items: center;
@@ -1873,6 +1891,11 @@
                                     d="M16 1H6c-1.1 0-2 .9-2 2v12h2V3h10V1zm3 4H10c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h9c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H10V7h9v14z" />
                             </svg>
                         </button>
+                        {% if account.website %}
+                        <a href="{{ account.website }}" target="_blank" rel="noopener" class="btn-website-link" title="Visit website">
+                            🔗
+                        </a>
+                        {% endif %}
                     </span>
                 </td>
                 <td class="github-org-cell" data-company="{{ account.company_name|e }}" ondblclick="editOrg(this)"
@@ -2658,6 +2681,10 @@
                 ? `<a href="/report/${account.latest_report_id}"><span class="company-name-text">${escapeHtml(account.company_name)}</span></a>`
                 : `<span class="company-name-text">${escapeHtml(account.company_name)}</span>`;
 
+            const websiteLink = account.website
+                ? `<a href="${escapeHtml(account.website)}" target="_blank" rel="noopener" class="btn-website-link" title="Visit website">🔗</a>`
+                : '';
+
             const githubOrgLink = account.github_org
                 ? `<a href="https://github.com/${escapeHtml(account.github_org)}" target="_blank" rel="noopener" class="github-org-link" title="View on GitHub">
                     <svg viewBox="0 0 16 16" fill="currentColor">
@@ -2693,6 +2720,7 @@
                                     <path d="M16 1H6c-1.1 0-2 .9-2 2v12h2V3h10V1zm3 4H10c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h9c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H10V7h9v14z" />
                                 </svg>
                             </button>
+                            ${websiteLink}
                         </span>
                     </td>
                     <td class="annual-revenue-cell">${formatRevenue(account.annual_revenue)}</td>
