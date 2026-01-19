@@ -29,6 +29,7 @@ wheels/
 
 # Database
 data/*.db
+*.db
 *.sqlite3
 
 # IDE
