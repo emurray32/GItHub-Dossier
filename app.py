@@ -1891,6 +1891,84 @@ def api_token_pool():
     return jsonify(pool_status)
 
 
+@app.route('/api/cache')
+def api_cache_stats():
+    """
+    Get cache statistics and status.
+
+    The caching layer reduces GitHub API calls by storing responses:
+    - Organization metadata: 24 hours TTL
+    - Repository lists: 7 days TTL
+    - File contents: 7 days TTL
+    - Branch/PR lists: 12 hours TTL
+    - Issue lists: 6 hours TTL
+
+    Returns:
+        JSON with cache status and statistics:
+        {
+            "backend": "redis" | "diskcache" | "disabled" | "none",
+            "enabled": true,
+            "hits": 150,
+            "misses": 50,
+            "hit_rate_percent": 75.0,
+            "bytes_saved_approx": 1048576,
+            "ttl_config": {
+                "org_metadata": 86400,
+                "repo_list": 604800,
+                ...
+            }
+        }
+    """
+    from cache import get_cache_stats
+    return jsonify(get_cache_stats())
+
+
+@app.route('/api/cache/clear', methods=['POST'])
+def api_cache_clear():
+    """
+    Clear all cached entries.
+
+    Use this when you need fresh data for all organizations.
+    Typically not needed as cache auto-expires based on TTL.
+
+    Returns:
+        JSON with number of entries cleared.
+    """
+    from cache import clear_cache
+    deleted = clear_cache()
+    return jsonify({
+        'success': True,
+        'entries_cleared': deleted,
+        'message': f'Cleared {deleted} cache entries'
+    })
+
+
+@app.route('/api/cache/invalidate/<org_login>', methods=['POST'])
+def api_cache_invalidate_org(org_login):
+    """
+    Invalidate cache for a specific organization.
+
+    Use this when:
+    - You receive a webhook that a repo was pushed
+    - You know an org's data has changed
+    - You want fresh data for a specific company scan
+
+    Args:
+        org_login: GitHub organization login name
+
+    Returns:
+        JSON with number of entries invalidated.
+    """
+    from cache import invalidate_org_cache
+    deleted = invalidate_org_cache(org_login)
+    return jsonify({
+        'success': True,
+        'org': org_login,
+        'entries_invalidated': deleted,
+        'message': f'Invalidated {deleted} cache entries for {org_login}'
+    })
+
+
 @app.route('/api/webhook-logs')
 def api_webhook_logs():
     """
