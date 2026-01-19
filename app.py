@@ -266,19 +266,21 @@ def enrich_webhook_data(company_data: dict, report_id: Optional[int] = None) -> 
         # If report_id not provided, fetch most recent report
         if report_id is None:
             conn = get_db_connection()
-            cursor = conn.cursor()
-            cursor.execute('''
-                SELECT id, github_org FROM reports
-                WHERE company_name = ?
-                ORDER BY created_at DESC
-                LIMIT 1
-            ''', (company_name,))
-            row = cursor.fetchone()
-            conn.close()
-            if row:
-                report_id = row['id']
-                if not enriched.get('github_org'):
-                    enriched['github_org'] = row['github_org']
+            try:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT id, github_org FROM reports
+                    WHERE company_name = ?
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                ''', (company_name,))
+                row = cursor.fetchone()
+                if row:
+                    report_id = row['id']
+                    if not enriched.get('github_org'):
+                        enriched['github_org'] = row['github_org']
+            finally:
+                conn.close()
 
         # If we have a report_id, fetch signals
         if report_id:
@@ -286,26 +288,28 @@ def enrich_webhook_data(company_data: dict, report_id: Optional[int] = None) -> 
 
             # Fetch signals for this report
             conn = get_db_connection()
-            cursor = conn.cursor()
-            cursor.execute('''
-                SELECT signal_type, description, file_path
-                FROM scan_signals
-                WHERE report_id = ?
-                ORDER BY timestamp DESC
-                LIMIT 10
-            ''', (report_id,))
-            signal_rows = cursor.fetchall()
-            conn.close()
+            try:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT signal_type, description, file_path
+                    FROM scan_signals
+                    WHERE report_id = ?
+                    ORDER BY timestamp DESC
+                    LIMIT 10
+                ''', (report_id,))
+                signal_rows = cursor.fetchall()
 
-            if signal_rows:
-                signals_summary = []
-                for sig_row in signal_rows:
-                    signals_summary.append({
-                        'type': sig_row['signal_type'],
-                        'description': sig_row['description'],
-                        'file_path': sig_row['file_path']
-                    })
-                enriched['signals_summary'] = signals_summary
+                if signal_rows:
+                    signals_summary = []
+                    for sig_row in signal_rows:
+                        signals_summary.append({
+                            'type': sig_row['signal_type'],
+                            'description': sig_row['description'],
+                            'file_path': sig_row['file_path']
+                        })
+                    enriched['signals_summary'] = signals_summary
+            finally:
+                conn.close()
     except Exception as e:
         print(f"[WEBHOOK] Error enriching webhook data: {str(e)}")
         # Continue with non-enriched data if error occurs
@@ -1398,8 +1402,8 @@ def api_update_org():
     if not company_name or not github_org:
         return jsonify({'status': 'error', 'message': 'Missing required fields'}), 400
 
+    conn = get_db_connection()
     try:
-        conn = get_db_connection()
         cursor = conn.cursor()
 
         # Update the github_org for this account
@@ -1410,11 +1414,9 @@ def api_update_org():
         ''', (github_org, company_name))
 
         if cursor.rowcount == 0:
-            conn.close()
             return jsonify({'status': 'error', 'message': 'Account not found'}), 404
 
         conn.commit()
-        conn.close()
 
         return jsonify({
             'status': 'success',
@@ -1424,6 +1426,8 @@ def api_update_org():
 
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
+    finally:
+        conn.close()
 
 
 @app.route('/api/rescan/<company_name>', methods=['POST'])
@@ -1515,18 +1519,20 @@ def api_scan_pending():
         JSON with count of scans queued.
     """
     conn = get_db_connection()
-    cursor = conn.cursor()
+    try:
+        cursor = conn.cursor()
 
-    # Find accounts that have never been scanned (last_scanned_at is NULL)
-    # and are not currently being scanned
-    cursor.execute('''
-        SELECT company_name FROM monitored_accounts
-        WHERE last_scanned_at IS NULL
-          AND (scan_status IS NULL OR scan_status = ?)
-    ''', (SCAN_STATUS_IDLE,))
+        # Find accounts that have never been scanned (last_scanned_at is NULL)
+        # and are not currently being scanned
+        cursor.execute('''
+            SELECT company_name FROM monitored_accounts
+            WHERE last_scanned_at IS NULL
+              AND (scan_status IS NULL OR scan_status = ?)
+        ''', (SCAN_STATUS_IDLE,))
 
-    pending_accounts = [row[0] for row in cursor.fetchall()]
-    conn.close()
+        pending_accounts = [row[0] for row in cursor.fetchall()]
+    finally:
+        conn.close()
 
     # Submit scans for each pending account
     queued_count = 0
@@ -1799,6 +1805,7 @@ def _auto_scan_pending_accounts():
     then submits to executor. This ensures status is visible immediately even
     if executor submission is slow.
     """
+    conn = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -1811,15 +1818,16 @@ def _auto_scan_pending_accounts():
 
         pending_accounts = [row[0] for row in cursor.fetchall()]
         conn.close()
+        conn = None  # Mark as closed
 
         if pending_accounts:
             print(f"[APP] Found {len(pending_accounts)} accounts pending initial scan")
-            
+
             # Step 1: Batch set ALL pending accounts to 'queued' status immediately
             # This makes the queue visible right away in the UI
             batch_set_scan_status_queued(pending_accounts)
             print(f"[APP] Batch queued {len(pending_accounts)} pending accounts")
-            
+
             # Step 2: Submit all to executor for background scanning
             executor = get_executor()
             for company_name in pending_accounts:
@@ -1830,6 +1838,9 @@ def _auto_scan_pending_accounts():
 
     except Exception as e:
         print(f"[APP] Error auto-scanning pending accounts: {str(e)}")
+    finally:
+        if conn is not None:
+            conn.close()
 
 
 # =============================================================================
