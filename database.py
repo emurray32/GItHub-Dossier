@@ -798,8 +798,7 @@ def update_account_status(scan_data: dict, report_id: Optional[int] = None) -> d
 
     now = datetime.now().isoformat()
     # Set next scan due to 7 days from now
-    next_scan = datetime.now()
-    next_scan = next_scan.replace(day=next_scan.day + 7) if next_scan.day <= 24 else next_scan.replace(month=next_scan.month + 1, day=1)
+    next_scan = datetime.now() + timedelta(days=7)
     next_scan_iso = next_scan.isoformat()
 
     tier_changed = False
@@ -890,8 +889,7 @@ def add_account_to_tier_0(company_name: str, github_org: str, annual_revenue: Op
 
     now = datetime.now().isoformat()
     # Set next scan due to 7 days from now
-    next_scan = datetime.now()
-    next_scan = next_scan.replace(day=next_scan.day + 7) if next_scan.day <= 24 else next_scan.replace(month=next_scan.month + 1, day=1)
+    next_scan = datetime.now() + timedelta(days=7)
     next_scan_iso = next_scan.isoformat()
 
     # Check if account exists by COMPANY NAME (case-insensitive)
@@ -1956,6 +1954,43 @@ def reset_all_scan_statuses() -> int:
     return reset_count
 
 
+def clear_misclassified_errors() -> int:
+    """
+    Clear last_scan_error values that contain tier evidence instead of actual errors.
+
+    This fixes a bug where tier evidence messages (like "INFRASTRUCTURE READY: ...")
+    were incorrectly stored in the last_scan_error column instead of evidence_summary.
+
+    Returns:
+        Number of accounts cleared.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Clear errors that look like tier evidence (not actual errors)
+    # Actual errors have prefixes like "Failed to", "Tier classification failed:", etc.
+    cursor.execute('''
+        UPDATE monitored_accounts
+        SET last_scan_error = NULL
+        WHERE last_scan_error IS NOT NULL
+          AND (
+            last_scan_error LIKE 'INFRASTRUCTURE READY:%'
+            OR last_scan_error LIKE 'STRATEGY SIGNAL:%'
+            OR last_scan_error LIKE 'ACTIVE BUILD:%'
+            OR last_scan_error LIKE 'Too Late:%'
+            OR last_scan_error LIKE 'No active signals%'
+            OR last_scan_error LIKE 'DISQUALIFIED:%'
+            OR last_scan_error LIKE 'Organization found%'
+          )
+    ''')
+
+    cleared_count = cursor.rowcount
+    conn.commit()
+    conn.close()
+
+    return cleared_count
+
+
 def batch_set_scan_status_queued(company_names: list) -> int:
     """
     Batch update multiple accounts to 'queued' status in a single transaction.
@@ -2135,40 +2170,6 @@ def get_import_batch(batch_id: int) -> Optional[dict]:
 
 # Initialize database on module import
 init_db()
-
-
-def clear_stale_scan_statuses(timeout_minutes: int = 15) -> int:
-    """
-    Reset accounts that have been 'processing' for too long.
-    This acts as a watchdog to recover from crashed worker threads.
-
-    Args:
-        timeout_minutes: Minutes after which a scan is considered 'stale'
-
-    Returns:
-        Number of accounts recovered
-    """
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
-    # Calculate cutoff time: now - timeout_minutes
-    cutoff_time = (datetime.now() - timedelta(minutes=timeout_minutes)).isoformat()
-
-    # Find accounts that are 'processing' but started before the cutoff
-    cursor.execute('''
-        UPDATE monitored_accounts
-        SET scan_status = 'idle',
-            scan_progress = 'Timed out (automatically recovered)',
-            scan_start_time = NULL
-        WHERE scan_status = 'processing'
-          AND scan_start_time < ?
-    ''', (cutoff_time,))
-
-    count = cursor.rowcount
-    conn.commit()
-    conn.close()
-
-    return count
 
 
 def get_stale_queued_accounts(timeout_minutes: int = 30) -> list:

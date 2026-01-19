@@ -22,7 +22,7 @@ from database import (
     get_stats_last_n_days, log_webhook, get_recent_webhook_logs,
     set_scan_status, get_scan_status, get_queued_and_processing_accounts,
     clear_stale_scan_statuses, reset_all_scan_statuses, batch_set_scan_status_queued,
-    reset_stale_queued_accounts, reset_all_queued_to_idle,
+    reset_stale_queued_accounts, reset_all_queued_to_idle, clear_misclassified_errors,
     SCAN_STATUS_IDLE, SCAN_STATUS_QUEUED, SCAN_STATUS_PROCESSING,
     save_signals, cleanup_duplicate_accounts, update_account_annual_revenue,
     update_account_website, update_account_notes,
@@ -1724,6 +1724,11 @@ def initialize_on_first_request():
         if reset_count > 0:
             print(f"[APP] Reset {reset_count} stale processing statuses from previous run")
 
+        # Clear any misclassified errors (tier evidence stored as errors)
+        cleared_errors = clear_misclassified_errors()
+        if cleared_errors > 0:
+            print(f"[APP] Cleared {cleared_errors} misclassified error messages")
+
         # Resume any interrupted import batches
         _resume_interrupted_import_batches()
 
@@ -2159,6 +2164,11 @@ if __name__ == '__main__':
     reset_count = reset_all_scan_statuses()
     if reset_count > 0:
         print(f"[APP] Reset {reset_count} stale processing statuses from previous run")
+
+    # Clear any misclassified errors (tier evidence stored as errors)
+    cleared_errors = clear_misclassified_errors()
+    if cleared_errors > 0:
+        print(f"[APP] Cleared {cleared_errors} misclassified error messages")
 
     # Resume any interrupted import batches
     _resume_interrupted_import_batches()
