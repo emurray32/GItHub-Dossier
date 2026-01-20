@@ -2471,10 +2471,14 @@
             })
             .catch(err => {
                 console.error('Error fetching hourly API stats:', err);
-                // Don't spam toast for API stats, just set a placeholder
+                // Always set a meaningful fallback on error for better UX
                 const apiEl = document.getElementById('dashboard-api-calls');
-                if (apiEl && apiEl.textContent === '--') {
+                const labelEl = document.getElementById('dashboard-api-label');
+                if (apiEl) {
                     apiEl.textContent = '0 / 10,000';  // Default fallback
+                }
+                if (labelEl) {
+                    labelEl.textContent = 'per hour';
                 }
             });
     }
@@ -2952,13 +2956,17 @@
         // Parse the number
         const num = parseFloat(value);
         if (isNaN(num)) return value;
-        // Format based on magnitude
+        // Format based on magnitude with proper decimal handling
         if (num >= 1000000000) {
-            return '$' + (num / 1000000000).toFixed(num % 1000000000 === 0 ? 0 : 1) + 'B';
+            const divided = num / 1000000000;
+            // Show 1 decimal place if it would be meaningful (not .0)
+            return '$' + (divided % 1 === 0 ? divided.toFixed(0) : divided.toFixed(1)) + 'B';
         } else if (num >= 1000000) {
-            return '$' + (num / 1000000).toFixed(num % 1000000 === 0 ? 0 : 1) + 'M';
+            const divided = num / 1000000;
+            return '$' + (divided % 1 === 0 ? divided.toFixed(0) : divided.toFixed(1)) + 'M';
         } else if (num >= 1000) {
-            return '$' + (num / 1000).toFixed(num % 1000 === 0 ? 0 : 1) + 'K';
+            const divided = num / 1000;
+            return '$' + (divided % 1 === 0 ? divided.toFixed(0) : divided.toFixed(1)) + 'K';
         }
         return '$' + num.toLocaleString();
     }

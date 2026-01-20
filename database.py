@@ -535,14 +535,24 @@ def get_signals_by_company(company_name: str, limit: int = 100) -> list:
 
 
 def get_recent_reports(limit: int = 20) -> list:
-    """Get the most recent reports."""
+    """Get the most recent reports, deduplicated by company name.
+
+    Only shows the latest report for each company to avoid duplicate entries.
+    """
     conn = get_db_connection()
     cursor = conn.cursor()
 
+    # Use ROW_NUMBER() to get only the most recent report per company
     cursor.execute('''
         SELECT id, company_name, github_org, signals_found, repos_scanned,
                commits_analyzed, prs_analyzed, created_at, scan_duration_seconds
-        FROM reports
+        FROM (
+            SELECT id, company_name, github_org, signals_found, repos_scanned,
+                   commits_analyzed, prs_analyzed, created_at, scan_duration_seconds,
+                   ROW_NUMBER() OVER (PARTITION BY LOWER(company_name) ORDER BY created_at DESC) as rn
+            FROM reports
+        )
+        WHERE rn = 1
         ORDER BY created_at DESC
         LIMIT ?
     ''', (limit,))

@@ -55,6 +55,29 @@ def _format_request_exception(error: requests.RequestException) -> str:
     return f"Error: {status_code} {reason}"
 
 
+def _safe_json_parse(response: requests.Response, default=None):
+    """
+    Safely parse JSON from a response, validating content-type first.
+
+    When server restarts or returns error pages, HTML may be returned instead of JSON.
+    This function checks the content-type header before attempting to parse.
+
+    Args:
+        response: The requests.Response object
+        default: Value to return if parsing fails (default: None)
+
+    Returns:
+        Parsed JSON data or the default value if parsing fails
+    """
+    content_type = response.headers.get('content-type', '')
+    if 'application/json' not in content_type:
+        return default
+    try:
+        return response.json()
+    except (json.JSONDecodeError, ValueError):
+        return default
+
+
 def _is_open_protocol_project(org_description: Optional[str]) -> Optional[str]:
     """
     Check if an organization description matches open protocol/decentralized project patterns.
@@ -107,7 +130,8 @@ def _fetch_top_contributors(org_login: str, repos: List[Dict], limit: int = 5) -
             url = f"{Config.GITHUB_API_BASE}/repos/{org_login}/{repo_name}/contributors"
             response = make_github_request(url, params={'per_page': 10}, timeout=10)
             if response.status_code == 200:
-                for c in response.json():
+                contributors_data = _safe_json_parse(response, [])
+                for c in contributors_data:
                     # Filter out bots
                     if c.get('type') == 'Bot' or '[bot]' in c.get('login', ''):
                         continue
@@ -149,7 +173,7 @@ def _fetch_top_contributors(org_login: str, repos: List[Dict], limit: int = 5) -
             user_url = f"{Config.GITHUB_API_BASE}/users/{contributor['login']}"
             user_response = make_github_request(user_url, timeout=10)
             if user_response.status_code == 200:
-                user_info = user_response.json()
+                user_info = _safe_json_parse(user_response, {})
                 contributor['name'] = user_info.get('name') or contributor['login']
                 contributor['email'] = user_info.get('email') or ''
                 contributor['blog'] = user_info.get('blog') or ''
@@ -623,7 +647,7 @@ def _scan_rfc_discussion(org: str, repo: str, company: str, since_timestamp: dat
         response = make_github_request(url, params=params, timeout=30)
 
         if response.status_code == 200:
-            issues = response.json()
+            issues = _safe_json_parse(response, [])
 
             for issue in issues:
                 # Skip pull requests (they appear in issues API)
@@ -690,7 +714,8 @@ def _scan_rfc_discussion(org: str, repo: str, company: str, since_timestamp: dat
             response = make_github_request(search_url, params=params, timeout=15)
 
             if response.status_code == 200:
-                results = response.json().get('items', [])
+                search_data = _safe_json_parse(response, {})
+                results = search_data.get('items', [])
                 for item in results:
                     # Skip if already processed or too old
                     created_at = item.get('created_at', '')
@@ -883,7 +908,7 @@ def _scan_dependency_injection(org: str, repo: str, company: str, is_fork: bool 
             search_response = make_github_request(search_url, params={'q': query}, timeout=15)
 
             if search_response.status_code == 200:
-                search_data = search_response.json()
+                search_data = _safe_json_parse(search_response, {})
                 items = search_data.get('items', [])
                 # Limit to top 20 matches per file type (most common in monorepos)
                 dep_paths = [item.get('path') for item in items[:20]]
@@ -907,7 +932,7 @@ def _scan_dependency_injection(org: str, repo: str, company: str, is_fork: bool 
                 if response.status_code != 200:
                     continue
 
-                file_data = response.json()
+                file_data = _safe_json_parse(response, {})
                 content_b64 = file_data.get('content', '')
                 file_url = file_data.get('html_url')
 
@@ -1087,7 +1112,7 @@ def _scan_pseudo_localization_configs(org: str, repo: str, company: str) -> Gene
             if response.status_code != 200:
                 continue
 
-            file_data = response.json()
+            file_data = _safe_json_parse(response, {})
             content_b64 = file_data.get('content', '')
             file_url = file_data.get('html_url')
 
@@ -1166,7 +1191,8 @@ def _scan_mobile_architecture(org: str, repo: str, company: str, is_fork: bool =
         base_lproj_parent = None
 
         if response.status_code == 200:
-            results = response.json().get('items', [])
+            search_data = _safe_json_parse(response, {})
+            results = search_data.get('items', [])
             for item in results:
                 path = item.get('path', '')
                 # Check if this is inside a Base.lproj folder
@@ -1198,7 +1224,8 @@ def _scan_mobile_architecture(org: str, repo: str, company: str, is_fork: bool =
                 lproj_response = make_github_request(lproj_search_url, params=lproj_params, timeout=15)
 
                 if lproj_response.status_code == 200:
-                    lproj_results = lproj_response.json().get('items', [])
+                    lproj_data = _safe_json_parse(lproj_response, {})
+                    lproj_results = lproj_data.get('items', [])
                     seen_folders = set()
 
                     for item in lproj_results:
@@ -1264,7 +1291,7 @@ def _scan_mobile_architecture(org: str, repo: str, company: str, is_fork: bool =
                 res_response = make_github_request(res_url, timeout=15)
 
                 if res_response.status_code == 200:
-                    res_contents = res_response.json()
+                    res_contents = _safe_json_parse(res_response, [])
                     if isinstance(res_contents, list):
                         for item in res_contents:
                             item_name = item.get('name', '')
@@ -1377,7 +1404,7 @@ def _scan_framework_configs(org: str, repo: str, company: str, is_fork: bool = F
             if response.status_code != 200:
                 continue
 
-            file_data = response.json()
+            file_data = _safe_json_parse(response, {})
             content_b64 = file_data.get('content', '')
             file_url = file_data.get('html_url')
 
@@ -1441,7 +1468,7 @@ def _scan_documentation_files(org: str, repo: str, company: str) -> Generator[tu
             if response.status_code != 200:
                 continue
 
-            file_data = response.json()
+            file_data = _safe_json_parse(response, {})
             content_b64 = file_data.get('content', '')
             file_url = file_data.get('html_url')
 
@@ -1663,7 +1690,7 @@ def _check_locale_folders_exist_detailed(org: str, repo: str) -> tuple:
             response = make_github_request(url, timeout=10)
             if response.status_code == 200:
                 # Parse the folder contents (files AND directories)
-                contents = response.json()
+                contents = _safe_json_parse(response, [])
                 entries_in_folder = []
                 entry_types = []
 
@@ -1699,7 +1726,7 @@ def _check_locale_folders_exist_detailed(org: str, repo: str) -> tuple:
                             subdir_url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}/contents/{path}/{subdir}"
                             subdir_response = make_github_request(subdir_url, timeout=10)
                             if subdir_response.status_code == 200:
-                                subdir_contents = subdir_response.json()
+                                subdir_contents = _safe_json_parse(subdir_response, [])
                                 if isinstance(subdir_contents, list):
                                     # Add files with locale prefix preserved
                                     for item in subdir_contents:
@@ -1730,13 +1757,15 @@ def _check_locale_folders_exist_detailed(org: str, repo: str) -> tuple:
     try:
         repo_url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}"
         repo_response = make_github_request(repo_url, timeout=15)
-        default_branch = repo_response.json().get('default_branch', 'main') if repo_response.status_code == 200 else 'main'
+        repo_data = _safe_json_parse(repo_response, {}) if repo_response.status_code == 200 else {}
+        default_branch = repo_data.get('default_branch', 'main')
 
         tree_url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}/git/trees/{default_branch}"
         tree_response = make_github_request(tree_url, params={'recursive': 1}, timeout=30)
 
         if tree_response.status_code == 200:
-            tree_entries = tree_response.json().get('tree', [])
+            tree_data = _safe_json_parse(tree_response, {})
+            tree_entries = tree_data.get('tree', [])
             locale_folder_names = set(Config.EXCLUSION_FOLDERS)
 
             for entry in tree_entries:
@@ -1764,7 +1793,7 @@ def _check_locale_folders_exist_detailed(org: str, repo: str) -> tuple:
                     folder_response = make_github_request(folder_url, timeout=10)
 
                     if folder_response.status_code == 200:
-                        contents = folder_response.json()
+                        contents = _safe_json_parse(folder_response, [])
                         entries_in_folder = []
                         entry_types_list = []
 
@@ -1800,7 +1829,7 @@ def _check_locale_folders_exist_detailed(org: str, repo: str) -> tuple:
                                     subdir_url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}/contents/{entry_path}/{subdir}"
                                     subdir_response = make_github_request(subdir_url, timeout=10)
                                     if subdir_response.status_code == 200:
-                                        subdir_contents = subdir_response.json()
+                                        subdir_contents = _safe_json_parse(subdir_response, [])
                                         if isinstance(subdir_contents, list):
                                             for item in subdir_contents:
                                                 if item.get('type') == 'file':
@@ -2035,7 +2064,7 @@ def _scan_ghost_branches(org: str, repo: str, company: str, since_timestamp: dat
         response = make_github_request(url, params=params, timeout=30)
 
         if response.status_code == 200:
-            branches = response.json()
+            branches = _safe_json_parse(response, [])
 
             for branch in branches:
                 branch_name = branch.get('name', '').lower()
@@ -2083,7 +2112,7 @@ def _scan_ghost_branches(org: str, repo: str, company: str, since_timestamp: dat
         response = make_github_request(url, params=params, timeout=30)
 
         if response.status_code == 200:
-            prs = response.json()
+            prs = _safe_json_parse(response, [])
 
             for pr in prs:
                 title = pr.get('title', '').lower()
