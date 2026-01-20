@@ -391,12 +391,6 @@
         rulesPanelOverlay.addEventListener('click', closeRulesPanel);
         rulesRefreshBtn.addEventListener('click', refreshRulesTimestamp);
 
-        // Also bind header toggle button if it exists
-        const rulesPanelToggleHeader = document.getElementById('rules-panel-toggle-header');
-        if (rulesPanelToggleHeader) {
-            rulesPanelToggleHeader.addEventListener('click', openRulesPanel);
-        }
-
         document.addEventListener('keydown', (event) => {
             if (event.key === 'Escape' && rulesPanel.classList.contains('open')) {
                 closeRulesPanel();
