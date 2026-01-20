@@ -2465,6 +2465,245 @@ def api_webhook_logs():
     })
 
 
+# =============================================================================
+# RULES PANEL API - Scanning Rules Visibility for Team
+# =============================================================================
+
+def _get_rules_last_updated():
+    """Get the timestamp when rules were last updated."""
+    from database import get_setting
+    timestamp = get_setting('rules_last_updated')
+    if timestamp:
+        return timestamp
+    # Default to now if never set
+    now = datetime.now().isoformat()
+    set_setting('rules_last_updated', now)
+    return now
+
+
+def _update_rules_timestamp():
+    """Update the rules last-updated timestamp to now."""
+    now = datetime.now().isoformat()
+    set_setting('rules_last_updated', now)
+    return now
+
+
+@app.route('/api/rules')
+def api_rules():
+    """
+    Get all scanning rules and heuristics for the Rules Panel.
+
+    This endpoint extracts rules from the Config class and formats them
+    for display to the engineering/sales team, providing visibility into
+    what the scanner looks for.
+
+    Returns:
+        JSON with categorized rules and last-updated timestamp.
+    """
+    rules = {
+        'last_updated': _get_rules_last_updated(),
+        'categories': [
+            {
+                'name': 'Signal 1: RFC & Discussion Keywords',
+                'description': 'Keywords that indicate internationalization planning in GitHub Issues/Discussions (Thinking Phase)',
+                'phase': 'THINKING',
+                'items': Config.RFC_KEYWORDS,
+                'lookback_days': Config.RFC_LOOKBACK_DAYS
+            },
+            {
+                'name': 'Signal 2: Smoking Gun Libraries',
+                'description': 'i18n libraries that indicate infrastructure setup without launched translations (Preparing Phase)',
+                'phase': 'PREPARING',
+                'items': Config.SMOKING_GUN_LIBS
+            },
+            {
+                'name': 'Signal 2b: Smoking Gun Fork Repos',
+                'description': 'When companies fork these repos, they are customizing i18n infrastructure (HIGH intent)',
+                'phase': 'PREPARING',
+                'items': Config.SMOKING_GUN_FORK_REPOS
+            },
+            {
+                'name': 'Signal 2c: Linter Libraries',
+                'description': 'Code linting/cleaning libraries for scrubbing hardcoded strings',
+                'phase': 'PREPARING',
+                'items': Config.LINTER_LIBRARIES
+            },
+            {
+                'name': 'Signal 2d: CMS i18n Libraries',
+                'description': 'CMS-specific internationalization plugins and libraries',
+                'phase': 'PREPARING',
+                'items': Config.CMS_I18N_LIBS
+            },
+            {
+                'name': 'Signal 3: Ghost Branch Patterns',
+                'description': 'Branch/PR naming patterns that indicate WIP localization work (Active Phase)',
+                'phase': 'ACTIVE',
+                'items': Config.GHOST_BRANCH_PATTERNS
+            },
+            {
+                'name': 'Signal 4: Documentation Intent Keywords',
+                'description': 'Keywords in docs (README, CHANGELOG) that indicate planned i18n work',
+                'phase': 'THINKING',
+                'items': Config.DOCUMENTATION_INTENT_KEYWORDS
+            },
+            {
+                'name': 'Documentation Context Keywords',
+                'description': 'Context words that must appear near intent keywords (indicates future/WIP)',
+                'phase': 'THINKING',
+                'items': Config.DOCUMENTATION_CONTEXT_KEYWORDS
+            },
+            {
+                'name': 'Exclusion Folders (Disqualifiers)',
+                'description': 'If these folders exist with translations, company has ALREADY LAUNCHED (Too Late)',
+                'phase': 'LAUNCHED',
+                'items': Config.EXCLUSION_FOLDERS
+            },
+            {
+                'name': 'Source Locale Patterns (Goldilocks Exception)',
+                'description': 'If locale folder contains ONLY these source files, still in Goldilocks Zone',
+                'phase': 'PREPARING',
+                'items': Config.SOURCE_LOCALE_PATTERNS
+            },
+            {
+                'name': 'Dependency Files Scanned',
+                'description': 'Package manager files checked for i18n library dependencies',
+                'phase': 'PREPARING',
+                'items': Config.DEPENDENCY_INJECTION_FILES
+            },
+            {
+                'name': 'Framework Config Files',
+                'description': 'Framework configuration files checked for i18n routing setup',
+                'phase': 'PREPARING',
+                'items': Config.FRAMEWORK_CONFIG_FILES
+            },
+            {
+                'name': 'Documentation Files Scanned',
+                'description': 'Documentation files checked for i18n intent signals',
+                'phase': 'THINKING',
+                'items': Config.DOCUMENTATION_FILES
+            },
+            {
+                'name': 'i18n Script Keywords',
+                'description': 'Keywords in package.json scripts that indicate i18n preparation',
+                'phase': 'PREPARING',
+                'items': Config.I18N_SCRIPT_KEYWORDS
+            },
+            {
+                'name': 'Build Script i18n Keywords',
+                'description': 'Keywords in build scripts indicating locale/translation work',
+                'phase': 'PREPARING',
+                'items': Config.BUILD_SCRIPT_I18N_KEYWORDS
+            },
+            {
+                'name': 'Open Protocol Disqualifiers',
+                'description': 'Patterns that identify non-commercial open source/decentralized projects',
+                'phase': 'DISQUALIFIED',
+                'items': Config.OPEN_PROTOCOL_DISQUALIFIERS
+            },
+            {
+                'name': 'High-Value Repo Patterns',
+                'description': 'Repo name patterns that indicate core product (prioritized for scanning)',
+                'phase': 'SCORING',
+                'items': Config.HIGH_VALUE_PATTERNS
+            },
+            {
+                'name': 'Low-Value Repo Patterns',
+                'description': 'Repo name patterns that indicate non-core repos (deprioritized)',
+                'phase': 'SCORING',
+                'items': Config.LOW_VALUE_PATTERNS
+            },
+            {
+                'name': 'High-Value Languages',
+                'description': 'Programming languages that get bonus points for i18n scanning',
+                'phase': 'SCORING',
+                'items': Config.HIGH_VALUE_LANGUAGES
+            },
+            {
+                'name': 'Launched Indicators (Negative)',
+                'description': 'Keywords in docs that indicate i18n is already live (disqualifies Goldilocks)',
+                'phase': 'LAUNCHED',
+                'items': Config.DOCUMENTATION_LAUNCHED_INDICATORS
+            }
+        ],
+        'scoring': {
+            'weights': Config.INTENT_SCORE_WEIGHTS,
+            'goldilocks_scores': Config.GOLDILOCKS_SCORES,
+            'lead_status_labels': Config.LEAD_STATUS_LABELS
+        },
+        'scan_config': {
+            'max_repos_to_scan': Config.MAX_REPOS_TO_SCAN,
+            'repo_inactivity_days': Config.REPO_INACTIVITY_DAYS,
+            'rfc_lookback_days': Config.RFC_LOOKBACK_DAYS,
+            'documentation_proximity_chars': Config.DOCUMENTATION_PROXIMITY_CHARS
+        }
+    }
+
+    return jsonify(rules)
+
+
+@app.route('/api/rules/refresh', methods=['POST'])
+def api_rules_refresh():
+    """
+    Manually trigger a rules timestamp update.
+
+    This endpoint allows admins to mark that rules have been reviewed/updated.
+    The automatic 7am EST update happens via scheduler, but this allows
+    manual refresh when rules are modified.
+
+    Returns:
+        JSON with new timestamp.
+    """
+    new_timestamp = _update_rules_timestamp()
+    return jsonify({
+        'success': True,
+        'last_updated': new_timestamp
+    })
+
+
+def _scheduled_rules_update():
+    """
+    Scheduled task to update rules timestamp at 7am EST daily.
+
+    This runs in a background thread and updates the timestamp to indicate
+    rules are current. In a production system, this could also pull rules
+    from a remote config or notify the team.
+    """
+    import pytz
+    from datetime import time as dt_time
+
+    est = pytz.timezone('US/Eastern')
+
+    while True:
+        try:
+            now_est = datetime.now(est)
+            target_time = now_est.replace(hour=7, minute=0, second=0, microsecond=0)
+
+            # If we're past 7am today, schedule for tomorrow
+            if now_est >= target_time:
+                target_time = target_time + timedelta(days=1)
+
+            # Calculate seconds until target time
+            seconds_until_target = (target_time - now_est).total_seconds()
+
+            print(f"[RULES] Next rules update scheduled for {target_time.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+            time.sleep(seconds_until_target)
+
+            # Update the timestamp
+            _update_rules_timestamp()
+            print(f"[RULES] Rules timestamp updated at 7am EST: {datetime.now(est).isoformat()}")
+
+        except Exception as e:
+            print(f"[RULES] Error in scheduled update: {e}")
+            # Sleep for an hour on error and retry
+            time.sleep(3600)
+
+
+def start_rules_scheduler():
+    """Start the rules update scheduler in a background daemon thread."""
+    thread = threading.Thread(target=_scheduled_rules_update, daemon=True, name="RulesScheduler")
+    thread.start()
+
+
 def _watchdog_worker():
     """
     Background worker that runs indefinitely to clear stale processing statuses
@@ -2521,6 +2760,9 @@ if __name__ == '__main__':
 
     # Start the background watchdog thread
     start_watchdog()
+
+    # Start the rules scheduler for 7am EST daily updates
+    start_rules_scheduler()
 
     # IMPORTANT: Recover stuck queued accounts BEFORE reset_all_scan_statuses
     # This captures accounts stuck in 'queued' state and re-queues them

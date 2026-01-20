@@ -38,6 +38,43 @@
         </div>
     </footer>
 
+    <!-- Rules Panel - Floating Button and Slide-out Panel -->
+    <button id="rules-panel-toggle" class="rules-panel-toggle" title="View Scanning Rules">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="16" y1="13" x2="8" y2="13"></line>
+            <line x1="16" y1="17" x2="8" y2="17"></line>
+            <polyline points="10 9 9 9 8 9"></polyline>
+        </svg>
+        <span class="rules-btn-label">Rules</span>
+    </button>
+
+    <div id="rules-panel" class="rules-panel">
+        <div class="rules-panel-header">
+            <h2>Scanning Rules</h2>
+            <div class="rules-panel-meta">
+                <span id="rules-last-updated" class="rules-timestamp">Loading...</span>
+                <button id="rules-refresh-btn" class="rules-refresh-btn" title="Mark rules as reviewed">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="23 4 23 10 17 10"></polyline>
+                        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                    </svg>
+                </button>
+            </div>
+            <button id="rules-panel-close" class="rules-panel-close" title="Close">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+            </button>
+        </div>
+        <div class="rules-panel-content" id="rules-panel-content">
+            <div class="rules-loading">Loading rules...</div>
+        </div>
+    </div>
+    <div id="rules-panel-overlay" class="rules-panel-overlay"></div>
+
     <script>
         function timeAgo(dateString) {
             const date = new Date(dateString);
@@ -85,6 +122,175 @@
             if (searchInput) {
                 event.preventDefault();
                 searchInput.focus();
+            }
+        });
+
+        // Rules Panel functionality
+        const rulesPanel = document.getElementById('rules-panel');
+        const rulesPanelToggle = document.getElementById('rules-panel-toggle');
+        const rulesPanelClose = document.getElementById('rules-panel-close');
+        const rulesPanelOverlay = document.getElementById('rules-panel-overlay');
+        const rulesPanelContent = document.getElementById('rules-panel-content');
+        const rulesLastUpdated = document.getElementById('rules-last-updated');
+        const rulesRefreshBtn = document.getElementById('rules-refresh-btn');
+
+        let rulesLoaded = false;
+
+        function formatRulesTimestamp(isoString) {
+            const date = new Date(isoString);
+            return date.toLocaleString('en-US', {
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric',
+                hour: 'numeric',
+                minute: '2-digit',
+                hour12: true,
+                timeZoneName: 'short'
+            });
+        }
+
+        function getPhaseColor(phase) {
+            const colors = {
+                'THINKING': '#3b82f6',
+                'PREPARING': '#16a34a',
+                'ACTIVE': '#8b5cf6',
+                'LAUNCHED': '#dc2626',
+                'DISQUALIFIED': '#6b7280',
+                'SCORING': '#d97706'
+            };
+            return colors[phase] || '#64748b';
+        }
+
+        function getPhaseLabel(phase) {
+            const labels = {
+                'THINKING': 'Thinking Phase',
+                'PREPARING': 'Preparing Phase',
+                'ACTIVE': 'Active Phase',
+                'LAUNCHED': 'Already Launched',
+                'DISQUALIFIED': 'Disqualifier',
+                'SCORING': 'Scoring'
+            };
+            return labels[phase] || phase;
+        }
+
+        async function loadRules() {
+            try {
+                const response = await fetch('/api/rules');
+                const data = await response.json();
+
+                rulesLastUpdated.textContent = 'Updated: ' + formatRulesTimestamp(data.last_updated);
+
+                let html = '';
+
+                // Scoring summary section
+                html += '<div class="rules-section rules-scoring-section">';
+                html += '<h3 class="rules-section-title">Intent Score Weights</h3>';
+                html += '<div class="rules-scoring-grid">';
+                for (const [key, value] of Object.entries(data.scoring.weights)) {
+                    const label = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                    html += `<div class="rules-score-item"><span class="rules-score-label">${label}</span><span class="rules-score-value">${value} pts</span></div>`;
+                }
+                html += '</div>';
+                html += '<h4 class="rules-subsection-title">Goldilocks Scores</h4>';
+                html += '<div class="rules-scoring-grid">';
+                for (const [key, value] of Object.entries(data.scoring.goldilocks_scores)) {
+                    const label = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                    html += `<div class="rules-score-item"><span class="rules-score-label">${label}</span><span class="rules-score-value">${value}</span></div>`;
+                }
+                html += '</div>';
+                html += '</div>';
+
+                // Scan configuration
+                html += '<div class="rules-section rules-config-section">';
+                html += '<h3 class="rules-section-title">Scan Configuration</h3>';
+                html += '<div class="rules-config-grid">';
+                html += `<div class="rules-config-item"><span class="rules-config-label">Max Repos to Scan</span><span class="rules-config-value">${data.scan_config.max_repos_to_scan}</span></div>`;
+                html += `<div class="rules-config-item"><span class="rules-config-label">Repo Inactivity Days</span><span class="rules-config-value">${data.scan_config.repo_inactivity_days}</span></div>`;
+                html += `<div class="rules-config-item"><span class="rules-config-label">RFC Lookback Days</span><span class="rules-config-value">${data.scan_config.rfc_lookback_days}</span></div>`;
+                html += `<div class="rules-config-item"><span class="rules-config-label">Doc Proximity Chars</span><span class="rules-config-value">${data.scan_config.documentation_proximity_chars}</span></div>`;
+                html += '</div>';
+                html += '</div>';
+
+                // Categories
+                for (const category of data.categories) {
+                    const phaseColor = getPhaseColor(category.phase);
+                    const phaseLabel = getPhaseLabel(category.phase);
+
+                    html += '<div class="rules-section">';
+                    html += `<div class="rules-category-header">`;
+                    html += `<h3 class="rules-section-title">${category.name}</h3>`;
+                    html += `<span class="rules-phase-badge" style="background-color: ${phaseColor}20; color: ${phaseColor}; border: 1px solid ${phaseColor}40;">${phaseLabel}</span>`;
+                    html += '</div>';
+                    html += `<p class="rules-description">${category.description}</p>`;
+                    if (category.lookback_days) {
+                        html += `<p class="rules-lookback">Lookback: ${category.lookback_days} days</p>`;
+                    }
+                    html += '<div class="rules-items">';
+                    for (const item of category.items) {
+                        html += `<span class="rules-item">${item}</span>`;
+                    }
+                    html += '</div>';
+                    html += '</div>';
+                }
+
+                // Lead status labels
+                html += '<div class="rules-section rules-status-section">';
+                html += '<h3 class="rules-section-title">Lead Status Labels</h3>';
+                html += '<div class="rules-status-grid">';
+                for (const [key, value] of Object.entries(data.scoring.lead_status_labels)) {
+                    html += `<div class="rules-status-item"><span class="rules-status-key">${key.toUpperCase()}</span><span class="rules-status-value">${value}</span></div>`;
+                }
+                html += '</div>';
+                html += '</div>';
+
+                rulesPanelContent.innerHTML = html;
+                rulesLoaded = true;
+            } catch (error) {
+                console.error('Failed to load rules:', error);
+                rulesPanelContent.innerHTML = '<div class="rules-error">Failed to load rules. Please try again.</div>';
+            }
+        }
+
+        async function refreshRulesTimestamp() {
+            try {
+                rulesRefreshBtn.disabled = true;
+                rulesRefreshBtn.classList.add('refreshing');
+                const response = await fetch('/api/rules/refresh', { method: 'POST' });
+                const data = await response.json();
+                if (data.success) {
+                    rulesLastUpdated.textContent = 'Updated: ' + formatRulesTimestamp(data.last_updated);
+                }
+            } catch (error) {
+                console.error('Failed to refresh rules timestamp:', error);
+            } finally {
+                rulesRefreshBtn.disabled = false;
+                rulesRefreshBtn.classList.remove('refreshing');
+            }
+        }
+
+        function openRulesPanel() {
+            rulesPanel.classList.add('open');
+            rulesPanelOverlay.classList.add('visible');
+            document.body.style.overflow = 'hidden';
+            if (!rulesLoaded) {
+                loadRules();
+            }
+        }
+
+        function closeRulesPanel() {
+            rulesPanel.classList.remove('open');
+            rulesPanelOverlay.classList.remove('visible');
+            document.body.style.overflow = '';
+        }
+
+        rulesPanelToggle.addEventListener('click', openRulesPanel);
+        rulesPanelClose.addEventListener('click', closeRulesPanel);
+        rulesPanelOverlay.addEventListener('click', closeRulesPanel);
+        rulesRefreshBtn.addEventListener('click', refreshRulesTimestamp);
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && rulesPanel.classList.contains('open')) {
+                closeRulesPanel();
             }
         });
     </script>
