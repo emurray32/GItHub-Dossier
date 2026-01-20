@@ -149,11 +149,11 @@ def _build_sales_intelligence_prompt(scan_data: dict) -> str:
     goldilocks_status = scan_data.get('goldilocks_status', 'unknown')
     lead_status = scan_data.get('lead_status', 'Unknown')
 
-    # Extract signal details
-    rfc_count = signal_summary.get('rfc_discussion', {}).get('count', 0)
-    rfc_high = signal_summary.get('rfc_discussion', {}).get('high_priority_count', 0)
-    dep_count = signal_summary.get('dependency_injection', {}).get('count', 0)
-    ghost_count = signal_summary.get('ghost_branch', {}).get('count', 0)
+    # Extract signal details (use 'or 0' to handle NULL values from database)
+    rfc_count = signal_summary.get('rfc_discussion', {}).get('count') or 0
+    rfc_high = signal_summary.get('rfc_discussion', {}).get('high_priority_count') or 0
+    dep_count = signal_summary.get('dependency_injection', {}).get('count') or 0
+    ghost_count = signal_summary.get('ghost_branch', {}).get('count') or 0
 
     # Get sample evidence with BDR translations
     sample_evidence = []
@@ -366,7 +366,7 @@ def _generate_fallback_analysis(scan_data: dict) -> dict:
     # Extract counts
     rfc_hits = signal_summary.get('rfc_discussion', {}).get('hits', [])
     rfc_count = len(rfc_hits)
-    rfc_high = signal_summary.get('rfc_discussion', {}).get('high_priority_count', 0)
+    rfc_high = signal_summary.get('rfc_discussion', {}).get('high_priority_count') or 0
     dep_hits = signal_summary.get('dependency_injection', {}).get('hits', [])
     dep_count = len(dep_hits)
     ghost_hits = signal_summary.get('ghost_branch', {}).get('hits', [])
