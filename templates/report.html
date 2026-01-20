@@ -1221,7 +1221,7 @@
             <span>Website: <a href="{{ report.website|normalize_url }}" target="_blank">{{ report.website }}</a></span>
             {% endif %}
             {% if report.annual_revenue %}
-            <span>Revenue: {{ report.annual_revenue }}</span>
+            <span>Revenue: <span class="revenue-display" data-raw="{{ report.annual_revenue }}">{{ report.annual_revenue }}</span></span>
             {% endif %}
         </div>
         <div style="margin-top: 1.5rem; display: flex; justify-content: center; gap: 1rem;">
@@ -2116,12 +2116,39 @@
         textarea.style.height = `${textarea.scrollHeight}px`;
     }
 
+    // Format revenue displays
+    function formatRevenue(value) {
+        if (!value) return '';
+        // If already formatted (contains letters like M, B, K), return as-is
+        if (typeof value === 'string' && /[a-zA-Z$]/.test(value)) {
+            return value;
+        }
+        // Parse the number
+        const num = parseFloat(value);
+        if (isNaN(num)) return value;
+        // Format based on magnitude
+        if (num >= 1000000000) {
+            return '$' + (num / 1000000000).toFixed(num % 1000000000 === 0 ? 0 : 1) + 'B';
+        } else if (num >= 1000000) {
+            return '$' + (num / 1000000).toFixed(num % 1000000 === 0 ? 0 : 1) + 'M';
+        } else if (num >= 1000) {
+            return '$' + (num / 1000).toFixed(num % 1000 === 0 ? 0 : 1) + 'K';
+        }
+        return '$' + num.toLocaleString();
+    }
+
     document.addEventListener('DOMContentLoaded', () => {
         const textarea = document.getElementById('emailBody');
         if (textarea) {
             autoResizeEmailBody(textarea);
             textarea.addEventListener('input', () => autoResizeEmailBody(textarea));
         }
+
+        // Format any revenue displays on the page
+        document.querySelectorAll('.revenue-display').forEach(el => {
+            const rawValue = el.dataset.raw || el.textContent;
+            el.textContent = formatRevenue(rawValue);
+        });
     });
 </script>
 {% endblock %}

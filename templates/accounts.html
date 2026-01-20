@@ -2108,6 +2108,82 @@
 
 <script>
     // =============================================================================
+    // Toast Notification System for User Feedback
+    // =============================================================================
+
+    const toastContainer = (() => {
+        const container = document.createElement('div');
+        container.id = 'toast-container';
+        container.style.cssText = 'position: fixed; top: 20px; right: 20px; z-index: 10000; display: flex; flex-direction: column; gap: 10px;';
+        document.addEventListener('DOMContentLoaded', () => document.body.appendChild(container));
+        return container;
+    })();
+
+    function showToast(message, type = 'error', duration = 5000) {
+        const toast = document.createElement('div');
+        const bgColor = type === 'error' ? '#ef4444' : type === 'warning' ? '#f59e0b' : '#22c55e';
+        toast.style.cssText = `
+            background: ${bgColor}; color: white; padding: 12px 20px; border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15); font-size: 14px; max-width: 350px;
+            animation: slideIn 0.3s ease; display: flex; align-items: center; gap: 10px;
+        `;
+        toast.innerHTML = `
+            <span>${message}</span>
+            <button onclick="this.parentElement.remove()" style="background: none; border: none; color: white; cursor: pointer; font-size: 18px; line-height: 1;">&times;</button>
+        `;
+        toastContainer.appendChild(toast);
+        setTimeout(() => toast.remove(), duration);
+    }
+
+    // =============================================================================
+    // Safe JSON Fetch Helper - Handles HTML error responses gracefully
+    // =============================================================================
+
+    async function safeFetchJson(url, options = {}) {
+        try {
+            const response = await fetch(url, options);
+
+            // Check if response is OK (status 200-299)
+            if (!response.ok) {
+                throw new Error(`Server error: ${response.status} ${response.statusText}`);
+            }
+
+            // Verify content type is JSON
+            const contentType = response.headers.get('content-type') || '';
+            if (!contentType.includes('application/json')) {
+                // Server returned HTML (likely error page) instead of JSON
+                throw new Error('Server returned unexpected response (server may be restarting)');
+            }
+
+            return await response.json();
+        } catch (error) {
+            // Rethrow with context
+            throw new Error(`API request failed: ${error.message}`);
+        }
+    }
+
+    // Track consecutive errors to avoid spamming toasts
+    const errorTracker = {
+        counts: {},
+        lastShown: {},
+        shouldShow(endpoint) {
+            const now = Date.now();
+            const key = endpoint;
+            this.counts[key] = (this.counts[key] || 0) + 1;
+
+            // Only show toast once per minute per endpoint
+            if (!this.lastShown[key] || (now - this.lastShown[key]) > 60000) {
+                this.lastShown[key] = now;
+                return true;
+            }
+            return false;
+        },
+        reset(endpoint) {
+            this.counts[endpoint] = 0;
+        }
+    };
+
+    // =============================================================================
     // Time Utilities
     // =============================================================================
 
@@ -2306,8 +2382,7 @@
     // =============================================================================
 
     function updateStatusFilterCounts() {
-        fetch('/api/status-counts')
-            .then(response => response.json())
+        safeFetchJson('/api/status-counts')
             .then(data => {
                 const statusFilter = document.getElementById('status-filter');
                 if (!statusFilter) return;
@@ -2341,9 +2416,9 @@
     function updateDashboardStats() {
         if (document.hidden) return;
 
-        fetch('/api/queue-status')
-            .then(response => response.json())
+        safeFetchJson('/api/queue-status')
             .then(data => {
+                errorTracker.reset('queue-status');
                 // Update queued count
                 const queueEl = document.getElementById('dashboard-queue-size');
                 if (queueEl) {
@@ -2368,15 +2443,20 @@
                     }
                 }
             })
-            .catch(err => console.error('Error fetching queue status:', err));
+            .catch(err => {
+                console.error('Error fetching queue status:', err);
+                if (errorTracker.shouldShow('queue-status')) {
+                    showToast('Unable to fetch queue status. Server may be temporarily unavailable.', 'warning');
+                }
+            });
 
         // Update status filter dropdown counts
         updateStatusFilterCounts();
 
         // Fetch hourly API stats for accurate rate limit display
-        fetch('/api/hourly-api-stats')
-            .then(response => response.json())
+        safeFetchJson('/api/hourly-api-stats')
             .then(data => {
+                errorTracker.reset('hourly-api-stats');
                 const apiEl = document.getElementById('dashboard-api-calls');
                 const labelEl = document.getElementById('dashboard-api-label');
                 if (apiEl) {
@@ -2389,7 +2469,14 @@
                     labelEl.textContent = 'per hour';
                 }
             })
-            .catch(err => console.error('Error fetching hourly API stats:', err));
+            .catch(err => {
+                console.error('Error fetching hourly API stats:', err);
+                // Don't spam toast for API stats, just set a placeholder
+                const apiEl = document.getElementById('dashboard-api-calls');
+                if (apiEl && apiEl.textContent === '--') {
+                    apiEl.textContent = '0 / 10,000';  // Default fallback
+                }
+            });
     }
 
     // =============================================================================
@@ -3619,9 +3706,9 @@
     function updateRowStatuses() {
         if (document.hidden) return; // Don't poll if tab is hidden
 
-        fetch('/api/accounts?limit=1000')
-            .then(response => response.json())
+        safeFetchJson('/api/accounts?limit=1000')
             .then(data => {
+                errorTracker.reset('accounts-polling');
                 const accounts = data.accounts || [];
                 // Track queue position
                 const queuedAccounts = accounts.filter(a => a.scan_status === 'queued');
@@ -3794,7 +3881,12 @@
                     applyTableFilters();
                 }
             })
-            .catch(err => console.error('Error polling statuses:', err));
+            .catch(err => {
+                console.error('Error polling statuses:', err);
+                if (errorTracker.shouldShow('accounts-polling')) {
+                    showToast('Unable to refresh account statuses. Server may be temporarily unavailable.', 'warning');
+                }
+            });
     }
 
     // Poll every 6 seconds

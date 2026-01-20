@@ -2,6 +2,34 @@
 PDF Generation Module for Lead Machine Reports.
 Uses fpdf2 to create professional sales intelligence reports.
 """
+import sys
+
+# Check for conflicting fpdf packages - fpdf (1.x) and fpdf2 conflict
+# If both are installed, fpdf takes precedence and breaks fpdf2 features
+def _check_fpdf_conflict():
+    """Detect and report conflicting fpdf installations."""
+    import importlib.metadata
+    installed = {}
+    for pkg in ['fpdf', 'fpdf2']:
+        try:
+            installed[pkg] = importlib.metadata.version(pkg)
+        except importlib.metadata.PackageNotFoundError:
+            pass
+
+    if 'fpdf' in installed and 'fpdf2' in installed:
+        raise ImportError(
+            f"Conflicting PDF packages detected: fpdf ({installed['fpdf']}) and fpdf2 ({installed['fpdf2']}). "
+            f"Please uninstall the old fpdf package: pip uninstall fpdf"
+        )
+
+    if 'fpdf' in installed and 'fpdf2' not in installed:
+        raise ImportError(
+            f"Old fpdf package ({installed['fpdf']}) detected. This application requires fpdf2. "
+            f"Please run: pip uninstall fpdf && pip install fpdf2"
+        )
+
+_check_fpdf_conflict()
+
 from fpdf import FPDF
 from datetime import datetime
 import os
