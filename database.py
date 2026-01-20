@@ -1153,7 +1153,7 @@ def get_all_accounts(page: int = 1, limit: int = 50, tier_filter: Optional[list]
     accounts = []
     for row in rows:
         account = dict(row)
-        tier = account.get('current_tier', 0)
+        tier = account.get('current_tier') or 0
         account['tier_config'] = TIER_CONFIG.get(tier, TIER_CONFIG[TIER_TRACKING])
         accounts.append(account)
 
@@ -1191,7 +1191,7 @@ def get_tier_counts() -> dict:
 
     # Populate with actual counts
     for row in rows:
-        tier = str(row['current_tier'])
+        tier = str(row['current_tier'] or 0)  # Handle NULL as tier 0
         if tier in tier_counts:
             tier_counts[tier] = row['count']
 
@@ -1305,7 +1305,7 @@ def get_all_accounts_datatable(draw: int, start: int, length: int, search_value:
     accounts = []
     for row in rows:
         account = dict(row)
-        tier = account.get('current_tier', 0)
+        tier = account.get('current_tier') or 0
         account['tier_config'] = TIER_CONFIG.get(tier, TIER_CONFIG[TIER_TRACKING])
         accounts.append(account)
 
@@ -1328,7 +1328,7 @@ def get_account(account_id: int) -> Optional[dict]:
 
     if row:
         account = dict(row)
-        tier = account.get('current_tier', 0)
+        tier = account.get('current_tier') or 0
         account['tier_config'] = TIER_CONFIG.get(tier, TIER_CONFIG[TIER_TRACKING])
         return account
     return None
@@ -1345,7 +1345,7 @@ def get_account_by_company(company_name: str) -> Optional[dict]:
 
     if row:
         account = dict(row)
-        tier = account.get('current_tier', 0)
+        tier = account.get('current_tier') or 0
         account['tier_config'] = TIER_CONFIG.get(tier, TIER_CONFIG[TIER_TRACKING])
         return account
     return None
@@ -1365,7 +1365,7 @@ def get_account_by_company_case_insensitive(company_name: str) -> Optional[dict]
 
     if row:
         account = dict(row)
-        tier = account.get('current_tier', 0)
+        tier = account.get('current_tier') or 0
         account['tier_config'] = TIER_CONFIG.get(tier, TIER_CONFIG[TIER_TRACKING])
         return account
     return None
@@ -1509,7 +1509,7 @@ def get_refreshable_accounts() -> list:
     accounts = []
     for row in rows:
         account = dict(row)
-        tier = account.get('current_tier', 0)
+        tier = account.get('current_tier') or 0
         account['tier_config'] = TIER_CONFIG.get(tier, TIER_CONFIG[TIER_TRACKING])
         accounts.append(account)
 

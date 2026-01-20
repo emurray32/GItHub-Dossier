@@ -1334,6 +1334,7 @@ def api_lead_stream():
 
 
 @app.route('/api/import', methods=['POST'])
+@app.route('/api/accounts/import', methods=['POST'])
 def api_import():
     """
     Bulk import companies by resolving them to GitHub organizations.
@@ -1553,7 +1554,7 @@ def api_rescan(company_name: str):
     queue_size = len(active_jobs.get('queued', [])) + len(active_jobs.get('processing', []))
 
     if account:
-        tier = account.get('current_tier', 0)
+        tier = account.get('current_tier') or 0
         tier_config = TIER_CONFIG.get(tier, TIER_CONFIG[0])
         return jsonify({
             'status': 'queued',
@@ -2069,7 +2070,7 @@ def api_zapier_trigger():
     scan_data = report.get('scan_data', {}) if report else {}
     ai_analysis = report.get('ai_analysis', {}) if report else {}
     github_org = report.get('github_org') if report else (account.get('github_org') if account else '')
-    tier = account.get('current_tier', 0) if account else 0
+    tier = account.get('current_tier') or 0 if account else 0
     tier_name = TIER_CONFIG.get(tier, TIER_CONFIG[0])['name']
     revenue = account.get('annual_revenue') if account else None
 
