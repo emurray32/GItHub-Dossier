@@ -2899,7 +2899,7 @@
         headers.forEach(th => {
             th.addEventListener('click', (e) => {
                 // Don't trigger sort when clicking on resize handle
-                if (e.target.classList.contains('resize-handle')) return;
+                if (e.target.closest('.resize-handle')) return;
 
                 const sortKey = th.dataset.sortKey;
                 const columnIndex = sortMap[sortKey];
@@ -2915,7 +2915,7 @@
                 }
 
                 // Update UI indicators
-                headers.forEach(h => {
+                document.querySelectorAll('th.sortable').forEach(h => {
                     const indicator = h.querySelector('.sort-indicator');
                     if (indicator) {
                         indicator.classList.remove('sort-asc-active', 'sort-desc-active');
