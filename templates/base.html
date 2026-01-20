@@ -53,7 +53,15 @@
     <div id="rules-panel" class="rules-panel">
         <div class="rules-panel-header">
             <h2>Scanning Rules</h2>
-            <div class="rules-panel-meta">
+            <div class="rules-panel-actions">
+                <a href="/api/rules/download" class="rules-download-btn" title="Download rules for LLM">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="7 10 12 15 17 10"></polyline>
+                        <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                    <span>Download</span>
+                </a>
                 <span id="rules-last-updated" class="rules-timestamp">Loading...</span>
                 <button id="rules-refresh-btn" class="rules-refresh-btn" title="Mark rules as reviewed">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -135,6 +143,31 @@
         const rulesRefreshBtn = document.getElementById('rules-refresh-btn');
 
         let rulesLoaded = false;
+        let explanationsCache = {};
+
+        // Map category names to rule keys for AI explanations
+        const categoryToRuleKey = {
+            'Signal 1: RFC & Discussion Keywords': 'rfc_keywords',
+            'Signal 2: Smoking Gun Libraries': 'smoking_gun_libs',
+            'Signal 2b: Smoking Gun Fork Repos': 'smoking_gun_fork_repos',
+            'Signal 2c: Linter Libraries': 'linter_libraries',
+            'Signal 2d: CMS i18n Libraries': 'cms_i18n_libs',
+            'Signal 3: Ghost Branch Patterns': 'ghost_branch_patterns',
+            'Signal 4: Documentation Intent Keywords': 'documentation_intent_keywords',
+            'Documentation Context Keywords': 'documentation_context_keywords',
+            'Exclusion Folders (Disqualifiers)': 'exclusion_folders',
+            'Source Locale Patterns (Goldilocks Exception)': 'source_locale_patterns',
+            'Dependency Files Scanned': 'dependency_injection_files',
+            'Framework Config Files': 'framework_config_files',
+            'Documentation Files Scanned': 'documentation_files',
+            'i18n Script Keywords': 'i18n_script_keywords',
+            'Build Script i18n Keywords': 'build_script_i18n_keywords',
+            'Open Protocol Disqualifiers': 'open_protocol_disqualifiers',
+            'High-Value Repo Patterns': 'high_value_patterns',
+            'Low-Value Repo Patterns': 'low_value_patterns',
+            'High-Value Languages': 'high_value_languages',
+            'Launched Indicators (Negative)': 'documentation_launched_indicators'
+        };
 
         function formatRulesTimestamp(isoString) {
             const date = new Date(isoString);
@@ -171,6 +204,61 @@
                 'SCORING': 'Scoring'
             };
             return labels[phase] || phase;
+        }
+
+        async function loadExplanation(ruleKey, explanationEl, btn) {
+            // Check cache first
+            if (explanationsCache[ruleKey]) {
+                explanationEl.textContent = explanationsCache[ruleKey];
+                explanationEl.classList.remove('loading');
+                return;
+            }
+
+            explanationEl.innerHTML = '<span class="explanation-loading">Loading explanation...</span>';
+            explanationEl.classList.add('loading');
+            btn.disabled = true;
+
+            try {
+                const response = await fetch('/api/rules/explain', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ rules: [ruleKey] })
+                });
+                const data = await response.json();
+
+                if (data.explanations && data.explanations[ruleKey]) {
+                    explanationsCache[ruleKey] = data.explanations[ruleKey];
+                    explanationEl.textContent = data.explanations[ruleKey];
+                } else {
+                    explanationEl.textContent = 'Unable to load explanation.';
+                }
+            } catch (error) {
+                console.error('Failed to load explanation:', error);
+                explanationEl.textContent = 'Failed to load explanation. Please try again.';
+            } finally {
+                explanationEl.classList.remove('loading');
+                btn.disabled = false;
+            }
+        }
+
+        function toggleExplanation(btn) {
+            const section = btn.closest('.rules-section');
+            const dropdown = section.querySelector('.rules-explanation-dropdown');
+            const explanationEl = dropdown.querySelector('.rules-explanation-text');
+            const ruleKey = btn.dataset.ruleKey;
+            const isOpen = dropdown.classList.contains('open');
+
+            if (isOpen) {
+                dropdown.classList.remove('open');
+                btn.classList.remove('open');
+            } else {
+                dropdown.classList.add('open');
+                btn.classList.add('open');
+                // Load explanation if not already loaded
+                if (!explanationEl.textContent || explanationEl.classList.contains('loading')) {
+                    loadExplanation(ruleKey, explanationEl, btn);
+                }
+            }
         }
 
         async function loadRules() {
@@ -211,10 +299,11 @@
                 html += '</div>';
                 html += '</div>';
 
-                // Categories
+                // Categories with dropdown explanations
                 for (const category of data.categories) {
                     const phaseColor = getPhaseColor(category.phase);
                     const phaseLabel = getPhaseLabel(category.phase);
+                    const ruleKey = categoryToRuleKey[category.name] || '';
 
                     html += '<div class="rules-section">';
                     html += `<div class="rules-category-header">`;
@@ -222,6 +311,19 @@
                     html += `<span class="rules-phase-badge" style="background-color: ${phaseColor}20; color: ${phaseColor}; border: 1px solid ${phaseColor}40;">${phaseLabel}</span>`;
                     html += '</div>';
                     html += `<p class="rules-description">${category.description}</p>`;
+
+                    // Add "What does this mean?" dropdown
+                    if (ruleKey) {
+                        html += `<button class="rules-explain-btn" data-rule-key="${ruleKey}" onclick="toggleExplanation(this)">`;
+                        html += `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="explain-icon"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>`;
+                        html += `<span>What does this mean?</span>`;
+                        html += `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="chevron-icon"><polyline points="6 9 12 15 18 9"></polyline></svg>`;
+                        html += `</button>`;
+                        html += `<div class="rules-explanation-dropdown">`;
+                        html += `<div class="rules-explanation-text"></div>`;
+                        html += `</div>`;
+                    }
+
                     if (category.lookback_days) {
                         html += `<p class="rules-lookback">Lookback: ${category.lookback_days} days</p>`;
                     }
