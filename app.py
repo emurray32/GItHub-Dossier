@@ -784,6 +784,16 @@ def process_import_batch_worker(batch_id: int):
             pass
 
 
+@app.route('/favicon.ico')
+def favicon():
+    """Return empty response for favicon to prevent 404 errors.
+
+    The actual favicon is defined as an inline SVG data URI in base.html,
+    but browsers also request /favicon.ico automatically.
+    """
+    return Response(status=204)
+
+
 @app.route('/')
 def index():
     """Redirect to accounts page."""
