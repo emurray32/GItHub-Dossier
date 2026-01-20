@@ -1085,6 +1085,113 @@
         margin-bottom: 0.5rem;
     }
 
+    /* Key Engineering Contacts Section */
+    .engineering-contacts-grid {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+    }
+
+    .engineering-contact-card {
+        display: flex;
+        gap: 1rem;
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 1rem;
+        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+    }
+
+    .contact-avatar {
+        width: 56px;
+        height: 56px;
+        border-radius: 50%;
+        flex-shrink: 0;
+    }
+
+    .contact-info {
+        flex: 1;
+    }
+
+    .contact-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 0.5rem;
+    }
+
+    .contact-header h3 {
+        margin: 0;
+        font-size: 1rem;
+        color: var(--text-primary);
+    }
+
+    .contact-login {
+        color: var(--text-secondary);
+        font-weight: normal;
+        font-size: 0.875rem;
+    }
+
+    .contact-role-badge {
+        display: inline-block;
+        background: #e0e7ff;
+        color: #4f46e5;
+        padding: 0.25rem 0.75rem;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+    }
+
+    .contact-bio {
+        font-style: italic;
+        color: var(--text-secondary);
+        font-size: 0.875rem;
+        margin-bottom: 0.5rem;
+    }
+
+    .contact-reason {
+        font-size: 0.875rem;
+        color: var(--text-primary);
+    }
+
+    /* Engineering Velocity Timeline */
+    .velocity-timeline {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        border-left: 3px solid var(--accent-color);
+        padding-left: 1.5rem;
+    }
+
+    .velocity-item {
+        position: relative;
+        padding: 0.75rem 0;
+        font-size: 0.9375rem;
+        color: var(--text-primary);
+        line-height: 1.5;
+    }
+
+    .velocity-item::before {
+        content: '';
+        position: absolute;
+        left: -1.75rem;
+        top: 1rem;
+        width: 10px;
+        height: 10px;
+        background: var(--accent-color);
+        border-radius: 50%;
+        border: 2px solid var(--bg-primary);
+    }
+
+    .velocity-item:first-child {
+        padding-top: 0;
+    }
+
+    .velocity-item:first-child::before {
+        top: 0.25rem;
+    }
+
     @media print {
 
         .navbar,
@@ -1103,13 +1210,19 @@
 {% block content %}
 <div class="report-container">
     <header class="report-header">
-        <h1 class="report-title">{{ report.company_name }}</h1>
+        <h1 class="report-title">{{ report.company_name|title }}</h1>
         <div class="report-org">
             <a href="{{ report.scan_data.org_url }}" target="_blank">@{{ report.github_org }}</a>
         </div>
         <div class="report-meta">
             <span>Scanned: {{ report.created_at }}</span>
             <span>Duration: {{ "%.1f"|format(report.scan_duration_seconds) }}s</span>
+            {% if report.website %}
+            <span>Website: <a href="{{ report.website|normalize_url }}" target="_blank">{{ report.website }}</a></span>
+            {% endif %}
+            {% if report.annual_revenue %}
+            <span>Revenue: {{ report.annual_revenue }}</span>
+            {% endif %}
         </div>
         <div style="margin-top: 1.5rem; display: flex; justify-content: center; gap: 1rem;">
             <a href="{{ url_for('index') }}" class="btn secondary">Analyze New Company</a>
@@ -1564,16 +1677,6 @@
     </div>
     {% endif %}
 
-    <!-- Forensic Evidence -->
-    {% if report.ai_analysis.forensic_evidence %}
-    <div class="section">
-        <h2 class="section-title">Forensic Evidence</h2>
-        <div class="forensic-card">
-            <div style="font-size: 1.125rem; font-weight: 600; margin-bottom: 0.5rem;">External Intelligence</div>
-            <p style="margin: 0; line-height: 1.6;">{{ report.ai_analysis.forensic_evidence }}</p>
-        </div>
-    </div>
-    {% endif %}
 
     <!-- Risk Intelligence: Compliance -->
     {% if report.scan_data and report.scan_data.get('compliance_assets') %}
@@ -1601,14 +1704,6 @@
         </div>
     </div>
     {% endif %}
-    {% endif %}
-
-    <!-- Recommended Approach -->
-    {% if report.ai_analysis.recommended_approach %}
-    <div class="section">
-        <h2 class="section-title">Recommended Approach</h2>
-        <div class="narrative-box">{{ report.ai_analysis.recommended_approach }}</div>
-    </div>
     {% endif %}
 
     <!-- Outreach Suggestions -->
@@ -1705,41 +1800,42 @@
     </div>
     {% endif %}
 
-    <!-- Conversation Starters -->
-    {% if report.ai_analysis.conversation_starters %}
+    <!-- Key Engineering Contacts -->
+    {% if report.ai_analysis.key_engineering_contacts %}
     <div class="section">
-        <h2 class="section-title">Conversation Starters</h2>
-        <ol class="conversation-list">
-            {% for starter in report.ai_analysis.conversation_starters %}
-            <li class="conversation-item">{{ starter }}</li>
+        <h2 class="section-title">Key Engineering Contacts</h2>
+        <p class="text-secondary">Top contributors who may be decision-makers for i18n initiatives.</p>
+        <div class="engineering-contacts-grid">
+            {% for contact in report.ai_analysis.key_engineering_contacts %}
+            <div class="engineering-contact-card">
+                {% set details = report.scan_data.contributors.get(contact.login, {}) if report.scan_data.contributors else {} %}
+                <img src="{{ details.avatar_url or 'https://github.com/identicons/' ~ contact.login ~ '.png' }}"
+                    class="contact-avatar">
+                <div class="contact-info">
+                    <div class="contact-header">
+                        <h3>{{ contact.name }} <span class="contact-login">@{{ contact.login }}</span></h3>
+                        <a href="https://github.com/{{ contact.login }}" target="_blank" class="signal-link">GitHub Profile</a>
+                    </div>
+                    <div class="contact-role-badge">{{ contact.role_inference }}</div>
+                    {% if details.bio %}
+                    <div class="contact-bio">"{{ details.bio }}"</div>
+                    {% endif %}
+                    <div class="contact-reason">{{ contact.outreach_reason }}</div>
+                </div>
+            </div>
             {% endfor %}
-        </ol>
+        </div>
     </div>
     {% endif %}
 
-    <!-- Risk Factors -->
-    {% if report.ai_analysis.risk_factors %}
+    <!-- Recent Engineering Velocity -->
+    {% if report.ai_analysis.engineering_velocity %}
     <div class="section">
-        <h2 class="section-title">Risk Factors</h2>
-        <ul class="risk-list">
-            {% for risk in report.ai_analysis.risk_factors %}
-            <li class="risk-item">
-                <span>{{ risk }}</span>
-            </li>
-            {% endfor %}
-        </ul>
-    </div>
-    {% endif %}
-
-    <!-- Next Steps -->
-    {% if report.ai_analysis.next_steps %}
-    <div class="section">
-        <h2 class="section-title">Next Steps</h2>
-        <ul class="next-steps-list">
-            {% for step in report.ai_analysis.next_steps %}
-            <li class="next-step-item">
-                <span>{{ step }}</span>
-            </li>
+        <h2 class="section-title">Recent Engineering Velocity</h2>
+        <p class="text-secondary">Timeline of i18n-related activity detected in the codebase.</p>
+        <ul class="velocity-timeline">
+            {% for item in report.ai_analysis.engineering_velocity %}
+            <li class="velocity-item">{{ item }}</li>
             {% endfor %}
         </ul>
     </div>

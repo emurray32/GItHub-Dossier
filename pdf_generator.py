@@ -119,16 +119,6 @@ def generate_report_pdf(report, output_path):
         pdf.set_text_color(0, 0, 0)
         pdf.multi_cell(0, 6, comp.get('description', ''))
 
-    # Forensic Evidence section
-    if ai.get('forensic_evidence'):
-        pdf.ln(5)
-        pdf.set_font('helvetica', 'B', 12)
-        pdf.set_text_color(26, 35, 126)
-        pdf.cell(0, 8, ' External Forensic Evidence:', ln=True)
-        pdf.set_font('helvetica', 'I', 10)
-        pdf.set_text_color(0, 0, 0)
-        pdf.multi_cell(0, 6, ai['forensic_evidence'])
-    
     pdf.ln(5)
 
     # 4. Tech Stack & Pain Points (High Intent)
@@ -240,19 +230,6 @@ def generate_report_pdf(report, output_path):
         pdf.set_font('helvetica', '', 11)
         pdf.set_text_color(0, 0, 0)
         pdf.multi_cell(0, 7, draft.get('body', ''))
-        pdf.ln(10)
-
-    # 7. Next Steps
-    if ai.get('next_steps'):
-        pdf.set_font('helvetica', 'B', 14)
-        pdf.set_text_color(26, 35, 126)
-        pdf.cell(0, 10, ' Recommended Next Steps', ln=True)
-        pdf.ln(3)
-        for step in ai['next_steps']:
-            pdf.set_font('helvetica', '', 11)
-            pdf.set_text_color(0, 0, 0)
-            pdf.cell(15, 8, ' [ ] ', ln=False)
-            pdf.cell(0, 8, step, ln=True)
         pdf.ln(10)
 
     # 8. Signals (Top 10)
