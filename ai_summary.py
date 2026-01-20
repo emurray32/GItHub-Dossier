@@ -139,7 +139,9 @@ def generate_analysis(scan_data: dict) -> Generator[str, None, dict]:
 
 def _build_sales_intelligence_prompt(scan_data: dict) -> str:
     """Build the sales intelligence prompt for Goldilocks Zone detection."""
-    company = scan_data.get('company_name', 'Unknown')
+    # Title case the company name for cleaner output in generated emails
+    raw_company = scan_data.get('company_name', 'Unknown')
+    company = raw_company.title() if raw_company else 'Unknown'
     org_name = scan_data.get('org_name', scan_data.get('org_login', ''))
     signals = scan_data.get('signals', [])
     signal_summary = scan_data.get('signal_summary', {})
@@ -170,6 +172,30 @@ def _build_sales_intelligence_prompt(scan_data: dict) -> str:
         if signal.get('type') == 'dependency_injection':
             libraries_found.extend(signal.get('libraries_found', []))
 
+    # Get contributors data for Key Engineering Contacts
+    contributors = scan_data.get('contributors', {})
+    contributors_list = []
+    for login, data in contributors.items():
+        contributors_list.append({
+            'login': login,
+            'name': data.get('name', login),
+            'contributions': data.get('contributions', 0),
+            'company': data.get('company', ''),
+            'bio': data.get('bio', ''),
+            'repos': data.get('repos', [])
+        })
+
+    # Build signal timeline data with timestamps
+    signal_timeline = []
+    for signal in signals:
+        timestamp = signal.get('created_at') or signal.get('pushed_at') or signal.get('timestamp')
+        if timestamp:
+            signal_timeline.append({
+                'date': timestamp[:10] if isinstance(timestamp, str) else str(timestamp)[:10],
+                'type': signal.get('type', signal.get('Signal', 'unknown')),
+                'description': signal.get('Evidence', signal.get('title', ''))[:100]
+            })
+
     prompt = f"""
 You are a SALES STRATEGIST for a Localization Platform. Your job is to help Business Development Reps (BDRs) understand technical findings and turn them into sales opportunities.
 
@@ -193,6 +219,12 @@ Our ideal customer is a company that has JUST STARTED setting up i18n infrastruc
 
 3. Ghost Branch Signal (ACTIVE Phase): {ghost_count} hits
    - BDR Translation: "Developers are actively working on i18n in a side branch"
+
+## Top Contributors (for Key Engineering Contacts):
+{json.dumps(contributors_list, indent=2)}
+
+## Signal Timeline (chronological activity):
+{json.dumps(signal_timeline, indent=2)}
 
 ## Sample Evidence:
 {json.dumps(sample_evidence, indent=2)}
@@ -242,6 +274,23 @@ Generate a JSON response with these fields. USE BOLD, PUNCHY, NON-TECHNICAL LANG
    - 9-10 if GOLDILOCKS ZONE (preparing)
    - 4-6 if THINKING
    - 1-2 if LAUNCHED (too late)
+
+9. "key_engineering_contacts": (list of 3-5 recommended contacts from the contributors)
+   - Select contacts most likely to be decision-makers or influencers for i18n
+   - Prioritize: Engineering Managers, Frontend/Platform leads, high-volume committers
+   - Each contact should have:
+     - "login": GitHub username
+     - "name": Real name
+     - "role_inference": Inferred role based on bio/company/contributions (e.g., "Likely Frontend Lead", "High-volume Committer")
+     - "outreach_reason": Why this person is worth contacting
+   - If no contributors data available, return empty list
+
+10. "engineering_velocity": (list of 3-5 bullet points showing progression)
+   - Generate a chronological narrative from the signal timeline data
+   - Show the progression of i18n work over time
+   - Format: "Mon YYYY: Brief description of activity"
+   - Example: ["Oct 2025: React-Intl library added to package.json", "Nov 2025: i18n RFC discussion opened", "Dec 2025: WIP i18n branch created"]
+   - If no timeline data available, return empty list
 """
 
     return prompt
@@ -304,7 +353,9 @@ def _parse_gemini_response(response_text: str, scan_data: dict) -> dict:
 
 def _generate_fallback_analysis(scan_data: dict) -> dict:
     """Generate rule-based sales intelligence when AI is unavailable - GOLDILOCKS ZONE FOCUSED."""
-    company = scan_data.get('company_name', 'Unknown')
+    # Title case the company name for cleaner output
+    raw_company = scan_data.get('company_name', 'Unknown')
+    company = raw_company.title() if raw_company else 'Unknown'
     org_name = scan_data.get('org_name', '')
     signals = scan_data.get('signals', [])
     signal_summary = scan_data.get('signal_summary', {})
@@ -519,6 +570,44 @@ def _generate_fallback_analysis(scan_data: dict) -> dict:
     if not conversation_starters:
         conversation_starters.append(f"Is internationalization on {company}'s roadmap?")
 
+    # Build key engineering contacts from contributor data
+    contributors = scan_data.get('contributors', {})
+    key_engineering_contacts = []
+    for login, data in list(contributors.items())[:5]:
+        role_inference = "High-volume Committer"
+        if data.get('bio'):
+            bio_lower = data['bio'].lower()
+            if 'manager' in bio_lower or 'lead' in bio_lower or 'director' in bio_lower:
+                role_inference = "Engineering Lead/Manager"
+            elif 'frontend' in bio_lower or 'ui' in bio_lower:
+                role_inference = "Frontend Engineer"
+            elif 'platform' in bio_lower or 'infrastructure' in bio_lower:
+                role_inference = "Platform Engineer"
+        key_engineering_contacts.append({
+            'login': login,
+            'name': data.get('name', login),
+            'role_inference': role_inference,
+            'outreach_reason': f"Top contributor with {data.get('contributions', 0)} commits"
+        })
+
+    # Build engineering velocity timeline from signals
+    engineering_velocity = []
+    for signal in signals:
+        timestamp = signal.get('created_at') or signal.get('pushed_at') or signal.get('timestamp')
+        if timestamp:
+            try:
+                date_str = timestamp[:10] if isinstance(timestamp, str) else str(timestamp)[:10]
+                from datetime import datetime as dt
+                date_obj = dt.fromisoformat(date_str)
+                month_year = date_obj.strftime('%b %Y')
+                signal_type = signal.get('type', signal.get('Signal', 'activity'))
+                description = signal.get('Evidence', signal.get('title', 'i18n activity detected'))[:50]
+                engineering_velocity.append(f"{month_year}: {description}")
+            except (ValueError, TypeError):
+                continue
+    # Remove duplicates and limit to 5
+    engineering_velocity = list(dict.fromkeys(engineering_velocity))[:5]
+
     return {
         'executive_summary': executive_summary,
         'pain_point_analysis': f"Company is in {dominant_phase} phase: {phase_evidence}",
@@ -559,6 +648,8 @@ def _generate_fallback_analysis(scan_data: dict) -> dict:
         },
         'goldilocks_status': goldilocks_status,
         'lead_status': lead_status,
+        'key_engineering_contacts': key_engineering_contacts,
+        'engineering_velocity': engineering_velocity,
         '_source': 'fallback'
     }
 

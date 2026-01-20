@@ -80,6 +80,88 @@ def _is_open_protocol_project(org_description: Optional[str]) -> Optional[str]:
     return None
 
 
+def _fetch_top_contributors(org_login: str, repos: List[Dict], limit: int = 5) -> Dict[str, Dict]:
+    """
+    Fetch top contributors across multiple repositories.
+
+    Aggregates contributors from the provided repos and returns the top
+    contributors with their profile information.
+
+    Args:
+        org_login: GitHub organization login name
+        repos: List of repository dictionaries
+        limit: Maximum number of contributors to return (default 5)
+
+    Returns:
+        Dictionary mapping login to contributor info with:
+        login, name, email, blog, avatar_url, contributions, repos
+    """
+    contributor_map = {}
+
+    for repo in repos:
+        repo_name = repo.get('name')
+        if not repo_name:
+            continue
+
+        try:
+            url = f"{Config.GITHUB_API_BASE}/repos/{org_login}/{repo_name}/contributors"
+            response = make_github_request(url, params={'per_page': 10}, timeout=10)
+            if response.status_code == 200:
+                for c in response.json():
+                    # Filter out bots
+                    if c.get('type') == 'Bot' or '[bot]' in c.get('login', ''):
+                        continue
+
+                    login = c['login']
+                    contributions = c.get('contributions', 0)
+
+                    if login in contributor_map:
+                        # Aggregate contributions
+                        contributor_map[login]['contributions'] += contributions
+                        contributor_map[login]['repos'].append(repo_name)
+                    else:
+                        contributor_map[login] = {
+                            'login': login,
+                            'avatar_url': c.get('avatar_url', ''),
+                            'github_url': c.get('html_url', f'https://github.com/{login}'),
+                            'contributions': contributions,
+                            'repos': [repo_name],
+                            'name': login,  # Fallback, will be enriched below
+                            'email': '',
+                            'blog': '',
+                            'bio': '',
+                            'company': ''
+                        }
+        except Exception as e:
+            print(f"[SCANNER] Failed to fetch contributors for {org_login}/{repo_name}: {e}")
+            continue
+
+    # Sort by contributions and take top N
+    sorted_contributors = sorted(
+        contributor_map.values(),
+        key=lambda x: x['contributions'],
+        reverse=True
+    )[:limit]
+
+    # Enrich top contributors with profile data
+    for contributor in sorted_contributors:
+        try:
+            user_url = f"{Config.GITHUB_API_BASE}/users/{contributor['login']}"
+            user_response = make_github_request(user_url, timeout=10)
+            if user_response.status_code == 200:
+                user_info = user_response.json()
+                contributor['name'] = user_info.get('name') or contributor['login']
+                contributor['email'] = user_info.get('email') or ''
+                contributor['blog'] = user_info.get('blog') or ''
+                contributor['bio'] = user_info.get('bio') or ''
+                contributor['company'] = user_info.get('company') or ''
+        except Exception as e:
+            print(f"[SCANNER] Failed to fetch user profile for {contributor['login']}: {e}")
+
+    # Convert to dict keyed by login for easy access in templates
+    return {c['login']: c for c in sorted_contributors}
+
+
 def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[object] = None, github_org: Optional[str] = None) -> Generator[str, None, None]:
     """
     Perform a 3-Signal Intent Scan of a company's GitHub presence.
@@ -491,6 +573,16 @@ def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[obje
         increment_daily_stat('api_calls_estimated', api_calls_estimate)
     except Exception as e:
         pass  # Stats tracking should not break scans
+
+    # Phase 7: Fetch Top Contributors for Key Engineering Contacts
+    yield _sse_log("")
+    yield _sse_log("Fetching top contributors...")
+    top_contributors = _fetch_top_contributors(org_login, repos_to_scan[:3])  # Top 3 repos
+    scan_results['contributors'] = top_contributors
+    if top_contributors:
+        yield _sse_log(f"Found {len(top_contributors)} key contributors")
+    else:
+        yield _sse_log("No contributor data available")
 
     # Send scan results
     yield _sse_data('SCAN_COMPLETE', scan_results)

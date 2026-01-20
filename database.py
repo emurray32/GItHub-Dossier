@@ -416,11 +416,17 @@ def save_report(
 
 
 def get_report(report_id: int) -> Optional[dict]:
-    """Retrieve a report by ID, including associated signals."""
+    """Retrieve a report by ID, including associated signals and firmographics."""
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    cursor.execute('SELECT * FROM reports WHERE id = ?', (report_id,))
+    # JOIN with monitored_accounts to get firmographics (website, annual_revenue)
+    cursor.execute('''
+        SELECT r.*, ma.website, ma.annual_revenue
+        FROM reports r
+        LEFT JOIN monitored_accounts ma ON LOWER(ma.company_name) = LOWER(r.company_name)
+        WHERE r.id = ?
+    ''', (report_id,))
     row = cursor.fetchone()
 
     if row:
