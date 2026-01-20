@@ -792,7 +792,7 @@
             <!-- Manual Entry Tab -->
             <div class="bulk-import-tab-content active" id="manualTab">
                 <form class="import-form" id="importForm" onsubmit="processImport(event)">
-                    <label class="import-label">Company Names (one per line)</label>
+                    <label class="import-label" for="companiesInput">Company Names (one per line)</label>
                     <textarea class="companies-textarea" id="companiesInput"
                         placeholder="Shopify&#10;Stripe&#10;Figma&#10;Slack&#10;Notion"></textarea>
 
@@ -816,8 +816,8 @@
                 </button>
             </div>
 
-            <label class="import-label" style="margin-top: 1.5rem;">Console Log</label>
-            <div class="console-log" id="consoleLog">
+            <label class="import-label" for="consoleLog" style="margin-top: 1.5rem;">Console Log</label>
+            <div class="console-log" id="consoleLog" role="log" aria-live="polite">
                 <div class="console-empty">Console output will appear here...</div>
             </div>
         </div>
@@ -852,11 +852,11 @@
 
             <!-- ICP Presets -->
             <div class="icp-presets" id="icpPresets">
-                <button class="icp-btn" onclick="selectICP('Retail/DTC E-commerce')">Retail/DTC</button>
-                <button class="icp-btn" onclick="selectICP('Fintech Banking')">Fintech</button>
-                <button class="icp-btn" onclick="selectICP('HealthTech Medical')">HealthTech</button>
-                <button class="icp-btn" onclick="selectICP('Logistics Supply Chain')">Logistics</button>
-                <button class="icp-btn" onclick="selectICP('SaaS B2B Software')">SaaS</button>
+                <button type="button" class="icp-btn" onclick="selectICP('Retail/DTC E-commerce')">Retail/DTC</button>
+                <button type="button" class="icp-btn" onclick="selectICP('Fintech Banking')">Fintech</button>
+                <button type="button" class="icp-btn" onclick="selectICP('HealthTech Medical')">HealthTech</button>
+                <button type="button" class="icp-btn" onclick="selectICP('Logistics Supply Chain')">Logistics</button>
+                <button type="button" class="icp-btn" onclick="selectICP('SaaS B2B Software')">SaaS</button>
             </div>
 
             <div class="search-box">

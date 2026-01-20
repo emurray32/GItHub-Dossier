@@ -9,7 +9,8 @@
     {% block head %}{% endblock %}
 </head>
 <body>
-    <nav class="navbar">
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+    <nav class="navbar" role="navigation" aria-label="Main navigation">
         <div class="nav-container">
             <a href="{{ url_for('accounts') }}" class="nav-brand">
                 <svg class="brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
@@ -27,7 +28,7 @@
         </div>
     </nav>
 
-    <main class="main-content">
+    <main class="main-content" id="main-content">
         {% block content %}{% endblock %}
     </main>
 
