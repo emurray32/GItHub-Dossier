@@ -1317,6 +1317,12 @@ def grow():
     return render_template('grow.html')
 
 
+@app.route('/rules')
+def rules():
+    """View the scanning rule set configuration."""
+    return render_template('rules.html')
+
+
 @app.route('/api/discover')
 def api_discover():
     """
