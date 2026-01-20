@@ -110,8 +110,8 @@ class Config:
             'estimated_companies_per_hour': companies_per_hour,
         }
 
-    # Gemini AI
-    GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
+    # Gemini AI (accepts either GOOGLE_API_KEY or GEMINI_API_KEY)
+    GEMINI_API_KEY = os.getenv('GOOGLE_API_KEY') or os.getenv('GEMINI_API_KEY')
     GEMINI_MODEL = 'gemini-2.5-flash'
 
     # Database
