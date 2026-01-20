@@ -1564,16 +1564,6 @@
     </div>
     {% endif %}
 
-    <!-- Forensic Evidence -->
-    {% if report.ai_analysis.forensic_evidence %}
-    <div class="section">
-        <h2 class="section-title">Forensic Evidence</h2>
-        <div class="forensic-card">
-            <div style="font-size: 1.125rem; font-weight: 600; margin-bottom: 0.5rem;">External Intelligence</div>
-            <p style="margin: 0; line-height: 1.6;">{{ report.ai_analysis.forensic_evidence }}</p>
-        </div>
-    </div>
-    {% endif %}
 
     <!-- Risk Intelligence: Compliance -->
     {% if report.scan_data and report.scan_data.get('compliance_assets') %}
@@ -1601,14 +1591,6 @@
         </div>
     </div>
     {% endif %}
-    {% endif %}
-
-    <!-- Recommended Approach -->
-    {% if report.ai_analysis.recommended_approach %}
-    <div class="section">
-        <h2 class="section-title">Recommended Approach</h2>
-        <div class="narrative-box">{{ report.ai_analysis.recommended_approach }}</div>
-    </div>
     {% endif %}
 
     <!-- Outreach Suggestions -->
@@ -1702,46 +1684,6 @@
             </div>
             {% endfor %}
         </div>
-    </div>
-    {% endif %}
-
-    <!-- Conversation Starters -->
-    {% if report.ai_analysis.conversation_starters %}
-    <div class="section">
-        <h2 class="section-title">Conversation Starters</h2>
-        <ol class="conversation-list">
-            {% for starter in report.ai_analysis.conversation_starters %}
-            <li class="conversation-item">{{ starter }}</li>
-            {% endfor %}
-        </ol>
-    </div>
-    {% endif %}
-
-    <!-- Risk Factors -->
-    {% if report.ai_analysis.risk_factors %}
-    <div class="section">
-        <h2 class="section-title">Risk Factors</h2>
-        <ul class="risk-list">
-            {% for risk in report.ai_analysis.risk_factors %}
-            <li class="risk-item">
-                <span>{{ risk }}</span>
-            </li>
-            {% endfor %}
-        </ul>
-    </div>
-    {% endif %}
-
-    <!-- Next Steps -->
-    {% if report.ai_analysis.next_steps %}
-    <div class="section">
-        <h2 class="section-title">Next Steps</h2>
-        <ul class="next-steps-list">
-            {% for step in report.ai_analysis.next_steps %}
-            <li class="next-step-item">
-                <span>{{ step }}</span>
-            </li>
-            {% endfor %}
-        </ul>
     </div>
     {% endif %}
 
