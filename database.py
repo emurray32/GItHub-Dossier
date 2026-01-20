@@ -1287,16 +1287,7 @@ def get_all_accounts_datatable(draw: int, start: int, length: int, search_value:
             WHERE rn = 1
         ) lr ON LOWER(lr.company_name) = LOWER(ma.company_name)
         {where_sql}
-        ORDER BY
-            CASE ma.current_tier
-                WHEN 2 THEN 1
-                WHEN 1 THEN 2
-                WHEN 0 THEN 3
-                WHEN 3 THEN 4
-                WHEN 4 THEN 5
-                ELSE 6
-            END,
-            ma.status_changed_at DESC
+        ORDER BY ma.{sort_column} {sort_order}
         LIMIT ? OFFSET ?
     '''
 
