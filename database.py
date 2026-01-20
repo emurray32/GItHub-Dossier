@@ -108,6 +108,12 @@ def init_db() -> None:
     except sqlite3.OperationalError:
         pass  # Column already exists
 
+    # Migrate reports table: add is_favorite column if it doesn't exist
+    try:
+        cursor.execute('ALTER TABLE reports ADD COLUMN is_favorite INTEGER DEFAULT 0')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
     cursor.execute('''
         CREATE INDEX IF NOT EXISTS idx_accounts_tier
         ON monitored_accounts(current_tier DESC)
@@ -2336,3 +2342,250 @@ def reset_all_queued_to_idle() -> list:
     conn.close()
 
     return accounts
+
+
+# =============================================================================
+# HISTORY TAB FUNCTIONS - Enhanced reports management
+# =============================================================================
+
+def get_paginated_reports(
+    page: int = 1,
+    limit: int = 10,
+    search_query: str = None,
+    date_from: str = None,
+    date_to: str = None,
+    min_signals: int = None,
+    max_signals: int = None,
+    sort_by: str = 'created_at',
+    sort_order: str = 'desc',
+    favorites_only: bool = False
+) -> dict:
+    """
+    Get paginated reports with filtering, sorting, and search.
+
+    Args:
+        page: Page number (1-indexed)
+        limit: Number of reports per page
+        search_query: Search string for company name or github org
+        date_from: Filter reports from this date (ISO format)
+        date_to: Filter reports up to this date (ISO format)
+        min_signals: Minimum signals count filter
+        max_signals: Maximum signals count filter
+        sort_by: Column to sort by (created_at, signals_found, company_name, etc.)
+        sort_order: Sort order ('asc' or 'desc')
+        favorites_only: If True, only return favorited reports
+
+    Returns:
+        Dictionary with:
+            - reports: List of report dictionaries
+            - total_items: Total number of reports matching filters
+            - total_pages: Total number of pages
+            - current_page: Current page number
+            - limit: Items per page
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Build WHERE clause
+    where_clauses = ["rn = 1"]  # Always filter to latest per company
+    params = []
+
+    if search_query:
+        where_clauses.append('(LOWER(company_name) LIKE ? OR LOWER(github_org) LIKE ?)')
+        search_param = f'%{search_query.lower()}%'
+        params.extend([search_param, search_param])
+
+    if date_from:
+        where_clauses.append('created_at >= ?')
+        params.append(date_from)
+
+    if date_to:
+        where_clauses.append('created_at <= ?')
+        params.append(date_to + ' 23:59:59')
+
+    if min_signals is not None:
+        where_clauses.append('signals_found >= ?')
+        params.append(min_signals)
+
+    if max_signals is not None:
+        where_clauses.append('signals_found <= ?')
+        params.append(max_signals)
+
+    if favorites_only:
+        where_clauses.append('is_favorite = 1')
+
+    where_sql = ' WHERE ' + ' AND '.join(where_clauses)
+
+    # Validate sort column to prevent SQL injection
+    valid_sort_columns = ['created_at', 'signals_found', 'company_name', 'github_org',
+                          'repos_scanned', 'commits_analyzed', 'prs_analyzed',
+                          'scan_duration_seconds', 'is_favorite']
+    if sort_by not in valid_sort_columns:
+        sort_by = 'created_at'
+
+    sort_order = 'DESC' if sort_order.lower() == 'desc' else 'ASC'
+
+    # Get total count with filters (using subquery for deduplication)
+    count_query = f'''
+        SELECT COUNT(*) as total FROM (
+            SELECT id, company_name, github_org, signals_found, repos_scanned,
+                   commits_analyzed, prs_analyzed, created_at, scan_duration_seconds,
+                   COALESCE(is_favorite, 0) as is_favorite,
+                   ROW_NUMBER() OVER (PARTITION BY LOWER(company_name) ORDER BY created_at DESC) as rn
+            FROM reports
+        )
+        {where_sql}
+    '''
+    cursor.execute(count_query, params)
+    total_items = cursor.fetchone()['total']
+
+    # Calculate pagination
+    total_pages = (total_items + limit - 1) // limit if total_items > 0 else 1
+    current_page = max(1, min(page, total_pages))
+    offset = (current_page - 1) * limit
+
+    # Get paginated data
+    select_query = f'''
+        SELECT id, company_name, github_org, signals_found, repos_scanned,
+               commits_analyzed, prs_analyzed, created_at, scan_duration_seconds,
+               COALESCE(is_favorite, 0) as is_favorite
+        FROM (
+            SELECT id, company_name, github_org, signals_found, repos_scanned,
+                   commits_analyzed, prs_analyzed, created_at, scan_duration_seconds,
+                   COALESCE(is_favorite, 0) as is_favorite,
+                   ROW_NUMBER() OVER (PARTITION BY LOWER(company_name) ORDER BY created_at DESC) as rn
+            FROM reports
+        )
+        {where_sql}
+        ORDER BY {sort_by} {sort_order}
+        LIMIT ? OFFSET ?
+    '''
+
+    cursor.execute(select_query, params + [limit, offset])
+    rows = cursor.fetchall()
+    conn.close()
+
+    return {
+        'reports': [dict(row) for row in rows],
+        'total_items': total_items,
+        'total_pages': total_pages,
+        'current_page': current_page,
+        'limit': limit
+    }
+
+
+def toggle_report_favorite(report_id: int) -> dict:
+    """
+    Toggle the favorite status of a report.
+
+    Args:
+        report_id: The ID of the report to toggle
+
+    Returns:
+        Dictionary with 'success' and 'is_favorite' status
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Get current favorite status
+    cursor.execute('SELECT is_favorite FROM reports WHERE id = ?', (report_id,))
+    row = cursor.fetchone()
+
+    if not row:
+        conn.close()
+        return {'success': False, 'error': 'Report not found'}
+
+    current_favorite = row['is_favorite'] or 0
+    new_favorite = 0 if current_favorite else 1
+
+    cursor.execute('UPDATE reports SET is_favorite = ? WHERE id = ?', (new_favorite, report_id))
+    conn.commit()
+    conn.close()
+
+    return {'success': True, 'is_favorite': bool(new_favorite)}
+
+
+def delete_report_by_id(report_id: int) -> dict:
+    """
+    Delete a report and its associated signals.
+
+    Args:
+        report_id: The ID of the report to delete
+
+    Returns:
+        Dictionary with 'success' status
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Check if report exists
+    cursor.execute('SELECT id FROM reports WHERE id = ?', (report_id,))
+    if not cursor.fetchone():
+        conn.close()
+        return {'success': False, 'error': 'Report not found'}
+
+    # Delete associated signals first
+    cursor.execute('DELETE FROM scan_signals WHERE report_id = ?', (report_id,))
+
+    # Delete the report
+    cursor.execute('DELETE FROM reports WHERE id = ?', (report_id,))
+
+    conn.commit()
+    conn.close()
+
+    return {'success': True}
+
+
+def get_report_preview(report_id: int) -> Optional[dict]:
+    """
+    Get a lightweight preview of a report for quick view.
+
+    Args:
+        report_id: The ID of the report
+
+    Returns:
+        Dictionary with preview data or None if not found
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT r.id, r.company_name, r.github_org, r.signals_found, r.repos_scanned,
+               r.commits_analyzed, r.prs_analyzed, r.created_at, r.scan_duration_seconds,
+               COALESCE(r.is_favorite, 0) as is_favorite, r.ai_analysis
+        FROM reports r
+        WHERE r.id = ?
+    ''', (report_id,))
+
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        return None
+
+    report = dict(row)
+
+    # Parse AI analysis for summary
+    if report.get('ai_analysis'):
+        try:
+            ai_data = json.loads(report['ai_analysis'])
+            report['ai_summary'] = ai_data.get('executive_summary', ai_data.get('summary', ''))
+            report['ai_priority'] = ai_data.get('priority', ai_data.get('lead_priority', 'unknown'))
+        except (json.JSONDecodeError, TypeError):
+            report['ai_summary'] = ''
+            report['ai_priority'] = 'unknown'
+        del report['ai_analysis']  # Don't send full analysis in preview
+
+    # Get top 5 signals for preview
+    cursor.execute('''
+        SELECT signal_type, description
+        FROM scan_signals
+        WHERE report_id = ?
+        ORDER BY timestamp DESC
+        LIMIT 5
+    ''', (report_id,))
+
+    signal_rows = cursor.fetchall()
+    report['top_signals'] = [dict(s) for s in signal_rows]
+
+    conn.close()
+    return report

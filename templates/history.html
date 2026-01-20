@@ -9,46 +9,2057 @@
         <p class="subtitle">Previous deep-dive scans</p>
     </header>
 
-    {% if reports %}
-    <div class="history-table-container">
-        <table class="history-table">
-            <thead>
-                <tr>
-                    <th>Company</th>
-                    <th>GitHub Org</th>
-                    <th>Signals</th>
-                    <th>Repos</th>
-                    <th>Commits</th>
-                    <th>PRs</th>
-                    <th>Duration</th>
-                    <th>Date</th>
-                    <th>Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for report in reports %}
-                <tr>
-                    <td class="company-cell">{{ report.company_name }}</td>
-                    <td class="org-cell">@{{ report.github_org }}</td>
-                    <td class="number-cell">{{ report.signals_found }}</td>
-                    <td class="number-cell">{{ report.repos_scanned }}</td>
-                    <td class="number-cell">{{ report.commits_analyzed }}</td>
-                    <td class="number-cell">{{ report.prs_analyzed }}</td>
-                    <td class="duration-cell">{{ "%.1f"|format(report.scan_duration_seconds) }}s</td>
-                    <td class="date-cell">{{ report.created_at }}</td>
-                    <td class="actions-cell">
-                        <a href="{{ url_for('view_report', report_id=report.id) }}" class="btn-view">View</a>
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+    <!-- Quick Filter Tabs -->
+    <div class="history-tabs" role="tablist" aria-label="Filter reports">
+        <button class="history-tab active" data-filter="all" role="tab" aria-selected="true" aria-controls="history-content">
+            All Reports
+        </button>
+        <button class="history-tab" data-filter="favorites" role="tab" aria-selected="false" aria-controls="history-content">
+            <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+            </svg>
+            Favorites
+        </button>
+        <button class="history-tab" data-filter="high-signals" role="tab" aria-selected="false" aria-controls="history-content">
+            <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path>
+            </svg>
+            High Signals (5+)
+        </button>
     </div>
-    {% else %}
-    <div class="empty-state">
-        <p>No scans yet. Start by searching for a company!</p>
-        <a href="{{ url_for('index') }}" class="btn-primary">Start Scanning</a>
+
+    <!-- Search and Filter Bar -->
+    <div class="history-controls">
+        <div class="search-filter-row">
+            <!-- Search Input -->
+            <div class="search-box">
+                <label for="history-search" class="visually-hidden">Search reports</label>
+                <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <path d="M21 21l-4.35-4.35"></path>
+                </svg>
+                <input type="text" id="history-search" class="history-search-input" placeholder="Search by company or GitHub org..." aria-describedby="search-hint">
+                <span id="search-hint" class="visually-hidden">Type to filter reports by company name or GitHub organization</span>
+            </div>
+
+            <!-- Date Range Filter -->
+            <div class="date-filter">
+                <label for="date-from" class="visually-hidden">From date</label>
+                <input type="date" id="date-from" class="date-input" aria-label="Filter from date">
+                <span class="date-separator">to</span>
+                <label for="date-to" class="visually-hidden">To date</label>
+                <input type="date" id="date-to" class="date-input" aria-label="Filter to date">
+            </div>
+
+            <!-- Signals Filter -->
+            <div class="signals-filter">
+                <label for="min-signals" class="visually-hidden">Minimum signals</label>
+                <input type="number" id="min-signals" class="signals-input" placeholder="Min signals" min="0" aria-label="Minimum signals count">
+                <span class="signals-separator">-</span>
+                <label for="max-signals" class="visually-hidden">Maximum signals</label>
+                <input type="number" id="max-signals" class="signals-input" placeholder="Max signals" min="0" aria-label="Maximum signals count">
+            </div>
+
+            <!-- Clear Filters -->
+            <button class="btn-clear-filters" id="clear-filters" aria-label="Clear all filters">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <path d="M18 6L6 18M6 6l12 12"></path>
+                </svg>
+                Clear
+            </button>
+        </div>
+
+        <!-- View Toggle and Actions Row -->
+        <div class="view-actions-row">
+            <div class="view-toggle" role="radiogroup" aria-label="View mode">
+                <button class="view-btn active" data-view="table" role="radio" aria-checked="true" aria-label="Table view">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                        <line x1="3" y1="9" x2="21" y2="9"></line>
+                        <line x1="3" y1="15" x2="21" y2="15"></line>
+                        <line x1="9" y1="3" x2="9" y2="21"></line>
+                    </svg>
+                </button>
+                <button class="view-btn" data-view="cards" role="radio" aria-checked="false" aria-label="Card view">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                        <rect x="3" y="3" width="7" height="7"></rect>
+                        <rect x="14" y="3" width="7" height="7"></rect>
+                        <rect x="14" y="14" width="7" height="7"></rect>
+                        <rect x="3" y="14" width="7" height="7"></rect>
+                    </svg>
+                </button>
+                <button class="view-btn" data-view="timeline" role="radio" aria-checked="false" aria-label="Timeline view">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                        <line x1="12" y1="2" x2="12" y2="22"></line>
+                        <circle cx="12" cy="6" r="3"></circle>
+                        <circle cx="12" cy="12" r="3"></circle>
+                        <circle cx="12" cy="18" r="3"></circle>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Compare Mode -->
+            <button class="btn-compare" id="toggle-compare" aria-pressed="false">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <rect x="3" y="3" width="8" height="18" rx="1"></rect>
+                    <rect x="13" y="3" width="8" height="18" rx="1"></rect>
+                </svg>
+                Compare
+            </button>
+            <button class="btn-compare-action hidden" id="run-compare" disabled aria-label="Compare selected reports">
+                Compare Selected (<span id="compare-count">0</span>)
+            </button>
+
+            <!-- Items per page -->
+            <div class="per-page-selector">
+                <label for="per-page">Show:</label>
+                <select id="per-page" class="per-page-select" aria-label="Reports per page">
+                    <option value="10">10</option>
+                    <option value="25">25</option>
+                    <option value="50">50</option>
+                    <option value="100">100</option>
+                </select>
+            </div>
+        </div>
     </div>
-    {% endif %}
+
+    <!-- Main Content Area -->
+    <div id="history-content" role="tabpanel" aria-label="Reports list">
+        <!-- Loading State -->
+        <div class="loading-state hidden" id="loading-state" aria-live="polite">
+            <div class="loading-spinner" aria-hidden="true"></div>
+            <p>Loading reports...</p>
+        </div>
+
+        <!-- Table View -->
+        <div class="history-table-container" id="table-view">
+            <table class="history-table" role="grid" aria-label="Scan history reports">
+                <thead>
+                    <tr role="row">
+                        <th class="compare-col hidden" scope="col">
+                            <span class="visually-hidden">Select for comparison</span>
+                        </th>
+                        <th scope="col" class="sortable" data-sort="company_name" role="columnheader" aria-sort="none" tabindex="0">
+                            Company
+                            <span class="sort-icon" aria-hidden="true"></span>
+                        </th>
+                        <th scope="col" class="sortable" data-sort="github_org" role="columnheader" aria-sort="none" tabindex="0">
+                            GitHub Org
+                            <span class="sort-icon" aria-hidden="true"></span>
+                        </th>
+                        <th scope="col" class="sortable" data-sort="signals_found" role="columnheader" aria-sort="none" tabindex="0">
+                            Signals
+                            <span class="sort-icon" aria-hidden="true"></span>
+                        </th>
+                        <th scope="col" class="sortable" data-sort="repos_scanned" role="columnheader" aria-sort="none" tabindex="0">
+                            Repos
+                            <span class="sort-icon" aria-hidden="true"></span>
+                        </th>
+                        <th scope="col" class="sortable" data-sort="commits_analyzed" role="columnheader" aria-sort="none" tabindex="0">
+                            Commits
+                            <span class="sort-icon" aria-hidden="true"></span>
+                        </th>
+                        <th scope="col" class="sortable" data-sort="prs_analyzed" role="columnheader" aria-sort="none" tabindex="0">
+                            PRs
+                            <span class="sort-icon" aria-hidden="true"></span>
+                        </th>
+                        <th scope="col" class="sortable" data-sort="scan_duration_seconds" role="columnheader" aria-sort="none" tabindex="0">
+                            Duration
+                            <span class="sort-icon" aria-hidden="true"></span>
+                        </th>
+                        <th scope="col" class="sortable active" data-sort="created_at" role="columnheader" aria-sort="descending" tabindex="0">
+                            Date
+                            <span class="sort-icon" aria-hidden="true"></span>
+                        </th>
+                        <th scope="col">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="history-table-body" role="rowgroup">
+                    <!-- Rows will be populated by JavaScript -->
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Cards View -->
+        <div class="history-cards-container hidden" id="cards-view">
+            <div class="reports-grid" id="history-cards-grid" role="list">
+                <!-- Cards will be populated by JavaScript -->
+            </div>
+        </div>
+
+        <!-- Timeline View -->
+        <div class="history-timeline-container hidden" id="timeline-view">
+            <div class="timeline" id="history-timeline" role="list">
+                <!-- Timeline items will be populated by JavaScript -->
+            </div>
+        </div>
+
+        <!-- Empty State -->
+        <div class="empty-state hidden" id="empty-state">
+            <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                <path d="M9 12h6M12 9v6M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+            </svg>
+            <p id="empty-message">No scans yet. Start by searching for a company!</p>
+            <a href="{{ url_for('index') }}" class="btn-primary">Start Scanning</a>
+        </div>
+
+        <!-- No Results State -->
+        <div class="no-results-state hidden" id="no-results-state">
+            <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                <circle cx="11" cy="11" r="8"></circle>
+                <path d="M21 21l-4.35-4.35"></path>
+                <path d="M8 8l6 6M14 8l-6 6"></path>
+            </svg>
+            <p>No reports match your filters.</p>
+            <button class="btn-secondary" id="clear-filters-empty">Clear Filters</button>
+        </div>
+    </div>
+
+    <!-- Pagination -->
+    <nav class="pagination-container" id="pagination" aria-label="Reports pagination">
+        <div class="pagination-info" aria-live="polite">
+            Showing <span id="showing-start">0</span>-<span id="showing-end">0</span> of <span id="total-items">0</span> reports
+        </div>
+        <div class="pagination-controls">
+            <button class="pagination-btn" id="prev-page" disabled aria-label="Previous page">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <polyline points="15 18 9 12 15 6"></polyline>
+                </svg>
+                Previous
+            </button>
+            <div class="page-numbers" id="page-numbers" role="group" aria-label="Page navigation">
+                <!-- Page numbers will be populated by JavaScript -->
+            </div>
+            <button class="pagination-btn" id="next-page" disabled aria-label="Next page">
+                Next
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <polyline points="9 18 15 12 9 6"></polyline>
+                </svg>
+            </button>
+        </div>
+    </nav>
 </div>
+
+<!-- Preview Modal -->
+<div class="modal-overlay hidden" id="preview-modal" role="dialog" aria-modal="true" aria-labelledby="preview-modal-title">
+    <div class="modal-content preview-modal-content">
+        <div class="modal-header">
+            <h2 id="preview-modal-title">Report Preview</h2>
+            <button class="modal-close" id="close-preview" aria-label="Close preview">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <path d="M18 6L6 18M6 6l12 12"></path>
+                </svg>
+            </button>
+        </div>
+        <div class="modal-body" id="preview-content">
+            <!-- Preview content will be populated by JavaScript -->
+        </div>
+        <div class="modal-footer">
+            <button class="btn-secondary" id="preview-close-btn">Close</button>
+            <a href="#" class="btn-primary" id="preview-view-full">View Full Report</a>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal-overlay hidden" id="delete-modal" role="dialog" aria-modal="true" aria-labelledby="delete-modal-title">
+    <div class="modal-content delete-modal-content">
+        <div class="modal-header">
+            <h2 id="delete-modal-title">Delete Report</h2>
+            <button class="modal-close" id="close-delete" aria-label="Close delete dialog">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <path d="M18 6L6 18M6 6l12 12"></path>
+                </svg>
+            </button>
+        </div>
+        <div class="modal-body">
+            <p>Are you sure you want to delete the report for <strong id="delete-company-name"></strong>?</p>
+            <p class="text-muted">This action cannot be undone.</p>
+        </div>
+        <div class="modal-footer">
+            <button class="btn-secondary" id="cancel-delete">Cancel</button>
+            <button class="btn-danger" id="confirm-delete">Delete</button>
+        </div>
+    </div>
+</div>
+
+<style>
+/* History Tab Styles */
+.history-tabs {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 0;
+}
+
+.history-tab {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1.25rem;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-secondary);
+    font-weight: 500;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    margin-bottom: -1px;
+}
+
+.history-tab:hover {
+    color: var(--text-primary);
+    background: var(--bg-secondary);
+}
+
+.history-tab.active {
+    color: var(--accent-color);
+    border-bottom-color: var(--accent-color);
+}
+
+.history-tab .tab-icon {
+    width: 16px;
+    height: 16px;
+}
+
+/* History Controls */
+.history-controls {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.search-filter-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.search-box {
+    flex: 1;
+    min-width: 250px;
+    position: relative;
+}
+
+.search-icon {
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 18px;
+    height: 18px;
+    color: var(--text-muted);
+    pointer-events: none;
+}
+
+.history-search-input {
+    width: 100%;
+    padding: 0.75rem 1rem 0.75rem 2.5rem;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--bg-primary);
+    font-size: 0.9rem;
+    color: var(--text-primary);
+    transition: border-color var(--transition-fast);
+}
+
+.history-search-input:focus {
+    outline: none;
+    border-color: var(--accent-color);
+}
+
+.date-filter, .signals-filter {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.date-input, .signals-input {
+    padding: 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--bg-primary);
+    font-size: 0.9rem;
+    color: var(--text-primary);
+    width: 140px;
+}
+
+.signals-input {
+    width: 100px;
+}
+
+.date-separator, .signals-separator {
+    color: var(--text-muted);
+    font-size: 0.875rem;
+}
+
+.btn-clear-filters {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    background: transparent;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.btn-clear-filters:hover {
+    background: var(--bg-primary);
+    color: var(--text-primary);
+}
+
+.btn-clear-filters svg {
+    width: 16px;
+    height: 16px;
+}
+
+/* View Actions Row */
+.view-actions-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 1rem;
+}
+
+.view-toggle {
+    display: flex;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.view-btn {
+    padding: 0.5rem 0.75rem;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    color: var(--text-secondary);
+    transition: all var(--transition-fast);
+}
+
+.view-btn:hover {
+    background: var(--bg-tertiary);
+}
+
+.view-btn.active {
+    background: var(--accent-color);
+    color: white;
+}
+
+.view-btn svg {
+    width: 18px;
+    height: 18px;
+}
+
+.btn-compare {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    background: transparent;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.btn-compare:hover, .btn-compare[aria-pressed="true"] {
+    background: var(--bg-primary);
+    border-color: var(--accent-color);
+    color: var(--accent-color);
+}
+
+.btn-compare svg {
+    width: 16px;
+    height: 16px;
+}
+
+.btn-compare-action {
+    padding: 0.5rem 1rem;
+    background: var(--accent-color);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 500;
+}
+
+.btn-compare-action:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.per-page-selector {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-left: auto;
+}
+
+.per-page-selector label {
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+}
+
+.per-page-select {
+    padding: 0.5rem;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    cursor: pointer;
+}
+
+/* Sortable Headers */
+.sortable {
+    cursor: pointer;
+    user-select: none;
+    transition: background var(--transition-fast);
+}
+
+.sortable:hover {
+    background: var(--bg-tertiary);
+}
+
+.sortable:focus {
+    outline: 2px solid var(--accent-color);
+    outline-offset: -2px;
+}
+
+.sort-icon::after {
+    content: '';
+    display: inline-block;
+    width: 0;
+    height: 0;
+    margin-left: 0.5rem;
+    vertical-align: middle;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    opacity: 0.3;
+}
+
+.sortable[aria-sort="ascending"] .sort-icon::after {
+    border-bottom: 5px solid currentColor;
+    border-top: none;
+    opacity: 1;
+}
+
+.sortable[aria-sort="descending"] .sort-icon::after {
+    border-top: 5px solid currentColor;
+    border-bottom: none;
+    opacity: 1;
+}
+
+.sortable[aria-sort="none"] .sort-icon::after {
+    border-top: 3px solid currentColor;
+    border-bottom: 3px solid currentColor;
+    margin-top: -3px;
+}
+
+/* Signal Badges */
+.signal-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 2rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: 999px;
+    font-weight: 600;
+    font-size: 0.8rem;
+}
+
+.signal-badge.signal-low {
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+}
+
+.signal-badge.signal-medium {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.signal-badge.signal-high {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.signal-badge.signal-very-high {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+/* Favorite Button */
+.btn-favorite {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 0.25rem;
+    color: var(--text-muted);
+    transition: all var(--transition-fast);
+}
+
+.btn-favorite:hover {
+    color: #f59e0b;
+}
+
+.btn-favorite.is-favorite {
+    color: #f59e0b;
+}
+
+.btn-favorite svg {
+    width: 18px;
+    height: 18px;
+}
+
+.btn-favorite.is-favorite svg {
+    fill: #f59e0b;
+}
+
+/* Action Buttons */
+.actions-cell {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.btn-action {
+    padding: 0.35rem 0.65rem;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.btn-action svg {
+    width: 14px;
+    height: 14px;
+}
+
+.btn-preview {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+}
+
+.btn-preview:hover {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+}
+
+.btn-rescan {
+    background: rgba(0, 181, 173, 0.1);
+    border: 1px solid rgba(0, 181, 173, 0.3);
+    color: var(--accent-color);
+}
+
+.btn-rescan:hover {
+    background: rgba(0, 181, 173, 0.2);
+}
+
+.btn-delete {
+    background: rgba(220, 38, 38, 0.1);
+    border: 1px solid rgba(220, 38, 38, 0.3);
+    color: var(--error-color);
+}
+
+.btn-delete:hover {
+    background: rgba(220, 38, 38, 0.2);
+}
+
+/* Date Display */
+.date-display {
+    display: flex;
+    flex-direction: column;
+}
+
+.date-relative {
+    color: var(--text-primary);
+    font-weight: 500;
+}
+
+.date-absolute {
+    color: var(--text-muted);
+    font-size: 0.75rem;
+}
+
+/* Compare Column */
+.compare-col {
+    width: 40px;
+    text-align: center;
+}
+
+.compare-checkbox {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+    accent-color: var(--accent-color);
+}
+
+/* Cards View */
+.history-cards-container {
+    padding: 0;
+}
+
+.reports-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1.5rem;
+}
+
+.history-card {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 1.25rem;
+    transition: all var(--transition-fast);
+    position: relative;
+}
+
+.history-card:hover {
+    border-color: var(--accent-color);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 1rem;
+}
+
+.card-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    text-transform: capitalize;
+}
+
+.card-org {
+    color: var(--accent-color);
+    font-size: 0.875rem;
+}
+
+.card-stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+}
+
+.card-stat {
+    text-align: center;
+}
+
+.card-stat-value {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--accent-color);
+}
+
+.card-stat-label {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+}
+
+.card-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-top: 1px solid var(--border-color);
+    padding-top: 0.75rem;
+}
+
+.card-date {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
+.card-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+/* Timeline View */
+.timeline {
+    position: relative;
+    padding-left: 2rem;
+}
+
+.timeline::before {
+    content: '';
+    position: absolute;
+    left: 8px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: var(--border-color);
+}
+
+.timeline-item {
+    position: relative;
+    padding-bottom: 2rem;
+}
+
+.timeline-item::before {
+    content: '';
+    position: absolute;
+    left: -2rem;
+    top: 0;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--accent-color);
+    border: 3px solid var(--bg-primary);
+    box-shadow: 0 0 0 2px var(--accent-color);
+}
+
+.timeline-date {
+    font-size: 0.875rem;
+    color: var(--text-muted);
+    margin-bottom: 0.5rem;
+}
+
+.timeline-content {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 1rem;
+}
+
+.timeline-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+}
+
+.timeline-company {
+    font-weight: 600;
+    color: var(--text-primary);
+    text-transform: capitalize;
+}
+
+.timeline-stats {
+    display: flex;
+    gap: 1rem;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+}
+
+/* Pagination */
+.pagination-container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 1.5rem;
+    padding: 1rem;
+    background: var(--bg-secondary);
+    border-radius: 12px;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.pagination-info {
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+}
+
+.pagination-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.pagination-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    color: var(--text-primary);
+    font-weight: 500;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.pagination-btn:hover:not(:disabled) {
+    border-color: var(--accent-color);
+    color: var(--accent-color);
+}
+
+.pagination-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.pagination-btn svg {
+    width: 16px;
+    height: 16px;
+}
+
+.page-numbers {
+    display: flex;
+    gap: 0.25rem;
+}
+
+.page-btn {
+    min-width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.page-btn:hover {
+    border-color: var(--accent-color);
+    color: var(--accent-color);
+}
+
+.page-btn.active {
+    background: var(--accent-color);
+    border-color: var(--accent-color);
+    color: white;
+}
+
+.page-ellipsis {
+    display: flex;
+    align-items: center;
+    padding: 0 0.5rem;
+    color: var(--text-muted);
+}
+
+/* Loading State */
+.loading-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 4rem 2rem;
+}
+
+.loading-spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid var(--border-color);
+    border-top-color: var(--accent-color);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Empty/No Results States */
+.empty-state, .no-results-state {
+    text-align: center;
+    padding: 4rem 2rem;
+    background: var(--bg-primary);
+    border-radius: 12px;
+    border: 1px dashed var(--border-color);
+}
+
+.empty-icon {
+    width: 64px;
+    height: 64px;
+    color: var(--text-muted);
+    margin-bottom: 1rem;
+}
+
+/* Modal Styles */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 1rem;
+}
+
+.modal-content {
+    background: var(--bg-primary);
+    border-radius: 12px;
+    width: 100%;
+    max-height: 90vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+}
+
+.preview-modal-content {
+    max-width: 600px;
+}
+
+.delete-modal-content {
+    max-width: 400px;
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.modal-header h2 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.modal-close {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 0.5rem;
+    color: var(--text-muted);
+    transition: color var(--transition-fast);
+}
+
+.modal-close:hover {
+    color: var(--text-primary);
+}
+
+.modal-close svg {
+    width: 20px;
+    height: 20px;
+}
+
+.modal-body {
+    padding: 1.5rem;
+    overflow-y: auto;
+}
+
+.modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    padding: 1rem 1.5rem;
+    border-top: 1px solid var(--border-color);
+}
+
+.btn-secondary {
+    padding: 0.5rem 1rem;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    color: var(--text-primary);
+    cursor: pointer;
+    font-weight: 500;
+    transition: all var(--transition-fast);
+}
+
+.btn-secondary:hover {
+    background: var(--bg-tertiary);
+}
+
+.btn-danger {
+    padding: 0.5rem 1rem;
+    background: var(--error-color);
+    border: none;
+    border-radius: 6px;
+    color: white;
+    cursor: pointer;
+    font-weight: 500;
+    transition: all var(--transition-fast);
+}
+
+.btn-danger:hover {
+    background: #b91c1c;
+}
+
+/* Preview Modal Content */
+.preview-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 1rem;
+}
+
+.preview-company {
+    font-size: 1.25rem;
+    font-weight: 600;
+    text-transform: capitalize;
+}
+
+.preview-org {
+    color: var(--accent-color);
+    font-size: 0.9rem;
+}
+
+.preview-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+    padding: 1rem;
+    background: var(--bg-secondary);
+    border-radius: 8px;
+}
+
+.preview-stat {
+    text-align: center;
+}
+
+.preview-stat-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--accent-color);
+}
+
+.preview-stat-label {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+}
+
+.preview-summary {
+    margin-bottom: 1.5rem;
+}
+
+.preview-summary h4 {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.5rem;
+    text-transform: uppercase;
+}
+
+.preview-summary p {
+    color: var(--text-primary);
+    line-height: 1.6;
+}
+
+.preview-signals {
+    margin-bottom: 1rem;
+}
+
+.preview-signals h4 {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.75rem;
+    text-transform: uppercase;
+}
+
+.signal-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.signal-item {
+    display: flex;
+    gap: 0.75rem;
+    padding: 0.5rem;
+    background: var(--bg-secondary);
+    border-radius: 6px;
+    font-size: 0.875rem;
+}
+
+.signal-type {
+    font-weight: 600;
+    color: var(--accent-color);
+    white-space: nowrap;
+}
+
+.signal-desc {
+    color: var(--text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Accessibility */
+.visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* Focus styles */
+.history-tab:focus-visible,
+.view-btn:focus-visible,
+.btn-compare:focus-visible,
+.btn-action:focus-visible,
+.btn-favorite:focus-visible,
+.page-btn:focus-visible {
+    outline: 2px solid var(--accent-color);
+    outline-offset: 2px;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .search-filter-row {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .search-box {
+        min-width: 100%;
+    }
+
+    .date-filter, .signals-filter {
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+
+    .view-actions-row {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .per-page-selector {
+        margin-left: 0;
+        justify-content: center;
+    }
+
+    .pagination-container {
+        flex-direction: column;
+        align-items: center;
+    }
+
+    .history-table th:nth-child(5),
+    .history-table td:nth-child(5),
+    .history-table th:nth-child(6),
+    .history-table td:nth-child(6),
+    .history-table th:nth-child(7),
+    .history-table td:nth-child(7) {
+        display: none;
+    }
+
+    .reports-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .preview-stats {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // State
+    let currentPage = 1;
+    let itemsPerPage = 10;
+    let totalItems = 0;
+    let totalPages = 1;
+    let currentSort = { column: 'created_at', order: 'desc' };
+    let currentFilters = {
+        search: '',
+        dateFrom: '',
+        dateTo: '',
+        minSignals: null,
+        maxSignals: null,
+        favoritesOnly: false,
+        highSignalsOnly: false
+    };
+    let currentView = 'table';
+    let compareMode = false;
+    let selectedForCompare = new Set();
+    let deleteReportId = null;
+
+    // DOM Elements
+    const searchInput = document.getElementById('history-search');
+    const dateFromInput = document.getElementById('date-from');
+    const dateToInput = document.getElementById('date-to');
+    const minSignalsInput = document.getElementById('min-signals');
+    const maxSignalsInput = document.getElementById('max-signals');
+    const clearFiltersBtn = document.getElementById('clear-filters');
+    const clearFiltersEmptyBtn = document.getElementById('clear-filters-empty');
+    const perPageSelect = document.getElementById('per-page');
+    const tableBody = document.getElementById('history-table-body');
+    const cardsGrid = document.getElementById('history-cards-grid');
+    const timeline = document.getElementById('history-timeline');
+    const loadingState = document.getElementById('loading-state');
+    const emptyState = document.getElementById('empty-state');
+    const noResultsState = document.getElementById('no-results-state');
+    const tableView = document.getElementById('table-view');
+    const cardsView = document.getElementById('cards-view');
+    const timelineView = document.getElementById('timeline-view');
+    const pagination = document.getElementById('pagination');
+    const prevPageBtn = document.getElementById('prev-page');
+    const nextPageBtn = document.getElementById('next-page');
+    const pageNumbers = document.getElementById('page-numbers');
+    const showingStart = document.getElementById('showing-start');
+    const showingEnd = document.getElementById('showing-end');
+    const totalItemsEl = document.getElementById('total-items');
+    const toggleCompareBtn = document.getElementById('toggle-compare');
+    const runCompareBtn = document.getElementById('run-compare');
+    const compareCount = document.getElementById('compare-count');
+    const previewModal = document.getElementById('preview-modal');
+    const deleteModal = document.getElementById('delete-modal');
+
+    // Initialize
+    loadReports();
+    setupEventListeners();
+
+    function setupEventListeners() {
+        // Search with debounce
+        let searchTimeout;
+        searchInput.addEventListener('input', function() {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => {
+                currentFilters.search = this.value;
+                currentPage = 1;
+                loadReports();
+            }, 300);
+        });
+
+        // Date filters
+        dateFromInput.addEventListener('change', function() {
+            currentFilters.dateFrom = this.value;
+            currentPage = 1;
+            loadReports();
+        });
+
+        dateToInput.addEventListener('change', function() {
+            currentFilters.dateTo = this.value;
+            currentPage = 1;
+            loadReports();
+        });
+
+        // Signal filters with debounce
+        let signalTimeout;
+        [minSignalsInput, maxSignalsInput].forEach(input => {
+            input.addEventListener('input', function() {
+                clearTimeout(signalTimeout);
+                signalTimeout = setTimeout(() => {
+                    currentFilters.minSignals = minSignalsInput.value ? parseInt(minSignalsInput.value) : null;
+                    currentFilters.maxSignals = maxSignalsInput.value ? parseInt(maxSignalsInput.value) : null;
+                    currentPage = 1;
+                    loadReports();
+                }, 300);
+            });
+        });
+
+        // Clear filters
+        clearFiltersBtn.addEventListener('click', clearAllFilters);
+        clearFiltersEmptyBtn?.addEventListener('click', clearAllFilters);
+
+        // Per page selector
+        perPageSelect.addEventListener('change', function() {
+            itemsPerPage = parseInt(this.value);
+            currentPage = 1;
+            loadReports();
+        });
+
+        // Tab filters
+        document.querySelectorAll('.history-tab').forEach(tab => {
+            tab.addEventListener('click', function() {
+                document.querySelectorAll('.history-tab').forEach(t => {
+                    t.classList.remove('active');
+                    t.setAttribute('aria-selected', 'false');
+                });
+                this.classList.add('active');
+                this.setAttribute('aria-selected', 'true');
+
+                const filter = this.dataset.filter;
+                currentFilters.favoritesOnly = filter === 'favorites';
+                currentFilters.highSignalsOnly = filter === 'high-signals';
+                if (filter === 'high-signals') {
+                    currentFilters.minSignals = 5;
+                    minSignalsInput.value = '5';
+                } else if (filter !== 'favorites') {
+                    currentFilters.minSignals = null;
+                    minSignalsInput.value = '';
+                }
+                currentPage = 1;
+                loadReports();
+            });
+        });
+
+        // View toggle
+        document.querySelectorAll('.view-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                document.querySelectorAll('.view-btn').forEach(b => {
+                    b.classList.remove('active');
+                    b.setAttribute('aria-checked', 'false');
+                });
+                this.classList.add('active');
+                this.setAttribute('aria-checked', 'true');
+
+                currentView = this.dataset.view;
+                updateViewDisplay();
+            });
+        });
+
+        // Sortable columns
+        document.querySelectorAll('.sortable').forEach(header => {
+            header.addEventListener('click', function() {
+                handleSort(this);
+            });
+            header.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    handleSort(this);
+                }
+            });
+        });
+
+        // Compare mode
+        toggleCompareBtn.addEventListener('click', function() {
+            compareMode = !compareMode;
+            this.setAttribute('aria-pressed', compareMode);
+            document.querySelectorAll('.compare-col').forEach(el => {
+                el.classList.toggle('hidden', !compareMode);
+            });
+            runCompareBtn.classList.toggle('hidden', !compareMode);
+            if (!compareMode) {
+                selectedForCompare.clear();
+                updateCompareCount();
+                document.querySelectorAll('.compare-checkbox').forEach(cb => cb.checked = false);
+            }
+        });
+
+        runCompareBtn.addEventListener('click', function() {
+            if (selectedForCompare.size >= 2) {
+                const ids = Array.from(selectedForCompare).join(',');
+                window.open(`/compare?ids=${ids}`, '_blank');
+            }
+        });
+
+        // Pagination
+        prevPageBtn.addEventListener('click', function() {
+            if (currentPage > 1) {
+                currentPage--;
+                loadReports();
+            }
+        });
+
+        nextPageBtn.addEventListener('click', function() {
+            if (currentPage < totalPages) {
+                currentPage++;
+                loadReports();
+            }
+        });
+
+        // Modal close handlers
+        document.getElementById('close-preview').addEventListener('click', closePreviewModal);
+        document.getElementById('preview-close-btn').addEventListener('click', closePreviewModal);
+        document.getElementById('close-delete').addEventListener('click', closeDeleteModal);
+        document.getElementById('cancel-delete').addEventListener('click', closeDeleteModal);
+        document.getElementById('confirm-delete').addEventListener('click', confirmDelete);
+
+        // Close modals on backdrop click
+        previewModal.addEventListener('click', function(e) {
+            if (e.target === this) closePreviewModal();
+        });
+        deleteModal.addEventListener('click', function(e) {
+            if (e.target === this) closeDeleteModal();
+        });
+
+        // Close modals on Escape
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                closePreviewModal();
+                closeDeleteModal();
+            }
+        });
+    }
+
+    function handleSort(header) {
+        const column = header.dataset.sort;
+        const currentSortOrder = header.getAttribute('aria-sort');
+
+        // Reset all headers
+        document.querySelectorAll('.sortable').forEach(h => {
+            h.setAttribute('aria-sort', 'none');
+            h.classList.remove('active');
+        });
+
+        // Set new sort
+        let newOrder;
+        if (currentSortOrder === 'descending') {
+            newOrder = 'ascending';
+        } else {
+            newOrder = 'descending';
+        }
+
+        header.setAttribute('aria-sort', newOrder);
+        header.classList.add('active');
+
+        currentSort = {
+            column: column,
+            order: newOrder === 'ascending' ? 'asc' : 'desc'
+        };
+
+        loadReports();
+    }
+
+    function clearAllFilters() {
+        searchInput.value = '';
+        dateFromInput.value = '';
+        dateToInput.value = '';
+        minSignalsInput.value = '';
+        maxSignalsInput.value = '';
+
+        currentFilters = {
+            search: '',
+            dateFrom: '',
+            dateTo: '',
+            minSignals: null,
+            maxSignals: null,
+            favoritesOnly: false,
+            highSignalsOnly: false
+        };
+
+        // Reset tabs
+        document.querySelectorAll('.history-tab').forEach(t => {
+            t.classList.remove('active');
+            t.setAttribute('aria-selected', 'false');
+        });
+        document.querySelector('.history-tab[data-filter="all"]').classList.add('active');
+        document.querySelector('.history-tab[data-filter="all"]').setAttribute('aria-selected', 'true');
+
+        currentPage = 1;
+        loadReports();
+    }
+
+    async function loadReports() {
+        showLoading();
+
+        const params = new URLSearchParams({
+            page: currentPage,
+            limit: itemsPerPage,
+            sort_by: currentSort.column,
+            sort_order: currentSort.order
+        });
+
+        if (currentFilters.search) params.set('search', currentFilters.search);
+        if (currentFilters.dateFrom) params.set('date_from', currentFilters.dateFrom);
+        if (currentFilters.dateTo) params.set('date_to', currentFilters.dateTo);
+        if (currentFilters.minSignals !== null) params.set('min_signals', currentFilters.minSignals);
+        if (currentFilters.maxSignals !== null) params.set('max_signals', currentFilters.maxSignals);
+        if (currentFilters.favoritesOnly) params.set('favorites_only', 'true');
+
+        try {
+            const response = await fetch(`/api/reports/paginated?${params}`);
+            const data = await response.json();
+
+            totalItems = data.total_items;
+            totalPages = data.total_pages;
+            currentPage = data.current_page;
+
+            renderReports(data.reports);
+            updatePagination();
+        } catch (error) {
+            console.error('Error loading reports:', error);
+            showError();
+        }
+    }
+
+    function showLoading() {
+        loadingState.classList.remove('hidden');
+        tableView.classList.add('hidden');
+        cardsView.classList.add('hidden');
+        timelineView.classList.add('hidden');
+        emptyState.classList.add('hidden');
+        noResultsState.classList.add('hidden');
+        pagination.classList.add('hidden');
+    }
+
+    function showError() {
+        loadingState.classList.add('hidden');
+        noResultsState.classList.remove('hidden');
+        document.getElementById('no-results-state').querySelector('p').textContent = 'Error loading reports. Please try again.';
+    }
+
+    function renderReports(reports) {
+        loadingState.classList.add('hidden');
+
+        if (reports.length === 0) {
+            if (hasActiveFilters()) {
+                noResultsState.classList.remove('hidden');
+            } else {
+                emptyState.classList.remove('hidden');
+            }
+            pagination.classList.add('hidden');
+            return;
+        }
+
+        pagination.classList.remove('hidden');
+        updateViewDisplay();
+
+        // Render table
+        tableBody.innerHTML = reports.map(report => createTableRow(report)).join('');
+
+        // Render cards
+        cardsGrid.innerHTML = reports.map(report => createCard(report)).join('');
+
+        // Render timeline
+        timeline.innerHTML = reports.map(report => createTimelineItem(report)).join('');
+
+        // Attach event listeners
+        attachRowEventListeners();
+    }
+
+    function hasActiveFilters() {
+        return currentFilters.search || currentFilters.dateFrom || currentFilters.dateTo ||
+               currentFilters.minSignals !== null || currentFilters.maxSignals !== null ||
+               currentFilters.favoritesOnly || currentFilters.highSignalsOnly;
+    }
+
+    function updateViewDisplay() {
+        tableView.classList.toggle('hidden', currentView !== 'table');
+        cardsView.classList.toggle('hidden', currentView !== 'cards');
+        timelineView.classList.toggle('hidden', currentView !== 'timeline');
+    }
+
+    function createTableRow(report) {
+        const signalClass = getSignalClass(report.signals_found);
+        const isFavorite = report.is_favorite;
+        const dateInfo = formatDate(report.created_at);
+
+        return `
+            <tr role="row" data-report-id="${report.id}">
+                <td class="compare-col ${compareMode ? '' : 'hidden'}">
+                    <input type="checkbox" class="compare-checkbox" data-id="${report.id}"
+                           ${selectedForCompare.has(report.id) ? 'checked' : ''}
+                           aria-label="Select ${report.company_name} for comparison">
+                </td>
+                <td class="company-cell">${escapeHtml(report.company_name)}</td>
+                <td class="org-cell">@${escapeHtml(report.github_org || '-')}</td>
+                <td class="number-cell">
+                    <span class="signal-badge ${signalClass}">${report.signals_found}</span>
+                </td>
+                <td class="number-cell">${report.repos_scanned}</td>
+                <td class="number-cell">${report.commits_analyzed}</td>
+                <td class="number-cell">${report.prs_analyzed}</td>
+                <td class="duration-cell">${report.scan_duration_seconds ? report.scan_duration_seconds.toFixed(1) + 's' : '-'}</td>
+                <td class="date-cell">
+                    <div class="date-display" title="${dateInfo.full}">
+                        <span class="date-relative">${dateInfo.relative}</span>
+                        <span class="date-absolute">${dateInfo.short}</span>
+                    </div>
+                </td>
+                <td class="actions-cell">
+                    <button class="btn-favorite ${isFavorite ? 'is-favorite' : ''}" data-id="${report.id}"
+                            aria-label="${isFavorite ? 'Remove from favorites' : 'Add to favorites'}"
+                            aria-pressed="${isFavorite}">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+                        </svg>
+                    </button>
+                    <button class="btn-action btn-preview" data-id="${report.id}" aria-label="Preview report">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                            <circle cx="12" cy="12" r="3"></circle>
+                        </svg>
+                    </button>
+                    <a href="/scan?company=${encodeURIComponent(report.company_name)}" class="btn-action btn-rescan" aria-label="Re-scan company">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M23 4v6h-6M1 20v-6h6"></path>
+                            <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"></path>
+                        </svg>
+                    </a>
+                    <a href="/report/${report.id}" class="btn-action btn-view" aria-label="View full report">View</a>
+                    <button class="btn-action btn-delete" data-id="${report.id}" data-company="${escapeHtml(report.company_name)}" aria-label="Delete report">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="3 6 5 6 21 6"></polyline>
+                            <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"></path>
+                        </svg>
+                    </button>
+                </td>
+            </tr>
+        `;
+    }
+
+    function createCard(report) {
+        const signalClass = getSignalClass(report.signals_found);
+        const isFavorite = report.is_favorite;
+        const dateInfo = formatDate(report.created_at);
+
+        return `
+            <div class="history-card" role="listitem" data-report-id="${report.id}">
+                ${compareMode ? `
+                    <div class="card-compare">
+                        <input type="checkbox" class="compare-checkbox" data-id="${report.id}"
+                               ${selectedForCompare.has(report.id) ? 'checked' : ''}>
+                    </div>
+                ` : ''}
+                <div class="card-header">
+                    <div>
+                        <div class="card-title">${escapeHtml(report.company_name)}</div>
+                        <div class="card-org">@${escapeHtml(report.github_org || '-')}</div>
+                    </div>
+                    <button class="btn-favorite ${isFavorite ? 'is-favorite' : ''}" data-id="${report.id}">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+                        </svg>
+                    </button>
+                </div>
+                <div class="card-stats">
+                    <div class="card-stat">
+                        <div class="card-stat-value"><span class="signal-badge ${signalClass}">${report.signals_found}</span></div>
+                        <div class="card-stat-label">Signals</div>
+                    </div>
+                    <div class="card-stat">
+                        <div class="card-stat-value">${report.repos_scanned}</div>
+                        <div class="card-stat-label">Repos</div>
+                    </div>
+                    <div class="card-stat">
+                        <div class="card-stat-value">${report.commits_analyzed}</div>
+                        <div class="card-stat-label">Commits</div>
+                    </div>
+                </div>
+                <div class="card-footer">
+                    <span class="card-date" title="${dateInfo.full}">${dateInfo.relative}</span>
+                    <div class="card-actions">
+                        <button class="btn-action btn-preview" data-id="${report.id}">Preview</button>
+                        <a href="/report/${report.id}" class="btn-view">View</a>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    function createTimelineItem(report) {
+        const signalClass = getSignalClass(report.signals_found);
+        const dateInfo = formatDate(report.created_at);
+
+        return `
+            <div class="timeline-item" role="listitem" data-report-id="${report.id}">
+                <div class="timeline-date">${dateInfo.full}</div>
+                <div class="timeline-content">
+                    <div class="timeline-header">
+                        <span class="timeline-company">${escapeHtml(report.company_name)}</span>
+                        <span class="signal-badge ${signalClass}">${report.signals_found} signals</span>
+                    </div>
+                    <div class="timeline-stats">
+                        <span>@${escapeHtml(report.github_org || '-')}</span>
+                        <span>${report.repos_scanned} repos</span>
+                        <span>${report.commits_analyzed} commits</span>
+                    </div>
+                    <div class="card-actions" style="margin-top: 0.75rem;">
+                        <button class="btn-action btn-preview" data-id="${report.id}">Preview</button>
+                        <a href="/report/${report.id}" class="btn-view">View</a>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    function attachRowEventListeners() {
+        // Favorite buttons
+        document.querySelectorAll('.btn-favorite').forEach(btn => {
+            btn.addEventListener('click', async function() {
+                const id = parseInt(this.dataset.id);
+                await toggleFavorite(id, this);
+            });
+        });
+
+        // Preview buttons
+        document.querySelectorAll('.btn-preview').forEach(btn => {
+            btn.addEventListener('click', async function() {
+                const id = parseInt(this.dataset.id);
+                await showPreview(id);
+            });
+        });
+
+        // Delete buttons
+        document.querySelectorAll('.btn-delete').forEach(btn => {
+            btn.addEventListener('click', function() {
+                deleteReportId = parseInt(this.dataset.id);
+                document.getElementById('delete-company-name').textContent = this.dataset.company;
+                deleteModal.classList.remove('hidden');
+            });
+        });
+
+        // Compare checkboxes
+        document.querySelectorAll('.compare-checkbox').forEach(cb => {
+            cb.addEventListener('change', function() {
+                const id = parseInt(this.dataset.id);
+                if (this.checked) {
+                    selectedForCompare.add(id);
+                } else {
+                    selectedForCompare.delete(id);
+                }
+                updateCompareCount();
+            });
+        });
+    }
+
+    async function toggleFavorite(id, button) {
+        try {
+            const response = await fetch(`/api/reports/${id}/favorite`, { method: 'POST' });
+            const data = await response.json();
+            if (data.success) {
+                button.classList.toggle('is-favorite', data.is_favorite);
+                button.setAttribute('aria-pressed', data.is_favorite);
+                button.setAttribute('aria-label', data.is_favorite ? 'Remove from favorites' : 'Add to favorites');
+
+                // Update all instances of this button (table, cards, etc)
+                document.querySelectorAll(`.btn-favorite[data-id="${id}"]`).forEach(btn => {
+                    btn.classList.toggle('is-favorite', data.is_favorite);
+                });
+            }
+        } catch (error) {
+            console.error('Error toggling favorite:', error);
+        }
+    }
+
+    async function showPreview(id) {
+        try {
+            const response = await fetch(`/api/reports/${id}/preview`);
+            const data = await response.json();
+
+            if (data.error) {
+                alert('Report not found');
+                return;
+            }
+
+            const dateInfo = formatDate(data.created_at);
+            const signalClass = getSignalClass(data.signals_found);
+
+            document.getElementById('preview-content').innerHTML = `
+                <div class="preview-header">
+                    <div>
+                        <div class="preview-company">${escapeHtml(data.company_name)}</div>
+                        <div class="preview-org">@${escapeHtml(data.github_org || '-')}</div>
+                    </div>
+                    <span class="signal-badge ${signalClass}">${data.signals_found} signals</span>
+                </div>
+                <div class="preview-stats">
+                    <div class="preview-stat">
+                        <div class="preview-stat-value">${data.repos_scanned}</div>
+                        <div class="preview-stat-label">Repos</div>
+                    </div>
+                    <div class="preview-stat">
+                        <div class="preview-stat-value">${data.commits_analyzed}</div>
+                        <div class="preview-stat-label">Commits</div>
+                    </div>
+                    <div class="preview-stat">
+                        <div class="preview-stat-value">${data.prs_analyzed}</div>
+                        <div class="preview-stat-label">PRs</div>
+                    </div>
+                    <div class="preview-stat">
+                        <div class="preview-stat-value">${data.scan_duration_seconds ? data.scan_duration_seconds.toFixed(1) + 's' : '-'}</div>
+                        <div class="preview-stat-label">Duration</div>
+                    </div>
+                </div>
+                ${data.ai_summary ? `
+                    <div class="preview-summary">
+                        <h4>AI Summary</h4>
+                        <p>${escapeHtml(data.ai_summary)}</p>
+                    </div>
+                ` : ''}
+                ${data.top_signals && data.top_signals.length > 0 ? `
+                    <div class="preview-signals">
+                        <h4>Top Signals</h4>
+                        <div class="signal-list">
+                            ${data.top_signals.map(s => `
+                                <div class="signal-item">
+                                    <span class="signal-type">${escapeHtml(s.signal_type || 'Signal')}</span>
+                                    <span class="signal-desc">${escapeHtml(s.description || '')}</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                ` : ''}
+                <div class="text-muted" style="font-size: 0.8rem; margin-top: 1rem;">
+                    Scanned ${dateInfo.relative} (${dateInfo.full})
+                </div>
+            `;
+
+            document.getElementById('preview-view-full').href = `/report/${id}`;
+            previewModal.classList.remove('hidden');
+        } catch (error) {
+            console.error('Error loading preview:', error);
+        }
+    }
+
+    async function confirmDelete() {
+        if (!deleteReportId) return;
+
+        try {
+            const response = await fetch(`/api/reports/${deleteReportId}`, { method: 'DELETE' });
+            const data = await response.json();
+            if (data.success) {
+                closeDeleteModal();
+                loadReports();
+            } else {
+                alert('Failed to delete report');
+            }
+        } catch (error) {
+            console.error('Error deleting report:', error);
+            alert('Error deleting report');
+        }
+    }
+
+    function closePreviewModal() {
+        previewModal.classList.add('hidden');
+    }
+
+    function closeDeleteModal() {
+        deleteModal.classList.add('hidden');
+        deleteReportId = null;
+    }
+
+    function updateCompareCount() {
+        const count = selectedForCompare.size;
+        compareCount.textContent = count;
+        runCompareBtn.disabled = count < 2;
+    }
+
+    function updatePagination() {
+        const start = totalItems === 0 ? 0 : (currentPage - 1) * itemsPerPage + 1;
+        const end = Math.min(currentPage * itemsPerPage, totalItems);
+
+        showingStart.textContent = start;
+        showingEnd.textContent = end;
+        totalItemsEl.textContent = totalItems;
+
+        prevPageBtn.disabled = currentPage <= 1;
+        nextPageBtn.disabled = currentPage >= totalPages;
+
+        // Render page numbers
+        pageNumbers.innerHTML = '';
+
+        if (totalPages <= 7) {
+            for (let i = 1; i <= totalPages; i++) {
+                pageNumbers.appendChild(createPageButton(i));
+            }
+        } else {
+            pageNumbers.appendChild(createPageButton(1));
+
+            if (currentPage > 3) {
+                pageNumbers.appendChild(createEllipsis());
+            }
+
+            const startPage = Math.max(2, currentPage - 1);
+            const endPage = Math.min(totalPages - 1, currentPage + 1);
+
+            for (let i = startPage; i <= endPage; i++) {
+                pageNumbers.appendChild(createPageButton(i));
+            }
+
+            if (currentPage < totalPages - 2) {
+                pageNumbers.appendChild(createEllipsis());
+            }
+
+            pageNumbers.appendChild(createPageButton(totalPages));
+        }
+    }
+
+    function createPageButton(page) {
+        const btn = document.createElement('button');
+        btn.className = `page-btn ${page === currentPage ? 'active' : ''}`;
+        btn.textContent = page;
+        btn.setAttribute('aria-label', `Page ${page}`);
+        if (page === currentPage) {
+            btn.setAttribute('aria-current', 'page');
+        }
+        btn.addEventListener('click', () => {
+            currentPage = page;
+            loadReports();
+        });
+        return btn;
+    }
+
+    function createEllipsis() {
+        const span = document.createElement('span');
+        span.className = 'page-ellipsis';
+        span.textContent = '...';
+        span.setAttribute('aria-hidden', 'true');
+        return span;
+    }
+
+    function getSignalClass(count) {
+        if (count === 0) return 'signal-low';
+        if (count <= 2) return 'signal-low';
+        if (count <= 5) return 'signal-medium';
+        if (count <= 10) return 'signal-high';
+        return 'signal-very-high';
+    }
+
+    function formatDate(dateStr) {
+        if (!dateStr) return { relative: '-', short: '', full: '' };
+
+        const date = new Date(dateStr);
+        const now = new Date();
+        const diffMs = now - date;
+        const diffSec = Math.floor(diffMs / 1000);
+        const diffMin = Math.floor(diffSec / 60);
+        const diffHour = Math.floor(diffMin / 60);
+        const diffDay = Math.floor(diffHour / 24);
+
+        let relative;
+        if (diffSec < 60) {
+            relative = 'Just now';
+        } else if (diffMin < 60) {
+            relative = `${diffMin}m ago`;
+        } else if (diffHour < 24) {
+            relative = `${diffHour}h ago`;
+        } else if (diffDay === 1) {
+            relative = 'Yesterday';
+        } else if (diffDay < 7) {
+            relative = `${diffDay}d ago`;
+        } else if (diffDay < 30) {
+            const weeks = Math.floor(diffDay / 7);
+            relative = `${weeks}w ago`;
+        } else if (diffDay < 365) {
+            const months = Math.floor(diffDay / 30);
+            relative = `${months}mo ago`;
+        } else {
+            const years = Math.floor(diffDay / 365);
+            relative = `${years}y ago`;
+        }
+
+        const short = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        const full = date.toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+
+        return { relative, short, full };
+    }
+
+    function escapeHtml(str) {
+        if (!str) return '';
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    }
+});
+</script>
 {% endblock %}

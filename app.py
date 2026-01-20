@@ -1001,6 +1001,71 @@ def api_search_reports():
     return jsonify(reports)
 
 
+@app.route('/api/reports/paginated')
+def api_reports_paginated():
+    """API endpoint for paginated reports with filtering and sorting."""
+    from database import get_paginated_reports
+
+    page = request.args.get('page', 1, type=int)
+    limit = request.args.get('limit', 10, type=int)
+    search = request.args.get('search', '', type=str)
+    date_from = request.args.get('date_from', None, type=str)
+    date_to = request.args.get('date_to', None, type=str)
+    min_signals = request.args.get('min_signals', None, type=int)
+    max_signals = request.args.get('max_signals', None, type=int)
+    sort_by = request.args.get('sort_by', 'created_at', type=str)
+    sort_order = request.args.get('sort_order', 'desc', type=str)
+    favorites_only = request.args.get('favorites_only', 'false', type=str).lower() == 'true'
+
+    result = get_paginated_reports(
+        page=page,
+        limit=limit,
+        search_query=search if search else None,
+        date_from=date_from,
+        date_to=date_to,
+        min_signals=min_signals,
+        max_signals=max_signals,
+        sort_by=sort_by,
+        sort_order=sort_order,
+        favorites_only=favorites_only
+    )
+
+    return jsonify(result)
+
+
+@app.route('/api/reports/<int:report_id>/favorite', methods=['POST'])
+def api_toggle_favorite(report_id):
+    """API endpoint to toggle report favorite status."""
+    from database import toggle_report_favorite
+
+    result = toggle_report_favorite(report_id)
+    if result.get('success'):
+        return jsonify(result)
+    return jsonify(result), 404
+
+
+@app.route('/api/reports/<int:report_id>', methods=['DELETE'])
+def api_delete_report(report_id):
+    """API endpoint to delete a report."""
+    from database import delete_report_by_id
+
+    result = delete_report_by_id(report_id)
+    if result.get('success'):
+        return jsonify(result)
+    return jsonify(result), 404
+
+
+@app.route('/api/reports/<int:report_id>/preview')
+def api_report_preview(report_id):
+    """API endpoint to get a report preview."""
+    from database import get_report_preview
+
+    preview = get_report_preview(report_id)
+    if preview:
+        return jsonify(preview)
+    return jsonify({'error': 'Report not found'}), 404
+
+
 @app.route('/api/agentmail/status')
 def api_agentmail_status():
     """Check if AgentMail is configured."""
