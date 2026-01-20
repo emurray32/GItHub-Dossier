@@ -1795,58 +1795,6 @@
     </div>
     {% endif %}
 
-    <!-- Email Draft (One-Click Cold Email Generator) -->
-    {% if report.ai_analysis.email_draft %}
-    <div class="email-draft-section">
-        <div class="email-draft-header">
-            <h3>Ready-to-Send Cold Email</h3>
-            <div class="email-actions">
-                <button class="copy-email-btn" onclick="copyEmailDraft(this)" id="copyEmailBtn">
-                    <span class="copy-icon copy-icon--default" aria-hidden="true">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                            stroke-linecap="round" stroke-linejoin="round">
-                            <rect x="9" y="9" width="13" height="13" rx="2"></rect>
-                            <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"></path>
-                        </svg>
-                    </span>
-                    <span class="copy-icon copy-icon--success" aria-hidden="true">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                            stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M20 6L9 17l-5-5"></path>
-                        </svg>
-                    </span>
-                    <span class="btn-text">Copy Email</span>
-                </button>
-                <button class="send-bdr-btn" onclick="showSendToBDRModal()" id="sendToBDRBtn"
-                    title="Send draft to BDR via email">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                        stroke-linejoin="round">
-                        <path d="M22 2L11 13"></path>
-                        <path d="M22 2L15 22L11 13L2 9L22 2Z"></path>
-                    </svg>
-                    <span class="btn-text">Send to BDR</span>
-                </button>
-            </div>
-        </div>
-        <div class="email-draft-content">
-            <div class="email-edit-hint">Edit before copying.</div>
-            <div class="email-subject">
-                <span class="email-subject-label">Subject Line</span>
-                <input id="emailSubject" class="email-edit-field email-subject-input" type="text"
-                    value="{{ report.ai_analysis.email_draft.subject }}">
-            </div>
-            <div>
-                <span class="email-body-label">Email Body</span>
-                <div class="email-body">
-                    <textarea id="emailBody"
-                        class="email-edit-field email-body-textarea">{{ report.ai_analysis.email_draft.body }}</textarea>
-                </div>
-            </div>
-        </div>
-    </div>
-    {% endif %}
-
-
     <!-- Key Findings - BDR-Optimized -->
     {% if report.ai_analysis.key_findings %}
     <div class="section">
@@ -2092,7 +2040,7 @@
     {% endif %}
 </div>
 
-<button class="print-button" onclick="window.print()" title="Print Report">
+<button class="print-button" onclick="window.print()" title="Print Report" aria-label="Print Report">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
         stroke-linejoin="round" aria-hidden="true">
         <path d="M6 9V2h12v7"></path>
@@ -2102,11 +2050,11 @@
 </button>
 
 <!-- Send to BDR Modal -->
-<div class="bdr-modal" id="bdrModal">
+<div class="bdr-modal" id="bdrModal" role="dialog" aria-modal="true" aria-labelledby="bdrModalTitle">
     <div class="bdr-modal-content">
         <div class="bdr-modal-header">
-            <h3>Send to BDR</h3>
-            <button class="bdr-modal-close" onclick="closeBDRModal()">&times;</button>
+            <h3 id="bdrModalTitle">Send to BDR</h3>
+            <button class="bdr-modal-close" onclick="closeBDRModal()" aria-label="Close modal" type="button">&times;</button>
         </div>
         <p style="color: var(--text-secondary); margin-bottom: 1rem; font-size: 0.875rem;">
             Send the cold email draft to your BDR's inbox for follow-up.

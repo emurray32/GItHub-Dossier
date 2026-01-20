@@ -858,3 +858,43 @@ a:hover {
 #report-drawer.drawer-open {
     right: 0;
 }
+
+/* Focus Visible Styles - Accessibility */
+.tier-filter-btn:focus-visible,
+.icp-btn:focus-visible,
+.mode-btn:focus-visible,
+.track-btn:focus-visible,
+.btn-primary:focus-visible,
+.btn-secondary:focus-visible,
+.btn-view:focus-visible,
+.search-button:focus-visible,
+.pagination-btn:focus-visible {
+    outline: 2px solid var(--accent-color);
+    outline-offset: 2px;
+}
+
+.search-input:focus-visible,
+.filter-select:focus-visible,
+.companies-textarea:focus-visible,
+.discovery-search:focus-visible {
+    outline: 2px solid var(--accent-color);
+    outline-offset: 1px;
+    border-color: var(--accent-color);
+}
+
+/* Skip link for keyboard users */
+.skip-link {
+    position: absolute;
+    top: -40px;
+    left: 0;
+    background: var(--accent-color);
+    color: white;
+    padding: 8px 16px;
+    z-index: 1000;
+    text-decoration: none;
+    font-weight: 600;
+}
+
+.skip-link:focus {
+    top: 0;
+}
