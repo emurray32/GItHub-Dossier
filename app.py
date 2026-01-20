@@ -2465,6 +2465,570 @@ def api_webhook_logs():
     })
 
 
+# =============================================================================
+# RULES PANEL API - Scanning Rules Visibility for Team
+# =============================================================================
+
+def _get_rules_last_updated():
+    """Get the timestamp when rules were last updated."""
+    from database import get_setting
+    timestamp = get_setting('rules_last_updated')
+    if timestamp:
+        return timestamp
+    # Default to now if never set
+    now = datetime.now().isoformat()
+    set_setting('rules_last_updated', now)
+    return now
+
+
+def _update_rules_timestamp():
+    """Update the rules last-updated timestamp to now."""
+    now = datetime.now().isoformat()
+    set_setting('rules_last_updated', now)
+    return now
+
+
+@app.route('/api/rules')
+def api_rules():
+    """
+    Get all scanning rules and heuristics for the Rules Panel.
+
+    This endpoint extracts rules from the Config class and formats them
+    for display to the engineering/sales team, providing visibility into
+    what the scanner looks for.
+
+    Returns:
+        JSON with categorized rules and last-updated timestamp.
+    """
+    rules = {
+        'last_updated': _get_rules_last_updated(),
+        'categories': [
+            {
+                'name': 'Signal 1: RFC & Discussion Keywords',
+                'description': 'Keywords that indicate internationalization planning in GitHub Issues/Discussions (Thinking Phase)',
+                'phase': 'THINKING',
+                'items': Config.RFC_KEYWORDS,
+                'lookback_days': Config.RFC_LOOKBACK_DAYS
+            },
+            {
+                'name': 'Signal 2: Smoking Gun Libraries',
+                'description': 'i18n libraries that indicate infrastructure setup without launched translations (Preparing Phase)',
+                'phase': 'PREPARING',
+                'items': Config.SMOKING_GUN_LIBS
+            },
+            {
+                'name': 'Signal 2b: Smoking Gun Fork Repos',
+                'description': 'When companies fork these repos, they are customizing i18n infrastructure (HIGH intent)',
+                'phase': 'PREPARING',
+                'items': Config.SMOKING_GUN_FORK_REPOS
+            },
+            {
+                'name': 'Signal 2c: Linter Libraries',
+                'description': 'Code linting/cleaning libraries for scrubbing hardcoded strings',
+                'phase': 'PREPARING',
+                'items': Config.LINTER_LIBRARIES
+            },
+            {
+                'name': 'Signal 2d: CMS i18n Libraries',
+                'description': 'CMS-specific internationalization plugins and libraries',
+                'phase': 'PREPARING',
+                'items': Config.CMS_I18N_LIBS
+            },
+            {
+                'name': 'Signal 3: Ghost Branch Patterns',
+                'description': 'Branch/PR naming patterns that indicate WIP localization work (Active Phase)',
+                'phase': 'ACTIVE',
+                'items': Config.GHOST_BRANCH_PATTERNS
+            },
+            {
+                'name': 'Signal 4: Documentation Intent Keywords',
+                'description': 'Keywords in docs (README, CHANGELOG) that indicate planned i18n work',
+                'phase': 'THINKING',
+                'items': Config.DOCUMENTATION_INTENT_KEYWORDS
+            },
+            {
+                'name': 'Documentation Context Keywords',
+                'description': 'Context words that must appear near intent keywords (indicates future/WIP)',
+                'phase': 'THINKING',
+                'items': Config.DOCUMENTATION_CONTEXT_KEYWORDS
+            },
+            {
+                'name': 'Exclusion Folders (Disqualifiers)',
+                'description': 'If these folders exist with translations, company has ALREADY LAUNCHED (Too Late)',
+                'phase': 'LAUNCHED',
+                'items': Config.EXCLUSION_FOLDERS
+            },
+            {
+                'name': 'Source Locale Patterns (Goldilocks Exception)',
+                'description': 'If locale folder contains ONLY these source files, still in Goldilocks Zone',
+                'phase': 'PREPARING',
+                'items': Config.SOURCE_LOCALE_PATTERNS
+            },
+            {
+                'name': 'Dependency Files Scanned',
+                'description': 'Package manager files checked for i18n library dependencies',
+                'phase': 'PREPARING',
+                'items': Config.DEPENDENCY_INJECTION_FILES
+            },
+            {
+                'name': 'Framework Config Files',
+                'description': 'Framework configuration files checked for i18n routing setup',
+                'phase': 'PREPARING',
+                'items': Config.FRAMEWORK_CONFIG_FILES
+            },
+            {
+                'name': 'Documentation Files Scanned',
+                'description': 'Documentation files checked for i18n intent signals',
+                'phase': 'THINKING',
+                'items': Config.DOCUMENTATION_FILES
+            },
+            {
+                'name': 'i18n Script Keywords',
+                'description': 'Keywords in package.json scripts that indicate i18n preparation',
+                'phase': 'PREPARING',
+                'items': Config.I18N_SCRIPT_KEYWORDS
+            },
+            {
+                'name': 'Build Script i18n Keywords',
+                'description': 'Keywords in build scripts indicating locale/translation work',
+                'phase': 'PREPARING',
+                'items': Config.BUILD_SCRIPT_I18N_KEYWORDS
+            },
+            {
+                'name': 'Open Protocol Disqualifiers',
+                'description': 'Patterns that identify non-commercial open source/decentralized projects',
+                'phase': 'DISQUALIFIED',
+                'items': Config.OPEN_PROTOCOL_DISQUALIFIERS
+            },
+            {
+                'name': 'High-Value Repo Patterns',
+                'description': 'Repo name patterns that indicate core product (prioritized for scanning)',
+                'phase': 'SCORING',
+                'items': Config.HIGH_VALUE_PATTERNS
+            },
+            {
+                'name': 'Low-Value Repo Patterns',
+                'description': 'Repo name patterns that indicate non-core repos (deprioritized)',
+                'phase': 'SCORING',
+                'items': Config.LOW_VALUE_PATTERNS
+            },
+            {
+                'name': 'High-Value Languages',
+                'description': 'Programming languages that get bonus points for i18n scanning',
+                'phase': 'SCORING',
+                'items': Config.HIGH_VALUE_LANGUAGES
+            },
+            {
+                'name': 'Launched Indicators (Negative)',
+                'description': 'Keywords in docs that indicate i18n is already live (disqualifies Goldilocks)',
+                'phase': 'LAUNCHED',
+                'items': Config.DOCUMENTATION_LAUNCHED_INDICATORS
+            }
+        ],
+        'scoring': {
+            'weights': Config.INTENT_SCORE_WEIGHTS,
+            'goldilocks_scores': Config.GOLDILOCKS_SCORES,
+            'lead_status_labels': Config.LEAD_STATUS_LABELS
+        },
+        'scan_config': {
+            'max_repos_to_scan': Config.MAX_REPOS_TO_SCAN,
+            'repo_inactivity_days': Config.REPO_INACTIVITY_DAYS,
+            'rfc_lookback_days': Config.RFC_LOOKBACK_DAYS,
+            'documentation_proximity_chars': Config.DOCUMENTATION_PROXIMITY_CHARS
+        }
+    }
+
+    return jsonify(rules)
+
+
+@app.route('/api/rules/refresh', methods=['POST'])
+def api_rules_refresh():
+    """
+    Manually trigger a rules timestamp update.
+
+    This endpoint allows admins to mark that rules have been reviewed/updated.
+    The automatic 7am EST update happens via scheduler, but this allows
+    manual refresh when rules are modified.
+
+    Returns:
+        JSON with new timestamp.
+    """
+    new_timestamp = _update_rules_timestamp()
+    return jsonify({
+        'success': True,
+        'last_updated': new_timestamp
+    })
+
+
+@app.route('/api/rules/download')
+def api_rules_download():
+    """
+    Download all scanning rules as a formatted text file.
+
+    This is useful for sharing with LLMs or for documentation purposes.
+    Returns a plain text file with all rules organized by category.
+    """
+    rules_text = _generate_rules_document()
+
+    response = Response(rules_text, mimetype='text/plain')
+    response.headers['Content-Disposition'] = 'attachment; filename=scanning_rules.txt'
+    return response
+
+
+def _generate_rules_document():
+    """Generate a formatted text document of all scanning rules."""
+    lines = []
+    lines.append("=" * 80)
+    lines.append("LEAD MACHINE - SCANNING RULES & HEURISTICS")
+    lines.append("3-Signal Internationalization Intent Scanner")
+    lines.append("=" * 80)
+    lines.append("")
+    lines.append(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    lines.append("")
+
+    # Intent Score Weights
+    lines.append("-" * 80)
+    lines.append("INTENT SCORE WEIGHTS")
+    lines.append("-" * 80)
+    for key, value in Config.INTENT_SCORE_WEIGHTS.items():
+        label = key.replace('_', ' ').title()
+        lines.append(f"  {label}: {value} points")
+    lines.append("")
+
+    # Goldilocks Scores
+    lines.append("-" * 80)
+    lines.append("GOLDILOCKS ZONE SCORES")
+    lines.append("-" * 80)
+    for key, value in Config.GOLDILOCKS_SCORES.items():
+        label = key.replace('_', ' ').title()
+        lines.append(f"  {label}: {value}")
+    lines.append("")
+
+    # Lead Status Labels
+    lines.append("-" * 80)
+    lines.append("LEAD STATUS LABELS")
+    lines.append("-" * 80)
+    for key, value in Config.LEAD_STATUS_LABELS.items():
+        lines.append(f"  {key.upper()}: {value}")
+    lines.append("")
+
+    # Scan Configuration
+    lines.append("-" * 80)
+    lines.append("SCAN CONFIGURATION")
+    lines.append("-" * 80)
+    lines.append(f"  Max Repos to Scan: {Config.MAX_REPOS_TO_SCAN}")
+    lines.append(f"  Repo Inactivity Days: {Config.REPO_INACTIVITY_DAYS}")
+    lines.append(f"  RFC Lookback Days: {Config.RFC_LOOKBACK_DAYS}")
+    lines.append(f"  Documentation Proximity Chars: {Config.DOCUMENTATION_PROXIMITY_CHARS}")
+    lines.append("")
+
+    # Rule Categories
+    categories = [
+        ("SIGNAL 1: RFC & DISCUSSION KEYWORDS (Thinking Phase)", Config.RFC_KEYWORDS,
+         "Keywords that trigger detection when found in GitHub Issues/Discussions"),
+        ("SIGNAL 2: SMOKING GUN LIBRARIES (Preparing Phase)", Config.SMOKING_GUN_LIBS,
+         "i18n libraries that indicate infrastructure setup without translations"),
+        ("SIGNAL 2b: SMOKING GUN FORK REPOS", Config.SMOKING_GUN_FORK_REPOS,
+         "When companies fork these repos, they're customizing i18n infrastructure"),
+        ("SIGNAL 2c: LINTER LIBRARIES", Config.LINTER_LIBRARIES,
+         "Code linting libraries for finding/scrubbing hardcoded strings"),
+        ("SIGNAL 2d: CMS i18n LIBRARIES", Config.CMS_I18N_LIBS,
+         "CMS-specific internationalization plugins"),
+        ("SIGNAL 3: GHOST BRANCH PATTERNS (Active Phase)", Config.GHOST_BRANCH_PATTERNS,
+         "Branch/PR naming patterns indicating WIP localization work"),
+        ("SIGNAL 4: DOCUMENTATION INTENT KEYWORDS", Config.DOCUMENTATION_INTENT_KEYWORDS,
+         "Keywords in docs that indicate planned i18n work"),
+        ("DOCUMENTATION CONTEXT KEYWORDS", Config.DOCUMENTATION_CONTEXT_KEYWORDS,
+         "Must appear near intent keywords to indicate future/WIP work"),
+        ("EXCLUSION FOLDERS (Disqualifiers)", Config.EXCLUSION_FOLDERS,
+         "If these exist with translations, company has ALREADY LAUNCHED"),
+        ("SOURCE LOCALE PATTERNS (Goldilocks Exception)", Config.SOURCE_LOCALE_PATTERNS,
+         "If locale folder contains ONLY these, still in Goldilocks Zone"),
+        ("DEPENDENCY FILES SCANNED", Config.DEPENDENCY_INJECTION_FILES,
+         "Package manager files checked for i18n library dependencies"),
+        ("FRAMEWORK CONFIG FILES", Config.FRAMEWORK_CONFIG_FILES,
+         "Framework configuration files checked for i18n routing"),
+        ("DOCUMENTATION FILES SCANNED", Config.DOCUMENTATION_FILES,
+         "Documentation files checked for i18n intent signals"),
+        ("i18n SCRIPT KEYWORDS", Config.I18N_SCRIPT_KEYWORDS,
+         "Keywords in package.json scripts indicating i18n preparation"),
+        ("BUILD SCRIPT i18n KEYWORDS", Config.BUILD_SCRIPT_I18N_KEYWORDS,
+         "Keywords in build scripts for locale/translation work"),
+        ("OPEN PROTOCOL DISQUALIFIERS", Config.OPEN_PROTOCOL_DISQUALIFIERS,
+         "Patterns that identify non-commercial open source projects"),
+        ("HIGH-VALUE REPO PATTERNS (+1000 points)", Config.HIGH_VALUE_PATTERNS,
+         "Repo name patterns indicating core product"),
+        ("LOW-VALUE REPO PATTERNS (-500 points)", Config.LOW_VALUE_PATTERNS,
+         "Repo name patterns indicating non-core repos"),
+        ("HIGH-VALUE LANGUAGES (+500 points)", Config.HIGH_VALUE_LANGUAGES,
+         "Programming languages that get bonus points"),
+        ("LAUNCHED INDICATORS (Negative)", Config.DOCUMENTATION_LAUNCHED_INDICATORS,
+         "Keywords indicating i18n is already live"),
+    ]
+
+    for title, items, description in categories:
+        lines.append("-" * 80)
+        lines.append(title)
+        lines.append("-" * 80)
+        lines.append(f"Description: {description}")
+        lines.append("")
+        for item in items:
+            lines.append(f"  - {item}")
+        lines.append("")
+
+    lines.append("=" * 80)
+    lines.append("END OF RULES DOCUMENT")
+    lines.append("=" * 80)
+
+    return "\n".join(lines)
+
+
+def _get_cached_rule_explanation(rule_name: str) -> str:
+    """Get a cached AI explanation for a rule, or None if not cached."""
+    cache_key = f"rule_explanation:{rule_name}"
+    cached = get_setting(cache_key)
+    return cached
+
+
+def _cache_rule_explanation(rule_name: str, explanation: str) -> None:
+    """Cache an AI-generated explanation for a rule."""
+    cache_key = f"rule_explanation:{rule_name}"
+    set_setting(cache_key, explanation)
+
+
+@app.route('/api/rules/explain', methods=['POST'])
+def api_rules_explain():
+    """
+    Get AI-generated simple explanations for rules.
+
+    Uses Gemini AI to generate layman-friendly explanations and caches them.
+
+    Request body:
+        {"rules": ["rule_name_1", "rule_name_2", ...]}
+
+    Returns:
+        JSON with explanations for each rule.
+    """
+    if not Config.GEMINI_API_KEY:
+        return jsonify({'error': 'Gemini API key not configured'}), 500
+
+    data = request.get_json() or {}
+    rule_names = data.get('rules', [])
+
+    if not rule_names:
+        return jsonify({'error': 'No rules specified'}), 400
+
+    explanations = {}
+    rules_to_generate = []
+
+    # Check cache first
+    for rule_name in rule_names:
+        cached = _get_cached_rule_explanation(rule_name)
+        if cached:
+            explanations[rule_name] = cached
+        else:
+            rules_to_generate.append(rule_name)
+
+    # Generate explanations for uncached rules
+    if rules_to_generate:
+        try:
+            new_explanations = _generate_rule_explanations(rules_to_generate)
+            for rule_name, explanation in new_explanations.items():
+                _cache_rule_explanation(rule_name, explanation)
+                explanations[rule_name] = explanation
+        except Exception as e:
+            print(f"[RULES] Error generating explanations: {e}")
+            # Return what we have from cache, mark others as error
+            for rule_name in rules_to_generate:
+                if rule_name not in explanations:
+                    explanations[rule_name] = "Unable to generate explanation at this time."
+
+    return jsonify({'explanations': explanations})
+
+
+def _generate_rule_explanations(rule_names: list) -> dict:
+    """
+    Generate AI explanations for a batch of rules using Gemini.
+
+    Returns a dict mapping rule names to their explanations.
+    """
+    from google import genai
+
+    # Build context about what each rule does
+    rule_context = _get_rule_context_for_ai(rule_names)
+
+    prompt = f"""You are explaining technical software scanning rules to a non-technical business person.
+
+For each rule below, provide a simple 1-2 sentence explanation that:
+- Uses everyday language (no developer jargon)
+- Explains WHY this matters for finding potential customers
+- Is conversational and friendly
+
+Rules to explain:
+{rule_context}
+
+Format your response as JSON with rule names as keys and explanations as values.
+Example: {{"rule_name": "Simple explanation here"}}
+
+IMPORTANT: Return ONLY valid JSON, no markdown formatting or code blocks."""
+
+    client = genai.Client(api_key=Config.GEMINI_API_KEY)
+
+    response = client.models.generate_content(
+        model=Config.GEMINI_MODEL,
+        contents=prompt
+    )
+
+    response_text = response.text.strip()
+
+    # Clean up response - remove markdown code blocks if present
+    if response_text.startswith('```'):
+        lines = response_text.split('\n')
+        lines = [l for l in lines if not l.startswith('```')]
+        response_text = '\n'.join(lines)
+
+    try:
+        return json.loads(response_text)
+    except json.JSONDecodeError:
+        print(f"[RULES] Failed to parse AI response: {response_text[:200]}")
+        return {}
+
+
+def _get_rule_context_for_ai(rule_names: list) -> str:
+    """Build context string for AI to understand what each rule does."""
+    context_map = {
+        'rfc_keywords': f"RFC & Discussion Keywords: {', '.join(Config.RFC_KEYWORDS[:5])}... These are searched in GitHub issues to find companies discussing internationalization plans.",
+        'smoking_gun_libs': f"Smoking Gun Libraries: {', '.join(Config.SMOKING_GUN_LIBS[:5])}... These are code libraries that companies install when preparing for translation.",
+        'smoking_gun_fork_repos': f"Forked Repositories: {', '.join(Config.SMOKING_GUN_FORK_REPOS[:5])}... When companies copy and modify these projects, they're building translation systems.",
+        'linter_libraries': f"Linter Libraries: {', '.join(Config.LINTER_LIBRARIES[:3])}... Tools that help find text that needs translation.",
+        'cms_i18n_libs': f"CMS i18n Libraries: {', '.join(Config.CMS_I18N_LIBS[:3])}... Plugins for content management systems to support multiple languages.",
+        'ghost_branch_patterns': f"Branch Patterns: {', '.join(Config.GHOST_BRANCH_PATTERNS[:5])}... Names developers use for work-in-progress translation features.",
+        'documentation_intent_keywords': f"Documentation Keywords: {', '.join(Config.DOCUMENTATION_INTENT_KEYWORDS[:5])}... Phrases found in project docs indicating translation plans.",
+        'documentation_context_keywords': f"Context Keywords: {', '.join(Config.DOCUMENTATION_CONTEXT_KEYWORDS[:5])}... Words like 'planned' or 'upcoming' that show something is future work.",
+        'exclusion_folders': f"Exclusion Folders: {', '.join(Config.EXCLUSION_FOLDERS)}... Folder names where translations live. If these exist with translations, they've already launched.",
+        'source_locale_patterns': f"Source Locale Patterns: Files like en.json or base.json. If only these exist, they're still preparing.",
+        'dependency_injection_files': f"Dependency Files: {', '.join(Config.DEPENDENCY_INJECTION_FILES[:5])}... Package manager files where we look for translation libraries.",
+        'framework_config_files': f"Framework Configs: {', '.join(Config.FRAMEWORK_CONFIG_FILES[:3])}... Configuration files that may have translation settings.",
+        'documentation_files': f"Documentation Files: {', '.join(Config.DOCUMENTATION_FILES[:4])}... Project docs where companies mention translation plans.",
+        'i18n_script_keywords': f"Script Keywords: {', '.join(Config.I18N_SCRIPT_KEYWORDS[:3])}... Commands in build scripts for translation work.",
+        'build_script_i18n_keywords': f"Build Keywords: {', '.join(Config.BUILD_SCRIPT_I18N_KEYWORDS[:4])}... Keywords in build commands related to translations.",
+        'open_protocol_disqualifiers': f"Disqualifiers: {', '.join(Config.OPEN_PROTOCOL_DISQUALIFIERS[:4])}... Phrases that indicate a project is open-source/community-driven, not a commercial company.",
+        'high_value_patterns': f"High-Value Patterns: {', '.join(Config.HIGH_VALUE_PATTERNS[:5])}... Repo names that indicate the main product.",
+        'low_value_patterns': f"Low-Value Patterns: {', '.join(Config.LOW_VALUE_PATTERNS)}... Repo names that indicate secondary projects.",
+        'high_value_languages': f"High-Value Languages: {', '.join(Config.HIGH_VALUE_LANGUAGES)}... Programming languages commonly used for user-facing apps.",
+        'documentation_launched_indicators': f"Launched Indicators: {', '.join(Config.DOCUMENTATION_LAUNCHED_INDICATORS[:3])}... Phrases showing translations are already live.",
+    }
+
+    lines = []
+    for rule_name in rule_names:
+        if rule_name in context_map:
+            lines.append(f"- {rule_name}: {context_map[rule_name]}")
+        else:
+            lines.append(f"- {rule_name}: A scanning rule for detecting internationalization signals.")
+
+    return "\n".join(lines)
+
+
+@app.route('/api/rules/explain-all', methods=['POST'])
+def api_rules_explain_all():
+    """
+    Generate and cache explanations for all rules at once.
+
+    This is useful for pre-populating the cache so users don't wait.
+    Returns all explanations.
+    """
+    if not Config.GEMINI_API_KEY:
+        return jsonify({'error': 'Gemini API key not configured'}), 500
+
+    all_rule_names = [
+        'rfc_keywords', 'smoking_gun_libs', 'smoking_gun_fork_repos',
+        'linter_libraries', 'cms_i18n_libs', 'ghost_branch_patterns',
+        'documentation_intent_keywords', 'documentation_context_keywords',
+        'exclusion_folders', 'source_locale_patterns', 'dependency_injection_files',
+        'framework_config_files', 'documentation_files', 'i18n_script_keywords',
+        'build_script_i18n_keywords', 'open_protocol_disqualifiers',
+        'high_value_patterns', 'low_value_patterns', 'high_value_languages',
+        'documentation_launched_indicators'
+    ]
+
+    explanations = {}
+    rules_to_generate = []
+
+    # Check cache first
+    for rule_name in all_rule_names:
+        cached = _get_cached_rule_explanation(rule_name)
+        if cached:
+            explanations[rule_name] = cached
+        else:
+            rules_to_generate.append(rule_name)
+
+    # Generate in batches to avoid overwhelming the API
+    batch_size = 5
+    for i in range(0, len(rules_to_generate), batch_size):
+        batch = rules_to_generate[i:i + batch_size]
+        try:
+            new_explanations = _generate_rule_explanations(batch)
+            for rule_name, explanation in new_explanations.items():
+                _cache_rule_explanation(rule_name, explanation)
+                explanations[rule_name] = explanation
+        except Exception as e:
+            print(f"[RULES] Error generating batch explanations: {e}")
+            for rule_name in batch:
+                if rule_name not in explanations:
+                    explanations[rule_name] = "Unable to generate explanation at this time."
+
+    return jsonify({
+        'success': True,
+        'explanations': explanations,
+        'generated_count': len(rules_to_generate),
+        'cached_count': len(all_rule_names) - len(rules_to_generate)
+    })
+
+
+def _scheduled_rules_update():
+    """
+    Scheduled task to update rules timestamp at 7am EST daily.
+
+    This runs in a background thread and updates the timestamp to indicate
+    rules are current. In a production system, this could also pull rules
+    from a remote config or notify the team.
+    """
+    import pytz
+    from datetime import time as dt_time
+
+    est = pytz.timezone('US/Eastern')
+
+    while True:
+        try:
+            now_est = datetime.now(est)
+            target_time = now_est.replace(hour=7, minute=0, second=0, microsecond=0)
+
+            # If we're past 7am today, schedule for tomorrow
+            if now_est >= target_time:
+                target_time = target_time + timedelta(days=1)
+
+            # Calculate seconds until target time
+            seconds_until_target = (target_time - now_est).total_seconds()
+
+            print(f"[RULES] Next rules update scheduled for {target_time.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+            time.sleep(seconds_until_target)
+
+            # Update the timestamp
+            _update_rules_timestamp()
+            print(f"[RULES] Rules timestamp updated at 7am EST: {datetime.now(est).isoformat()}")
+
+        except Exception as e:
+            print(f"[RULES] Error in scheduled update: {e}")
+            # Sleep for an hour on error and retry
+            time.sleep(3600)
+
+
+def start_rules_scheduler():
+    """Start the rules update scheduler in a background daemon thread."""
+    thread = threading.Thread(target=_scheduled_rules_update, daemon=True, name="RulesScheduler")
+    thread.start()
+
+
 def _watchdog_worker():
     """
     Background worker that runs indefinitely to clear stale processing statuses
@@ -2521,6 +3085,9 @@ if __name__ == '__main__':
 
     # Start the background watchdog thread
     start_watchdog()
+
+    # Start the rules scheduler for 7am EST daily updates
+    start_rules_scheduler()
 
     # IMPORTANT: Recover stuck queued accounts BEFORE reset_all_scan_statuses
     # This captures accounts stuck in 'queued' state and re-queues them
