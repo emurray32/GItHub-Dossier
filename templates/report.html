@@ -1204,6 +1204,185 @@
             padding: 0;
         }
     }
+
+    /* Deep Dive Section Styles */
+    .deep-dive-btn {
+        background: linear-gradient(135deg, #6366f1, #8b5cf6);
+        color: white;
+        border: none;
+        padding: 0.5rem 1.25rem;
+        border-radius: 8px;
+        font-weight: 600;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        transition: all 0.2s;
+        box-shadow: 0 2px 4px rgba(99, 102, 241, 0.3);
+    }
+
+    .deep-dive-btn:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 8px rgba(99, 102, 241, 0.4);
+    }
+
+    .deep-dive-btn:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+        transform: none;
+    }
+
+    .deep-dive-btn.loading {
+        background: linear-gradient(135deg, #818cf8, #a78bfa);
+    }
+
+    .deep-dive-btn svg {
+        width: 18px;
+        height: 18px;
+    }
+
+    .deep-dive-section {
+        background: var(--bg-primary);
+        border: 2px solid #6366f1;
+        border-radius: 12px;
+        margin-bottom: 2rem;
+        overflow: hidden;
+        box-shadow: 0 4px 12px rgba(99, 102, 241, 0.15);
+    }
+
+    .deep-dive-header {
+        background: linear-gradient(135deg, #6366f1, #8b5cf6);
+        color: white;
+        padding: 1rem 1.5rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .deep-dive-header h3 {
+        margin: 0;
+        font-size: 1.125rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .deep-dive-content {
+        padding: 1.5rem;
+    }
+
+    .deep-dive-subsection {
+        margin-bottom: 1.5rem;
+    }
+
+    .deep-dive-subsection:last-child {
+        margin-bottom: 0;
+    }
+
+    .deep-dive-subsection h4 {
+        font-size: 1rem;
+        color: #6366f1;
+        margin: 0 0 0.75rem 0;
+        padding-bottom: 0.5rem;
+        border-bottom: 1px solid var(--border-color);
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .timeline-event {
+        display: flex;
+        gap: 1rem;
+        padding: 0.75rem;
+        background: var(--bg-secondary);
+        border-radius: 8px;
+        margin-bottom: 0.5rem;
+        border-left: 3px solid #6366f1;
+    }
+
+    .timeline-event-date {
+        font-weight: 600;
+        color: #6366f1;
+        min-width: 80px;
+        font-size: 0.875rem;
+    }
+
+    .timeline-event-content {
+        flex: 1;
+    }
+
+    .timeline-event-title {
+        font-weight: 500;
+        color: var(--text-primary);
+        margin-bottom: 0.25rem;
+    }
+
+    .timeline-event-significance {
+        font-size: 0.8125rem;
+        color: var(--text-secondary);
+        font-style: italic;
+    }
+
+    .code-insight-item {
+        padding: 0.75rem 1rem;
+        background: var(--bg-secondary);
+        border-radius: 8px;
+        margin-bottom: 0.5rem;
+        border-left: 3px solid #22c55e;
+        line-height: 1.5;
+    }
+
+    .outreach-narrative {
+        background: linear-gradient(135deg, #f0fdf4, #ecfdf5);
+        border: 1px solid #86efac;
+        border-radius: 8px;
+        padding: 1.25rem;
+        line-height: 1.7;
+        font-size: 1rem;
+        color: #166534;
+    }
+
+    .deep-dive-loading {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.75rem;
+        padding: 2rem;
+        color: var(--text-secondary);
+    }
+
+    .deep-dive-loading .spinner {
+        width: 24px;
+        height: 24px;
+        border: 3px solid var(--border-color);
+        border-top-color: #6366f1;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+
+    .deep-dive-error {
+        padding: 1rem;
+        background: #fef2f2;
+        border: 1px solid #fecaca;
+        border-radius: 8px;
+        color: #991b1b;
+        text-align: center;
+    }
+
+    .ai-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        background: rgba(255, 255, 255, 0.2);
+        padding: 0.25rem 0.5rem;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        font-weight: 500;
+    }
 </style>
 {% endblock %}
 
@@ -1224,12 +1403,24 @@
             <span>Revenue: <span class="revenue-display" data-raw="{{ report.annual_revenue }}">{{ report.annual_revenue }}</span></span>
             {% endif %}
         </div>
-        <div style="margin-top: 1.5rem; display: flex; justify-content: center; gap: 1rem;">
+        <div style="margin-top: 1.5rem; display: flex; justify-content: center; gap: 1rem; flex-wrap: wrap;">
             <a href="{{ url_for('index') }}" class="btn secondary">Analyze New Company</a>
             <a href="{{ url_for('download_pdf', report_id=report.id) }}" class="btn primary"
                 style="background: var(--accent-color); color: white; padding: 0.5rem 1.5rem; border-radius: 8px; text-decoration: none; font-weight: 500;">
                 Download PDF Report
             </a>
+            {% set goldilocks_status = report.scan_data.goldilocks_status or report.ai_analysis.goldilocks_status or 'none' %}
+            {% if goldilocks_status in ['thinking', 'preparing', 'launched'] %}
+            <button class="deep-dive-btn" onclick="runDeepDive(this)" id="deepDiveBtn" data-report-id="{{ report.id }}">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <path d="M21 21l-4.35-4.35"></path>
+                    <path d="M11 8v6"></path>
+                    <path d="M8 11h6"></path>
+                </svg>
+                <span class="btn-text">Run Deep Dive</span>
+            </button>
+            {% endif %}
         </div>
     </header>
 
@@ -1307,6 +1498,33 @@
     {% if report.ai_analysis.executive_summary %}
     <div class="executive-summary">
         {{ report.ai_analysis.executive_summary }}
+    </div>
+    {% endif %}
+
+    <!-- Deep Dive Section (populated via JavaScript) -->
+    {% set goldilocks_status_check = report.scan_data.goldilocks_status or report.ai_analysis.goldilocks_status or 'none' %}
+    {% if goldilocks_status_check in ['thinking', 'preparing', 'launched'] %}
+    <div id="deepDiveSection" class="deep-dive-section" style="display: none;">
+        <div class="deep-dive-header">
+            <h3>
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <path d="M21 21l-4.35-4.35"></path>
+                </svg>
+                Deep Dive Analysis
+            </h3>
+            <span class="ai-badge">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 2L2 7l10 5 10-5-10-5z"></path>
+                    <path d="M2 17l10 5 10-5"></path>
+                    <path d="M2 12l10 5 10-5"></path>
+                </svg>
+                Powered by Gemini
+            </span>
+        </div>
+        <div class="deep-dive-content" id="deepDiveContent">
+            <!-- Content populated by JavaScript -->
+        </div>
     </div>
     {% endif %}
 
@@ -2150,5 +2368,166 @@
             el.textContent = formatRevenue(rawValue);
         });
     });
+
+    // Deep Dive functionality
+    async function runDeepDive(button) {
+        const reportId = button.dataset.reportId;
+        const btnText = button.querySelector('.btn-text');
+        const originalText = btnText.textContent;
+        const section = document.getElementById('deepDiveSection');
+        const content = document.getElementById('deepDiveContent');
+
+        // Disable button and show loading state
+        button.disabled = true;
+        button.classList.add('loading');
+        btnText.textContent = 'Analyzing...';
+
+        // Show section with loading indicator
+        section.style.display = 'block';
+        content.innerHTML = `
+            <div class="deep-dive-loading">
+                <div class="spinner"></div>
+                <span>Gemini is analyzing the codebase data...</span>
+            </div>
+        `;
+
+        // Scroll to the section
+        section.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+        try {
+            const response = await fetch(`/api/report/${reportId}/deep-dive`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error || 'Failed to generate Deep Dive');
+            }
+
+            if (data.status === 'success' && data.deep_dive) {
+                // Render the Deep Dive results
+                renderDeepDive(data.deep_dive);
+
+                // Update button to show success
+                button.classList.remove('loading');
+                btnText.textContent = 'Deep Dive Complete';
+
+                // Keep button disabled since analysis is done
+                setTimeout(() => {
+                    btnText.textContent = 'View Deep Dive';
+                    button.onclick = () => {
+                        section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    };
+                    button.disabled = false;
+                }, 2000);
+            } else {
+                throw new Error(data.error || 'Invalid response from server');
+            }
+
+        } catch (error) {
+            console.error('Deep Dive error:', error);
+            content.innerHTML = `
+                <div class="deep-dive-error">
+                    <strong>Error:</strong> ${error.message}
+                    <br><br>
+                    <button onclick="runDeepDive(document.getElementById('deepDiveBtn'))"
+                            style="padding: 0.5rem 1rem; background: #dc2626; color: white; border: none; border-radius: 6px; cursor: pointer;">
+                        Try Again
+                    </button>
+                </div>
+            `;
+            button.classList.remove('loading');
+            button.disabled = false;
+            btnText.textContent = originalText;
+        }
+    }
+
+    function renderDeepDive(deepDive) {
+        const content = document.getElementById('deepDiveContent');
+
+        let html = '';
+
+        // Timeline Events
+        if (deepDive.timeline_events && deepDive.timeline_events.length > 0) {
+            html += `
+                <div class="deep-dive-subsection">
+                    <h4>
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <polyline points="12,6 12,12 16,14"></polyline>
+                        </svg>
+                        Timeline Events
+                    </h4>
+                    <div class="timeline-events-list">
+            `;
+
+            for (const event of deepDive.timeline_events) {
+                html += `
+                    <div class="timeline-event">
+                        <div class="timeline-event-date">${escapeHtml(event.date || 'Unknown')}</div>
+                        <div class="timeline-event-content">
+                            <div class="timeline-event-title">${escapeHtml(event.event || '')}</div>
+                            <div class="timeline-event-significance">${escapeHtml(event.significance || '')}</div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            html += '</div></div>';
+        }
+
+        // Code Insights
+        if (deepDive.code_insights && deepDive.code_insights.length > 0) {
+            html += `
+                <div class="deep-dive-subsection">
+                    <h4>
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="16,18 22,12 16,6"></polyline>
+                            <polyline points="8,6 2,12 8,18"></polyline>
+                        </svg>
+                        Key Code Insights
+                    </h4>
+            `;
+
+            for (const insight of deepDive.code_insights) {
+                html += `<div class="code-insight-item">${escapeHtml(insight)}</div>`;
+            }
+
+            html += '</div>';
+        }
+
+        // Outreach Narrative
+        if (deepDive.outreach_narrative) {
+            html += `
+                <div class="deep-dive-subsection">
+                    <h4>
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                        </svg>
+                        Why Reach Out
+                    </h4>
+                    <div class="outreach-narrative">${escapeHtml(deepDive.outreach_narrative)}</div>
+                </div>
+            `;
+        }
+
+        // If no content, show a message
+        if (!html) {
+            html = '<p style="text-align: center; color: var(--text-secondary);">No deep dive data available.</p>';
+        }
+
+        content.innerHTML = html;
+    }
+
+    function escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
 </script>
 {% endblock %}

@@ -1041,6 +1041,64 @@ def api_send_to_bdr():
         return jsonify(result), 500
 
 
+@app.route('/api/report/<int:report_id>/deep-dive', methods=['POST'])
+def api_deep_dive(report_id: int):
+    """
+    Generate a Deep Dive analysis for a report using Gemini AI.
+
+    Only available for Tier 1-3 accounts (Thinking, Preparing, Launched).
+    Not available for Tier 0 (Tracking) or Tier 4 (Invalid).
+
+    Returns:
+        JSON with timeline_events, code_insights, and outreach_narrative
+    """
+    from ai_summary import generate_deep_dive
+
+    # Get the report
+    report = get_report(report_id)
+    if not report:
+        return jsonify({'error': 'Report not found'}), 404
+
+    scan_data = report.get('scan_data', {})
+    ai_analysis = report.get('ai_analysis', {})
+
+    # Determine the tier from goldilocks_status
+    goldilocks_status = scan_data.get('goldilocks_status', ai_analysis.get('goldilocks_status', 'none'))
+
+    # Map goldilocks_status to tier
+    # preparing = Tier 2, thinking = Tier 1, launched = Tier 3, none = Tier 0
+    tier_map = {
+        'preparing': 2,
+        'thinking': 1,
+        'launched': 3,
+        'none': 0,
+        'unknown': 0
+    }
+    tier = tier_map.get(goldilocks_status, 0)
+
+    # Check if Deep Dive is allowed for this tier (only Tier 1-3)
+    if tier not in [1, 2, 3]:
+        return jsonify({
+            'error': 'Deep Dive is only available for Tier 1-3 accounts (Thinking, Preparing, or Launched)',
+            'current_tier': tier,
+            'goldilocks_status': goldilocks_status
+        }), 403
+
+    # Generate the Deep Dive analysis
+    try:
+        deep_dive_result = generate_deep_dive(scan_data, ai_analysis)
+        return jsonify({
+            'status': 'success',
+            'deep_dive': deep_dive_result,
+            'company_name': report.get('company_name', ''),
+            'tier': tier,
+            'goldilocks_status': goldilocks_status
+        })
+    except Exception as e:
+        print(f"[API] Deep Dive error for report {report_id}: {str(e)}")
+        return jsonify({'error': f'Failed to generate Deep Dive: {str(e)}'}), 500
+
+
 @app.route('/history')
 def history():
     """View scan history."""

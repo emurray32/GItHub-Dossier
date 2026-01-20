@@ -744,3 +744,274 @@ def _sse_log(message: str) -> str:
 def _sse_data(event_type: str, data: dict) -> str:
     """Format a data payload for SSE."""
     return f"data: {event_type}:{json.dumps(data)}\n\n"
+
+
+def generate_deep_dive(scan_data: dict, ai_analysis: dict) -> dict:
+    """
+    Generate a Deep Dive analysis using Gemini AI.
+
+    This provides:
+    1. Important timeline events from the company's i18n journey
+    2. Key insights from their code repo related to i18n
+    3. A 3-4 sentence narrative summarizing why this is a good account
+
+    Args:
+        scan_data: The complete scan results dictionary
+        ai_analysis: The existing AI analysis dictionary
+
+    Returns:
+        Dictionary with deep_dive analysis results
+    """
+    if not GENAI_AVAILABLE:
+        return _generate_deep_dive_fallback(scan_data, ai_analysis)
+
+    if not Config.GEMINI_API_KEY:
+        return _generate_deep_dive_fallback(scan_data, ai_analysis)
+
+    # Build the Deep Dive prompt
+    prompt = _build_deep_dive_prompt(scan_data, ai_analysis)
+
+    try:
+        client = genai.Client(api_key=Config.GEMINI_API_KEY)
+
+        response = client.models.generate_content(
+            model=Config.GEMINI_MODEL,
+            contents=prompt
+        )
+
+        return _parse_deep_dive_response(response.text, scan_data, ai_analysis)
+
+    except Exception as e:
+        print(f"[AI] Deep Dive error: {str(e)}")
+        return _generate_deep_dive_fallback(scan_data, ai_analysis)
+
+
+def _build_deep_dive_prompt(scan_data: dict, ai_analysis: dict) -> str:
+    """Build the prompt for Deep Dive analysis."""
+    raw_company = scan_data.get('company_name', 'Unknown')
+    company = raw_company.title() if raw_company else 'Unknown'
+    org_name = scan_data.get('org_name', scan_data.get('org_login', ''))
+    signals = scan_data.get('signals', [])
+    signal_summary = scan_data.get('signal_summary', {})
+    goldilocks_status = scan_data.get('goldilocks_status', 'unknown')
+    intent_score = scan_data.get('intent_score', 0)
+
+    # Get existing analysis data
+    executive_summary = ai_analysis.get('executive_summary', '')
+    key_findings = ai_analysis.get('key_findings', [])
+    engineering_velocity = ai_analysis.get('engineering_velocity', [])
+    key_contacts = ai_analysis.get('key_engineering_contacts', [])
+
+    # Extract detailed signal data
+    rfc_hits = signal_summary.get('rfc_discussion', {}).get('hits', [])
+    dep_hits = signal_summary.get('dependency_injection', {}).get('hits', [])
+    ghost_hits = signal_summary.get('ghost_branch', {}).get('hits', [])
+
+    # Build timeline data from signals
+    timeline_data = []
+    for signal in signals:
+        timestamp = signal.get('created_at') or signal.get('pushed_at') or signal.get('timestamp')
+        if timestamp:
+            timeline_data.append({
+                'date': timestamp[:10] if isinstance(timestamp, str) else str(timestamp)[:10],
+                'type': signal.get('type', 'unknown'),
+                'description': signal.get('Evidence', signal.get('title', signal.get('Signal', '')))[:150],
+                'repo': signal.get('repo', ''),
+                'priority': signal.get('priority', 'MEDIUM')
+            })
+
+    # Get libraries found
+    libraries_found = []
+    for hit in dep_hits:
+        if isinstance(hit, dict):
+            libraries_found.extend(hit.get('libraries_found', []))
+
+    prompt = f"""
+You are a SENIOR SALES INTELLIGENCE ANALYST creating a "Deep Dive" report for Business Development Representatives (BDRs).
+
+Your job is to synthesize technical GitHub data into a compelling, easy-to-understand executive briefing that helps BDRs understand WHY this company is worth their time and HOW to approach them.
+
+## Company: {company} (GitHub: {org_name})
+## Current Status: {goldilocks_status.upper()}
+## Intent Score: {intent_score}/100
+
+## Existing Analysis Summary:
+{executive_summary}
+
+## Signal Data:
+- RFC/Discussion Signals: {len(rfc_hits)} hits
+- Dependency Injection Signals: {len(dep_hits)} hits
+- Ghost Branch Signals: {len(ghost_hits)} hits
+- Libraries Found: {', '.join(libraries_found) if libraries_found else 'None detected'}
+
+## Timeline Data (chronological activity):
+{json.dumps(timeline_data[:15], indent=2)}
+
+## Key Findings:
+{json.dumps(key_findings, indent=2)}
+
+## Engineering Velocity:
+{json.dumps(engineering_velocity, indent=2)}
+
+## Key Contacts:
+{json.dumps(key_contacts, indent=2)}
+
+---
+
+Generate a JSON response with EXACTLY these three fields:
+
+1. "timeline_events": (list of 3-5 important events)
+   - Each event should be an object with:
+     - "date": Month/Year or date range (e.g., "Nov 2025", "Q4 2025")
+     - "event": What happened (1 sentence, BDR-friendly language)
+     - "significance": Why this matters for sales (1 sentence)
+   - Focus on i18n-related milestones: library installations, RFC discussions, branch creation, etc.
+   - Order chronologically from oldest to newest
+   - If no timeline data available, create logical milestones based on the signals found
+
+2. "code_insights": (list of 3-4 key insights)
+   - Each insight should be a string (1-2 sentences)
+   - Focus on ACTIONABLE intelligence from their codebase
+   - Translate technical findings into sales opportunities
+   - Examples:
+     - "They've installed react-i18next but haven't created locale folders yet - they're ready to start but need help with the workflow."
+     - "Their main product repo has 15K stars - this is a high-profile account that could become a case study."
+     - "Found 3 different i18n discussions in the last 60 days - the team is actively researching solutions."
+
+3. "outreach_narrative": (string, EXACTLY 3-4 sentences)
+   - Write a compelling paragraph that a BDR can use in their notes or share with their manager
+   - Structure: [Why this account] + [What we found] + [Why now] + [Recommended approach]
+   - Use confident, persuasive language but NOT salesy
+   - Include specific details from the scan (library names, repo names, etc.)
+   - End with a clear call to action recommendation
+
+IMPORTANT:
+- Use PLAIN ENGLISH that a non-technical sales person can understand
+- Be specific - reference actual library names, repo names, dates when available
+- Focus on the "so what?" - why should a BDR care about each finding?
+- Keep the narrative punchy and actionable
+"""
+
+    return prompt
+
+
+def _parse_deep_dive_response(response_text: str, scan_data: dict, ai_analysis: dict) -> dict:
+    """Parse Gemini Deep Dive response."""
+    try:
+        # Clean up response text
+        text = response_text.strip()
+        if text.startswith('```json'):
+            text = text[7:]
+        if text.startswith('```'):
+            text = text[3:]
+        if text.endswith('```'):
+            text = text[:-3]
+        text = text.strip()
+
+        result = json.loads(text)
+
+        # Validate required fields
+        if 'timeline_events' not in result:
+            result['timeline_events'] = []
+        if 'code_insights' not in result:
+            result['code_insights'] = []
+        if 'outreach_narrative' not in result:
+            result['outreach_narrative'] = ''
+
+        result['_source'] = 'gemini'
+        result['_model'] = Config.GEMINI_MODEL
+
+        return result
+
+    except json.JSONDecodeError:
+        return _generate_deep_dive_fallback(scan_data, ai_analysis)
+
+
+def _generate_deep_dive_fallback(scan_data: dict, ai_analysis: dict) -> dict:
+    """Generate fallback Deep Dive when AI is unavailable."""
+    raw_company = scan_data.get('company_name', 'Unknown')
+    company = raw_company.title() if raw_company else 'Unknown'
+    org_name = scan_data.get('org_login', '')
+    signals = scan_data.get('signals', [])
+    signal_summary = scan_data.get('signal_summary', {})
+    goldilocks_status = scan_data.get('goldilocks_status', 'none')
+    intent_score = scan_data.get('intent_score', 0)
+
+    # Extract signal data
+    rfc_hits = signal_summary.get('rfc_discussion', {}).get('hits', [])
+    dep_hits = signal_summary.get('dependency_injection', {}).get('hits', [])
+    ghost_hits = signal_summary.get('ghost_branch', {}).get('hits', [])
+
+    # Get libraries found
+    libraries_found = []
+    for hit in dep_hits:
+        if isinstance(hit, dict):
+            libraries_found.extend(hit.get('libraries_found', []))
+
+    # Build timeline events from signals
+    timeline_events = []
+    for signal in signals[:5]:
+        timestamp = signal.get('created_at') or signal.get('pushed_at') or signal.get('timestamp')
+        if timestamp:
+            try:
+                date_str = timestamp[:10] if isinstance(timestamp, str) else str(timestamp)[:10]
+                from datetime import datetime as dt
+                date_obj = dt.fromisoformat(date_str)
+                month_year = date_obj.strftime('%b %Y')
+
+                signal_type = signal.get('type', 'activity')
+                evidence = signal.get('Evidence', signal.get('title', 'i18n activity'))[:100]
+
+                significance = "Indicates active i18n consideration"
+                if signal_type == 'dependency_injection':
+                    significance = "Infrastructure being set up - perfect timing for outreach"
+                elif signal_type == 'rfc_discussion':
+                    significance = "Team is researching solutions - opportunity to influence"
+                elif signal_type == 'ghost_branch':
+                    significance = "Active development - can help accelerate their work"
+
+                timeline_events.append({
+                    'date': month_year,
+                    'event': evidence,
+                    'significance': significance
+                })
+            except (ValueError, TypeError):
+                continue
+
+    # Build code insights
+    code_insights = []
+
+    if goldilocks_status == 'preparing':
+        libs = ', '.join(libraries_found[:3]) if libraries_found else 'i18n libraries'
+        code_insights.append(f"GOLDILOCKS ZONE: {company} has installed {libs} but has zero translation files - they're ready to start but need a workflow solution.")
+
+    if len(rfc_hits) > 0:
+        code_insights.append(f"Found {len(rfc_hits)} i18n-related discussion(s) - the team is actively researching internationalization strategies.")
+
+    if len(ghost_hits) > 0:
+        code_insights.append(f"Detected {len(ghost_hits)} work-in-progress i18n branch(es) - developers are actively building localization features.")
+
+    total_stars = scan_data.get('total_stars', 0)
+    if total_stars > 1000:
+        code_insights.append(f"Their repositories have {total_stars:,} total stars - this is a high-profile account that could become a valuable case study.")
+
+    if not code_insights:
+        code_insights.append(f"Monitoring {company}'s GitHub activity for emerging i18n signals.")
+
+    # Build outreach narrative
+    if goldilocks_status == 'preparing':
+        libs = libraries_found[0] if libraries_found else 'i18n libraries'
+        narrative = f"{company} represents a perfect-timing opportunity. Our scan detected {libs} installed in their codebase with zero translation files created yet - they've built the infrastructure but haven't started the localization work. This is the ideal moment to engage before they develop manual workflows. Recommend immediate outreach referencing the specific library found and offering to help them set up an automated translation pipeline."
+    elif goldilocks_status == 'thinking':
+        narrative = f"{company} is in the early research phase for internationalization. We found active discussions and RFCs about i18n strategy, indicating the team is evaluating options. This is a nurture opportunity - they're not ready to buy today but are building their requirements. Recommend sharing educational content and positioning as a thought partner."
+    elif goldilocks_status == 'launched':
+        narrative = f"{company} already has localization infrastructure in place with existing translation files. While they've already launched i18n, there may be pain points with their current workflow. Lower priority than greenfield opportunities, but worth exploring if they're experiencing scaling challenges or dissatisfaction with their current solution."
+    else:
+        narrative = f"{company} shows limited i18n signals at this time. The account should be monitored for future activity. Recommend adding to a nurture sequence and re-scanning in 30-60 days to check for new signals."
+
+    return {
+        'timeline_events': timeline_events,
+        'code_insights': code_insights,
+        'outreach_narrative': narrative,
+        '_source': 'fallback'
+    }
