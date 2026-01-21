@@ -1323,6 +1323,12 @@ def rules():
     return render_template('rules.html')
 
 
+@app.route('/experiment')
+def experiment():
+    """Experiment #2 - TBD."""
+    return render_template('experiment.html')
+
+
 @app.route('/api/discover')
 def api_discover():
     """
