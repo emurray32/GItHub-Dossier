@@ -1192,6 +1192,195 @@
         top: 0.25rem;
     }
 
+    /* Contributors Section */
+    .contributors-section {
+        margin-bottom: 2.5rem;
+    }
+
+    .contributors-grid {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+    }
+
+    .contributor-card {
+        display: flex;
+        gap: 1.25rem;
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        padding: 1.25rem;
+        box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+        position: relative;
+    }
+
+    .contributor-card.i18n-involved {
+        border-left: 4px solid #22c55e;
+        background: linear-gradient(90deg, #f0fdf4 0%, var(--bg-primary) 50%);
+    }
+
+    .contributor-rank {
+        position: absolute;
+        top: -8px;
+        left: -8px;
+        width: 28px;
+        height: 28px;
+        background: var(--accent-color);
+        color: white;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        font-size: 0.875rem;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+    }
+
+    .contributor-rank.rank-1 {
+        background: linear-gradient(135deg, #fbbf24, #f59e0b);
+    }
+
+    .contributor-rank.rank-2 {
+        background: linear-gradient(135deg, #9ca3af, #6b7280);
+    }
+
+    .contributor-rank.rank-3 {
+        background: linear-gradient(135deg, #d97706, #b45309);
+    }
+
+    .contributor-avatar {
+        width: 64px;
+        height: 64px;
+        border-radius: 50%;
+        flex-shrink: 0;
+        border: 2px solid var(--border-color);
+    }
+
+    .contributor-info {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .contributor-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 0.5rem;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+
+    .contributor-name {
+        margin: 0;
+        font-size: 1.125rem;
+        color: var(--text-primary);
+    }
+
+    .contributor-login {
+        color: var(--text-secondary);
+        font-weight: normal;
+        font-size: 0.875rem;
+    }
+
+    .contributor-meta {
+        display: flex;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+        margin-bottom: 0.5rem;
+    }
+
+    .contributor-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        padding: 0.25rem 0.5rem;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+
+    .badge-contributions {
+        background: #dbeafe;
+        color: #1e40af;
+    }
+
+    .badge-repos {
+        background: #f3e8ff;
+        color: #7c3aed;
+    }
+
+    .badge-i18n {
+        background: #dcfce7;
+        color: #166534;
+    }
+
+    .badge-no-i18n {
+        background: #f1f5f9;
+        color: #64748b;
+    }
+
+    .contributor-bio {
+        font-style: italic;
+        color: var(--text-secondary);
+        font-size: 0.875rem;
+        margin-bottom: 0.5rem;
+        line-height: 1.4;
+    }
+
+    .contributor-company {
+        font-size: 0.875rem;
+        color: var(--text-secondary);
+        margin-bottom: 0.5rem;
+    }
+
+    .contributor-repos {
+        font-size: 0.8125rem;
+        color: var(--text-muted);
+    }
+
+    .contributor-repos strong {
+        color: var(--text-secondary);
+    }
+
+    .i18n-involvement-note {
+        margin-top: 0.75rem;
+        padding: 0.5rem 0.75rem;
+        background: #f0fdf4;
+        border-left: 3px solid #22c55e;
+        border-radius: 0 4px 4px 0;
+        font-size: 0.8125rem;
+        color: #166534;
+    }
+
+    .contributors-summary {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 1rem 1.25rem;
+        margin-bottom: 1rem;
+        display: flex;
+        gap: 2rem;
+        flex-wrap: wrap;
+    }
+
+    .summary-stat {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .summary-stat-value {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: var(--accent-color);
+    }
+
+    .summary-stat-label {
+        font-size: 0.75rem;
+        color: var(--text-secondary);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+
     @media print {
 
         .navbar,
@@ -2004,6 +2193,118 @@
             <li class="velocity-item">{{ item }}</li>
             {% endfor %}
         </ul>
+    </div>
+    {% endif %}
+
+    <!-- Contributors Section -->
+    {% if report.scan_data.contributors %}
+    {% set signal_repos = [] %}
+    {% for signal in report.scan_data.signals %}
+        {% if signal.repo and signal.repo not in signal_repos %}
+            {% set _ = signal_repos.append(signal.repo) %}
+        {% endif %}
+    {% endfor %}
+    <div class="section contributors-section">
+        <h2 class="section-title">Contributors</h2>
+        <p class="text-secondary">Top contributors ranked by commit activity, with i18n involvement indicators.</p>
+
+        <!-- Contributors Summary -->
+        {% set contributors_list = report.scan_data.contributors.values()|list|sort(attribute='contributions', reverse=true) %}
+        {% set i18n_contributors_count = namespace(value=0) %}
+        {% for contributor in contributors_list %}
+            {% set contrib_repos = contributor.repos if contributor.repos else [] %}
+            {% set is_i18n = namespace(value=false) %}
+            {% for repo in contrib_repos %}
+                {% for signal in report.scan_data.signals %}
+                    {% if signal.repo == repo %}
+                        {% set is_i18n.value = true %}
+                    {% endif %}
+                {% endfor %}
+            {% endfor %}
+            {% if is_i18n.value %}
+                {% set i18n_contributors_count.value = i18n_contributors_count.value + 1 %}
+            {% endif %}
+        {% endfor %}
+        <div class="contributors-summary">
+            <div class="summary-stat">
+                <span class="summary-stat-value">{{ contributors_list|length }}</span>
+                <span class="summary-stat-label">Total Contributors</span>
+            </div>
+            <div class="summary-stat">
+                <span class="summary-stat-value">{{ i18n_contributors_count.value }}</span>
+                <span class="summary-stat-label">i18n Involved</span>
+            </div>
+            <div class="summary-stat">
+                <span class="summary-stat-value">{{ contributors_list|sum(attribute='contributions') }}</span>
+                <span class="summary-stat-label">Total Commits</span>
+            </div>
+        </div>
+
+        <div class="contributors-grid">
+            {% for contributor in contributors_list %}
+            {% set contrib_repos = contributor.repos if contributor.repos else [] %}
+            {% set i18n_repos = [] %}
+            {% for repo in contrib_repos %}
+                {% for signal in report.scan_data.signals %}
+                    {% if signal.repo == repo and repo not in i18n_repos %}
+                        {% set _ = i18n_repos.append(repo) %}
+                    {% endif %}
+                {% endfor %}
+            {% endfor %}
+            {% set is_i18n_involved = i18n_repos|length > 0 %}
+            <div class="contributor-card{% if is_i18n_involved %} i18n-involved{% endif %}">
+                <span class="contributor-rank{% if loop.index == 1 %} rank-1{% elif loop.index == 2 %} rank-2{% elif loop.index == 3 %} rank-3{% endif %}">#{{ loop.index }}</span>
+                <img src="{{ contributor.avatar_url or 'https://github.com/identicons/' ~ contributor.login ~ '.png' }}"
+                    class="contributor-avatar" alt="{{ contributor.name }} avatar">
+                <div class="contributor-info">
+                    <div class="contributor-header">
+                        <h3 class="contributor-name">
+                            {{ contributor.name or contributor.login }}
+                            <span class="contributor-login">@{{ contributor.login }}</span>
+                        </h3>
+                        <a href="{{ contributor.github_url or 'https://github.com/' ~ contributor.login }}" target="_blank" class="signal-link">GitHub Profile</a>
+                    </div>
+                    <div class="contributor-meta">
+                        <span class="contributor-badge badge-contributions">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+                            {{ contributor.contributions }} commits
+                        </span>
+                        <span class="contributor-badge badge-repos">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                            {{ contrib_repos|length }} repos
+                        </span>
+                        {% if is_i18n_involved %}
+                        <span class="contributor-badge badge-i18n">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
+                            i18n Involved
+                        </span>
+                        {% else %}
+                        <span class="contributor-badge badge-no-i18n">No i18n Signals</span>
+                        {% endif %}
+                    </div>
+                    {% if contributor.bio %}
+                    <div class="contributor-bio">"{{ contributor.bio }}"</div>
+                    {% endif %}
+                    {% if contributor.company %}
+                    <div class="contributor-company">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: inline; vertical-align: middle; margin-right: 4px;"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
+                        {{ contributor.company }}
+                    </div>
+                    {% endif %}
+                    {% if contrib_repos %}
+                    <div class="contributor-repos">
+                        <strong>Active in:</strong> {{ contrib_repos|join(', ') }}
+                    </div>
+                    {% endif %}
+                    {% if is_i18n_involved %}
+                    <div class="i18n-involvement-note">
+                        <strong>i18n Context:</strong> Contributed to repos with i18n signals: {{ i18n_repos|join(', ') }}
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
     </div>
     {% endif %}
 
