@@ -37,35 +37,43 @@ def _load_cold_outreach_skill() -> str:
 def _get_cold_email_instructions() -> str:
     """Get cold email instructions from SKILL.md or use defaults."""
     skill_content = _load_cold_outreach_skill()
-    
+
     if skill_content:
         return f"""
    *** COLD OUTREACH SKILL INSTRUCTIONS (FROM SKILL.md) ***
    Follow these instructions EXACTLY when drafting the cold email:
-   
+
 {skill_content}
-   
+
    *** END OF SKILL INSTRUCTIONS ***
 """
-    
+
     return """
+   APOLLO.IO DYNAMIC VARIABLES (REQUIRED):
+   - Use {{first_name}} in the greeting (e.g., "Hey {{first_name}},")
+   - Use {{company}} in subject lines (increases open rates)
+   - Use {{sender_first_name}} as the email signature
+   - NEVER use {{first_name}} in subject lines (triggers spam filters)
+
    FORMATTING RULES:
-   - Total body MUST be under 120 words
+   - Total body MUST be under 100 words (2025 best practice)
    - NEVER write a paragraph longer than 2 sentences
    - Use double line breaks between thoughts (visual spacing matters)
    - Tone: peer-to-peer, technical, helpful - NOT "salesy" or enthusiastic
-   
-   STRUCTURE (3 parts):
-   a) "subject": Short, references specific library/file/signal found (e.g., "Saw you added react-i18next")
+
+   STRUCTURE (5 parts):
+   a) "subject": Short, references specific library/file + {{company}} (e.g., "react-i18next in main-app / {{company}}")
    b) "body": Follow this exact structure:
-      - THE HOOK: Start IMMEDIATELY with the specific library, file, or branch you found.
+      - GREETING: Start with "Hey {{first_name}},"
+      - THE HOOK: Immediately reference the specific library, file, or branch found.
         Do NOT use "I hope you are well" or pleasantries.
-        Example: "I noticed you recently added `react-i18next` to your `package.json`."
+        Example: "Noticed you added `react-i18next` but no locale files yet."
       - THE PAIN/VALUE: Connect that signal to the pain of manual localization.
-        Mention GitHub Actions/API integration and automation.
+        Mention GitHub Sync and automation (1-2 sentences max).
       - THE SOFT CTA: Ask for INTEREST, not time. Low friction.
-        Examples: "Worth a chat?" or "Open to seeing how we fit into your CI/CD?"
-   
+        Examples: "Worth a look?" or "Open to seeing how we fit into your CI/CD?"
+      - SIGNATURE: End with "{{sender_first_name}}"
+
    PHRASE MESSAGING:
    - DO mention: automation, API, GitHub integration, "infrastructure," "continuous localization"
    - DO NOT mention: "high quality translations," "professional linguists" (devs care about process, not linguists)
@@ -436,43 +444,55 @@ def _generate_fallback_analysis(scan_data: dict) -> dict:
         executive_summary = f"COLD LEAD - No significant i18n signals detected for {company}. Consider for future outreach or skip."
 
     # Build email draft based on Goldilocks status (following Cold Outreach Skill rules)
+    # Uses Apollo.io dynamic variables: {{first_name}}, {{company}}, {{sender_first_name}}
+    # Best practices: <100 words, no {{first_name}} in subject, personalized hook + value + soft CTA
     if goldilocks_status == 'preparing':
         lib = dep_hits[0].get('libraries_found', ['i18n library'])[0] if dep_hits else 'i18n library'
-        email_subject = f"{lib} in {org_name} / {company}"
+        email_subject = f"{lib} in {org_name} / {{{{company}}}}"
         email_body = (
-            f"I noticed you recently added {lib} to your codebase, but haven't started on the locale files yet.\n\n"
-            f"Usually, this is when the manual JSON file management headache begins. We've built Phrase to automate that infrastructure via GitHub Sync, so your team never has to touch a translation file manually.\n\n"
-            f"Worth a look to see how we fit into your workflow?"
+            "Hey {{first_name}},\n\n"
+            f"Noticed you added `{lib}` but no locale files yet.\n\n"
+            "This is usually when manual JSON wrangling starts. We built Phrase to automate that via GitHub Sync—your team never touches translation files.\n\n"
+            "Worth a look?\n\n"
+            "{{sender_first_name}}"
         )
     elif goldilocks_status == 'launched':
-        email_subject = f"Localization scale in {company}"
+        email_subject = f"Localization at {{{{company}}}}"
         email_body = (
-            f"I was doing some forensics on {company}'s GitHub footprint and saw you already have a mature localization setup.\n\n"
-            f"Curious if the team is feeling any pain around manual file handoffs or sync bottlenecks? We help teams like yours remove that friction via our CI/CD integrations.\n\n"
-            f"Worth a 5-minute chat to see if we can save your team some technical debt?"
+            "Hey {{first_name}},\n\n"
+            f"Did some recon on {org_name}'s GitHub—saw you have a mature localization setup.\n\n"
+            "Curious if the team feels any pain around file syncs or manual handoffs? We help teams automate that friction via CI/CD integrations.\n\n"
+            "Worth a quick chat?\n\n"
+            "{{sender_first_name}}"
         )
     elif dominant_phase == 'Active':
         branch = ghost_hits[0].get('branch_name', 'i18n branch') if ghost_hits else 'i18n branch'
-        email_subject = f"Saw your {branch} work - can we help?"
+        email_subject = f"Your {branch} work"
         email_body = (
-            f"I noticed your team has been actively working on internationalization in the {branch} branch.\n\n"
-            f"Many teams hit unexpected complexity during this phase with key management and automation. We've built Phrase specifically to handle the infrastructure so your devs can focus on the code.\n\n"
-            f"Open to seeing how we fit into your CI/CD?"
+            "Hey {{first_name}},\n\n"
+            f"Noticed your team's working on i18n in the `{branch}` branch.\n\n"
+            "Teams often hit complexity here with key management and automation. Phrase handles that infrastructure so devs can focus on shipping.\n\n"
+            "Open to seeing how we fit into your CI/CD?\n\n"
+            "{{sender_first_name}}"
         )
     elif dominant_phase == 'Thinking':
         keyword = rfc_hits[0].get('keywords_matched', ['i18n'])[0] if rfc_hits else 'internationalization'
-        email_subject = f"Re: {keyword} - automated infrastructure for {company}"
+        email_subject = f"Re: {keyword} at {{{{company}}}}"
         email_body = (
-            f"I came across your team's discussion about {keyword} in your repositories.\n\n"
-            f"We've helped many teams automate the handoff between developers and translators before the first file is even created. It saves a massive amount of technical debt down the line.\n\n"
-            f"Worth a chat to see how to automate the file handoff?"
+            "Hey {{first_name}},\n\n"
+            f"Came across your team's `{keyword}` discussion.\n\n"
+            "We've helped teams automate the dev-to-translator handoff before the first file is created—saves massive technical debt.\n\n"
+            "Worth a chat?\n\n"
+            "{{sender_first_name}}"
         )
     else:
-        email_subject = f"Localization infrastructure at {company}"
+        email_subject = f"Localization at {{{{company}}}}"
         email_body = (
-            f"I've been researching {company}'s technical stack and noticed you're at the perfect stage to think about localization automation.\n\n"
-            f"Most teams wait until they have a manual mess of files before looking at Phrase, but setting up the GitHub Sync now prevents the headache entirely.\n\n"
-            f"Open to a quick tactical assessment of your global readiness?"
+            "Hey {{first_name}},\n\n"
+            f"Been researching {org_name}'s tech stack—you're at a good stage for localization automation.\n\n"
+            "Most teams wait until they have a file management mess. Setting up GitHub Sync now prevents that entirely.\n\n"
+            "Open to a quick tactical chat?\n\n"
+            "{{sender_first_name}}"
         )
 
     # Build key findings - BDR-friendly language
