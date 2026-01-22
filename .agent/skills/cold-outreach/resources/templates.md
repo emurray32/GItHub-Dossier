@@ -1,48 +1,72 @@
-# Cold Outreach Templates
+# Cold Outreach Templates for Apollo.io
 
 Use these templates as a starting point. **Always** customize them based on the specific company and repo data.
 
-## Template 1: Intent Signal (New i18n Config)
-**Subject:** `i18n` in [Repo Name] / [Company]
+> **Apollo.io Dynamic Variables Used:**
+> - `{{first_name}}` - Contact's first name
+> - `{{company}}` - Company name
+> - `{{sender_first_name}}` - Your first name (BDR)
+>
+> **Best Practice:** Never use `{{first_name}}` in subject lines (spam trigger). `{{company}}` in subjects increases open rates.
 
-Hi [Name],
+---
 
-I was doing some forensics on [Company]'s GitHub activity and noticed the team just added a `i18n` configuration to the `[Repo Name]` repository.
+## Template 1: Goldilocks Signal (Library Found, No Locales)
+**Subject:** `[Library]` in [Repo Name] / {{company}}
 
-Usually, when I see this, it means you're gearing up for a significant global expansion. It's a huge milestone.
+Hey {{first_name}},
 
-I've worked with teams at [Competitor/Similar Company] to automate the handoff between devs and translators so that this new config doesn't become a bottleneck.
+Noticed you added `[Library]` to `[Repo Name]` but no locale files yet.
 
-How are you planning to manage the string updates as the repo grows?
+This is usually when manual JSON wrangling starts. We built Phrase to automate that via GitHub Sync—your team never touches translation files.
 
-Best,
+Worth a look?
 
-## Template 2: Friction Signal (Hardcoded Strings)
-**Subject:** Localization scale in [Repo Name]
+{{sender_first_name}}
 
-Hi [Name],
+---
 
-I noticed some recent commits in `[Repo Name]` that include hardcoded strings in the UI components (specifically in the `[Module/File Path]`).
+## Template 2: Friction Signal (Manual Process Pain)
+**Subject:** Localization at {{company}}
 
-I know how painful it is to retroactively extract those when the "go global" order comes down from product.
+Hey {{first_name}},
 
-We've built some tooling that can help automate the detection and extraction of these strings before they hit production, keeping your `main` branch localization-ready.
+Noticed some recent i18n work in `[Repo Name]`—looks like translation updates might be manual right now.
 
-Worth a 5-minute chat to see if we can save your team some technical debt?
+We help teams automate the dev-to-translator handoff via CI/CD, so no one has to wrangle JSON files.
 
-Best,
+Worth a quick chat to see if we can remove that friction?
 
-## Template 3: The "At-a-Glance" Dossier Follow-up
-**Subject:** Signal Report: [Company] Global Readiness
+{{sender_first_name}}
 
-Hi [Name],
+---
 
-I put together a quick tactical assessment of [Company]'s localization architecture based on your public GitHub footprint.
+## Template 3: Ghost Branch Signal (Active WIP)
+**Subject:** Your [branch-name] work
+
+Hey {{first_name}},
+
+Noticed your team's working on i18n in the `[branch-name]` branch.
+
+Teams often hit complexity here with key management and automation. Phrase handles that infrastructure so devs can focus on shipping.
+
+Open to seeing how we fit into your CI/CD?
+
+{{sender_first_name}}
+
+---
+
+## Template 4: Dossier Follow-up
+**Subject:** {{company}} - Global Readiness Assessment
+
+Hey {{first_name}},
+
+Put together a quick assessment of {{company}}'s localization architecture from your GitHub footprint.
 
 Two things jumped out:
-1. **High Intent:** Your new `[Library]` implementation shows you're prioritizing speed.
-2. **Potential Friction:** The `[Specific File]` structure suggests translation updates might be manual right now.
+1. Your `[Library]` implementation shows you're prioritizing speed
+2. Translation updates look manual—potential bottleneck
 
-I'd love to share the full dossier with you. Are you the right person to talk to about localization infrastructure?
+Happy to share the full dossier. Worth a look?
 
-Best,
+{{sender_first_name}}
