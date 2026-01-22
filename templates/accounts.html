@@ -59,6 +59,178 @@
         font-weight: 500;
     }
 
+    .tier-filter-btn.archived-btn {
+        background: var(--bg-secondary);
+        border-color: var(--border-color);
+        color: var(--text-muted);
+    }
+
+    .tier-filter-btn.archived-btn:hover {
+        background: rgba(100, 100, 100, 0.15);
+        border-color: var(--text-muted);
+        color: var(--text-secondary);
+    }
+
+    /* Archived Modal Styles */
+    .archived-modal-overlay {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.6);
+        z-index: 1000;
+        justify-content: center;
+        align-items: center;
+    }
+
+    .archived-modal-overlay.active {
+        display: flex;
+    }
+
+    .archived-modal {
+        background: var(--bg-primary);
+        border-radius: 12px;
+        max-width: 900px;
+        width: 90%;
+        max-height: 80vh;
+        display: flex;
+        flex-direction: column;
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+    }
+
+    .archived-modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1.25rem 1.5rem;
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    .archived-modal-header h2 {
+        margin: 0;
+        font-size: 1.125rem;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .archived-modal-header h2 svg {
+        color: var(--text-muted);
+    }
+
+    .archived-modal-close {
+        background: none;
+        border: none;
+        cursor: pointer;
+        color: var(--text-muted);
+        padding: 0.5rem;
+        border-radius: 6px;
+        transition: all var(--transition-fast);
+    }
+
+    .archived-modal-close:hover {
+        background: var(--bg-secondary);
+        color: var(--text-primary);
+    }
+
+    .archived-modal-body {
+        flex: 1;
+        overflow-y: auto;
+        padding: 1rem 1.5rem;
+    }
+
+    .archived-info-banner {
+        background: rgba(100, 100, 100, 0.1);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 0.75rem 1rem;
+        margin-bottom: 1rem;
+        font-size: 0.85rem;
+        color: var(--text-secondary);
+    }
+
+    .archived-info-banner strong {
+        color: var(--text-primary);
+    }
+
+    .archived-accounts-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    .archived-account-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.75rem 1rem;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+    }
+
+    .archived-account-info {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+
+    .archived-account-name {
+        font-weight: 500;
+        color: var(--text-primary);
+    }
+
+    .archived-account-meta {
+        font-size: 0.8rem;
+        color: var(--text-muted);
+    }
+
+    .archived-account-actions {
+        display: flex;
+        gap: 0.5rem;
+    }
+
+    .archived-account-actions button {
+        padding: 0.4rem 0.75rem;
+        border-radius: 6px;
+        font-size: 0.75rem;
+        cursor: pointer;
+        border: 1px solid var(--border-color);
+        background: var(--bg-primary);
+        color: var(--text-secondary);
+        transition: all var(--transition-fast);
+    }
+
+    .archived-account-actions button:hover {
+        border-color: var(--accent-color);
+        color: var(--accent-color);
+    }
+
+    .archived-account-actions .unarchive-btn:hover {
+        background: rgba(0, 181, 173, 0.12);
+    }
+
+    .archived-account-actions .delete-archived-btn:hover {
+        border-color: #ef4444;
+        color: #ef4444;
+        background: rgba(239, 68, 68, 0.12);
+    }
+
+    .archived-empty-state {
+        text-align: center;
+        padding: 2rem;
+        color: var(--text-muted);
+    }
+
+    .archived-loading {
+        text-align: center;
+        padding: 2rem;
+        color: var(--text-muted);
+    }
+
     .search-container {
         position: relative;
         min-width: 250px;
@@ -1773,6 +1945,16 @@
                         {{ config.name }}
                     </button>
                     {% endfor %}
+
+                    <!-- Archived accounts button -->
+                    <button class="tier-filter-btn archived-btn" id="show-archived-btn" title="View archived accounts (auto-archived Tier 4)">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="21 8 21 21 3 21 3 8"></polyline>
+                            <rect x="1" y="3" width="22" height="5"></rect>
+                            <line x1="10" y1="12" x2="14" y2="12"></line>
+                        </svg>
+                        Archived ({{ archived_count }})
+                    </button>
                 </div>
                 {# tier_counts is now passed from the backend with counts for ALL accounts #}
 
@@ -2167,6 +2349,38 @@
                 <div id="queued-list" class="queue-list">
                     <div class="queue-empty">No accounts in queue</div>
                 </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Archived Accounts Modal -->
+<div id="archived-modal" class="archived-modal-overlay">
+    <div class="archived-modal">
+        <div class="archived-modal-header">
+            <h2>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="21 8 21 21 3 21 3 8"></polyline>
+                    <rect x="1" y="3" width="22" height="5"></rect>
+                    <line x1="10" y1="12" x2="14" y2="12"></line>
+                </svg>
+                Archived Accounts
+            </h2>
+            <button type="button" class="archived-modal-close" onclick="closeArchivedModal()" aria-label="Close modal">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+            </button>
+        </div>
+        <div class="archived-modal-body">
+            <div class="archived-info-banner">
+                <strong>Auto-Archive:</strong> Tier 4 accounts (GitHub org not found or no public repos) are automatically archived.
+                They are re-scanned every <strong>4 weeks</strong> to check if they've become valid.
+                If a re-scan finds valid data, the account will be automatically unarchived.
+            </div>
+            <div id="archived-accounts-list" class="archived-accounts-list">
+                <div class="archived-loading">Loading archived accounts...</div>
             </div>
         </div>
     </div>
@@ -4261,6 +4475,162 @@
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') {
             closeQueueModal();
+            closeArchivedModal();
+        }
+    });
+
+    // =============================================================================
+    // Archived Accounts Modal
+    // =============================================================================
+
+    function openArchivedModal() {
+        const modal = document.getElementById('archived-modal');
+        modal.classList.add('active');
+        loadArchivedAccounts();
+    }
+
+    function closeArchivedModal() {
+        const modal = document.getElementById('archived-modal');
+        modal.classList.remove('active');
+    }
+
+    async function loadArchivedAccounts() {
+        const listContainer = document.getElementById('archived-accounts-list');
+        listContainer.innerHTML = '<div class="archived-loading">Loading archived accounts...</div>';
+
+        try {
+            const response = await fetch('/api/accounts/archived');
+            const data = await response.json();
+
+            if (data.accounts && data.accounts.length > 0) {
+                listContainer.innerHTML = data.accounts.map(account => {
+                    const archivedDate = account.archived_at ? new Date(account.archived_at).toLocaleDateString() : 'Unknown';
+                    const lastScanned = account.last_scanned_at ? new Date(account.last_scanned_at).toLocaleDateString() : 'Never';
+                    return `
+                        <div class="archived-account-item" data-account-id="${account.id}">
+                            <div class="archived-account-info">
+                                <span class="archived-account-name">${escapeHtml(account.company_name)}</span>
+                                <span class="archived-account-meta">
+                                    ${account.github_org ? `@${escapeHtml(account.github_org)} | ` : ''}
+                                    Archived: ${archivedDate} | Last scan: ${lastScanned}
+                                </span>
+                                ${account.evidence_summary ? `<span class="archived-account-meta">${escapeHtml(account.evidence_summary)}</span>` : ''}
+                            </div>
+                            <div class="archived-account-actions">
+                                <button class="unarchive-btn" onclick="unarchiveAccount(${account.id}, '${escapeHtml(account.company_name)}')">
+                                    Unarchive
+                                </button>
+                                <button class="delete-archived-btn" onclick="deleteArchivedAccount(${account.id}, '${escapeHtml(account.company_name)}')">
+                                    Delete
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } else {
+                listContainer.innerHTML = '<div class="archived-empty-state">No archived accounts</div>';
+            }
+        } catch (error) {
+            console.error('Error loading archived accounts:', error);
+            listContainer.innerHTML = '<div class="archived-empty-state">Error loading archived accounts</div>';
+        }
+    }
+
+    async function unarchiveAccount(accountId, companyName) {
+        if (!confirm(`Unarchive "${companyName}"? This will restore it to the main accounts list.`)) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/accounts/${accountId}/unarchive`, {
+                method: 'POST'
+            });
+
+            if (response.ok) {
+                showToast(`"${companyName}" has been unarchived`, 'success');
+                // Remove the item from the list
+                const item = document.querySelector(`.archived-account-item[data-account-id="${accountId}"]`);
+                if (item) item.remove();
+                // Update archived count in button
+                updateArchivedCount(-1);
+                // Refresh the main table
+                if (typeof accountsTable !== 'undefined' && accountsTable) {
+                    accountsTable.ajax.reload(null, false);
+                }
+            } else {
+                const data = await response.json();
+                showToast(data.error || 'Failed to unarchive account', 'error');
+            }
+        } catch (error) {
+            console.error('Error unarchiving account:', error);
+            showToast('Error unarchiving account', 'error');
+        }
+    }
+
+    async function deleteArchivedAccount(accountId, companyName) {
+        if (!confirm(`Permanently delete "${companyName}"? This action cannot be undone.`)) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/accounts/${accountId}`, {
+                method: 'DELETE'
+            });
+
+            if (response.ok) {
+                showToast(`"${companyName}" has been deleted`, 'success');
+                // Remove the item from the list
+                const item = document.querySelector(`.archived-account-item[data-account-id="${accountId}"]`);
+                if (item) item.remove();
+                // Update archived count in button
+                updateArchivedCount(-1);
+            } else {
+                const data = await response.json();
+                showToast(data.error || 'Failed to delete account', 'error');
+            }
+        } catch (error) {
+            console.error('Error deleting account:', error);
+            showToast('Error deleting account', 'error');
+        }
+    }
+
+    function updateArchivedCount(delta) {
+        const btn = document.getElementById('show-archived-btn');
+        if (btn) {
+            const match = btn.textContent.match(/Archived \((\d+)\)/);
+            if (match) {
+                const currentCount = parseInt(match[1], 10);
+                const newCount = Math.max(0, currentCount + delta);
+                btn.innerHTML = `
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="21 8 21 21 3 21 3 8"></polyline>
+                        <rect x="1" y="3" width="22" height="5"></rect>
+                        <line x1="10" y1="12" x2="14" y2="12"></line>
+                    </svg>
+                    Archived (${newCount})
+                `;
+            }
+        }
+    }
+
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    // Initialize archived button click handler
+    document.addEventListener('DOMContentLoaded', () => {
+        const archivedBtn = document.getElementById('show-archived-btn');
+        if (archivedBtn) {
+            archivedBtn.addEventListener('click', openArchivedModal);
+        }
+    });
+
+    // Close archived modal when clicking overlay
+    document.getElementById('archived-modal').addEventListener('click', (e) => {
+        if (e.target.classList.contains('archived-modal-overlay')) {
+            closeArchivedModal();
         }
     });
 </script>

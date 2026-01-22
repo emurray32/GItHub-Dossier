@@ -108,6 +108,12 @@ def init_db() -> None:
     except sqlite3.OperationalError:
         pass  # Column already exists
 
+    # Migrate existing tables: add archived_at column for auto-archiving Tier 4 accounts
+    try:
+        cursor.execute('ALTER TABLE monitored_accounts ADD COLUMN archived_at TIMESTAMP')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
     # Migrate reports table: add is_favorite column if it doesn't exist
     try:
         cursor.execute('ALTER TABLE reports ADD COLUMN is_favorite INTEGER DEFAULT 0')
@@ -122,6 +128,12 @@ def init_db() -> None:
     cursor.execute('''
         CREATE INDEX IF NOT EXISTS idx_accounts_company
         ON monitored_accounts(company_name)
+    ''')
+
+    # Index for archived accounts (efficient filtering by archive status)
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_accounts_archived
+        ON monitored_accounts(archived_at)
     ''')
 
     # Case-insensitive indices for faster JOINs and lookups
@@ -864,6 +876,28 @@ def update_account_status(scan_data: dict, report_id: Optional[int] = None) -> d
         account_id = cursor.lastrowid
         tier_changed = True  # New account is considered a "change"
 
+    # Auto-archive/unarchive based on tier
+    was_archived = existing['archived_at'] if existing else None
+    archived = False
+    unarchived = False
+
+    if new_tier == TIER_INVALID:
+        # Auto-archive Tier 4 accounts
+        if not was_archived:
+            cursor.execute(
+                'UPDATE monitored_accounts SET archived_at = ? WHERE id = ?',
+                (now, account_id)
+            )
+            archived = True
+    else:
+        # Unarchive if account was archived but now has a valid tier
+        if was_archived:
+            cursor.execute(
+                'UPDATE monitored_accounts SET archived_at = NULL WHERE id = ?',
+                (account_id,)
+            )
+            unarchived = True
+
     conn.commit()
     conn.close()
 
@@ -883,7 +917,9 @@ def update_account_status(scan_data: dict, report_id: Optional[int] = None) -> d
         'evidence': evidence_summary,
         'report_id': report_id,
         'webhook_event': webhook_event,
-        'revenue': existing['annual_revenue'] if existing else None
+        'revenue': existing['annual_revenue'] if existing else None,
+        'archived': archived,
+        'unarchived': unarchived
     }
 
 
@@ -1101,25 +1137,23 @@ def get_all_accounts(page: int = 1, limit: int = 50, tier_filter: Optional[list]
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Build WHERE clause
-    where_clauses = []
+    # Build WHERE clause - always exclude archived accounts
+    where_clauses = ['ma.archived_at IS NULL']
     params = []
 
     if tier_filter:
         placeholders = ','.join(['?'] * len(tier_filter))
-        where_clauses.append(f'current_tier IN ({placeholders})')
+        where_clauses.append(f'ma.current_tier IN ({placeholders})')
         params.extend(tier_filter)
-    
+
     if search_query:
-        where_clauses.append('company_name LIKE ?')
+        where_clauses.append('ma.company_name LIKE ?')
         params.append(f'%{search_query}%')
 
-    where_sql = ''
-    if where_clauses:
-        where_sql = ' WHERE ' + ' AND '.join(where_clauses)
+    where_sql = ' WHERE ' + ' AND '.join(where_clauses)
 
-    # Get total count
-    count_query = f'SELECT COUNT(*) as total FROM monitored_accounts{where_sql}'
+    # Get total count (use subquery to match main query's table alias)
+    count_query = f'SELECT COUNT(*) as total FROM monitored_accounts ma{where_sql}'
     cursor.execute(count_query, params)
     total_items = cursor.fetchone()['total']
 
@@ -1184,7 +1218,7 @@ def get_all_accounts(page: int = 1, limit: int = 50, tier_filter: Optional[list]
 
 def get_tier_counts() -> dict:
     """
-    Get the count of accounts in each tier.
+    Get the count of non-archived accounts in each tier.
 
     Returns:
         Dictionary with tier numbers as string keys and counts as values:
@@ -1193,9 +1227,11 @@ def get_tier_counts() -> dict:
     conn = get_db_connection()
     cursor = conn.cursor()
 
+    # Exclude archived accounts from tier counts
     cursor.execute('''
         SELECT current_tier, COUNT(*) as count
         FROM monitored_accounts
+        WHERE archived_at IS NULL
         GROUP BY current_tier
     ''')
 
@@ -1255,12 +1291,12 @@ def get_all_accounts_datatable(draw: int, start: int, length: int, search_value:
         5: 'evidence_summary',
     }
 
-    # Get total count without filters
-    cursor.execute('SELECT COUNT(*) as total FROM monitored_accounts')
+    # Get total count without filters (excluding archived)
+    cursor.execute('SELECT COUNT(*) as total FROM monitored_accounts WHERE archived_at IS NULL')
     total_records = cursor.fetchone()['total']
 
-    # Build WHERE clause for filtering
-    where_clauses = []
+    # Build WHERE clause for filtering - always exclude archived accounts
+    where_clauses = ['archived_at IS NULL']
     params = []
 
     # Tier filter
@@ -1275,9 +1311,7 @@ def get_all_accounts_datatable(draw: int, start: int, length: int, search_value:
         search_param = f'%{search_value.lower()}%'
         params.extend([search_param, search_param])
 
-    where_sql = ''
-    if where_clauses:
-        where_sql = ' WHERE ' + ' AND '.join(where_clauses)
+    where_sql = ' WHERE ' + ' AND '.join(where_clauses)
 
     # Get filtered count
     count_query = f'SELECT COUNT(*) as total FROM monitored_accounts{where_sql}'
@@ -1435,25 +1469,26 @@ def mark_account_as_invalid(company_name: str, reason: str) -> dict:
     existing = cursor.fetchone()
 
     if existing:
-        # Update existing account to Tier 4
+        # Update existing account to Tier 4 and auto-archive
         cursor.execute('''
             UPDATE monitored_accounts
             SET current_tier = ?,
                 last_scanned_at = ?,
                 status_changed_at = ?,
                 evidence_summary = ?,
-                next_scan_due = NULL
+                next_scan_due = NULL,
+                archived_at = ?
             WHERE LOWER(company_name) = ?
-        ''', (TIER_INVALID, now, now, reason, company_name_normalized))
+        ''', (TIER_INVALID, now, now, reason, now, company_name_normalized))
         account_id = existing['id']
     else:
-        # Create new account at Tier 4 (use normalized name)
+        # Create new account at Tier 4 and auto-archive (use normalized name)
         cursor.execute('''
             INSERT INTO monitored_accounts (
                 company_name, github_org, current_tier, last_scanned_at,
-                status_changed_at, evidence_summary, next_scan_due
-            ) VALUES (?, ?, ?, ?, ?, ?, NULL)
-        ''', (company_name_normalized, '', TIER_INVALID, now, now, reason))
+                status_changed_at, evidence_summary, next_scan_due, archived_at
+            ) VALUES (?, ?, ?, ?, ?, ?, NULL, ?)
+        ''', (company_name_normalized, '', TIER_INVALID, now, now, reason, now))
         account_id = cursor.lastrowid
 
     conn.commit()
@@ -1471,6 +1506,201 @@ def mark_account_as_invalid(company_name: str, reason: str) -> dict:
     }
 
 
+def archive_account(account_id: int) -> bool:
+    """
+    Archive an account by setting its archived_at timestamp.
+
+    Archived accounts are hidden from the main accounts list but retained
+    in the database for periodic re-scanning.
+
+    Args:
+        account_id: The ID of the account to archive.
+
+    Returns:
+        True if account was archived, False if not found.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    now = datetime.now().isoformat()
+    cursor.execute(
+        'UPDATE monitored_accounts SET archived_at = ? WHERE id = ? AND archived_at IS NULL',
+        (now, account_id)
+    )
+
+    updated = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+
+    return updated
+
+
+def unarchive_account(account_id: int) -> bool:
+    """
+    Unarchive an account by clearing its archived_at timestamp.
+
+    Args:
+        account_id: The ID of the account to unarchive.
+
+    Returns:
+        True if account was unarchived, False if not found or not archived.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        'UPDATE monitored_accounts SET archived_at = NULL WHERE id = ? AND archived_at IS NOT NULL',
+        (account_id,)
+    )
+
+    updated = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+
+    return updated
+
+
+def auto_archive_tier4_accounts() -> int:
+    """
+    Automatically archive all non-archived Tier 4 accounts.
+
+    Called after scans complete to hide invalid/disqualified accounts
+    from the main view while retaining them for periodic re-checks.
+
+    Returns:
+        Number of accounts archived.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    now = datetime.now().isoformat()
+    cursor.execute('''
+        UPDATE monitored_accounts
+        SET archived_at = ?
+        WHERE current_tier = ? AND archived_at IS NULL
+    ''', (now, TIER_INVALID))
+
+    archived_count = cursor.rowcount
+    conn.commit()
+    conn.close()
+
+    return archived_count
+
+
+def get_archived_accounts(page: int = 1, limit: int = 50, search_query: Optional[str] = None) -> dict:
+    """
+    Get all archived accounts with pagination.
+
+    Args:
+        page: Page number (1-indexed, default 1)
+        limit: Number of accounts per page (default 50)
+        search_query: Search string for company name (optional)
+
+    Returns:
+        Dictionary with accounts, pagination info, and archive stats.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Build WHERE clause
+    where_clauses = ['archived_at IS NOT NULL']
+    params = []
+
+    if search_query:
+        where_clauses.append('company_name LIKE ?')
+        params.append(f'%{search_query}%')
+
+    where_sql = ' WHERE ' + ' AND '.join(where_clauses)
+
+    # Get total count
+    count_query = f'SELECT COUNT(*) as total FROM monitored_accounts{where_sql}'
+    cursor.execute(count_query, params)
+    total_items = cursor.fetchone()['total']
+
+    # Calculate pagination
+    total_pages = (total_items + limit - 1) // limit
+    current_page = max(1, min(page, total_pages or 1))
+    offset = (current_page - 1) * limit
+
+    # Get archived accounts sorted by archive date (most recent first)
+    select_query = f'''
+        SELECT * FROM monitored_accounts
+        {where_sql}
+        ORDER BY archived_at DESC
+        LIMIT ? OFFSET ?
+    '''
+
+    select_params = list(params) + [limit, offset]
+    cursor.execute(select_query, select_params)
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    accounts = []
+    for row in rows:
+        account = dict(row)
+        tier = account.get('current_tier') or 0
+        account['tier_config'] = TIER_CONFIG.get(tier, TIER_CONFIG[TIER_TRACKING])
+        accounts.append(account)
+
+    return {
+        'accounts': accounts,
+        'total_items': total_items,
+        'total_pages': total_pages,
+        'current_page': current_page,
+        'limit': limit
+    }
+
+
+def get_archived_accounts_for_rescan() -> list:
+    """
+    Get archived accounts that need re-scanning (every 4 weeks).
+
+    Selection criteria:
+    - archived_at IS NOT NULL (account is archived)
+    - last_scanned_at < 28 days ago OR last_scanned_at IS NULL
+
+    Returns:
+        List of account dictionaries eligible for re-scan.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT * FROM monitored_accounts
+        WHERE archived_at IS NOT NULL
+          AND (
+              last_scanned_at IS NULL
+              OR last_scanned_at < datetime('now', '-28 days')
+          )
+        ORDER BY last_scanned_at ASC
+    ''')
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    accounts = []
+    for row in rows:
+        account = dict(row)
+        tier = account.get('current_tier') or 0
+        account['tier_config'] = TIER_CONFIG.get(tier, TIER_CONFIG[TIER_TRACKING])
+        accounts.append(account)
+
+    return accounts
+
+
+def get_archived_count() -> int:
+    """Get the count of archived accounts."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('SELECT COUNT(*) as count FROM monitored_accounts WHERE archived_at IS NOT NULL')
+    count = cursor.fetchone()['count']
+
+    conn.close()
+    return count
+
+
 def get_refreshable_accounts() -> list:
     """
     Get accounts eligible for the weekly refresh pipeline.
@@ -1478,10 +1708,12 @@ def get_refreshable_accounts() -> list:
     Selection criteria:
     - current_tier IN (0, 1, 2) - Tracking, Thinking, or Preparing
     - last_scanned_at < 7 days ago OR last_scanned_at IS NULL
+    - archived_at IS NULL (not archived)
 
     Excludes:
     - Tier 3 (Launched) - Already localized, no need to monitor
     - Tier 4 (Invalid) - GitHub org not found or no public repos
+    - Archived accounts (handled separately with 4-week rescan cycle)
 
     Returns:
         List of account dictionaries eligible for refresh.
@@ -1489,7 +1721,7 @@ def get_refreshable_accounts() -> list:
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Select accounts in Tiers 0, 1, 2 that haven't been scanned in 7+ days
+    # Select non-archived accounts in Tiers 0, 1, 2 that haven't been scanned in 7+ days
     # Use LEFT JOIN with ROW_NUMBER() to efficiently fetch latest report per company
     cursor.execute('''
         SELECT
@@ -1505,7 +1737,8 @@ def get_refreshable_accounts() -> list:
             )
             WHERE rn = 1
         ) lr ON LOWER(lr.company_name) = LOWER(ma.company_name)
-        WHERE ma.current_tier IN (0, 1, 2)
+        WHERE ma.archived_at IS NULL
+          AND ma.current_tier IN (0, 1, 2)
           AND (
               ma.last_scanned_at IS NULL
               OR ma.last_scanned_at < datetime('now', '-7 days')
