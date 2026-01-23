@@ -114,6 +114,12 @@ def init_db() -> None:
     except sqlite3.OperationalError:
         pass  # Column already exists
 
+    # Migrate existing tables: add metadata column for storing extra CSV fields as JSON
+    try:
+        cursor.execute('ALTER TABLE monitored_accounts ADD COLUMN metadata TEXT')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
     # Migrate reports table: add is_favorite column if it doesn't exist
     try:
         cursor.execute('ALTER TABLE reports ADD COLUMN is_favorite INTEGER DEFAULT 0')
@@ -923,7 +929,7 @@ def update_account_status(scan_data: dict, report_id: Optional[int] = None) -> d
     }
 
 
-def add_account_to_tier_0(company_name: str, github_org: str, annual_revenue: Optional[str] = None, website: Optional[str] = None) -> dict:
+def add_account_to_tier_0(company_name: str, github_org: str, annual_revenue: Optional[str] = None, website: Optional[str] = None, metadata: Optional[dict] = None) -> dict:
     """
     Add or update a company account to Tier 0 (Tracking) status.
 
@@ -935,6 +941,7 @@ def add_account_to_tier_0(company_name: str, github_org: str, annual_revenue: Op
         github_org: The GitHub organization login.
         annual_revenue: Optional annual revenue string (e.g., "$50M", "$4.6B").
         website: Optional company website URL.
+        metadata: Optional dict of extra CSV fields to store as JSON.
 
     Returns:
         Dictionary with account creation/update result.
@@ -971,8 +978,8 @@ def add_account_to_tier_0(company_name: str, github_org: str, annual_revenue: Op
 
     if existing:
         # Update existing account - don't change last_scanned_at
-        # Only update annual_revenue/website if new values are provided
-        if annual_revenue or website:
+        # Only update annual_revenue/website/metadata if new values are provided
+        if annual_revenue or website or metadata:
             # Build dynamic update based on what's provided
             update_fields = ['github_org = ?', 'next_scan_due = ?']
             update_params = [github_org, next_scan_iso]
@@ -982,6 +989,17 @@ def add_account_to_tier_0(company_name: str, github_org: str, annual_revenue: Op
             if website:
                 update_fields.append('website = ?')
                 update_params.append(website)
+            if metadata:
+                # Merge with existing metadata if present
+                existing_metadata = {}
+                if existing['metadata']:
+                    try:
+                        existing_metadata = json.loads(existing['metadata'])
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+                existing_metadata.update(metadata)
+                update_fields.append('metadata = ?')
+                update_params.append(json.dumps(existing_metadata))
             update_params.append(existing['id'])
             cursor.execute(f'''
                 UPDATE monitored_accounts
@@ -1003,13 +1021,14 @@ def add_account_to_tier_0(company_name: str, github_org: str, annual_revenue: Op
     else:
         # Create new account at Tier 0 (use normalized name)
         # Note: last_scanned_at is NULL until a scan actually completes
+        metadata_json = json.dumps(metadata) if metadata else None
         cursor.execute('''
             INSERT INTO monitored_accounts (
                 company_name, github_org, annual_revenue, website, current_tier, last_scanned_at,
-                status_changed_at, evidence_summary, next_scan_due
-            ) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?)
+                status_changed_at, evidence_summary, next_scan_due, metadata
+            ) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)
         ''', (company_name_normalized, github_org, annual_revenue, website, TIER_TRACKING, now,
-              "Added via Grow pipeline", next_scan_iso))
+              "Added via Grow pipeline", next_scan_iso, metadata_json))
         account_id = cursor.lastrowid
 
     conn.commit()
@@ -1077,6 +1096,57 @@ def update_account_website(company_name: str, website: str) -> bool:
         SET website = ?
         WHERE LOWER(company_name) = LOWER(?)
     ''', (website, company_name.strip()))
+
+    updated = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+
+    return updated
+
+
+def update_account_metadata(company_name: str, metadata: dict) -> bool:
+    """
+    Update or merge the metadata field for an existing account.
+
+    Merges new metadata with existing metadata (new values override existing keys).
+    Used to enrich existing accounts with extra CSV fields.
+
+    Args:
+        company_name: The company name to update.
+        metadata: Dictionary of extra fields to store.
+
+    Returns:
+        True if the update was successful, False if account not found.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # First, fetch existing metadata to merge
+    cursor.execute('''
+        SELECT metadata FROM monitored_accounts
+        WHERE LOWER(company_name) = LOWER(?)
+    ''', (company_name.strip(),))
+    row = cursor.fetchone()
+
+    if not row:
+        conn.close()
+        return False
+
+    # Merge existing metadata with new metadata
+    existing_metadata = {}
+    if row['metadata']:
+        try:
+            existing_metadata = json.loads(row['metadata'])
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    existing_metadata.update(metadata)
+
+    cursor.execute('''
+        UPDATE monitored_accounts
+        SET metadata = ?
+        WHERE LOWER(company_name) = LOWER(?)
+    ''', (json.dumps(existing_metadata), company_name.strip()))
 
     updated = cursor.rowcount > 0
     conn.commit()
