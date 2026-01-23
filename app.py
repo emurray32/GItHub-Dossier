@@ -1569,13 +1569,16 @@ def api_check_duplicates():
             ]
         }
     """
-    from database import find_potential_duplicates
+    from database import find_potential_duplicates_bulk
 
     data = request.get_json() or {}
     companies = data.get('companies', [])
 
     if not isinstance(companies, list) or not companies:
         return jsonify({'error': 'Invalid payload: expected {"companies": [...]}'}), 400
+
+    # Use bulk duplicate check for performance (single query instead of N queries)
+    duplicate_map = find_potential_duplicates_bulk(companies)
 
     results = []
     duplicates_count = 0
@@ -1584,18 +1587,14 @@ def api_check_duplicates():
         # Support both string format and object format
         if isinstance(company_item, dict):
             company_name = company_item.get('name', '').strip()
-            github_org = company_item.get('github_org', '').strip() if company_item.get('github_org') else None
-            website = company_item.get('website', '').strip() if company_item.get('website') else None
         else:
             company_name = str(company_item).strip()
-            github_org = None
-            website = None
 
         if not company_name:
             continue
 
-        # Find potential duplicates
-        duplicates = find_potential_duplicates(company_name, github_org, website)
+        # Get duplicates from bulk results
+        duplicates = duplicate_map.get(company_name, [])
 
         # Format matches for response
         matches = []
