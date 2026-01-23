@@ -962,7 +962,7 @@
         });
     }
 
-    function handleCSVFile(event) {
+    async function handleCSVFile(event) {
         const file = event.target.files[0];
         if (!file) return;
 
@@ -972,7 +972,7 @@
         }
 
         const reader = new FileReader();
-        reader.onload = (e) => {
+        reader.onload = async (e) => {
             try {
                 const csv = e.target.result;
                 const companies = parseCSV(csv);
@@ -984,11 +984,56 @@
 
                 selectedCSVData = companies;
                 const infoDiv = document.getElementById('fileSelectedInfo');
-                infoDiv.textContent = `✓ ${companies.length} companies loaded from ${file.name}`;
-                infoDiv.style.display = 'block';
 
-                document.getElementById('processCSVBtn').style.display = 'block';
-                addConsoleEntry(`Ready to process ${companies.length} companies from CSV`, 'info');
+                // Show initial loading message
+                infoDiv.textContent = `Checking ${companies.length} companies for duplicates...`;
+                infoDiv.style.display = 'block';
+                infoDiv.style.background = 'rgba(14, 165, 233, 0.1)';
+                infoDiv.style.color = 'var(--accent-color)';
+
+                // Check for duplicates
+                try {
+                    const response = await fetch('/api/import/check-duplicates', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ companies: companies })
+                    });
+
+                    const data = await response.json();
+
+                    if (response.ok) {
+                        const newCount = data.new_companies || 0;
+                        const duplicateCount = data.duplicates_found || 0;
+
+                        // Update message with duplicate check results
+                        if (duplicateCount > 0) {
+                            infoDiv.textContent = `✓ ${newCount} new accounts found (${duplicateCount} duplicates skipped) - ${file.name}`;
+                            addConsoleEntry(`Found ${newCount} new companies and ${duplicateCount} duplicates in CSV`, 'info');
+                        } else {
+                            infoDiv.textContent = `✓ ${newCount} new accounts found - ${file.name}`;
+                            addConsoleEntry(`All ${newCount} companies are new - ready to process`, 'success');
+                        }
+
+                        infoDiv.style.background = 'rgba(34, 197, 94, 0.1)';
+                        infoDiv.style.color = 'var(--success-color)';
+
+                        document.getElementById('processCSVBtn').style.display = 'block';
+                    } else {
+                        // Fallback if duplicate check fails
+                        infoDiv.textContent = `✓ ${companies.length} companies loaded from ${file.name}`;
+                        infoDiv.style.background = 'rgba(34, 197, 94, 0.1)';
+                        infoDiv.style.color = 'var(--success-color)';
+                        document.getElementById('processCSVBtn').style.display = 'block';
+                        addConsoleEntry(`Ready to process ${companies.length} companies from CSV`, 'info');
+                    }
+                } catch (error) {
+                    // Fallback if duplicate check fails
+                    infoDiv.textContent = `✓ ${companies.length} companies loaded from ${file.name}`;
+                    infoDiv.style.background = 'rgba(34, 197, 94, 0.1)';
+                    infoDiv.style.color = 'var(--success-color)';
+                    document.getElementById('processCSVBtn').style.display = 'block';
+                    addConsoleEntry(`Ready to process ${companies.length} companies from CSV`, 'info');
+                }
             } catch (error) {
                 addConsoleEntry(`Error parsing CSV: ${error.message}`, 'error');
             }
@@ -1100,13 +1145,13 @@
         btn.disabled = true;
 
         clearConsole();
-        addConsoleEntry(`Starting batch import of ${selectedCSVData.length} companies from CSV...`, 'info');
+        addConsoleEntry(`Starting batch import of ${selectedCSVData.length} companies from CSV (auto-skipping duplicates)...`, 'info');
 
         try {
             const response = await fetch('/api/import', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ companies: selectedCSVData })
+                body: JSON.stringify({ companies: selectedCSVData, skip_duplicates: true })
             });
 
             const data = await response.json();
