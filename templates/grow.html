@@ -912,6 +912,8 @@
 {% endblock %}
 
 {% block scripts %}
+<!-- Papa Parse for robust CSV parsing -->
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 <script>
     // Discovery mode: 'ai' or 'github' or 'stream'
     let discoveryMode = 'ai';
@@ -971,96 +973,117 @@
             return;
         }
 
-        const reader = new FileReader();
-        reader.onload = async (e) => {
-            try {
-                const csv = e.target.result;
-                const companies = parseCSV(csv);
-
-                if (companies.length === 0) {
-                    addConsoleEntry('No valid company names found in CSV', 'error');
-                    return;
-                }
-
-                selectedCSVData = companies;
-                const infoDiv = document.getElementById('fileSelectedInfo');
-
-                // For large CSVs (>500 companies), skip duplicate check to avoid hanging
-                if (companies.length > 500) {
-                    infoDiv.textContent = `✓ ${companies.length} companies loaded from ${file.name} (duplicate check skipped for large files)`;
-                    infoDiv.style.display = 'block';
-                    infoDiv.style.background = 'rgba(34, 197, 94, 0.1)';
-                    infoDiv.style.color = 'var(--success-color)';
-                    document.getElementById('processCSVBtn').style.display = 'block';
-                    addConsoleEntry(`Loaded ${companies.length} companies - duplicates will be skipped automatically during import`, 'info');
-                    return;
-                }
-
-                // Show initial loading message
-                infoDiv.textContent = `Checking ${companies.length} companies for duplicates...`;
-                infoDiv.style.display = 'block';
-                infoDiv.style.background = 'rgba(14, 165, 233, 0.1)';
-                infoDiv.style.color = 'var(--accent-color)';
-
-                // Check for duplicates with timeout
+        // Use Papa Parse to correctly handle multi-line quoted fields
+        Papa.parse(file, {
+            header: true,
+            skipEmptyLines: true,
+            transformHeader: (header) => header.trim().toLowerCase(),
+            complete: async (results) => {
                 try {
-                    const controller = new AbortController();
-                    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+                    // Map Papa Parse results to our company format
+                    const companies = results.data
+                        .map(row => {
+                            // Find company name column (try multiple common names)
+                            const companyName = row['company_name'] || row['name'] || row['company'] || row['company name'];
+                            if (!companyName || !companyName.trim()) return null;
 
-                    const response = await fetch('/api/import/check-duplicates', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ companies: companies }),
-                        signal: controller.signal
-                    });
+                            // Find optional fields
+                            const rawRevenue = row['annual_revenue'] || row['revenue'] || row['annual revenue'] || row['estimated_revenue'];
+                            const rawWebsite = row['website'] || row['url'] || row['company_website'] || row['company website'] || row['site'];
 
-                    clearTimeout(timeoutId);
-                    const data = await response.json();
+                            // Collect metadata (all other fields)
+                            const metadata = {};
+                            const knownFields = new Set(['company_name', 'name', 'company', 'company name', 'annual_revenue', 'revenue', 'annual revenue', 'estimated_revenue', 'website', 'url', 'company_website', 'company website', 'site']);
+                            for (const [key, value] of Object.entries(row)) {
+                                if (!knownFields.has(key.toLowerCase()) && value && value.trim()) {
+                                    metadata[key] = value.trim();
+                                }
+                            }
 
-                    if (response.ok) {
-                        const newCount = data.new_companies || 0;
-                        const duplicateCount = data.duplicates_found || 0;
+                            return {
+                                name: companyName.trim(),
+                                annual_revenue: validateRevenueValue(rawRevenue),
+                                website: rawWebsite ? rawWebsite.trim() : null,
+                                metadata: Object.keys(metadata).length > 0 ? metadata : null
+                            };
+                        })
+                        .filter(company => company !== null);
 
-                        // Update message with duplicate check results
-                        if (duplicateCount > 0) {
-                            infoDiv.textContent = `✓ ${newCount} new accounts found (${duplicateCount} duplicates skipped) - ${file.name}`;
-                            addConsoleEntry(`Found ${newCount} new companies and ${duplicateCount} duplicates in CSV`, 'info');
+                    if (companies.length === 0) {
+                        addConsoleEntry('No valid company names found in CSV', 'error');
+                        return;
+                    }
+
+                    selectedCSVData = companies;
+                    const infoDiv = document.getElementById('fileSelectedInfo');
+
+                    // Show initial loading message
+                    infoDiv.textContent = `Checking ${companies.length} companies for duplicates...`;
+                    infoDiv.style.display = 'block';
+                    infoDiv.style.background = 'rgba(14, 165, 233, 0.1)';
+                    infoDiv.style.color = 'var(--accent-color)';
+
+                    // Check for duplicates (now optimized with bulk queries)
+                    try {
+                        const controller = new AbortController();
+                        const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout
+
+                        const response = await fetch('/api/import/check-duplicates', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ companies: companies }),
+                            signal: controller.signal
+                        });
+
+                        clearTimeout(timeoutId);
+                        const data = await response.json();
+
+                        if (response.ok) {
+                            const newCount = data.new_companies || 0;
+                            const duplicateCount = data.duplicates_found || 0;
+
+                            // Update message with duplicate check results
+                            if (duplicateCount > 0) {
+                                infoDiv.textContent = `✓ ${newCount} new accounts found (${duplicateCount} duplicates skipped) - ${file.name}`;
+                                addConsoleEntry(`Found ${newCount} new companies and ${duplicateCount} duplicates in CSV`, 'info');
+                            } else {
+                                infoDiv.textContent = `✓ ${newCount} new accounts found - ${file.name}`;
+                                addConsoleEntry(`All ${newCount} companies are new - ready to process`, 'success');
+                            }
+
+                            infoDiv.style.background = 'rgba(34, 197, 94, 0.1)';
+                            infoDiv.style.color = 'var(--success-color)';
+
+                            document.getElementById('processCSVBtn').style.display = 'block';
                         } else {
-                            infoDiv.textContent = `✓ ${newCount} new accounts found - ${file.name}`;
-                            addConsoleEntry(`All ${newCount} companies are new - ready to process`, 'success');
+                            // Fallback if duplicate check fails
+                            infoDiv.textContent = `✓ ${companies.length} companies loaded from ${file.name}`;
+                            infoDiv.style.background = 'rgba(34, 197, 94, 0.1)';
+                            infoDiv.style.color = 'var(--success-color)';
+                            document.getElementById('processCSVBtn').style.display = 'block';
+                            addConsoleEntry(`Ready to process ${companies.length} companies from CSV`, 'info');
                         }
-
+                    } catch (error) {
+                        // Fallback if duplicate check fails or times out
+                        if (error.name === 'AbortError') {
+                            infoDiv.textContent = `✓ ${companies.length} companies loaded from ${file.name} (duplicate check timed out)`;
+                            addConsoleEntry(`Duplicate check timed out - duplicates will be skipped automatically during import`, 'warning');
+                        } else {
+                            infoDiv.textContent = `✓ ${companies.length} companies loaded from ${file.name}`;
+                            addConsoleEntry(`Ready to process ${companies.length} companies from CSV`, 'info');
+                        }
                         infoDiv.style.background = 'rgba(34, 197, 94, 0.1)';
                         infoDiv.style.color = 'var(--success-color)';
-
                         document.getElementById('processCSVBtn').style.display = 'block';
-                    } else {
-                        // Fallback if duplicate check fails
-                        infoDiv.textContent = `✓ ${companies.length} companies loaded from ${file.name}`;
-                        infoDiv.style.background = 'rgba(34, 197, 94, 0.1)';
-                        infoDiv.style.color = 'var(--success-color)';
-                        document.getElementById('processCSVBtn').style.display = 'block';
-                        addConsoleEntry(`Ready to process ${companies.length} companies from CSV`, 'info');
                     }
                 } catch (error) {
-                    // Fallback if duplicate check fails or times out
-                    if (error.name === 'AbortError') {
-                        infoDiv.textContent = `✓ ${companies.length} companies loaded from ${file.name} (duplicate check timed out)`;
-                        addConsoleEntry(`Duplicate check timed out - duplicates will be skipped automatically during import`, 'warning');
-                    } else {
-                        infoDiv.textContent = `✓ ${companies.length} companies loaded from ${file.name}`;
-                        addConsoleEntry(`Ready to process ${companies.length} companies from CSV`, 'info');
-                    }
-                    infoDiv.style.background = 'rgba(34, 197, 94, 0.1)';
-                    infoDiv.style.color = 'var(--success-color)';
-                    document.getElementById('processCSVBtn').style.display = 'block';
+                    addConsoleEntry(`Error processing CSV: ${error.message}`, 'error');
                 }
-            } catch (error) {
+            },
+            error: (error) => {
                 addConsoleEntry(`Error parsing CSV: ${error.message}`, 'error');
             }
-        };
-
-        reader.readAsText(file);
+        });
     }
 
     // Validate that a value looks like a revenue number (e.g., "$50M", "4.6B", "50000000")

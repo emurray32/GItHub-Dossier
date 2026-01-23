@@ -1588,6 +1588,167 @@ def find_potential_duplicates(company_name: str, github_org: str = None, website
     return duplicates
 
 
+def find_potential_duplicates_bulk(companies: list) -> dict:
+    """
+    Bulk version of find_potential_duplicates for performance.
+
+    Instead of N queries for N companies, this does:
+    1. Single query to fetch all existing accounts
+    2. In-memory matching for all companies
+
+    Args:
+        companies: List of dicts with {'name': str, 'github_org': str, 'website': str}
+
+    Returns:
+        Dict mapping company names to their duplicate matches:
+        {
+            "Shopify": [
+                {
+                    "id": 123,
+                    "company_name": "Shopify",
+                    "match_reason": "exact_name",
+                    "match_confidence": 100
+                }
+            ],
+            ...
+        }
+    """
+    if not companies:
+        return {}
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Fetch ALL existing accounts once
+    cursor.execute('SELECT * FROM monitored_accounts')
+    all_accounts = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+
+    # Build lookup indices for fast matching
+    # Index by lowercase company name
+    name_index = {}
+    # Index by normalized company name
+    normalized_index = {}
+    # Index by lowercase github_org
+    github_index = {}
+    # Index by website domain
+    domain_index = {}
+
+    for account in all_accounts:
+        account_id = account['id']
+
+        # Index by company name
+        name = account.get('company_name', '').lower().strip()
+        if name:
+            if name not in name_index:
+                name_index[name] = []
+            name_index[name].append(account)
+
+        # Index by normalized company name
+        normalized = _normalize_company_name(account.get('company_name', ''))
+        if normalized:
+            if normalized not in normalized_index:
+                normalized_index[normalized] = []
+            normalized_index[normalized].append(account)
+
+        # Index by github_org
+        github_org = account.get('github_org', '').lower().strip()
+        if github_org:
+            if github_org not in github_index:
+                github_index[github_org] = []
+            github_index[github_org].append(account)
+
+        # Index by website domain
+        website = account.get('website', '')
+        if website:
+            domain = _extract_domain(website)
+            if domain:
+                if domain not in domain_index:
+                    domain_index[domain] = []
+                domain_index[domain].append(account)
+
+    # Now check each company against the indices
+    results = {}
+
+    for company_item in companies:
+        if isinstance(company_item, dict):
+            company_name = company_item.get('name', '').strip()
+            github_org = company_item.get('github_org', '').strip() if company_item.get('github_org') else None
+            website = company_item.get('website', '').strip() if company_item.get('website') else None
+        else:
+            company_name = str(company_item).strip()
+            github_org = None
+            website = None
+
+        if not company_name:
+            continue
+
+        duplicates = []
+        seen_ids = set()
+
+        # 1. Exact company name match
+        name_lower = company_name.lower().strip()
+        if name_lower in name_index:
+            for account in name_index[name_lower]:
+                account_copy = account.copy()
+                account_copy['match_reason'] = 'exact_name'
+                account_copy['match_confidence'] = 100
+                duplicates.append(account_copy)
+                seen_ids.add(account['id'])
+
+        # 2. Normalized company name match
+        company_normalized = _normalize_company_name(company_name)
+        if company_normalized:
+            if company_normalized in normalized_index:
+                for account in normalized_index[company_normalized]:
+                    if account['id'] not in seen_ids:
+                        account_copy = account.copy()
+                        account_copy['match_reason'] = 'normalized_name'
+                        account_copy['match_confidence'] = 90
+                        duplicates.append(account_copy)
+                        seen_ids.add(account['id'])
+
+            # Partial match check (slower, but only for non-exact matches)
+            if not duplicates:
+                for existing_normalized, accounts in normalized_index.items():
+                    if existing_normalized in company_normalized or company_normalized in existing_normalized:
+                        for account in accounts:
+                            if account['id'] not in seen_ids:
+                                account_copy = account.copy()
+                                account_copy['match_reason'] = 'partial_name'
+                                account_copy['match_confidence'] = 75
+                                duplicates.append(account_copy)
+                                seen_ids.add(account['id'])
+
+        # 3. GitHub org match
+        if github_org:
+            github_lower = github_org.lower().strip()
+            if github_lower in github_index:
+                for account in github_index[github_lower]:
+                    if account['id'] not in seen_ids:
+                        account_copy = account.copy()
+                        account_copy['match_reason'] = 'github_org'
+                        account_copy['match_confidence'] = 95
+                        duplicates.append(account_copy)
+                        seen_ids.add(account['id'])
+
+        # 4. Website domain match
+        if website:
+            domain = _extract_domain(website)
+            if domain and domain in domain_index:
+                for account in domain_index[domain]:
+                    if account['id'] not in seen_ids:
+                        account_copy = account.copy()
+                        account_copy['match_reason'] = 'website_domain'
+                        account_copy['match_confidence'] = 85
+                        duplicates.append(account_copy)
+                        seen_ids.add(account['id'])
+
+        results[company_name] = duplicates
+
+    return results
+
+
 def _normalize_company_name(name: str) -> str:
     """
     Normalize a company name for comparison.
