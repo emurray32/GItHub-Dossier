@@ -29,7 +29,8 @@ from database import (
     create_import_batch, get_pending_import_batches, update_batch_progress, get_import_batch,
     increment_hourly_api_calls, get_current_hour_api_calls, cleanup_old_hourly_stats,
     archive_account, unarchive_account, get_archived_accounts, get_archived_accounts_for_rescan,
-    get_archived_count, auto_archive_tier4_accounts
+    get_archived_count, auto_archive_tier4_accounts,
+    find_potential_duplicates, get_import_duplicates_summary
 )
 from monitors.scanner import deep_scan_generator
 from monitors.discovery import search_github_orgs, resolve_org_fast, discover_companies_via_ai
@@ -1752,6 +1753,53 @@ def api_import_batch_status(batch_id):
         'processed_count': processed,
         'progress_percent': progress_percent
     })
+
+
+@app.route('/api/import/check-duplicates', methods=['POST'])
+def api_check_import_duplicates():
+    """
+    Check a list of companies for potential duplicates before import.
+
+    This endpoint performs smart duplicate detection including:
+    - Exact case-insensitive name matches
+    - Fuzzy name matches (removing Inc, LLC, Corp suffixes)
+    - GitHub org matches
+    - Website domain matches
+
+    Expects JSON payload: {"companies": ["Shopify", "Stripe", ...]}
+    Or with metadata: {"companies": [{"name": "Shopify", "github_org": "shopify", "website": "shopify.com"}, ...]}
+
+    Returns:
+        JSON with: {
+            "total": <int>,
+            "duplicates": <int>,
+            "new": <int>,
+            "details": [
+                {
+                    "company": "Shopify Inc",
+                    "matches": [
+                        {
+                            "existing_name": "Shopify",
+                            "match_type": "similar_name",
+                            "match_confidence": "medium",
+                            "match_detail": "'Shopify Inc' matches 'Shopify' (normalized)"
+                        }
+                    ]
+                }
+            ]
+        }
+    """
+    data = request.get_json() or {}
+    companies = data.get('companies', [])
+
+    if not isinstance(companies, list) or not companies:
+        return jsonify({'error': 'Invalid payload: expected {"companies": [...]}'}), 400
+
+    try:
+        results = get_import_duplicates_summary(companies)
+        return jsonify(results)
+    except Exception as e:
+        return jsonify({'error': f'Failed to check duplicates: {str(e)}'}), 500
 
 
 @app.route('/api/track', methods=['POST'])

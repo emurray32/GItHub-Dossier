@@ -1659,6 +1659,63 @@ def _extract_domain(url: str) -> str:
     return url
 
 
+def get_import_duplicates_summary(companies_list: list) -> dict:
+    """
+    Check a list of companies for potential duplicates before import.
+
+    This is useful for providing a preview of duplicates during bulk import.
+
+    Args:
+        companies_list: List of company items (strings or dicts with name/github_org/website)
+
+    Returns:
+        Dictionary with:
+        - 'total': Total companies in the list
+        - 'duplicates': Number of companies that would be duplicates
+        - 'new': Number of new companies
+        - 'details': List of duplicate details for each company
+    """
+    results = {
+        'total': len(companies_list),
+        'duplicates': 0,
+        'new': 0,
+        'details': []
+    }
+
+    for company_item in companies_list:
+        if isinstance(company_item, dict):
+            company_name = company_item.get('name', '').strip()
+            github_org = company_item.get('github_org', '').strip() if company_item.get('github_org') else None
+            website = company_item.get('website', '').strip() if company_item.get('website') else None
+        else:
+            company_name = str(company_item).strip()
+            github_org = None
+            website = None
+
+        if not company_name:
+            continue
+
+        potential_dups = find_potential_duplicates(company_name, github_org, website)
+
+        if potential_dups:
+            results['duplicates'] += 1
+            results['details'].append({
+                'company': company_name,
+                'matches': [
+                    {
+                        'existing_name': d['company_name'],
+                        'match_reason': d.get('match_reason'),
+                        'match_confidence': d.get('match_confidence'),
+                    }
+                    for d in potential_dups
+                ]
+            })
+        else:
+            results['new'] += 1
+
+    return results
+
+
 def delete_account(account_id: int) -> bool:
     """Delete a monitored account."""
     conn = get_db_connection()
