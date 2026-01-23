@@ -1908,6 +1908,105 @@
         animation: spin 0.8s linear infinite;
         margin-right: 0.5rem;
     }
+
+    /* Loading overlay for table */
+    .accounts-table-container {
+        position: relative;
+    }
+
+    .accounts-table-container .loading-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(255, 255, 255, 0.85);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 50;
+        border-radius: 12px;
+    }
+
+    .accounts-table-container .loading-overlay .loading-spinner {
+        width: 32px;
+        height: 32px;
+        border-width: 3px;
+    }
+
+    /* Skeleton loading styles */
+    .skeleton-row td {
+        padding: 1rem;
+    }
+
+    .skeleton {
+        background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+        background-size: 200% 100%;
+        animation: skeleton-loading 1.5s infinite;
+        border-radius: 4px;
+        height: 1.2em;
+    }
+
+    .skeleton.short {
+        width: 60%;
+    }
+
+    @keyframes skeleton-loading {
+        0% { background-position: 200% 0; }
+        100% { background-position: -200% 0; }
+    }
+
+    /* Controls disabled state */
+    .controls-disabled {
+        opacity: 0.6;
+        pointer-events: none;
+    }
+
+    /* Infinite scroll loading indicator */
+    .infinite-scroll-loading {
+        text-align: center;
+        padding: 1rem;
+        color: var(--text-muted);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+    }
+
+    .infinite-scroll-loading .loading-spinner {
+        margin-right: 0;
+    }
+
+    /* Virtual scroll toggle button */
+    .pagination-mode-toggle {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.4rem 0.75rem;
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        font-size: 0.8rem;
+        color: var(--text-secondary);
+        cursor: pointer;
+        transition: all var(--transition-fast);
+    }
+
+    .pagination-mode-toggle:hover {
+        border-color: var(--accent-color);
+        color: var(--accent-color);
+    }
+
+    .pagination-mode-toggle.active {
+        background: rgba(0, 181, 173, 0.12);
+        border-color: var(--accent-color);
+        color: var(--accent-color);
+    }
+
+    .pagination-mode-toggle svg {
+        width: 14px;
+        height: 14px;
+    }
 </style>
 {% endblock %}
 
@@ -2273,6 +2372,13 @@
             Loading...
         </div>
         <div class="pagination-controls">
+            <button type="button" class="pagination-mode-toggle" id="infinite-scroll-toggle" title="Toggle infinite scroll for large datasets">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                    <polyline points="19 12 12 19 5 12"></polyline>
+                </svg>
+                <span>Infinite Scroll</span>
+            </button>
             <select id="limit-select" class="pagination-limit-select" aria-label="Rows per page">
                 <option value="25">25 rows</option>
                 <option value="50" selected>50 rows</option>
@@ -2292,6 +2398,11 @@
                 Next
             </button>
         </div>
+    </div>
+    <!-- Infinite scroll loading indicator (hidden by default) -->
+    <div class="infinite-scroll-loading" id="infinite-scroll-indicator" style="display: none;">
+        <div class="loading-spinner"></div>
+        <span>Loading more accounts...</span>
     </div>
 
     <div class="bulk-command-bar hidden" id="bulk-command-bar">
@@ -3035,10 +3146,75 @@
         });
     }
 
+    // Loading state management
+    let isLoading = false;
+
+    function setLoadingState(loading) {
+        isLoading = loading;
+        const tableContainer = document.querySelector('.accounts-table-container');
+        const paginationContainer = document.getElementById('pagination-container');
+        const searchInput = document.getElementById('account-search-input');
+        const tierButtons = document.querySelectorAll('.tier-filter-btn');
+        const prevBtn = document.getElementById('prev-page-btn');
+        const nextBtn = document.getElementById('next-page-btn');
+        const limitSelect = document.getElementById('limit-select');
+
+        if (loading) {
+            // Add loading overlay to table
+            if (tableContainer && !tableContainer.querySelector('.loading-overlay')) {
+                const overlay = document.createElement('div');
+                overlay.className = 'loading-overlay';
+                overlay.innerHTML = '<div class="loading-spinner"></div>';
+                tableContainer.style.position = 'relative';
+                tableContainer.appendChild(overlay);
+            }
+
+            // Disable controls
+            if (searchInput) searchInput.disabled = true;
+            tierButtons.forEach(btn => btn.disabled = true);
+            if (prevBtn) prevBtn.disabled = true;
+            if (nextBtn) nextBtn.disabled = true;
+            if (limitSelect) limitSelect.disabled = true;
+            if (paginationContainer) paginationContainer.classList.add('controls-disabled');
+        } else {
+            // Remove loading overlay
+            const overlay = tableContainer?.querySelector('.loading-overlay');
+            if (overlay) overlay.remove();
+
+            // Re-enable controls
+            if (searchInput) searchInput.disabled = false;
+            tierButtons.forEach(btn => btn.disabled = false);
+            if (limitSelect) limitSelect.disabled = false;
+            if (paginationContainer) paginationContainer.classList.remove('controls-disabled');
+
+            // Update pagination button states based on current page
+            updatePaginationUI();
+        }
+    }
+
     function reloadAccountsTable() {
         const tbody = document.querySelector('#accounts-tbody');
         const searchInput = document.querySelector('#account-search-input');
         const urlParams = new URLSearchParams(window.location.search);
+
+        // Show loading state
+        setLoadingState(true);
+
+        // Show skeleton loading in table
+        tbody.innerHTML = Array(5).fill(0).map(() => `
+            <tr class="skeleton-row">
+                <td class="select-col"><div class="skeleton skeleton-text short"></div></td>
+                <td class="row-num-col"><div class="skeleton skeleton-text short"></div></td>
+                <td class="company-cell"><div class="skeleton skeleton-text"></div></td>
+                <td class="annual-revenue-cell"><div class="skeleton skeleton-text short"></div></td>
+                <td class="github-org-cell"><div class="skeleton skeleton-text"></div></td>
+                <td><div class="skeleton skeleton-text short"></div></td>
+                <td class="last-check-cell"><div class="skeleton skeleton-text short"></div></td>
+                <td class="evidence-cell"><div class="skeleton skeleton-text"></div></td>
+                <td class="actions-cell"><div class="skeleton skeleton-text short"></div></td>
+                <td class="notes-cell"><div class="skeleton skeleton-text"></div></td>
+            </tr>
+        `).join('');
 
         const searchValue = searchInput ? searchInput.value : urlParams.get('q') || '';
         const tierFilters = urlParams.getAll('tier').map(t => parseInt(t));
@@ -3067,10 +3243,12 @@
                 paginationState.totalPages = Math.ceil(paginationState.totalRecords / paginationState.pageSize) || 1;
                 renderAccountsTable(data.data);
                 updatePaginationUI();
+                setLoadingState(false);
             })
             .catch(error => {
                 console.error('Error loading accounts:', error);
-                tbody.innerHTML = '<tr><td colspan="7">Error loading accounts. Please try again.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="10">Error loading accounts. Please try again.</td></tr>';
+                setLoadingState(false);
             });
     }
 
@@ -3251,12 +3429,264 @@
         return '$' + num.toLocaleString();
     }
 
+    // ============================================================
+    // INFINITE SCROLL / LAZY LOADING
+    // ============================================================
+    // For large datasets (500+ accounts), this provides smooth
+    // scrolling by loading more rows as the user scrolls down.
+
+    let infiniteScrollEnabled = false;
+    let infiniteScrollLoading = false;
+    let infiniteScrollObserver = null;
+    let loadedAccountIds = new Set();
+
+    function initializeInfiniteScroll() {
+        const toggle = document.getElementById('infinite-scroll-toggle');
+        const indicator = document.getElementById('infinite-scroll-indicator');
+        const tableContainer = document.querySelector('.accounts-table-container');
+
+        if (toggle) {
+            toggle.addEventListener('click', () => {
+                infiniteScrollEnabled = !infiniteScrollEnabled;
+                toggle.classList.toggle('active', infiniteScrollEnabled);
+
+                if (infiniteScrollEnabled) {
+                    // Switch to infinite scroll mode
+                    paginationState.pageSize = 50; // Load 50 at a time
+                    document.getElementById('limit-select').value = '50';
+                    document.getElementById('limit-select').disabled = true;
+                    document.getElementById('prev-page-btn').style.display = 'none';
+                    document.getElementById('next-page-btn').style.display = 'none';
+                    document.getElementById('page-display').style.display = 'none';
+
+                    // Reset and load fresh
+                    loadedAccountIds.clear();
+                    paginationState.currentPage = 1;
+                    reloadAccountsTable();
+
+                    // Setup intersection observer
+                    setupInfiniteScrollObserver();
+                } else {
+                    // Switch back to pagination mode
+                    document.getElementById('limit-select').disabled = false;
+                    document.getElementById('prev-page-btn').style.display = '';
+                    document.getElementById('next-page-btn').style.display = '';
+                    document.getElementById('page-display').style.display = '';
+                    indicator.style.display = 'none';
+
+                    // Cleanup observer
+                    if (infiniteScrollObserver) {
+                        infiniteScrollObserver.disconnect();
+                        infiniteScrollObserver = null;
+                    }
+
+                    // Reset and load fresh
+                    loadedAccountIds.clear();
+                    paginationState.currentPage = 1;
+                    reloadAccountsTable();
+                }
+            });
+        }
+    }
+
+    function setupInfiniteScrollObserver() {
+        const indicator = document.getElementById('infinite-scroll-indicator');
+        const tableContainer = document.querySelector('.accounts-table-container');
+
+        if (infiniteScrollObserver) {
+            infiniteScrollObserver.disconnect();
+        }
+
+        // Show indicator
+        indicator.style.display = 'flex';
+
+        // Create intersection observer to detect when user scrolls to bottom
+        infiniteScrollObserver = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting && !infiniteScrollLoading && infiniteScrollEnabled) {
+                    loadMoreAccounts();
+                }
+            });
+        }, {
+            root: null,
+            rootMargin: '100px',
+            threshold: 0.1
+        });
+
+        infiniteScrollObserver.observe(indicator);
+    }
+
+    function loadMoreAccounts() {
+        if (infiniteScrollLoading || !infiniteScrollEnabled) return;
+
+        // Check if we have more data to load
+        const loadedCount = loadedAccountIds.size;
+        if (loadedCount >= paginationState.totalRecords) {
+            const indicator = document.getElementById('infinite-scroll-indicator');
+            indicator.innerHTML = '<span>All accounts loaded</span>';
+            return;
+        }
+
+        infiniteScrollLoading = true;
+        const indicator = document.getElementById('infinite-scroll-indicator');
+        indicator.innerHTML = '<div class="loading-spinner"></div><span>Loading more accounts...</span>';
+
+        const searchInput = document.querySelector('#account-search-input');
+        const urlParams = new URLSearchParams(window.location.search);
+        const searchValue = searchInput ? searchInput.value : urlParams.get('q') || '';
+        const tierFilters = urlParams.getAll('tier').map(t => parseInt(t));
+
+        // Calculate start offset based on loaded count
+        const start = loadedCount;
+
+        const params = new URLSearchParams();
+        params.set('draw', '1');
+        params.set('start', start.toString());
+        params.set('length', paginationState.pageSize.toString());
+        params.set('search[value]', searchValue);
+        params.set('order[0][column]', paginationState.sortColumn);
+        params.set('order[0][dir]', paginationState.sortDirection);
+
+        tierFilters.forEach(tier => {
+            params.append('tier', tier);
+        });
+
+        fetch(`/api/accounts/datatable?${params.toString()}`)
+            .then(response => response.json())
+            .then(data => {
+                paginationState.totalRecords = data.recordsFiltered || data.recordsTotal || 0;
+                appendAccountsToTable(data.data);
+                infiniteScrollLoading = false;
+
+                // Update info display
+                const infoEl = document.getElementById('pagination-info');
+                if (infoEl) {
+                    infoEl.textContent = `Showing ${loadedAccountIds.size} of ${paginationState.totalRecords} accounts`;
+                }
+
+                // Check if we've loaded everything
+                if (loadedAccountIds.size >= paginationState.totalRecords) {
+                    indicator.innerHTML = '<span>All accounts loaded</span>';
+                }
+            })
+            .catch(error => {
+                console.error('Error loading more accounts:', error);
+                infiniteScrollLoading = false;
+                indicator.innerHTML = '<span>Error loading accounts. Scroll to retry.</span>';
+            });
+    }
+
+    function appendAccountsToTable(accounts) {
+        const tbody = document.querySelector('#accounts-tbody');
+
+        if (!accounts || accounts.length === 0) return;
+
+        const newRows = accounts
+            .filter(account => !loadedAccountIds.has(account.id))
+            .map((account, index) => {
+                loadedAccountIds.add(account.id);
+                return generateAccountRow(account, loadedAccountIds.size);
+            }).join('');
+
+        tbody.insertAdjacentHTML('beforeend', newRows);
+        initializeBulkSelection();
+    }
+
+    function generateAccountRow(account, rowNumber) {
+        const companyLink = account.latest_report_id
+            ? `<a href="/report/${account.latest_report_id}"><span class="company-name-text">${escapeHtml(account.company_name)}</span></a>`
+            : `<span class="company-name-text">${escapeHtml(account.company_name)}</span>`;
+
+        const websiteLink = account.website
+            ? `<a href="${normalizeUrl(account.website)}" target="_blank" rel="noopener" class="btn-website-link" title="Visit website">🔗</a>`
+            : '';
+
+        const githubOrgLink = account.github_org
+            ? `<a href="https://github.com/${escapeHtml(account.github_org)}" target="_blank" rel="noopener" class="github-org-link" title="View on GitHub">
+                <svg viewBox="0 0 16 16" fill="currentColor">
+                    <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" />
+                </svg>
+                @${escapeHtml(account.github_org)}
+            </a>
+            <button type="button" class="github-org-edit" onclick="showOrgEdit(this)" title="Edit GitHub org">Edit</button>`
+            : `<span class="org-not-found">Not found</span>
+               <button type="button" class="github-org-edit" onclick="showOrgEdit(this)" title="Set GitHub org">Set</button>`;
+
+        const tierConfig = TIER_CONFIG[account.current_tier] || TIER_CONFIG[0];
+        const lastScannedFormatted = account.last_scanned_at ? formatSmartDate(account.last_scanned_at) : 'Never';
+
+        let actionsHtml = '';
+        if (account.latest_report_id) {
+            actionsHtml += `<button type="button" class="btn-view-report" onclick="openReport('/report/${account.latest_report_id}')">View</button>`;
+        } else {
+            actionsHtml += `<button type="button" class="btn-view-report" disabled style="visibility: hidden;">View</button>`;
+        }
+
+        return `
+            <tr id="row-${account.id}" data-company="${escapeHtml(account.company_name)}" data-account-id="${account.id}" data-tier="${account.current_tier}" data-last-scanned="${account.last_scanned_at || ''}" data-website="${escapeHtml(account.website || '')}" data-status="idle">
+                <td class="select-col">
+                    <input type="checkbox" class="select-account-checkbox row-select" data-account-id="${account.id}" aria-label="Select ${escapeHtml(account.company_name)}">
+                </td>
+                <td class="row-num-col">${rowNumber}</td>
+                <td class="company-cell">
+                    <span class="company-cell-content">
+                        ${companyLink}
+                        <button type="button" class="btn-copy-company" title="Copy company name" data-company="${escapeHtml(account.company_name)}" onclick="copyToClipboard(this.dataset.company, this)">
+                            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                                <path d="M16 1H6c-1.1 0-2 .9-2 2v12h2V3h10V1zm3 4H10c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h9c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H10V7h9v14z" />
+                            </svg>
+                        </button>
+                        ${websiteLink}
+                    </span>
+                </td>
+                <td class="annual-revenue-cell">${formatRevenue(account.annual_revenue)}</td>
+                <td class="github-org-cell" data-company="${escapeHtml(account.company_name)}" ondblclick="editOrg(this)" data-org="${escapeHtml(account.github_org || '')}">
+                    <span class="org-display">
+                        ${githubOrgLink}
+                    </span>
+                    <span class="github-org-input-container">
+                        <input type="text" class="github-org-input" placeholder="org-name" value="${escapeHtml(account.github_org || '')}">
+                        <button type="button" class="btn-save-org" onclick="saveOrgEdit(this)">Save</button>
+                        <button type="button" class="btn-cancel-org" onclick="cancelOrgEdit(this)">Cancel</button>
+                    </span>
+                </td>
+                <td>
+                    <span class="tier-badge tier-badge-${account.current_tier}">Tier ${account.current_tier}</span>
+                </td>
+                <td class="last-check-cell">
+                    <div class="status-container">
+                        <span class="account-last-scan" data-timestamp="${account.last_scanned_at || ''}">
+                            <strong class="last-scan-date">${lastScannedFormatted}</strong>
+                        </span>
+                    </div>
+                </td>
+                <td class="evidence-cell">
+                    <span class="evidence-text" title="${escapeHtml(account.evidence_summary || 'No evidence recorded')}">${escapeHtml(account.evidence_summary || 'No evidence recorded')}</span>
+                </td>
+                <td class="actions-cell">
+                    ${actionsHtml}
+                </td>
+                <td class="notes-cell" data-account-id="${account.id}">
+                    <span class="notes-display" ondblclick="editNotes(this)">${escapeHtml(account.notes || '')}</span>
+                    <div class="notes-edit-container" style="display: none;">
+                        <textarea class="notes-input" placeholder="Add notes...">${escapeHtml(account.notes || '')}</textarea>
+                        <div class="notes-edit-buttons">
+                            <button type="button" class="btn-save-notes" onclick="saveNotes(this)">Save</button>
+                            <button type="button" class="btn-cancel-notes" onclick="cancelNotesEdit(this)">Cancel</button>
+                        </div>
+                    </div>
+                </td>
+            </tr>
+        `;
+    }
+
     // Initialize on page load
     document.addEventListener('DOMContentLoaded', () => {
         initializeUI();
         initializeDataTable();
         initializeSortHandlers();
         initializeColumnResize();
+        initializeInfiniteScroll();
         updateDashboardStats();
     });
 

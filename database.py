@@ -1421,6 +1421,174 @@ def get_account_by_company_case_insensitive(company_name: str) -> Optional[dict]
     return None
 
 
+def find_potential_duplicates(company_name: str, github_org: str = None, website: str = None) -> list:
+    """
+    Find potential duplicate accounts using smart matching.
+
+    This helps prevent importing the same company multiple times by checking:
+    1. Exact company name match (case-insensitive)
+    2. Fuzzy company name match (normalized - removes Inc, LLC, Corp, etc.)
+    3. GitHub org match (case-insensitive)
+    4. Website domain match (strips www, http, etc.)
+
+    Args:
+        company_name: The company name to check
+        github_org: Optional GitHub organization to match
+        website: Optional website URL to match
+
+    Returns:
+        List of potential duplicate accounts with match_reason
+    """
+    duplicates = []
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Normalize the input company name
+    company_normalized = _normalize_company_name(company_name)
+
+    # 1. Exact company name match (case-insensitive)
+    cursor.execute(
+        'SELECT * FROM monitored_accounts WHERE LOWER(company_name) = LOWER(?)',
+        (company_name.strip(),)
+    )
+    for row in cursor.fetchall():
+        account = dict(row)
+        account['match_reason'] = 'exact_name'
+        account['match_confidence'] = 100
+        duplicates.append(account)
+
+    # 2. Fuzzy company name match (normalized)
+    cursor.execute('SELECT * FROM monitored_accounts')
+    for row in cursor.fetchall():
+        account = dict(row)
+        existing_normalized = _normalize_company_name(account.get('company_name', ''))
+
+        # Skip if already matched
+        if any(d['id'] == account['id'] for d in duplicates):
+            continue
+
+        # Check normalized match
+        if existing_normalized and company_normalized:
+            if existing_normalized == company_normalized:
+                account['match_reason'] = 'normalized_name'
+                account['match_confidence'] = 90
+                duplicates.append(account)
+            # Check if one contains the other (for variations like "Acme" vs "Acme Inc")
+            elif existing_normalized in company_normalized or company_normalized in existing_normalized:
+                account['match_reason'] = 'partial_name'
+                account['match_confidence'] = 75
+                duplicates.append(account)
+
+    # 3. GitHub org match (if provided)
+    if github_org:
+        cursor.execute(
+            'SELECT * FROM monitored_accounts WHERE LOWER(github_org) = LOWER(?)',
+            (github_org.strip(),)
+        )
+        for row in cursor.fetchall():
+            account = dict(row)
+            # Skip if already matched
+            if any(d['id'] == account['id'] for d in duplicates):
+                continue
+            account['match_reason'] = 'github_org'
+            account['match_confidence'] = 95
+            duplicates.append(account)
+
+    # 4. Website domain match (if provided)
+    if website:
+        website_domain = _extract_domain(website)
+        if website_domain:
+            cursor.execute('SELECT * FROM monitored_accounts WHERE website IS NOT NULL')
+            for row in cursor.fetchall():
+                account = dict(row)
+                # Skip if already matched
+                if any(d['id'] == account['id'] for d in duplicates):
+                    continue
+                existing_domain = _extract_domain(account.get('website', ''))
+                if existing_domain and existing_domain == website_domain:
+                    account['match_reason'] = 'website_domain'
+                    account['match_confidence'] = 85
+                    duplicates.append(account)
+
+    conn.close()
+
+    # Sort by confidence (highest first)
+    duplicates.sort(key=lambda x: x.get('match_confidence', 0), reverse=True)
+
+    return duplicates
+
+
+def _normalize_company_name(name: str) -> str:
+    """
+    Normalize a company name for comparison.
+
+    Removes common suffixes and normalizes spacing/casing.
+    """
+    if not name:
+        return ''
+
+    # Convert to lowercase and strip
+    normalized = name.lower().strip()
+
+    # Remove common company suffixes
+    suffixes = [
+        ', inc.', ', inc', ' inc.', ' inc',
+        ', llc', ' llc',
+        ', ltd.', ', ltd', ' ltd.', ' ltd',
+        ', corp.', ', corp', ' corp.', ' corp',
+        ', co.', ', co', ' co.', ' co',
+        ', corporation', ' corporation',
+        ', incorporated', ' incorporated',
+        ', limited', ' limited',
+        ', gmbh', ' gmbh',
+        ', s.a.', ' s.a.',
+        ', ag', ' ag',
+        ', plc', ' plc',
+    ]
+
+    for suffix in suffixes:
+        if normalized.endswith(suffix):
+            normalized = normalized[:-len(suffix)]
+
+    # Remove "the " prefix
+    if normalized.startswith('the '):
+        normalized = normalized[4:]
+
+    # Normalize whitespace
+    normalized = ' '.join(normalized.split())
+
+    return normalized
+
+
+def _extract_domain(url: str) -> str:
+    """
+    Extract the base domain from a URL.
+
+    Strips protocol, www, and path to get just the domain.
+    """
+    if not url:
+        return ''
+
+    # Convert to lowercase
+    url = url.lower().strip()
+
+    # Remove protocol
+    for prefix in ['https://', 'http://', '//']:
+        if url.startswith(prefix):
+            url = url[len(prefix):]
+
+    # Remove www.
+    if url.startswith('www.'):
+        url = url[4:]
+
+    # Remove path and query string
+    url = url.split('/')[0]
+    url = url.split('?')[0]
+    url = url.split('#')[0]
+
+    return url
+
+
 def delete_account(account_id: int) -> bool:
     """Delete a monitored account."""
     conn = get_db_connection()

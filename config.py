@@ -222,6 +222,140 @@ class Config:
     ]
 
     # ============================================================
+    # NLP FILTERING FOR RFC DETECTION
+    # ============================================================
+    # These patterns help distinguish actual i18n planning discussions
+    # from generic mentions of "translate" in code contexts.
+    # This reduces false positives significantly.
+
+    # High-confidence i18n intent phrases (require less context)
+    RFC_HIGH_INTENT_PHRASES = [
+        'i18n support',
+        'localization support',
+        'internationalization support',
+        'translation support',
+        'multi-language support',
+        'multilingual support',
+        'language support',
+        'regional support',
+        'i18n roadmap',
+        'localization roadmap',
+        'i18n initiative',
+        'localization initiative',
+        'i18n strategy',
+        'localization strategy',
+        'translation strategy',
+        'i18n implementation',
+        'localization implementation',
+        'internationalization effort',
+        'localization effort',
+        'going global',
+        'global expansion',
+        'international markets',
+        'international expansion',
+        'support multiple languages',
+        'support different languages',
+        'multiple language',
+        'different locales',
+        'user language',
+        'user locale',
+        'locale detection',
+        'language detection',
+        'rtl support',
+        'right-to-left',
+        'bidirectional text',
+    ]
+
+    # False positive patterns - if these appear near "translate", it's likely NOT about i18n
+    RFC_FALSE_POSITIVE_PATTERNS = [
+        # Code/API translation (not human language)
+        'translate coordinates',
+        'translate position',
+        'translate transform',
+        'translate matrix',
+        'translate x',
+        'translate y',
+        'translate z',
+        'translate()',
+        'translatex',
+        'translatey',
+        'translatez',
+        'translate3d',
+        'css translate',
+        'svg translate',
+        'canvas translate',
+        'transform translate',
+        # Compiler/parser translation
+        'translate to bytecode',
+        'translate to machine code',
+        'translate to ir',
+        'translate ast',
+        'translate syntax',
+        'translate code',
+        'translate expression',
+        'translate statement',
+        'source to source',
+        # Data format translation
+        'translate json',
+        'translate xml',
+        'translate format',
+        'translate schema',
+        'translate data',
+        'translate between formats',
+        # Mathematical translation
+        'translate vector',
+        'translate point',
+        'translate origin',
+        'translate axis',
+        'geometric translate',
+        # Address/DNS translation
+        'translate address',
+        'translate domain',
+        'nat translation',
+        'address translation',
+        'name translation',
+        # Generic programming terms
+        'translate method',
+        'translate function',
+        'translate call',
+        'translate type',
+        'translate value',
+    ]
+
+    # Context keywords that increase confidence of true i18n intent
+    RFC_CONTEXT_BOOSTERS = [
+        'language',
+        'locale',
+        'locales',
+        'regional',
+        'country',
+        'countries',
+        'international',
+        'global',
+        'worldwide',
+        'users worldwide',
+        'non-english',
+        'foreign language',
+        'native language',
+        'mother tongue',
+        'translation service',
+        'translation platform',
+        'translation management',
+        'crowdin',
+        'transifex',
+        'lokalise',
+        'phrase',
+        'weblate',
+        'gettext',
+        'icu',
+        'cldr',
+        'unicode',
+    ]
+
+    # Minimum word context window for NLP filtering
+    RFC_NLP_CONTEXT_WINDOW = 50  # words before and after keyword
+
+    # ============================================================
     # SIGNAL 2: DEPENDENCY INJECTION (Preparing Phase)
     # ============================================================
     # Target: Dependency files
@@ -444,11 +578,46 @@ class Config:
     # Logic: Flag branches/PRs indicating WIP localization work
 
     GHOST_BRANCH_PATTERNS = [
+        # Primary patterns (high confidence)
         'feature/i18n',
+        'feature/l10n',
+        'feature/localization',
+        'feature/internationalization',
+        'feature/translate',
+        'feature/translation',
+        'feature/translations',
+        'feature/multi-language',
+        'feature/multilingual',
+        'chore/i18n',
+        'chore/l10n',
         'chore/localization',
+        'chore/translations',
         'add-translation-support',
         'refactor/extract-strings',
         'l10n-setup',
+        'i18n-setup',
+        # WIP/Work-in-progress patterns
+        'wip/i18n',
+        'wip/l10n',
+        'wip/localization',
+        'wip/translate',
+        'wip/translations',
+        'work/i18n',
+        'work/localization',
+        # Experimental/draft patterns
+        'experimental/i18n',
+        'experimental/localization',
+        'draft/i18n',
+        'draft/localization',
+        'poc/i18n',
+        'poc/localization',
+        # Language-specific patterns
+        'lang/',
+        'language/',
+        'locale/',
+        'locales/',
+        'translate/',
+        'translation/',
         # Additional common patterns
         'i18n',
         'l10n',
@@ -456,6 +625,21 @@ class Config:
         'internationalization',
         'translations',
         'intl',
+        # Action-based patterns
+        'add-i18n',
+        'add-l10n',
+        'add-localization',
+        'setup-i18n',
+        'setup-l10n',
+        'enable-i18n',
+        'enable-localization',
+        'implement-i18n',
+        'implement-l10n',
+        # String extraction patterns
+        'extract-strings',
+        'string-extraction',
+        'externalize-strings',
+        'message-extraction',
     ]
 
     # ============================================================
