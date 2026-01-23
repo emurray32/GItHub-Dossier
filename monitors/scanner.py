@@ -42,64 +42,6 @@ def _parse_timestamp(timestamp: Optional[object]) -> Optional[datetime]:
     return None
 
 
-def _calculate_rfc_confidence_score(text: str, matched_keywords: list) -> tuple:
-    """
-    Calculate confidence score for RFC/discussion signal using NLP-style filtering.
-
-    Returns:
-        Tuple of (score, is_false_positive, reason)
-        - score: 0-10 confidence score
-        - is_false_positive: True if this should be filtered out
-        - reason: Human-readable explanation
-    """
-    text_lower = text.lower()
-    score = 0
-    reasons = []
-
-    # Check for false positive indicators first
-    for indicator in Config.RFC_FALSE_POSITIVE_INDICATORS:
-        if indicator.lower() in text_lower:
-            return (0, True, f"False positive: contains '{indicator}'")
-
-    # Score based on keyword quality
-    high_intent_keywords = ['i18n strategy', 'localization support', 'RTL support',
-                           'translation workflow', 'internationalization']
-    medium_intent_keywords = ['currency formatting', 'handle timezones', 'multi-currency',
-                             'global expansion']
-    low_intent_keywords = ['translate']  # Generic, prone to false positives
-
-    for kw in matched_keywords:
-        kw_lower = kw.lower()
-        if kw_lower in high_intent_keywords:
-            score += 3
-            reasons.append(f"high-intent: {kw}")
-        elif kw_lower in medium_intent_keywords:
-            score += 2
-            reasons.append(f"medium-intent: {kw}")
-        elif kw_lower in low_intent_keywords:
-            score += 1
-            reasons.append(f"low-intent: {kw}")
-        else:
-            score += 2
-
-    # Boost score with context amplifiers
-    for amplifier in Config.RFC_CONTEXT_AMPLIFIERS:
-        if amplifier.lower() in text_lower:
-            score += 1
-            if len(reasons) < 5:  # Limit reason list
-                reasons.append(f"context: {amplifier}")
-
-    # Cap score at 10
-    score = min(score, 10)
-
-    # Check minimum threshold
-    min_score = getattr(Config, 'RFC_MIN_CONFIDENCE_SCORE', 2)
-    is_false_positive = score < min_score
-
-    reason = f"Score {score}: {', '.join(reasons[:3])}" if reasons else f"Score {score}"
-    return (score, is_false_positive, reason)
-
-
 def _format_request_exception(error: requests.RequestException) -> str:
     response = getattr(error, 'response', None)
     if response is None:
@@ -159,6 +101,174 @@ def _is_open_protocol_project(org_description: Optional[str]) -> Optional[str]:
             return pattern
 
     return None
+
+
+def _is_genuine_i18n_mention(text: str, matched_keyword: str) -> tuple[bool, str]:
+    """
+    Apply NLP filtering to determine if a keyword match is genuinely about i18n.
+
+    This reduces false positives from:
+    - CSS/SVG transform: translate()
+    - Compiler/parser translation
+    - Mathematical/geometric translation
+    - Data format conversion
+
+    Args:
+        text: The full text context (title + body)
+        matched_keyword: The keyword that was matched
+
+    Returns:
+        Tuple of (is_genuine, reason)
+        - is_genuine: True if this appears to be genuine i18n intent
+        - reason: Explanation for the decision
+    """
+    text_lower = text.lower()
+    keyword_lower = matched_keyword.lower()
+
+    # If the keyword is a high-intent phrase, it's almost always genuine
+    for phrase in getattr(Config, 'RFC_HIGH_INTENT_PHRASES', []):
+        if phrase.lower() in text_lower:
+            return True, f"High-intent phrase: {phrase}"
+
+    # Check for false positive patterns (especially around "translate")
+    if keyword_lower == 'translate' or 'translat' in keyword_lower:
+        for fp_pattern in getattr(Config, 'RFC_FALSE_POSITIVE_PATTERNS', []):
+            if fp_pattern.lower() in text_lower:
+                return False, f"False positive pattern: {fp_pattern}"
+
+    # Find the position of the keyword match for context analysis
+    keyword_pos = text_lower.find(keyword_lower)
+    if keyword_pos == -1:
+        return True, "Keyword not found in text (edge case)"
+
+    # Extract context window around the keyword
+    context_window = getattr(Config, 'RFC_NLP_CONTEXT_WINDOW', 50)
+    words = text_lower.split()
+
+    # Find word index of keyword
+    char_count = 0
+    word_start_idx = 0
+    for i, word in enumerate(words):
+        if char_count <= keyword_pos <= char_count + len(word):
+            word_start_idx = i
+            break
+        char_count += len(word) + 1  # +1 for space
+
+    # Get context window
+    start_idx = max(0, word_start_idx - context_window)
+    end_idx = min(len(words), word_start_idx + context_window)
+    context_words = set(words[start_idx:end_idx])
+
+    # Check for context boosters
+    context_boosters = getattr(Config, 'RFC_CONTEXT_BOOSTERS', [])
+    boosters_found = []
+    for booster in context_boosters:
+        if booster.lower() in context_words or booster.lower() in text_lower:
+            boosters_found.append(booster)
+
+    if boosters_found:
+        return True, f"Context boosters found: {', '.join(boosters_found[:3])}"
+
+    # For the generic "translate" keyword, require additional context
+    if keyword_lower == 'translate':
+        # Check if there's any i18n-related context nearby
+        i18n_terms = ['language', 'locale', 'i18n', 'l10n', 'international', 'user', 'string', 'text', 'message']
+        for term in i18n_terms:
+            if term in context_words:
+                return True, f"i18n context term found: {term}"
+        # No supporting context found for generic "translate"
+        return False, "Generic 'translate' without i18n context"
+
+    # For other keywords, assume genuine
+    return True, "Keyword passes NLP filter"
+
+
+def _verify_library_usage_in_codebase(org: str, repo: str, library: str) -> tuple[bool, str, list]:
+    """
+    Verify that a detected i18n library is actually being used in the codebase.
+
+    This helps distinguish between:
+    - Actively used libraries (import statements, API calls found)
+    - Abandoned dependencies (listed but never imported)
+    - Dev dependencies only (used in tests but not production)
+
+    Args:
+        org: GitHub organization login
+        repo: Repository name
+        library: The library name to verify
+
+    Returns:
+        Tuple of (is_used, usage_evidence, import_locations)
+        - is_used: True if actual usage found in source files
+        - usage_evidence: Description of how the library is being used
+        - import_locations: List of files where imports were found
+    """
+    # Map libraries to their common import patterns
+    library_import_patterns = {
+        'react-intl': ['react-intl', 'FormattedMessage', 'FormattedNumber', 'FormattedDate', 'IntlProvider', 'useIntl', 'injectIntl'],
+        'react-i18next': ['react-i18next', 'useTranslation', 'withTranslation', 'Trans', 'I18nextProvider'],
+        'i18next': ['i18next', 'i18n.t(', 't(', 'i18next.init'],
+        'vue-i18n': ['vue-i18n', '$t(', 'VueI18n', 'useI18n'],
+        'next-i18next': ['next-i18next', 'serverSideTranslations', 'useTranslation'],
+        'next-intl': ['next-intl', 'useTranslations', 'NextIntlProvider', 'getTranslations'],
+        '@lingui/core': ['@lingui/core', 'i18n.activate', 'i18n.load'],
+        '@lingui/react': ['@lingui/react', 'Trans', 'useLingui', 'I18nProvider'],
+        '@lingui/macro': ['@lingui/macro', 't`', 'Trans', 'Plural', 'Select'],
+        'formatjs': ['formatjs', '@formatjs', 'IntlMessageFormat'],
+        '@formatjs/intl': ['@formatjs/intl', 'createIntl', 'createIntlCache'],
+        'i18n-js': ['i18n-js', 'I18n.t(', 'I18n.translate'],
+        'typesafe-i18n': ['typesafe-i18n', 'useI18nContext', 'LL.'],
+        'django-babel': ['django_babel', 'babel', 'gettext'],
+        'flask-babel': ['flask_babel', 'Babel', 'gettext', '_()'],
+        'go-i18n': ['go-i18n', 'i18n.Bundle', 'i18n.Localizer'],
+        'rails-i18n': ['I18n.t', 'I18n.translate', 't('],
+    }
+
+    # Get patterns for this library (or use generic patterns)
+    patterns = library_import_patterns.get(library.lower(), [library])
+
+    import_locations = []
+    usage_evidence = []
+
+    # Search for imports/usage in code files
+    # Use GitHub's code search API
+    for pattern in patterns[:3]:  # Limit to first 3 patterns to avoid rate limits
+        try:
+            search_url = f"{Config.GITHUB_API_BASE}/search/code"
+            query = f'repo:{org}/{repo} "{pattern}"'
+            response = make_github_request(search_url, params={'q': query, 'per_page': 5}, timeout=15)
+
+            if response.status_code == 200:
+                search_data = _safe_json_parse(response, {})
+                items = search_data.get('items', [])
+
+                for item in items:
+                    file_path = item.get('path', '')
+                    # Skip test files, examples, and documentation
+                    skip_patterns = ['test', 'spec', 'example', 'demo', 'docs', '__tests__', 'mock', 'fixture']
+                    if any(skip in file_path.lower() for skip in skip_patterns):
+                        continue
+
+                    # Skip node_modules, vendor, etc.
+                    if any(d in file_path for d in ['node_modules', 'vendor', 'dist', 'build']):
+                        continue
+
+                    import_locations.append(file_path)
+                    usage_evidence.append(f"'{pattern}' found in {file_path}")
+
+        except requests.RequestException:
+            continue
+
+    # Deduplicate locations
+    import_locations = list(set(import_locations))
+
+    if import_locations:
+        evidence_str = f"Active usage confirmed in {len(import_locations)} source file(s): {', '.join(import_locations[:3])}"
+        if len(import_locations) > 3:
+            evidence_str += f" and {len(import_locations) - 3} more"
+        return True, evidence_str, import_locations
+    else:
+        return False, "Library declared but no active imports found in source files", []
 
 
 def _fetch_top_contributors(org_login: str, repos: List[Dict], limit: int = 5) -> Dict[str, Dict]:
@@ -717,33 +827,27 @@ def _scan_rfc_discussion(org: str, repo: str, company: str, since_timestamp: dat
                 issue_number = issue.get('number')
                 issue_url = issue.get('html_url')
 
-                # Check for high-intent keywords
+                # Check for high-intent keywords with NLP filtering
                 text_to_check = f"{title} {body}".lower()
                 matched_keywords = []
+                nlp_reasons = []
 
                 for keyword in Config.RFC_KEYWORDS:
                     if keyword.lower() in text_to_check:
-                        matched_keywords.append(keyword)
+                        # Apply NLP filtering to reduce false positives
+                        is_genuine, reason = _is_genuine_i18n_mention(text_to_check, keyword)
+                        if is_genuine:
+                            matched_keywords.append(keyword)
+                            nlp_reasons.append(reason)
 
                 if matched_keywords:
-                    # Apply NLP filtering to reduce false positives
-                    confidence_score, is_false_positive, confidence_reason = _calculate_rfc_confidence_score(
-                        text_to_check, matched_keywords
-                    )
-
-                    if is_false_positive:
-                        # Skip this result - it's likely not actual i18n planning
-                        yield (f"FILTERED: Issue #{issue_number} - {confidence_reason}", None)
-                        continue
-
                     # Determine priority
                     title_upper = title.upper()
                     is_high_priority = (
                         title_upper.startswith('RFC') or
                         title_upper.startswith('PROPOSAL') or
                         title_upper.startswith('[RFC]') or
-                        title_upper.startswith('[PROPOSAL]') or
-                        confidence_score >= 6  # High confidence also gets HIGH priority
+                        title_upper.startswith('[PROPOSAL]')
                     )
 
                     signal = {
@@ -757,8 +861,6 @@ def _scan_rfc_discussion(org: str, repo: str, company: str, since_timestamp: dat
                         'issue_number': issue_number,
                         'title': title,
                         'keywords_matched': matched_keywords,
-                        'confidence_score': confidence_score,
-                        'confidence_reason': confidence_reason,
                         'state': issue.get('state'),
                         'created_at': issue.get('created_at'),
                     }
@@ -801,22 +903,10 @@ def _scan_rfc_discussion(org: str, repo: str, company: str, since_timestamp: dat
                     is_discussion = '/discussions/' in issue_url
 
                     if is_discussion:
-                        # Apply NLP filtering for discussions too
-                        body_text = item.get('body', '') or ''
-                        full_text = f"{title} {body_text}".lower()
-                        confidence_score, is_false_positive, confidence_reason = _calculate_rfc_confidence_score(
-                            full_text, [keyword]
-                        )
-
-                        if is_false_positive:
-                            yield (f"FILTERED: Discussion - {confidence_reason}", None)
-                            continue
-
                         title_upper = title.upper()
                         is_high_priority = (
                             title_upper.startswith('RFC') or
-                            title_upper.startswith('PROPOSAL') or
-                            confidence_score >= 6
+                            title_upper.startswith('PROPOSAL')
                         )
 
                         signal = {
@@ -829,8 +919,6 @@ def _scan_rfc_discussion(org: str, repo: str, company: str, since_timestamp: dat
                             'repo': repo,
                             'title': title,
                             'keywords_matched': [keyword],
-                            'confidence_score': confidence_score,
-                            'confidence_reason': confidence_reason,
                             'is_discussion': True,
                             'created_at': created_at,
                         }
@@ -1109,57 +1197,53 @@ def _scan_dependency_injection(org: str, repo: str, company: str, is_fork: bool 
                                 found_cms_i18n_libs.append(lib)
 
                         if found_libs:
-                            # Verify actual usage of found libraries to reduce false positives
+                            # Verify actual usage of libraries in codebase
                             verified_libs = []
                             unverified_libs = []
-                            verification_evidence = []
+                            usage_details = []
 
                             for lib in found_libs:
-                                # Extract clean library name (remove any suffixes like "(with locale config)")
-                                clean_lib = lib.split(' ')[0] if ' ' in lib else lib
-                                is_verified, verify_evidence, files_found = _verify_dependency_usage(org, repo, clean_lib)
+                                # Clean library name (remove any parenthetical notes)
+                                clean_lib = lib.split(' (')[0] if ' (' in lib else lib
+                                is_used, evidence_detail, locations = _verify_library_usage_in_codebase(org, repo, clean_lib)
 
-                                if is_verified and files_found:
+                                if is_used:
                                     verified_libs.append(lib)
-                                    verification_evidence.append(verify_evidence)
-                                elif is_verified:
-                                    # No patterns defined - trust the dependency
-                                    verified_libs.append(lib)
+                                    usage_details.append(evidence_detail)
                                 else:
                                     unverified_libs.append(lib)
-                                    yield (f"UNVERIFIED: {lib} in dependencies but no usage found", None)
 
-                            # Only proceed if we have verified libraries
-                            if not verified_libs:
-                                yield (f"SKIPPED: All libraries unverified in {dep_path}", None)
-                                continue
+                            # Only emit signal if we have verified libs, or if verification couldn't be performed
+                            active_libs = verified_libs if verified_libs else found_libs
+                            usage_verified = len(verified_libs) > 0
 
                             # This is the GOLDILOCKS ZONE - Library found + NO locale folders (or source-only)!
                             if source_only_evidence:
                                 # Source-only case: folder exists but only has source files
-                                evidence = f"GOLDILOCKS ZONE: Found {', '.join(verified_libs)} in {dep_path}. {source_only_evidence}"
+                                evidence = f"GOLDILOCKS ZONE: Found {', '.join(active_libs)} in {dep_path}. {source_only_evidence}"
                                 gap_explanation = Config.BDR_TRANSLATIONS.get('locale_folder_source_only', 'Infrastructure ready, only source files')
                             else:
                                 # No folder case: no locale folders at all
-                                evidence = f"GOLDILOCKS ZONE: Found {', '.join(verified_libs)} in {dep_path} but NO locale folders exist!"
+                                evidence = f"GOLDILOCKS ZONE: Found {', '.join(active_libs)} in {dep_path} but NO locale folders exist!"
                                 gap_explanation = Config.BDR_TRANSLATIONS.get('locale_folder_missing', 'Infrastructure ready, no translations')
 
-                            # Add verification info to evidence
-                            if verification_evidence:
-                                evidence += f" [{'; '.join(verification_evidence[:2])}]"
+                            # Add usage verification info to evidence
+                            if usage_verified:
+                                evidence += f" Usage verified: {'; '.join(usage_details[:2])}"
 
                             signal = {
                                 'Company': company,
                                 'Signal': 'Dependency Injection',
                                 'Evidence': evidence,
                                 'Link': file_url,
-                                'priority': 'CRITICAL',
+                                'priority': 'CRITICAL' if usage_verified else 'HIGH',
                                 'type': 'dependency_injection',
                                 'repo': repo,
                                 'file': dep_path,
-                                'libraries_found': verified_libs,
-                                'libraries_unverified': unverified_libs,
-                                'usage_verified': True,
+                                'libraries_found': found_libs,
+                                'verified_libraries': verified_libs,
+                                'unverified_libraries': unverified_libs,
+                                'usage_verified': usage_verified,
                                 'goldilocks_status': 'preparing',
                                 'gap_verified': True,  # Negative check passed!
                                 'source_only': source_only_evidence is not None,
@@ -1167,7 +1251,8 @@ def _scan_dependency_injection(org: str, repo: str, company: str, is_fork: bool 
                                 'bdr_gap_explanation': gap_explanation,
                             }
 
-                            yield (f"GOLDILOCKS ZONE: {', '.join(verified_libs)} in {dep_path} - NO TRANSLATIONS YET!", signal)
+                            status = "VERIFIED" if usage_verified else "DECLARED"
+                            yield (f"GOLDILOCKS ZONE ({status}): {', '.join(active_libs)} in {dep_path} - NO TRANSLATIONS YET!", signal)
 
                         for lib in found_linter_libs:
                             signal = {
@@ -1212,69 +1297,6 @@ def _scan_dependency_injection(org: str, repo: str, company: str, is_fork: bool 
 
             except requests.RequestException:
                 continue
-
-
-def _verify_dependency_usage(org: str, repo: str, library: str) -> tuple:
-    """
-    Verify that an i18n library is actually being used in the codebase.
-
-    This reduces false positives from abandoned or unused dependencies by
-    searching for actual import/usage patterns in the source files.
-
-    Args:
-        org: GitHub organization
-        repo: Repository name
-        library: Library name to verify (e.g., 'react-i18next')
-
-    Returns:
-        Tuple of (is_verified, evidence, files_found)
-        - is_verified: True if we found actual usage
-        - evidence: Human-readable description of what we found
-        - files_found: List of files where usage was detected
-    """
-    usage_patterns = getattr(Config, 'DEPENDENCY_USAGE_PATTERNS', {})
-    patterns = usage_patterns.get(library, [])
-
-    if not patterns:
-        # No patterns defined for this library - assume it's used
-        return (True, f"No verification patterns defined for {library}", [])
-
-    # Search for usage patterns using GitHub code search
-    files_with_usage = []
-
-    for pattern in patterns[:3]:  # Limit to 3 patterns to avoid rate limits
-        try:
-            # Build search query
-            search_url = f"{Config.GITHUB_API_BASE}/search/code"
-            query = f"repo:{org}/{repo} {pattern}"
-
-            response = make_github_request(search_url, params={'q': query, 'per_page': 5}, timeout=15)
-
-            if response.status_code == 200:
-                data = _safe_json_parse(response, {})
-                items = data.get('items', [])
-
-                for item in items:
-                    file_path = item.get('path', '')
-                    # Check if it's a source file
-                    extensions = getattr(Config, 'DEPENDENCY_SCAN_EXTENSIONS', ['.js', '.jsx', '.ts', '.tsx'])
-                    if any(file_path.endswith(ext) for ext in extensions):
-                        if file_path not in files_with_usage:
-                            files_with_usage.append(file_path)
-
-                if files_with_usage:
-                    # Found usage - no need to check more patterns
-                    break
-
-        except Exception:
-            continue  # Search failures are non-fatal
-
-    if files_with_usage:
-        evidence = f"Verified {library} usage in: {', '.join(files_with_usage[:3])}"
-        return (True, evidence, files_with_usage)
-    else:
-        evidence = f"Warning: {library} found in dependencies but no usage detected in source files"
-        return (False, evidence, [])
 
 
 def _scan_pseudo_localization_configs(org: str, repo: str, company: str) -> Generator[tuple, None, None]:

@@ -114,6 +114,12 @@ def init_db() -> None:
     except sqlite3.OperationalError:
         pass  # Column already exists
 
+    # Migrate existing tables: add metadata column for storing extra CSV fields as JSON
+    try:
+        cursor.execute('ALTER TABLE monitored_accounts ADD COLUMN metadata TEXT')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
     # Migrate reports table: add is_favorite column if it doesn't exist
     try:
         cursor.execute('ALTER TABLE reports ADD COLUMN is_favorite INTEGER DEFAULT 0')
@@ -923,7 +929,7 @@ def update_account_status(scan_data: dict, report_id: Optional[int] = None) -> d
     }
 
 
-def add_account_to_tier_0(company_name: str, github_org: str, annual_revenue: Optional[str] = None, website: Optional[str] = None) -> dict:
+def add_account_to_tier_0(company_name: str, github_org: str, annual_revenue: Optional[str] = None, website: Optional[str] = None, metadata: Optional[dict] = None) -> dict:
     """
     Add or update a company account to Tier 0 (Tracking) status.
 
@@ -935,6 +941,7 @@ def add_account_to_tier_0(company_name: str, github_org: str, annual_revenue: Op
         github_org: The GitHub organization login.
         annual_revenue: Optional annual revenue string (e.g., "$50M", "$4.6B").
         website: Optional company website URL.
+        metadata: Optional dict of extra CSV fields to store as JSON.
 
     Returns:
         Dictionary with account creation/update result.
@@ -971,8 +978,8 @@ def add_account_to_tier_0(company_name: str, github_org: str, annual_revenue: Op
 
     if existing:
         # Update existing account - don't change last_scanned_at
-        # Only update annual_revenue/website if new values are provided
-        if annual_revenue or website:
+        # Only update annual_revenue/website/metadata if new values are provided
+        if annual_revenue or website or metadata:
             # Build dynamic update based on what's provided
             update_fields = ['github_org = ?', 'next_scan_due = ?']
             update_params = [github_org, next_scan_iso]
@@ -982,6 +989,17 @@ def add_account_to_tier_0(company_name: str, github_org: str, annual_revenue: Op
             if website:
                 update_fields.append('website = ?')
                 update_params.append(website)
+            if metadata:
+                # Merge with existing metadata if present
+                existing_metadata = {}
+                if existing['metadata']:
+                    try:
+                        existing_metadata = json.loads(existing['metadata'])
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+                existing_metadata.update(metadata)
+                update_fields.append('metadata = ?')
+                update_params.append(json.dumps(existing_metadata))
             update_params.append(existing['id'])
             cursor.execute(f'''
                 UPDATE monitored_accounts
@@ -1003,13 +1021,14 @@ def add_account_to_tier_0(company_name: str, github_org: str, annual_revenue: Op
     else:
         # Create new account at Tier 0 (use normalized name)
         # Note: last_scanned_at is NULL until a scan actually completes
+        metadata_json = json.dumps(metadata) if metadata else None
         cursor.execute('''
             INSERT INTO monitored_accounts (
                 company_name, github_org, annual_revenue, website, current_tier, last_scanned_at,
-                status_changed_at, evidence_summary, next_scan_due
-            ) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?)
+                status_changed_at, evidence_summary, next_scan_due, metadata
+            ) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)
         ''', (company_name_normalized, github_org, annual_revenue, website, TIER_TRACKING, now,
-              "Added via Grow pipeline", next_scan_iso))
+              "Added via Grow pipeline", next_scan_iso, metadata_json))
         account_id = cursor.lastrowid
 
     conn.commit()
@@ -1077,6 +1096,57 @@ def update_account_website(company_name: str, website: str) -> bool:
         SET website = ?
         WHERE LOWER(company_name) = LOWER(?)
     ''', (website, company_name.strip()))
+
+    updated = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+
+    return updated
+
+
+def update_account_metadata(company_name: str, metadata: dict) -> bool:
+    """
+    Update or merge the metadata field for an existing account.
+
+    Merges new metadata with existing metadata (new values override existing keys).
+    Used to enrich existing accounts with extra CSV fields.
+
+    Args:
+        company_name: The company name to update.
+        metadata: Dictionary of extra fields to store.
+
+    Returns:
+        True if the update was successful, False if account not found.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # First, fetch existing metadata to merge
+    cursor.execute('''
+        SELECT metadata FROM monitored_accounts
+        WHERE LOWER(company_name) = LOWER(?)
+    ''', (company_name.strip(),))
+    row = cursor.fetchone()
+
+    if not row:
+        conn.close()
+        return False
+
+    # Merge existing metadata with new metadata
+    existing_metadata = {}
+    if row['metadata']:
+        try:
+            existing_metadata = json.loads(row['metadata'])
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    existing_metadata.update(metadata)
+
+    cursor.execute('''
+        UPDATE monitored_accounts
+        SET metadata = ?
+        WHERE LOWER(company_name) = LOWER(?)
+    ''', (json.dumps(existing_metadata), company_name.strip()))
 
     updated = cursor.rowcount > 0
     conn.commit()
@@ -1425,112 +1495,168 @@ def find_potential_duplicates(company_name: str, github_org: str = None, website
     """
     Find potential duplicate accounts using smart matching.
 
-    This function checks for:
-    1. Exact case-insensitive company name match
-    2. Fuzzy company name matches (removing common suffixes like Inc, LLC, Corp)
-    3. GitHub org matches
-    4. Website domain matches
+    This helps prevent importing the same company multiple times by checking:
+    1. Exact company name match (case-insensitive)
+    2. Fuzzy company name match (normalized - removes Inc, LLC, Corp, etc.)
+    3. GitHub org match (case-insensitive)
+    4. Website domain match (strips www, http, etc.)
 
     Args:
         company_name: The company name to check
-        github_org: Optional GitHub organization to check
-        website: Optional website URL to check
+        github_org: Optional GitHub organization to match
+        website: Optional website URL to match
 
     Returns:
-        List of potential duplicate accounts with match_type indicator
+        List of potential duplicate accounts with match_reason
     """
-    import re
-
+    duplicates = []
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    duplicates = []
-    seen_ids = set()
+    # Normalize the input company name
+    company_normalized = _normalize_company_name(company_name)
 
-    # Normalize company name for matching
-    company_name_lower = company_name.lower().strip()
-
-    # 1. Exact case-insensitive match
+    # 1. Exact company name match (case-insensitive)
     cursor.execute(
-        'SELECT * FROM monitored_accounts WHERE LOWER(company_name) = ?',
-        (company_name_lower,)
+        'SELECT * FROM monitored_accounts WHERE LOWER(company_name) = LOWER(?)',
+        (company_name.strip(),)
     )
     for row in cursor.fetchall():
         account = dict(row)
-        if account['id'] not in seen_ids:
-            account['match_type'] = 'exact_name'
-            account['match_confidence'] = 'high'
-            duplicates.append(account)
-            seen_ids.add(account['id'])
+        account['match_reason'] = 'exact_name'
+        account['match_confidence'] = 100
+        duplicates.append(account)
 
-    # 2. Fuzzy name matching - remove common suffixes and check
-    # Remove: Inc, Inc., LLC, Corp, Corporation, Ltd, Limited, Co, Company
-    suffixes_pattern = r'\s*(,?\s*(inc\.?|llc\.?|corp\.?|corporation|ltd\.?|limited|co\.?|company|technologies|tech|software|labs?|group|holdings?|enterprises?|solutions?|systems?))+\s*$'
-    normalized_name = re.sub(suffixes_pattern, '', company_name_lower, flags=re.IGNORECASE).strip()
+    # 2. Fuzzy company name match (normalized)
+    cursor.execute('SELECT * FROM monitored_accounts')
+    for row in cursor.fetchall():
+        account = dict(row)
+        existing_normalized = _normalize_company_name(account.get('company_name', ''))
 
-    if normalized_name and normalized_name != company_name_lower:
-        # Search for accounts with similar normalized names
-        cursor.execute('SELECT * FROM monitored_accounts')
-        for row in cursor.fetchall():
-            account = dict(row)
-            if account['id'] in seen_ids:
-                continue
-            existing_name = account.get('company_name', '').lower()
-            existing_normalized = re.sub(suffixes_pattern, '', existing_name, flags=re.IGNORECASE).strip()
+        # Skip if already matched
+        if any(d['id'] == account['id'] for d in duplicates):
+            continue
 
-            if existing_normalized == normalized_name:
-                account['match_type'] = 'similar_name'
-                account['match_confidence'] = 'medium'
-                account['match_detail'] = f"'{company_name}' matches '{account['company_name']}' (normalized)"
+        # Check normalized match
+        if existing_normalized and company_normalized:
+            if existing_normalized == company_normalized:
+                account['match_reason'] = 'normalized_name'
+                account['match_confidence'] = 90
                 duplicates.append(account)
-                seen_ids.add(account['id'])
+            # Check if one contains the other (for variations like "Acme" vs "Acme Inc")
+            elif existing_normalized in company_normalized or company_normalized in existing_normalized:
+                account['match_reason'] = 'partial_name'
+                account['match_confidence'] = 75
+                duplicates.append(account)
 
-    # 3. GitHub org match
+    # 3. GitHub org match (if provided)
     if github_org:
-        github_org_lower = github_org.lower().strip()
         cursor.execute(
-            'SELECT * FROM monitored_accounts WHERE LOWER(github_org) = ?',
-            (github_org_lower,)
+            'SELECT * FROM monitored_accounts WHERE LOWER(github_org) = LOWER(?)',
+            (github_org.strip(),)
         )
         for row in cursor.fetchall():
             account = dict(row)
-            if account['id'] not in seen_ids:
-                account['match_type'] = 'github_org'
-                account['match_confidence'] = 'high'
-                account['match_detail'] = f"Same GitHub org: {github_org}"
-                duplicates.append(account)
-                seen_ids.add(account['id'])
+            # Skip if already matched
+            if any(d['id'] == account['id'] for d in duplicates):
+                continue
+            account['match_reason'] = 'github_org'
+            account['match_confidence'] = 95
+            duplicates.append(account)
 
-    # 4. Website domain match
+    # 4. Website domain match (if provided)
     if website:
-        # Extract domain from website URL
-        domain_pattern = r'(?:https?://)?(?:www\.)?([^/]+)'
-        match = re.match(domain_pattern, website.lower())
-        if match:
-            domain = match.group(1)
-            cursor.execute('SELECT * FROM monitored_accounts WHERE website IS NOT NULL AND website != ""')
+        website_domain = _extract_domain(website)
+        if website_domain:
+            cursor.execute('SELECT * FROM monitored_accounts WHERE website IS NOT NULL')
             for row in cursor.fetchall():
                 account = dict(row)
-                if account['id'] in seen_ids:
+                # Skip if already matched
+                if any(d['id'] == account['id'] for d in duplicates):
                     continue
-                existing_website = account.get('website', '')
-                if existing_website:
-                    existing_match = re.match(domain_pattern, existing_website.lower())
-                    if existing_match and existing_match.group(1) == domain:
-                        account['match_type'] = 'website_domain'
-                        account['match_confidence'] = 'high'
-                        account['match_detail'] = f"Same domain: {domain}"
-                        duplicates.append(account)
-                        seen_ids.add(account['id'])
+                existing_domain = _extract_domain(account.get('website', ''))
+                if existing_domain and existing_domain == website_domain:
+                    account['match_reason'] = 'website_domain'
+                    account['match_confidence'] = 85
+                    duplicates.append(account)
 
     conn.close()
 
-    # Add tier config to all results
-    for dup in duplicates:
-        tier = dup.get('current_tier') or 0
-        dup['tier_config'] = TIER_CONFIG.get(tier, TIER_CONFIG[TIER_TRACKING])
+    # Sort by confidence (highest first)
+    duplicates.sort(key=lambda x: x.get('match_confidence', 0), reverse=True)
 
     return duplicates
+
+
+def _normalize_company_name(name: str) -> str:
+    """
+    Normalize a company name for comparison.
+
+    Removes common suffixes and normalizes spacing/casing.
+    """
+    if not name:
+        return ''
+
+    # Convert to lowercase and strip
+    normalized = name.lower().strip()
+
+    # Remove common company suffixes
+    suffixes = [
+        ', inc.', ', inc', ' inc.', ' inc',
+        ', llc', ' llc',
+        ', ltd.', ', ltd', ' ltd.', ' ltd',
+        ', corp.', ', corp', ' corp.', ' corp',
+        ', co.', ', co', ' co.', ' co',
+        ', corporation', ' corporation',
+        ', incorporated', ' incorporated',
+        ', limited', ' limited',
+        ', gmbh', ' gmbh',
+        ', s.a.', ' s.a.',
+        ', ag', ' ag',
+        ', plc', ' plc',
+    ]
+
+    for suffix in suffixes:
+        if normalized.endswith(suffix):
+            normalized = normalized[:-len(suffix)]
+
+    # Remove "the " prefix
+    if normalized.startswith('the '):
+        normalized = normalized[4:]
+
+    # Normalize whitespace
+    normalized = ' '.join(normalized.split())
+
+    return normalized
+
+
+def _extract_domain(url: str) -> str:
+    """
+    Extract the base domain from a URL.
+
+    Strips protocol, www, and path to get just the domain.
+    """
+    if not url:
+        return ''
+
+    # Convert to lowercase
+    url = url.lower().strip()
+
+    # Remove protocol
+    for prefix in ['https://', 'http://', '//']:
+        if url.startswith(prefix):
+            url = url[len(prefix):]
+
+    # Remove www.
+    if url.startswith('www.'):
+        url = url[4:]
+
+    # Remove path and query string
+    url = url.split('/')[0]
+    url = url.split('?')[0]
+    url = url.split('#')[0]
+
+    return url
 
 
 def get_import_duplicates_summary(companies_list: list) -> dict:
@@ -1578,9 +1704,8 @@ def get_import_duplicates_summary(companies_list: list) -> dict:
                 'matches': [
                     {
                         'existing_name': d['company_name'],
-                        'match_type': d.get('match_type'),
+                        'match_reason': d.get('match_reason'),
                         'match_confidence': d.get('match_confidence'),
-                        'match_detail': d.get('match_detail', '')
                     }
                     for d in potential_dups
                 ]

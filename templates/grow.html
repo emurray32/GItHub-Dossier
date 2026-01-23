@@ -2,6 +2,24 @@
 
 {% block title %}Grow Pipeline - Lead Machine{% endblock %}
 
+{% block breadcrumb %}
+<nav class="breadcrumb-container" aria-label="Breadcrumb">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item">
+            <a href="{{ url_for('accounts') }}">
+                <svg class="breadcrumb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                    <polyline points="9 22 9 12 15 12 15 22"></polyline>
+                </svg>
+                Accounts
+            </a>
+        </li>
+        <li class="breadcrumb-separator">/</li>
+        <li class="breadcrumb-item active" aria-current="page">Grow Pipeline</li>
+    </ol>
+</nav>
+{% endblock %}
+
 {% block head %}
 <style>
     .grow-container {
@@ -816,6 +834,16 @@
                     <textarea class="companies-textarea" id="companiesInput"
                         placeholder="Shopify&#10;Stripe&#10;Figma&#10;Slack&#10;Notion"></textarea>
 
+                    <div class="import-options" style="display: flex; gap: 1rem; align-items: center; margin-bottom: 1rem;">
+                        <label class="import-option" style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.875rem; color: var(--text-secondary); cursor: pointer;">
+                            <input type="checkbox" id="skipDuplicates" style="accent-color: var(--accent-color);">
+                            <span>Auto-skip duplicates</span>
+                        </label>
+                        <button type="button" class="check-duplicates-btn" onclick="checkForDuplicates()" style="padding: 0.5rem 1rem; font-size: 0.85rem; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-secondary); cursor: pointer;">
+                            Check for Duplicates
+                        </button>
+                    </div>
+
                     <button type="submit" class="process-batch-btn" id="processBtn">
                         ▶ Process Batch
                     </button>
@@ -1027,6 +1055,7 @@
         if (lines.length === 0) return [];
 
         const header = lines[0].split(',').map(h => stripQuotes(h).toLowerCase());
+        const originalHeader = lines[0].split(',').map(h => stripQuotes(h)); // Preserve original case for metadata keys
         const companyNameIndex = header.findIndex(h =>
             h === 'company_name' || h === 'name' || h === 'company' || h === 'company name'
         );
@@ -1045,6 +1074,11 @@
             h === 'website' || h === 'url' || h === 'company_website' || h === 'company website' || h === 'site'
         );
 
+        // Identify which column indices are "known" (displayed) fields
+        const knownIndices = new Set([companyNameIndex]);
+        if (revenueIndex !== -1) knownIndices.add(revenueIndex);
+        if (websiteIndex !== -1) knownIndices.add(websiteIndex);
+
         const companies = [];
         for (let i = 1; i < lines.length; i++) {
             const fields = lines[i].split(',').map(f => stripQuotes(f));
@@ -1052,10 +1086,22 @@
                 // Validate revenue value - ignore text that doesn't look like a number
                 const rawRevenue = revenueIndex !== -1 ? fields[revenueIndex] : null;
                 const rawWebsite = websiteIndex !== -1 ? fields[websiteIndex] : null;
+
+                // Collect all extra fields into metadata object
+                const metadata = {};
+                for (let j = 0; j < fields.length; j++) {
+                    if (!knownIndices.has(j) && fields[j] && fields[j].trim()) {
+                        // Use original header name as key (preserves case)
+                        const key = originalHeader[j] || `column_${j}`;
+                        metadata[key] = fields[j].trim();
+                    }
+                }
+
                 const company = {
                     name: fields[companyNameIndex],
                     annual_revenue: validateRevenueValue(rawRevenue),
-                    website: rawWebsite || null
+                    website: rawWebsite || null,
+                    metadata: Object.keys(metadata).length > 0 ? metadata : null
                 };
                 companies.push(company);
             }
@@ -1607,25 +1653,21 @@
         }
     }
 
-    async function processImport(event) {
-        event.preventDefault();
-
+    async function checkForDuplicates() {
         const input = document.getElementById('companiesInput').value.trim();
-        const btn = document.getElementById('processBtn');
 
         if (!input) {
-            addConsoleEntry('Please enter at least one company name', 'warning');
+            addConsoleEntry('Please enter at least one company name to check', 'warning');
             return;
         }
 
         const companies = input.split('\n').map(c => c.trim()).filter(c => c.length > 0);
 
         clearConsole();
-        btn.disabled = true;
-        addConsoleEntry(`Starting batch import of ${companies.length} companies...`, 'info');
+        addConsoleEntry(`Checking ${companies.length} companies for duplicates...`, 'info');
 
         try {
-            const response = await fetch('/api/import', {
+            const response = await fetch('/api/import/check-duplicates', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ companies })
@@ -1636,28 +1678,118 @@
             if (response.ok) {
                 addConsoleEntry('', 'info');
                 addConsoleEntry(`═══════════════════════════════════`, 'info');
-                addConsoleEntry(`Import Complete`, 'success');
+                addConsoleEntry(`Duplicate Check Results`, 'info');
                 addConsoleEntry(`═══════════════════════════════════`, 'info');
-                addConsoleEntry(`Added: ${data.added.length} / ${data.total_processed}`, 'success');
-                addConsoleEntry(`Failed: ${data.failed.length} / ${data.total_processed}`, 'error');
+                addConsoleEntry(`Total checked: ${data.total_checked}`, 'info');
+                addConsoleEntry(`New companies: ${data.new_companies}`, 'success');
+                addConsoleEntry(`Duplicates found: ${data.duplicates_found}`, data.duplicates_found > 0 ? 'warning' : 'success');
                 addConsoleEntry('', 'info');
 
-                // Show results
                 data.results.forEach(result => {
-                    if (result.status === 'added') {
-                        addConsoleEntry(`Added ${result.company} → ${result.github_org}`, 'success');
+                    if (result.is_duplicate) {
+                        const match = result.matches[0];
+                        const reason = match.match_reason.replace('_', ' ');
+                        const confidence = match.match_confidence;
+                        addConsoleEntry(`⚠ ${result.company} → matches "${match.company_name}" (${reason}, ${confidence}% confidence)`, 'warning');
                     } else {
-                        addConsoleEntry(`${result.company} (${result.status})`, 'error');
+                        addConsoleEntry(`✓ ${result.company} → new company`, 'success');
                     }
                 });
 
-                // Redirect to accounts page with batch_id to highlight new imports
-                if (data.batch_id) {
+                if (data.duplicates_found > 0) {
                     addConsoleEntry('', 'info');
-                    addConsoleEntry('Redirecting to results...', 'info');
-                    setTimeout(() => {
-                        window.location.href = `/accounts?highlight_batch=${data.batch_id}`;
-                    }, 2000);
+                    addConsoleEntry('Tip: Enable "Auto-skip duplicates" to import only new companies', 'info');
+                }
+            } else {
+                addConsoleEntry(`Error: ${data.error}`, 'error');
+            }
+        } catch (error) {
+            addConsoleEntry(`Network Error: ${error.message}`, 'error');
+        }
+    }
+
+    async function processImport(event) {
+        event.preventDefault();
+
+        const input = document.getElementById('companiesInput').value.trim();
+        const btn = document.getElementById('processBtn');
+        const skipDuplicates = document.getElementById('skipDuplicates')?.checked || false;
+
+        if (!input) {
+            addConsoleEntry('Please enter at least one company name', 'warning');
+            return;
+        }
+
+        const companies = input.split('\n').map(c => c.trim()).filter(c => c.length > 0);
+
+        clearConsole();
+        btn.disabled = true;
+
+        if (skipDuplicates) {
+            addConsoleEntry(`Starting batch import of ${companies.length} companies (auto-skipping duplicates)...`, 'info');
+        } else {
+            addConsoleEntry(`Starting batch import of ${companies.length} companies...`, 'info');
+        }
+
+        try {
+            const response = await fetch('/api/import', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ companies, skip_duplicates: skipDuplicates })
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                addConsoleEntry('', 'info');
+                addConsoleEntry(`═══════════════════════════════════`, 'info');
+                addConsoleEntry(`Import Complete`, 'success');
+                addConsoleEntry(`═══════════════════════════════════`, 'info');
+
+                // Handle new batch-style response
+                if (data.status === 'queued' && data.batch_id) {
+                    addConsoleEntry(`Queued ${data.total_count} companies for import`, 'success');
+
+                    // Show skipped duplicates if any
+                    if (data.skipped_duplicates && data.skipped_duplicates.length > 0) {
+                        addConsoleEntry(`Skipped ${data.skipped_count} duplicates:`, 'warning');
+                        data.skipped_duplicates.forEach(skip => {
+                            addConsoleEntry(`  ⚠ ${skip.company} → matches "${skip.existing_match}" (${skip.match_reason.replace('_', ' ')})`, 'warning');
+                        });
+                    }
+
+                    // Poll for progress
+                    await pollBatchProgress(data.batch_id, data.total_count);
+                } else if (data.status === 'skipped') {
+                    addConsoleEntry('All companies were duplicates - nothing to import', 'warning');
+                    if (data.skipped_duplicates && data.skipped_duplicates.length > 0) {
+                        data.skipped_duplicates.forEach(skip => {
+                            addConsoleEntry(`  ⚠ ${skip.company} → matches "${skip.existing_match}"`, 'warning');
+                        });
+                    }
+                } else if (data.added || data.results) {
+                    // Handle legacy response format
+                    addConsoleEntry(`Added: ${data.added?.length || 0} / ${data.total_processed || 0}`, 'success');
+                    addConsoleEntry(`Failed: ${data.failed?.length || 0} / ${data.total_processed || 0}`, 'error');
+                    addConsoleEntry('', 'info');
+
+                    // Show results
+                    (data.results || []).forEach(result => {
+                        if (result.status === 'added') {
+                            addConsoleEntry(`Added ${result.company} → ${result.github_org}`, 'success');
+                        } else {
+                            addConsoleEntry(`${result.company} (${result.status})`, 'error');
+                        }
+                    });
+
+                    // Redirect to accounts page with batch_id to highlight new imports
+                    if (data.batch_id) {
+                        addConsoleEntry('', 'info');
+                        addConsoleEntry('Redirecting to results...', 'info');
+                        setTimeout(() => {
+                            window.location.href = `/accounts?highlight_batch=${data.batch_id}`;
+                        }, 2000);
+                    }
                 }
             } else {
                 addConsoleEntry(`Error: ${data.error}`, 'error');
