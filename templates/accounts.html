@@ -1486,6 +1486,29 @@
         cursor: not-allowed;
     }
 
+    .btn-archive {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+        padding: 0.45rem 0.9rem;
+        background: #f59e0b;
+        color: white;
+        border: none;
+        border-radius: 6px;
+        font-size: 0.8rem;
+        cursor: pointer;
+        transition: background var(--transition-fast);
+    }
+
+    .btn-archive:hover:not(:disabled) {
+        background: #d97706;
+    }
+
+    .btn-archive:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+
     /* Pagination controls */
     .pagination-container {
         display: flex;
@@ -2413,6 +2436,9 @@
             </button>
             <button type="button" class="btn-rescan" id="bulk-export-btn" onclick="exportCSV()">
                 Export CSV
+            </button>
+            <button type="button" class="btn-archive" id="bulk-archive-btn" onclick="bulkArchiveSelected()">
+                Archive Selected
             </button>
             <button type="button" class="btn-danger" id="bulk-delete-btn" onclick="bulkDeleteSelected()">
                 Delete Selected
@@ -3987,6 +4013,49 @@
         if (selectAll) selectAll.checked = false;
         updateBulkSelectionState();
         showNotification('Selected accounts removed.', 'success');
+    }
+
+    async function bulkArchiveSelected() {
+        const selectedRows = getSelectedRows();
+        if (selectedRows.length === 0) return;
+
+        if (!confirm(`Archive ${selectedRows.length} selected account${selectedRows.length === 1 ? '' : 's'}? Archived accounts will be hidden from the main list but can be restored later.`)) {
+            return;
+        }
+
+        let successCount = 0;
+        let failCount = 0;
+
+        for (const row of selectedRows) {
+            const accountId = row.dataset.accountId;
+            const company = row.dataset.company || 'this account';
+            if (!accountId) continue;
+            try {
+                const response = await fetch(`/api/accounts/${accountId}/archive`, { method: 'POST' });
+                if (!response.ok) {
+                    const data = await response.json();
+                    throw new Error(data.error || 'Failed to archive account.');
+                }
+                row.remove();
+                successCount++;
+            } catch (error) {
+                showNotification(`Failed to archive ${company}: ${error.message}`, 'warning');
+                failCount++;
+            }
+        }
+
+        const selectAll = document.querySelector('#select-all-accounts');
+        if (selectAll) selectAll.checked = false;
+        updateBulkSelectionState();
+
+        if (successCount > 0) {
+            showNotification(`${successCount} account${successCount === 1 ? '' : 's'} archived successfully.`, 'success');
+            // Update archived count in the header if it exists
+            updateArchivedCount(successCount);
+        }
+        if (failCount > 0) {
+            showNotification(`Failed to archive ${failCount} account${failCount === 1 ? '' : 's'}.`, 'warning');
+        }
     }
 
     // =============================================================================
