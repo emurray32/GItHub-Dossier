@@ -1529,6 +1529,99 @@ def api_lead_stream():
         return jsonify({'error': f'Failed to generate lead stream: {str(e)}'}), 500
 
 
+@app.route('/api/import/check-duplicates', methods=['POST'])
+def api_check_duplicates():
+    """
+    Check for potential duplicates before importing companies.
+
+    This endpoint helps prevent importing the same company multiple times by:
+    1. Checking exact company name matches (case-insensitive)
+    2. Checking fuzzy company name matches (removes Inc, LLC, Corp, etc.)
+    3. Checking GitHub org matches (if provided)
+    4. Checking website domain matches (if provided)
+
+    Expects JSON payload: {"companies": ["Shopify", "Stripe", ...]}
+    Or with details: {"companies": [{"name": "Shopify", "github_org": "shopify", "website": "shopify.com"}, ...]}
+
+    Returns:
+        JSON with: {
+            "total_checked": <int>,
+            "duplicates_found": <int>,
+            "results": [
+                {
+                    "company": "Shopify",
+                    "is_duplicate": true,
+                    "matches": [
+                        {
+                            "id": 123,
+                            "company_name": "Shopify",
+                            "match_reason": "exact_name",
+                            "match_confidence": 100
+                        }
+                    ]
+                },
+                ...
+            ]
+        }
+    """
+    from database import find_potential_duplicates
+
+    data = request.get_json() or {}
+    companies = data.get('companies', [])
+
+    if not isinstance(companies, list) or not companies:
+        return jsonify({'error': 'Invalid payload: expected {"companies": [...]}'}), 400
+
+    results = []
+    duplicates_count = 0
+
+    for company_item in companies:
+        # Support both string format and object format
+        if isinstance(company_item, dict):
+            company_name = company_item.get('name', '').strip()
+            github_org = company_item.get('github_org', '').strip() if company_item.get('github_org') else None
+            website = company_item.get('website', '').strip() if company_item.get('website') else None
+        else:
+            company_name = str(company_item).strip()
+            github_org = None
+            website = None
+
+        if not company_name:
+            continue
+
+        # Find potential duplicates
+        duplicates = find_potential_duplicates(company_name, github_org, website)
+
+        # Format matches for response
+        matches = []
+        for dup in duplicates:
+            matches.append({
+                'id': dup.get('id'),
+                'company_name': dup.get('company_name'),
+                'github_org': dup.get('github_org'),
+                'current_tier': dup.get('current_tier'),
+                'match_reason': dup.get('match_reason'),
+                'match_confidence': dup.get('match_confidence'),
+            })
+
+        is_duplicate = len(matches) > 0
+        if is_duplicate:
+            duplicates_count += 1
+
+        results.append({
+            'company': company_name,
+            'is_duplicate': is_duplicate,
+            'matches': matches,
+        })
+
+    return jsonify({
+        'total_checked': len(results),
+        'duplicates_found': duplicates_count,
+        'new_companies': len(results) - duplicates_count,
+        'results': results,
+    })
+
+
 @app.route('/api/import', methods=['POST'])
 @app.route('/api/accounts/import', methods=['POST'])
 def api_import():
@@ -1546,6 +1639,7 @@ def api_import():
 
     Expects JSON payload: {"companies": ["Shopify", "Stripe", ...]}
     Or with annual_revenue: {"companies": [{"name": "Shopify", "annual_revenue": "$4.6B"}, ...]}
+    Optional: {"skip_duplicates": true} to automatically skip detected duplicates
 
     Returns:
         JSON with: {
@@ -1555,27 +1649,74 @@ def api_import():
             "message": "Import batch created and queued for processing"
         }
     """
+    from database import find_potential_duplicates
+
     data = request.get_json() or {}
     companies = data.get('companies', [])
+    skip_duplicates = data.get('skip_duplicates', False)
 
     if not isinstance(companies, list) or not companies:
         return jsonify({'error': 'Invalid payload: expected {"companies": [...]}'}), 400
 
-    # Create persistent batch in database
-    batch_id = create_import_batch(companies)
-    print(f"[IMPORT] Created batch {batch_id} with {len(companies)} companies")
+    # If skip_duplicates is enabled, filter out potential duplicates
+    filtered_companies = []
+    skipped_duplicates = []
+
+    for company_item in companies:
+        if isinstance(company_item, dict):
+            company_name = company_item.get('name', '').strip()
+            github_org = company_item.get('github_org', '').strip() if company_item.get('github_org') else None
+            website = company_item.get('website', '').strip() if company_item.get('website') else None
+        else:
+            company_name = str(company_item).strip()
+            github_org = None
+            website = None
+
+        if not company_name:
+            continue
+
+        if skip_duplicates:
+            duplicates = find_potential_duplicates(company_name, github_org, website)
+            if duplicates:
+                skipped_duplicates.append({
+                    'company': company_name,
+                    'existing_match': duplicates[0].get('company_name'),
+                    'match_reason': duplicates[0].get('match_reason'),
+                })
+                continue
+
+        filtered_companies.append(company_item)
+
+    if not filtered_companies:
+        return jsonify({
+            'batch_id': None,
+            'total_count': 0,
+            'status': 'skipped',
+            'message': 'All companies were duplicates - nothing to import',
+            'skipped_duplicates': skipped_duplicates if skip_duplicates else [],
+        })
+
+    # Create persistent batch in database with filtered companies
+    batch_id = create_import_batch(filtered_companies)
+    print(f"[IMPORT] Created batch {batch_id} with {len(filtered_companies)} companies")
 
     # Submit batch to thread pool for background processing
     executor = get_executor()
     executor.submit(process_import_batch_worker, batch_id)
     print(f"[EXECUTOR] Submitted batch {batch_id} for processing")
 
-    return jsonify({
+    response = {
         'batch_id': batch_id,
-        'total_count': len(companies),
+        'total_count': len(filtered_companies),
         'status': 'queued',
-        'message': 'Import batch created and queued for processing'
-    })
+        'message': 'Import batch created and queued for processing',
+    }
+
+    if skip_duplicates and skipped_duplicates:
+        response['skipped_duplicates'] = skipped_duplicates
+        response['skipped_count'] = len(skipped_duplicates)
+
+    return jsonify(response)
 
 
 @app.route('/api/import-batch/<int:batch_id>', methods=['GET'])
