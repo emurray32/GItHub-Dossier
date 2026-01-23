@@ -27,7 +27,9 @@ from database import (
     save_signals, cleanup_duplicate_accounts, update_account_annual_revenue,
     update_account_website, update_account_notes,
     create_import_batch, get_pending_import_batches, update_batch_progress, get_import_batch,
-    increment_hourly_api_calls, get_current_hour_api_calls, cleanup_old_hourly_stats
+    increment_hourly_api_calls, get_current_hour_api_calls, cleanup_old_hourly_stats,
+    archive_account, unarchive_account, get_archived_accounts, get_archived_accounts_for_rescan,
+    get_archived_count, auto_archive_tier4_accounts
 )
 from monitors.scanner import deep_scan_generator
 from monitors.discovery import search_github_orgs, resolve_org_fast, discover_companies_via_ai
@@ -1192,6 +1194,9 @@ def accounts():
     # Get tier counts for ALL accounts (not just current page)
     tier_counts = get_tier_counts()
 
+    # Get archived accounts count
+    archived_count = get_archived_count()
+
     return render_template(
         'accounts.html',
         accounts=result['accounts'],
@@ -1202,7 +1207,8 @@ def accounts():
         current_tier_filter=tiers,
         current_search=search_query or '',
         tier_config=TIER_CONFIG,
-        tier_counts=tier_counts
+        tier_counts=tier_counts,
+        archived_count=archived_count
     )
 
 
@@ -1309,6 +1315,51 @@ def api_update_account_notes(account_id: int):
     if not updated:
         return jsonify({'error': 'Account not found'}), 404
     return jsonify({'status': 'success', 'notes': notes})
+
+
+@app.route('/api/accounts/<int:account_id>/archive', methods=['POST'])
+def api_archive_account(account_id: int):
+    """Archive an account (hide from main list but retain for periodic re-scan)."""
+    archived = archive_account(account_id)
+    if not archived:
+        return jsonify({'error': 'Account not found or already archived'}), 404
+    return jsonify({'status': 'success', 'message': 'Account archived'})
+
+
+@app.route('/api/accounts/<int:account_id>/unarchive', methods=['POST'])
+def api_unarchive_account(account_id: int):
+    """Unarchive an account (restore to main accounts list)."""
+    unarchived = unarchive_account(account_id)
+    if not unarchived:
+        return jsonify({'error': 'Account not found or not archived'}), 404
+    return jsonify({'status': 'success', 'message': 'Account unarchived'})
+
+
+@app.route('/api/accounts/archived')
+def api_get_archived_accounts():
+    """
+    Get archived accounts with pagination.
+
+    Query parameters:
+        page: Page number (default 1)
+        limit: Items per page (default 50)
+        search: Search query (optional)
+
+    Returns JSON with archived accounts and pagination info.
+    """
+    page = request.args.get('page', 1, type=int)
+    limit = request.args.get('limit', 50, type=int)
+    search_query = request.args.get('search', None)
+
+    result = get_archived_accounts(page=page, limit=limit, search_query=search_query)
+    return jsonify(result)
+
+
+@app.route('/api/accounts/archived/count')
+def api_get_archived_count():
+    """Get the count of archived accounts."""
+    count = get_archived_count()
+    return jsonify({'count': count})
 
 
 @app.route('/grow')
@@ -3146,6 +3197,56 @@ def start_watchdog():
     thread.start()
 
 
+def _archived_accounts_rescan_worker():
+    """
+    Background worker that runs every 4 weeks to re-scan archived accounts.
+
+    Archived accounts (primarily Tier 4 - Invalid/Disqualified) are checked
+    periodically to see if they've become valid (e.g., org now exists, has public repos).
+
+    If a re-scan shows the account is now valid (Tier 0-3), it will be automatically
+    unarchived by update_account_status.
+    """
+    from datetime import timedelta
+
+    # Run every 4 weeks (28 days) - check daily but only process accounts due for rescan
+    RESCAN_CHECK_INTERVAL = 86400  # Check once per day (in seconds)
+
+    print("[ARCHIVE RESCAN] Background thread started - will check for accounts to rescan daily")
+
+    while True:
+        try:
+            # Get archived accounts that haven't been scanned in 28+ days
+            accounts_to_rescan = get_archived_accounts_for_rescan()
+
+            if accounts_to_rescan:
+                print(f"[ARCHIVE RESCAN] Found {len(accounts_to_rescan)} archived accounts due for re-scan")
+
+                for account in accounts_to_rescan:
+                    company_name = account.get('company_name')
+                    if company_name:
+                        try:
+                            # Queue the account for re-scan
+                            spawn_background_scan(company_name)
+                            print(f"[ARCHIVE RESCAN] Queued re-scan for archived account: {company_name}")
+                            # Small delay between queueing to avoid overwhelming the system
+                            time.sleep(2)
+                        except Exception as e:
+                            print(f"[ARCHIVE RESCAN] Failed to queue {company_name}: {e}")
+
+        except Exception as e:
+            print(f"[ARCHIVE RESCAN] Error in rescan worker: {e}")
+
+        # Sleep for 24 hours before checking again
+        time.sleep(RESCAN_CHECK_INTERVAL)
+
+
+def start_archived_rescan_scheduler():
+    """Start the archived accounts rescan scheduler in a background daemon thread."""
+    thread = threading.Thread(target=_archived_accounts_rescan_worker, daemon=True, name="ArchivedRescanScheduler")
+    thread.start()
+
+
 if __name__ == '__main__':
     # Initialize when running directly
     print("[APP] Starting application...")
@@ -3165,6 +3266,9 @@ if __name__ == '__main__':
 
     # Start the rules scheduler for 7am EST daily updates
     start_rules_scheduler()
+
+    # Start the archived accounts rescan scheduler (re-scans every 4 weeks)
+    start_archived_rescan_scheduler()
 
     # IMPORTANT: Recover stuck queued accounts BEFORE reset_all_scan_statuses
     # This captures accounts stuck in 'queued' state and re-queues them
