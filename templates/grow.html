@@ -1035,6 +1035,7 @@
         if (lines.length === 0) return [];
 
         const header = lines[0].split(',').map(h => stripQuotes(h).toLowerCase());
+        const originalHeader = lines[0].split(',').map(h => stripQuotes(h)); // Preserve original case for metadata keys
         const companyNameIndex = header.findIndex(h =>
             h === 'company_name' || h === 'name' || h === 'company' || h === 'company name'
         );
@@ -1053,6 +1054,11 @@
             h === 'website' || h === 'url' || h === 'company_website' || h === 'company website' || h === 'site'
         );
 
+        // Identify which column indices are "known" (displayed) fields
+        const knownIndices = new Set([companyNameIndex]);
+        if (revenueIndex !== -1) knownIndices.add(revenueIndex);
+        if (websiteIndex !== -1) knownIndices.add(websiteIndex);
+
         const companies = [];
         for (let i = 1; i < lines.length; i++) {
             const fields = lines[i].split(',').map(f => stripQuotes(f));
@@ -1060,10 +1066,22 @@
                 // Validate revenue value - ignore text that doesn't look like a number
                 const rawRevenue = revenueIndex !== -1 ? fields[revenueIndex] : null;
                 const rawWebsite = websiteIndex !== -1 ? fields[websiteIndex] : null;
+
+                // Collect all extra fields into metadata object
+                const metadata = {};
+                for (let j = 0; j < fields.length; j++) {
+                    if (!knownIndices.has(j) && fields[j] && fields[j].trim()) {
+                        // Use original header name as key (preserves case)
+                        const key = originalHeader[j] || `column_${j}`;
+                        metadata[key] = fields[j].trim();
+                    }
+                }
+
                 const company = {
                     name: fields[companyNameIndex],
                     annual_revenue: validateRevenueValue(rawRevenue),
-                    website: rawWebsite || null
+                    website: rawWebsite || null,
+                    metadata: Object.keys(metadata).length > 0 ? metadata : null
                 };
                 companies.push(company);
             }
