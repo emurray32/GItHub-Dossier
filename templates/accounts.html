@@ -1908,6 +1908,95 @@
         animation: spin 0.8s linear infinite;
         margin-right: 0.5rem;
     }
+
+    .loading-spinner.small {
+        width: 12px;
+        height: 12px;
+        border-width: 1.5px;
+    }
+
+    .loading-spinner.large {
+        width: 24px;
+        height: 24px;
+        border-width: 3px;
+    }
+
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+
+    /* Button loading states */
+    .btn-loading {
+        position: relative;
+        color: transparent !important;
+        pointer-events: none;
+    }
+
+    .btn-loading::after {
+        content: '';
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 14px;
+        height: 14px;
+        border: 2px solid rgba(255, 255, 255, 0.3);
+        border-top: 2px solid white;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+    }
+
+    .btn-loading.btn-secondary::after {
+        border: 2px solid rgba(0, 181, 173, 0.3);
+        border-top: 2px solid var(--accent-color);
+    }
+
+    /* Table loading overlay */
+    .table-loading-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(255, 255, 255, 0.8);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 10;
+    }
+
+    .table-loading-overlay .loading-spinner {
+        width: 32px;
+        height: 32px;
+        border-width: 3px;
+    }
+
+    .accounts-table-container {
+        position: relative;
+    }
+
+    /* Disabled button style */
+    button:disabled,
+    .btn-disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        pointer-events: none;
+    }
+
+    /* Progress indicator */
+    .progress-indicator {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.85rem;
+        color: var(--text-secondary);
+    }
+
+    .progress-indicator .count {
+        font-weight: 600;
+        color: var(--accent-color);
+    }
 </style>
 {% endblock %}
 
@@ -3035,6 +3124,36 @@
         });
     }
 
+    // Loading state management
+    let isTableLoading = false;
+
+    function setTableLoading(loading) {
+        isTableLoading = loading;
+        const container = document.querySelector('.accounts-table-container');
+        const paginationBtns = document.querySelectorAll('.pagination-btn');
+        const limitSelect = document.getElementById('limit-select');
+
+        if (loading) {
+            // Add loading overlay
+            let overlay = container.querySelector('.table-loading-overlay');
+            if (!overlay) {
+                overlay = document.createElement('div');
+                overlay.className = 'table-loading-overlay';
+                overlay.innerHTML = '<div class="loading-spinner large"></div>';
+                container.appendChild(overlay);
+            }
+            // Disable pagination controls
+            paginationBtns.forEach(btn => btn.disabled = true);
+            if (limitSelect) limitSelect.disabled = true;
+        } else {
+            // Remove loading overlay
+            const overlay = container.querySelector('.table-loading-overlay');
+            if (overlay) overlay.remove();
+            // Re-enable pagination controls (updatePaginationUI will set proper disabled states)
+            if (limitSelect) limitSelect.disabled = false;
+        }
+    }
+
     function reloadAccountsTable() {
         const tbody = document.querySelector('#accounts-tbody');
         const searchInput = document.querySelector('#account-search-input');
@@ -3059,6 +3178,9 @@
             params.append('tier', tier);
         });
 
+        // Show loading state
+        setTableLoading(true);
+
         // Fetch data from server
         fetch(`/api/accounts/datatable?${params.toString()}`)
             .then(response => response.json())
@@ -3071,6 +3193,9 @@
             .catch(error => {
                 console.error('Error loading accounts:', error);
                 tbody.innerHTML = '<tr><td colspan="7">Error loading accounts. Please try again.</td></tr>';
+            })
+            .finally(() => {
+                setTableLoading(false);
             });
     }
 
@@ -3450,22 +3575,52 @@
         const selectedRows = getSelectedRows();
         if (selectedRows.length === 0) return;
 
+        const rescanBtn = document.querySelector('#bulk-rescan-btn');
+        const originalText = rescanBtn?.textContent;
+
+        // Set loading state
+        if (rescanBtn) {
+            rescanBtn.disabled = true;
+            rescanBtn.classList.add('btn-loading');
+            rescanBtn.innerHTML = '<span class="loading-spinner small"></span> Queuing...';
+        }
+
+        let successCount = 0;
+        let errorCount = 0;
+
         for (const row of selectedRows) {
             const companyName = row.dataset.company;
             if (!companyName) continue;
             try {
-                await fetch(`/api/rescan/${encodeURIComponent(companyName)}`, {
+                const response = await fetch(`/api/rescan/${encodeURIComponent(companyName)}`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                     },
                 });
+                if (response.ok) {
+                    successCount++;
+                } else {
+                    errorCount++;
+                }
             } catch (error) {
                 console.error('Bulk rescan error:', error);
+                errorCount++;
             }
         }
 
-        showNotification(`Queued rescan for ${selectedRows.length} account(s).`, 'info');
+        // Reset button state
+        if (rescanBtn) {
+            rescanBtn.disabled = false;
+            rescanBtn.classList.remove('btn-loading');
+            rescanBtn.textContent = originalText || 'Rescan Selected';
+        }
+
+        if (errorCount > 0) {
+            showNotification(`Queued ${successCount} account(s), ${errorCount} failed.`, 'warning');
+        } else {
+            showNotification(`Queued rescan for ${successCount} account(s).`, 'success');
+        }
     }
 
     function exportCSV() {
@@ -3537,6 +3692,19 @@
             return;
         }
 
+        const deleteBtn = document.querySelector('#bulk-delete-btn');
+        const originalText = deleteBtn?.textContent;
+
+        // Set loading state
+        if (deleteBtn) {
+            deleteBtn.disabled = true;
+            deleteBtn.classList.add('btn-loading');
+            deleteBtn.innerHTML = '<span class="loading-spinner small"></span> Deleting...';
+        }
+
+        let successCount = 0;
+        let errorCount = 0;
+
         for (const row of selectedRows) {
             const accountId = row.dataset.accountId;
             const company = row.dataset.company || 'this account';
@@ -3548,15 +3716,27 @@
                     throw new Error(data.error || 'Failed to remove account.');
                 }
                 row.remove();
+                successCount++;
             } catch (error) {
                 showNotification(`Failed to remove ${company}: ${error.message}`, 'warning');
+                errorCount++;
             }
+        }
+
+        // Reset button state
+        if (deleteBtn) {
+            deleteBtn.disabled = false;
+            deleteBtn.classList.remove('btn-loading');
+            deleteBtn.textContent = originalText || 'Delete Selected';
         }
 
         const selectAll = document.querySelector('#select-all-accounts');
         if (selectAll) selectAll.checked = false;
         updateBulkSelectionState();
-        showNotification('Selected accounts removed.', 'success');
+
+        if (successCount > 0) {
+            showNotification(`Removed ${successCount} account(s).`, 'success');
+        }
     }
 
     // =============================================================================

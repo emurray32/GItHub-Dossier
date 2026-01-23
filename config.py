@@ -222,6 +222,50 @@ class Config:
     ]
 
     # ============================================================
+    # NLP FALSE POSITIVE FILTERING FOR RFC DETECTION
+    # ============================================================
+    # These patterns help distinguish actual i18n planning discussions
+    # from generic mentions of "translate" or other keywords in code.
+
+    # High-confidence context words that strengthen RFC signals
+    RFC_CONTEXT_AMPLIFIERS = [
+        'roadmap', 'plan', 'planning', 'strategy', 'proposal',
+        'implementation', 'support', 'add support', 'enable',
+        'user-facing', 'customer', 'market', 'region', 'country',
+        'language support', 'multi-language', 'multilingual',
+        'locale', 'locales', 'translation management', 'TMS',
+        'crowdin', 'lokalise', 'transifex', 'phrase', 'smartling',
+        'weblate', 'poeditor', 'translation platform',
+        'internationalize', 'localize', 'i18n framework',
+    ]
+
+    # False positive indicators - suggest code/technical context, not planning
+    RFC_FALSE_POSITIVE_INDICATORS = [
+        # Code-related false positives
+        'google translate api', 'translate api', 'translation api',
+        'machine translation', 'auto-translate', 'auto translate',
+        'translatex', 'translatey', 'translatez',  # CSS transform functions
+        'transform: translate', 'css translate',
+        'translate3d', 'translatevalue',
+        # Documentation translation (not product i18n)
+        'translate this readme', 'translate docs', 'translate documentation',
+        'help translate', 'help us translate', 'translations welcome',
+        # Generic coding terms
+        'translate between', 'translate from', 'translate to',
+        'translate the error', 'translate the message',
+        'translate coordinates', 'translate position',
+        # Bot/automated content
+        'dependabot', 'renovate', 'greenkeeper',
+        # Compiler/build tool context
+        'babel preset', 'babel plugin', 'babel config',
+        'webpack translate', 'compile',
+    ]
+
+    # Minimum keyword match score for RFC signals
+    # Higher score = higher confidence the discussion is about actual i18n planning
+    RFC_MIN_CONFIDENCE_SCORE = 2  # Require at least 2 quality indicators
+
+    # ============================================================
     # SIGNAL 2: DEPENDENCY INJECTION (Preparing Phase)
     # ============================================================
     # Target: Dependency files
@@ -252,6 +296,85 @@ class Config:
         'i18next-scanner',
         'lingui extract',
     ]
+
+    # ============================================================
+    # DEPENDENCY USAGE VERIFICATION PATTERNS
+    # ============================================================
+    # When we find an i18n library in package.json, we verify actual usage
+    # by searching for these import/usage patterns in the codebase.
+    # This reduces false positives from abandoned or unused dependencies.
+
+    DEPENDENCY_USAGE_PATTERNS = {
+        'react-i18next': [
+            'from [\'"]react-i18next[\'"]',
+            'useTranslation',
+            'withTranslation',
+            'Trans ',
+            'Trans>',
+            '<Trans',
+            'i18n.t(',
+            't\\(',
+        ],
+        'i18next': [
+            'from [\'"]i18next[\'"]',
+            'import i18next',
+            'i18next.init',
+            'i18next.t(',
+            'i18n.init',
+            'createInstance',
+        ],
+        'react-intl': [
+            'from [\'"]react-intl[\'"]',
+            'FormattedMessage',
+            'useIntl',
+            'injectIntl',
+            'IntlProvider',
+            'defineMessages',
+        ],
+        'vue-i18n': [
+            'from [\'"]vue-i18n[\'"]',
+            'createI18n',
+            'useI18n',
+            '\\$t\\(',
+            'this.\\$t',
+            'i18n.global',
+        ],
+        'next-i18next': [
+            'from [\'"]next-i18next[\'"]',
+            'serverSideTranslations',
+            'useTranslation',
+            'appWithTranslation',
+        ],
+        'next-intl': [
+            'from [\'"]next-intl[\'"]',
+            'useTranslations',
+            'NextIntlClientProvider',
+            'getTranslations',
+            'useLocale',
+        ],
+        '@lingui/react': [
+            'from [\'"]@lingui',
+            'Trans',
+            'useLingui',
+            'i18n.activate',
+            'i18n._(',
+        ],
+        'formatjs': [
+            'from [\'"]@formatjs',
+            'IntlMessageFormat',
+            'createIntl',
+            'formatMessage',
+        ],
+    }
+
+    # File extensions to scan for dependency usage verification
+    DEPENDENCY_SCAN_EXTENSIONS = [
+        '.js', '.jsx', '.ts', '.tsx', '.vue', '.svelte',
+        '.mjs', '.cjs', '.mts', '.cts',
+    ]
+
+    # Maximum files to scan per repository for usage verification
+    DEPENDENCY_SCAN_MAX_FILES = 50
 
     # ============================================================
     # GOLDILOCKS ZONE DETECTION
@@ -444,11 +567,33 @@ class Config:
     # Logic: Flag branches/PRs indicating WIP localization work
 
     GHOST_BRANCH_PATTERNS = [
+        # Explicit feature/chore branches
         'feature/i18n',
+        'feature/localization',
+        'feature/translate',
+        'feature/intl',
+        'feature/l10n',
+        'feature/multi-language',
+        'feature/multilingual',
         'chore/localization',
+        'chore/i18n',
+        'chore/translations',
         'add-translation-support',
         'refactor/extract-strings',
         'l10n-setup',
+        # WIP/work-in-progress patterns
+        'wip/translate',
+        'wip/i18n',
+        'wip/localization',
+        # Wildcard-style patterns (matched as substring)
+        'localization/',
+        'i18n/',
+        'translation/',
+        'intl/',
+        '/i18n',
+        '/l10n',
+        '/localization',
+        '/intl',
         # Additional common patterns
         'i18n',
         'l10n',
@@ -456,6 +601,20 @@ class Config:
         'internationalization',
         'translations',
         'intl',
+        'multi-language',
+        'multilingual',
+        'add-i18n',
+        'setup-i18n',
+        'init-i18n',
+        'enable-i18n',
+        'implement-i18n',
+        'add-localization',
+        'setup-localization',
+        'locale-support',
+        'language-support',
+        'translation-setup',
+        'extract-strings',
+        'string-extraction',
     ]
 
     # ============================================================

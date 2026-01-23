@@ -1421,6 +1421,176 @@ def get_account_by_company_case_insensitive(company_name: str) -> Optional[dict]
     return None
 
 
+def find_potential_duplicates(company_name: str, github_org: str = None, website: str = None) -> list:
+    """
+    Find potential duplicate accounts using smart matching.
+
+    This function checks for:
+    1. Exact case-insensitive company name match
+    2. Fuzzy company name matches (removing common suffixes like Inc, LLC, Corp)
+    3. GitHub org matches
+    4. Website domain matches
+
+    Args:
+        company_name: The company name to check
+        github_org: Optional GitHub organization to check
+        website: Optional website URL to check
+
+    Returns:
+        List of potential duplicate accounts with match_type indicator
+    """
+    import re
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    duplicates = []
+    seen_ids = set()
+
+    # Normalize company name for matching
+    company_name_lower = company_name.lower().strip()
+
+    # 1. Exact case-insensitive match
+    cursor.execute(
+        'SELECT * FROM monitored_accounts WHERE LOWER(company_name) = ?',
+        (company_name_lower,)
+    )
+    for row in cursor.fetchall():
+        account = dict(row)
+        if account['id'] not in seen_ids:
+            account['match_type'] = 'exact_name'
+            account['match_confidence'] = 'high'
+            duplicates.append(account)
+            seen_ids.add(account['id'])
+
+    # 2. Fuzzy name matching - remove common suffixes and check
+    # Remove: Inc, Inc., LLC, Corp, Corporation, Ltd, Limited, Co, Company
+    suffixes_pattern = r'\s*(,?\s*(inc\.?|llc\.?|corp\.?|corporation|ltd\.?|limited|co\.?|company|technologies|tech|software|labs?|group|holdings?|enterprises?|solutions?|systems?))+\s*$'
+    normalized_name = re.sub(suffixes_pattern, '', company_name_lower, flags=re.IGNORECASE).strip()
+
+    if normalized_name and normalized_name != company_name_lower:
+        # Search for accounts with similar normalized names
+        cursor.execute('SELECT * FROM monitored_accounts')
+        for row in cursor.fetchall():
+            account = dict(row)
+            if account['id'] in seen_ids:
+                continue
+            existing_name = account.get('company_name', '').lower()
+            existing_normalized = re.sub(suffixes_pattern, '', existing_name, flags=re.IGNORECASE).strip()
+
+            if existing_normalized == normalized_name:
+                account['match_type'] = 'similar_name'
+                account['match_confidence'] = 'medium'
+                account['match_detail'] = f"'{company_name}' matches '{account['company_name']}' (normalized)"
+                duplicates.append(account)
+                seen_ids.add(account['id'])
+
+    # 3. GitHub org match
+    if github_org:
+        github_org_lower = github_org.lower().strip()
+        cursor.execute(
+            'SELECT * FROM monitored_accounts WHERE LOWER(github_org) = ?',
+            (github_org_lower,)
+        )
+        for row in cursor.fetchall():
+            account = dict(row)
+            if account['id'] not in seen_ids:
+                account['match_type'] = 'github_org'
+                account['match_confidence'] = 'high'
+                account['match_detail'] = f"Same GitHub org: {github_org}"
+                duplicates.append(account)
+                seen_ids.add(account['id'])
+
+    # 4. Website domain match
+    if website:
+        # Extract domain from website URL
+        domain_pattern = r'(?:https?://)?(?:www\.)?([^/]+)'
+        match = re.match(domain_pattern, website.lower())
+        if match:
+            domain = match.group(1)
+            cursor.execute('SELECT * FROM monitored_accounts WHERE website IS NOT NULL AND website != ""')
+            for row in cursor.fetchall():
+                account = dict(row)
+                if account['id'] in seen_ids:
+                    continue
+                existing_website = account.get('website', '')
+                if existing_website:
+                    existing_match = re.match(domain_pattern, existing_website.lower())
+                    if existing_match and existing_match.group(1) == domain:
+                        account['match_type'] = 'website_domain'
+                        account['match_confidence'] = 'high'
+                        account['match_detail'] = f"Same domain: {domain}"
+                        duplicates.append(account)
+                        seen_ids.add(account['id'])
+
+    conn.close()
+
+    # Add tier config to all results
+    for dup in duplicates:
+        tier = dup.get('current_tier') or 0
+        dup['tier_config'] = TIER_CONFIG.get(tier, TIER_CONFIG[TIER_TRACKING])
+
+    return duplicates
+
+
+def get_import_duplicates_summary(companies_list: list) -> dict:
+    """
+    Check a list of companies for potential duplicates before import.
+
+    This is useful for providing a preview of duplicates during bulk import.
+
+    Args:
+        companies_list: List of company items (strings or dicts with name/github_org/website)
+
+    Returns:
+        Dictionary with:
+        - 'total': Total companies in the list
+        - 'duplicates': Number of companies that would be duplicates
+        - 'new': Number of new companies
+        - 'details': List of duplicate details for each company
+    """
+    results = {
+        'total': len(companies_list),
+        'duplicates': 0,
+        'new': 0,
+        'details': []
+    }
+
+    for company_item in companies_list:
+        if isinstance(company_item, dict):
+            company_name = company_item.get('name', '').strip()
+            github_org = company_item.get('github_org', '').strip() if company_item.get('github_org') else None
+            website = company_item.get('website', '').strip() if company_item.get('website') else None
+        else:
+            company_name = str(company_item).strip()
+            github_org = None
+            website = None
+
+        if not company_name:
+            continue
+
+        potential_dups = find_potential_duplicates(company_name, github_org, website)
+
+        if potential_dups:
+            results['duplicates'] += 1
+            results['details'].append({
+                'company': company_name,
+                'matches': [
+                    {
+                        'existing_name': d['company_name'],
+                        'match_type': d.get('match_type'),
+                        'match_confidence': d.get('match_confidence'),
+                        'match_detail': d.get('match_detail', '')
+                    }
+                    for d in potential_dups
+                ]
+            })
+        else:
+            results['new'] += 1
+
+    return results
+
+
 def delete_account(account_id: int) -> bool:
     """Delete a monitored account."""
     conn = get_db_connection()

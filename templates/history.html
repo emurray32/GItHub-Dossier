@@ -2,6 +2,26 @@
 
 {% block title %}Scan History - Lead Machine{% endblock %}
 
+{% block breadcrumbs %}
+<nav class="breadcrumb-nav" aria-label="Breadcrumb">
+    <div class="breadcrumb-container">
+        <ol class="breadcrumb-list">
+            <li class="breadcrumb-item">
+                <a href="{{ url_for('accounts') }}">Accounts</a>
+            </li>
+            <li class="breadcrumb-separator">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="9 18 15 12 9 6"></polyline>
+                </svg>
+            </li>
+            <li class="breadcrumb-item active" aria-current="page">
+                History
+            </li>
+        </ol>
+    </div>
+</nav>
+{% endblock %}
+
 {% block content %}
 <div class="container">
     <header class="page-header">
