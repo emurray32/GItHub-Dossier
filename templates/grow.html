@@ -985,20 +985,36 @@
                 selectedCSVData = companies;
                 const infoDiv = document.getElementById('fileSelectedInfo');
 
+                // For large CSVs (>500 companies), skip duplicate check to avoid hanging
+                if (companies.length > 500) {
+                    infoDiv.textContent = `✓ ${companies.length} companies loaded from ${file.name} (duplicate check skipped for large files)`;
+                    infoDiv.style.display = 'block';
+                    infoDiv.style.background = 'rgba(34, 197, 94, 0.1)';
+                    infoDiv.style.color = 'var(--success-color)';
+                    document.getElementById('processCSVBtn').style.display = 'block';
+                    addConsoleEntry(`Loaded ${companies.length} companies - duplicates will be skipped automatically during import`, 'info');
+                    return;
+                }
+
                 // Show initial loading message
                 infoDiv.textContent = `Checking ${companies.length} companies for duplicates...`;
                 infoDiv.style.display = 'block';
                 infoDiv.style.background = 'rgba(14, 165, 233, 0.1)';
                 infoDiv.style.color = 'var(--accent-color)';
 
-                // Check for duplicates
+                // Check for duplicates with timeout
                 try {
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+
                     const response = await fetch('/api/import/check-duplicates', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ companies: companies })
+                        body: JSON.stringify({ companies: companies }),
+                        signal: controller.signal
                     });
 
+                    clearTimeout(timeoutId);
                     const data = await response.json();
 
                     if (response.ok) {
@@ -1027,12 +1043,17 @@
                         addConsoleEntry(`Ready to process ${companies.length} companies from CSV`, 'info');
                     }
                 } catch (error) {
-                    // Fallback if duplicate check fails
-                    infoDiv.textContent = `✓ ${companies.length} companies loaded from ${file.name}`;
+                    // Fallback if duplicate check fails or times out
+                    if (error.name === 'AbortError') {
+                        infoDiv.textContent = `✓ ${companies.length} companies loaded from ${file.name} (duplicate check timed out)`;
+                        addConsoleEntry(`Duplicate check timed out - duplicates will be skipped automatically during import`, 'warning');
+                    } else {
+                        infoDiv.textContent = `✓ ${companies.length} companies loaded from ${file.name}`;
+                        addConsoleEntry(`Ready to process ${companies.length} companies from CSV`, 'info');
+                    }
                     infoDiv.style.background = 'rgba(34, 197, 94, 0.1)';
                     infoDiv.style.color = 'var(--success-color)';
                     document.getElementById('processCSVBtn').style.display = 'block';
-                    addConsoleEntry(`Ready to process ${companies.length} companies from CSV`, 'info');
                 }
             } catch (error) {
                 addConsoleEntry(`Error parsing CSV: ${error.message}`, 'error');
