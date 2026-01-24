@@ -34,6 +34,7 @@ from database import (
 )
 from monitors.scanner import deep_scan_generator
 from monitors.discovery import search_github_orgs, resolve_org_fast, discover_companies_via_ai
+from monitors.web_analyzer import analyze_website
 from ai_summary import generate_analysis
 from pdf_generator import generate_report_pdf
 from agentmail_client import is_agentmail_configured, send_email_draft
@@ -1381,8 +1382,47 @@ def rules():
 
 @app.route('/experiment')
 def experiment():
-    """Experiment #2 - TBD."""
-    return render_template('experiment.html')
+    """WebScraper - Analyze websites using natural language prompts."""
+    return render_template('webscraper.html')
+
+
+@app.route('/api/webscraper/analyze', methods=['POST'])
+def api_webscraper_analyze():
+    """
+    Analyze a website using a natural language prompt.
+
+    Request JSON:
+        url: Website URL to analyze (required)
+        prompt: Natural language prompt describing what to analyze (required)
+
+    Returns JSON with analysis results.
+    """
+    try:
+        data = request.get_json()
+
+        if not data:
+            return jsonify({'error': 'Invalid JSON payload'}), 400
+
+        url = data.get('url', '').strip()
+        prompt = data.get('prompt', '').strip()
+
+        if not url:
+            return jsonify({'error': 'Missing required field: url'}), 400
+
+        if not prompt:
+            return jsonify({'error': 'Missing required field: prompt'}), 400
+
+        # Analyze the website
+        result = analyze_website(url, prompt)
+
+        if not result.get('success'):
+            error_msg = result.get('error', 'Analysis failed')
+            return jsonify({'error': error_msg}), 500
+
+        return jsonify(result), 200
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/discover')

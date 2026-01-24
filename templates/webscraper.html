@@ -1,0 +1,652 @@
+{% extends "base.html" %}
+
+{% block title %}WebScraper - Lead Machine{% endblock %}
+
+{% block head %}
+<style>
+    .webscraper-page {
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 2rem;
+    }
+
+    .page-header {
+        margin-bottom: 2rem;
+    }
+
+    .page-title {
+        font-size: 2rem;
+        font-weight: 700;
+        color: var(--text-primary);
+        margin: 0 0 0.5rem 0;
+    }
+
+    .subtitle {
+        color: var(--text-secondary);
+        font-size: 1rem;
+        margin: 0;
+    }
+
+    .analyzer-container {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 2rem;
+        margin-bottom: 2rem;
+    }
+
+    @media (max-width: 1024px) {
+        .analyzer-container {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    .input-panel {
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        padding: 1.5rem;
+    }
+
+    .results-panel {
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        padding: 1.5rem;
+        min-height: 500px;
+        max-height: 800px;
+        overflow-y: auto;
+    }
+
+    .form-group {
+        margin-bottom: 1.5rem;
+    }
+
+    .form-label {
+        display: block;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin-bottom: 0.5rem;
+        font-size: 0.875rem;
+    }
+
+    .form-input {
+        width: 100%;
+        padding: 0.75rem;
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        background: var(--bg-secondary);
+        color: var(--text-primary);
+        font-size: 0.875rem;
+        transition: all var(--transition-fast);
+    }
+
+    .form-input:focus {
+        outline: none;
+        border-color: var(--accent-color);
+        box-shadow: 0 0 0 3px rgba(0, 181, 173, 0.1);
+    }
+
+    .form-textarea {
+        min-height: 120px;
+        resize: vertical;
+        font-family: inherit;
+    }
+
+    .btn-analyze {
+        width: 100%;
+        padding: 0.875rem 1.5rem;
+        background: var(--accent-color);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        font-weight: 600;
+        font-size: 0.875rem;
+        cursor: pointer;
+        transition: all var(--transition-fast);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+    }
+
+    .btn-analyze:hover:not(:disabled) {
+        background: #00a89e;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(0, 181, 173, 0.2);
+    }
+
+    .btn-analyze:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+        transform: none;
+    }
+
+    .spinner {
+        display: inline-block;
+        width: 16px;
+        height: 16px;
+        border: 2px solid rgba(255, 255, 255, 0.3);
+        border-top-color: white;
+        border-radius: 50%;
+        animation: spin 0.6s linear infinite;
+    }
+
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+
+    .results-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1rem;
+        padding-bottom: 1rem;
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    .results-title {
+        font-weight: 600;
+        font-size: 1.125rem;
+        color: var(--text-primary);
+        margin: 0;
+    }
+
+    .results-placeholder {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 100%;
+        color: var(--text-muted);
+        text-align: center;
+        padding: 2rem;
+    }
+
+    .results-placeholder svg {
+        width: 80px;
+        height: 80px;
+        margin-bottom: 1rem;
+        opacity: 0.3;
+    }
+
+    .results-content {
+        display: none;
+    }
+
+    .results-content.active {
+        display: block;
+    }
+
+    .result-section {
+        margin-bottom: 1.5rem;
+    }
+
+    .result-section-title {
+        font-weight: 600;
+        font-size: 0.875rem;
+        color: var(--text-secondary);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin: 0 0 0.75rem 0;
+    }
+
+    .result-card {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 1rem;
+        margin-bottom: 0.75rem;
+    }
+
+    .result-text {
+        color: var(--text-primary);
+        line-height: 1.6;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+    }
+
+    .error-message {
+        background: #fee2e2;
+        border: 1px solid #fecaca;
+        border-radius: 8px;
+        padding: 1rem;
+        color: #991b1b;
+        margin-bottom: 1rem;
+    }
+
+    .success-message {
+        background: #dcfce7;
+        border: 1px solid #bbf7d0;
+        border-radius: 8px;
+        padding: 1rem;
+        color: #166534;
+        margin-bottom: 1rem;
+    }
+
+    .metadata-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+        margin-top: 1rem;
+    }
+
+    .metadata-item {
+        background: var(--bg-tertiary);
+        padding: 0.75rem;
+        border-radius: 6px;
+    }
+
+    .metadata-label {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin-bottom: 0.25rem;
+    }
+
+    .metadata-value {
+        font-size: 1rem;
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+
+    .example-prompts {
+        background: var(--bg-tertiary);
+        border-radius: 8px;
+        padding: 1rem;
+        margin-top: 1rem;
+    }
+
+    .example-prompts-title {
+        font-size: 0.75rem;
+        font-weight: 600;
+        color: var(--text-secondary);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin: 0 0 0.75rem 0;
+    }
+
+    .example-prompt {
+        display: block;
+        padding: 0.5rem;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        margin-bottom: 0.5rem;
+        font-size: 0.8rem;
+        color: var(--text-secondary);
+        cursor: pointer;
+        transition: all var(--transition-fast);
+    }
+
+    .example-prompt:hover {
+        border-color: var(--accent-color);
+        color: var(--text-primary);
+        background: var(--bg-primary);
+    }
+
+    .btn-copy-result {
+        padding: 0.5rem 1rem;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        color: var(--text-secondary);
+        font-size: 0.75rem;
+        cursor: pointer;
+        transition: all var(--transition-fast);
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+    }
+
+    .btn-copy-result:hover {
+        background: var(--accent-color);
+        color: white;
+        border-color: var(--accent-color);
+    }
+
+    .btn-copy-result svg {
+        width: 14px;
+        height: 14px;
+    }
+
+    .history-container {
+        margin-top: 3rem;
+    }
+
+    .history-title {
+        font-weight: 700;
+        font-size: 1.25rem;
+        color: var(--text-primary);
+        margin: 0 0 1rem 0;
+    }
+
+    .history-list {
+        display: grid;
+        gap: 1rem;
+    }
+
+    .history-item {
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 1rem;
+        cursor: pointer;
+        transition: all var(--transition-fast);
+    }
+
+    .history-item:hover {
+        border-color: var(--accent-color);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    }
+
+    .history-item-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: start;
+        margin-bottom: 0.5rem;
+    }
+
+    .history-item-url {
+        font-weight: 600;
+        color: var(--text-primary);
+        font-size: 0.875rem;
+    }
+
+    .history-item-time {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+    }
+
+    .history-item-prompt {
+        font-size: 0.8rem;
+        color: var(--text-secondary);
+        font-style: italic;
+        margin-top: 0.5rem;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container webscraper-page">
+    <header class="page-header">
+        <h1 class="page-title">WebScraper</h1>
+        <p class="subtitle">Analyze websites using natural language prompts</p>
+    </header>
+
+    <div class="analyzer-container">
+        <!-- Input Panel -->
+        <div class="input-panel">
+            <form id="scraper-form">
+                <div class="form-group">
+                    <label class="form-label" for="website-url">Website URL</label>
+                    <input
+                        type="url"
+                        id="website-url"
+                        class="form-input"
+                        placeholder="https://example.com"
+                        required
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="analysis-prompt">What would you like to analyze?</label>
+                    <textarea
+                        id="analysis-prompt"
+                        class="form-input form-textarea"
+                        placeholder="E.g., Extract all pricing information, Find contact details, Identify internationalization features, etc."
+                        required
+                    ></textarea>
+                </div>
+
+                <button type="submit" class="btn-analyze" id="analyze-btn">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 18px; height: 18px;">
+                        <circle cx="11" cy="11" r="8"></circle>
+                        <path d="m21 21-4.35-4.35"></path>
+                    </svg>
+                    <span id="btn-text">Analyze Website</span>
+                </button>
+
+                <div class="example-prompts">
+                    <div class="example-prompts-title">Example Prompts</div>
+                    <div class="example-prompt" data-prompt="Extract all contact information including emails, phone numbers, and addresses">
+                        Extract all contact information
+                    </div>
+                    <div class="example-prompt" data-prompt="Identify all internationalization and localization features (language switchers, hreflang tags, translated content)">
+                        Identify i18n/l10n features
+                    </div>
+                    <div class="example-prompt" data-prompt="Analyze the website for mobile responsiveness, page load time indicators, and overall UX quality">
+                        Analyze UX and performance
+                    </div>
+                    <div class="example-prompt" data-prompt="Find all pricing information, subscription tiers, and payment options">
+                        Extract pricing information
+                    </div>
+                    <div class="example-prompt" data-prompt="List all social media links, blog posts, and external resources mentioned">
+                        Find social media and resources
+                    </div>
+                </div>
+            </form>
+        </div>
+
+        <!-- Results Panel -->
+        <div class="results-panel">
+            <div class="results-header">
+                <h2 class="results-title">Analysis Results</h2>
+                <button class="btn-copy-result" id="copy-results-btn" style="display: none;">
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M16 1H6c-1.1 0-2 .9-2 2v12h2V3h10V1zm3 4H10c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h9c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H10V7h9v14z" />
+                    </svg>
+                    Copy Results
+                </button>
+            </div>
+
+            <div id="results-placeholder" class="results-placeholder">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+                    <path d="M2 12h20"></path>
+                </svg>
+                <p>Enter a website URL and prompt to start analyzing</p>
+            </div>
+
+            <div id="results-content" class="results-content">
+                <!-- Results will be populated here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Analysis History -->
+    <div class="history-container" id="history-container" style="display: none;">
+        <h2 class="history-title">Recent Analyses</h2>
+        <div class="history-list" id="history-list">
+            <!-- History items will be populated here -->
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Example prompts click handler
+    document.querySelectorAll('.example-prompt').forEach(prompt => {
+        prompt.addEventListener('click', () => {
+            document.getElementById('analysis-prompt').value = prompt.dataset.prompt;
+        });
+    });
+
+    // Form submission
+    document.getElementById('scraper-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const url = document.getElementById('website-url').value;
+        const prompt = document.getElementById('analysis-prompt').value;
+        const analyzeBtn = document.getElementById('analyze-btn');
+        const btnText = document.getElementById('btn-text');
+        const resultsPlaceholder = document.getElementById('results-placeholder');
+        const resultsContent = document.getElementById('results-content');
+        const copyBtn = document.getElementById('copy-results-btn');
+
+        // Update UI to loading state
+        analyzeBtn.disabled = true;
+        btnText.innerHTML = '<span class="spinner"></span> Analyzing...';
+        resultsPlaceholder.style.display = 'none';
+        resultsContent.innerHTML = '<div class="result-text" style="text-align: center; color: var(--text-muted);">Processing your request...</div>';
+        resultsContent.classList.add('active');
+
+        try {
+            const response = await fetch('/api/webscraper/analyze', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ url, prompt }),
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error || 'Analysis failed');
+            }
+
+            // Display results
+            displayResults(data);
+            copyBtn.style.display = 'inline-flex';
+
+            // Update history
+            addToHistory(url, prompt, data);
+
+        } catch (error) {
+            resultsContent.innerHTML = `
+                <div class="error-message">
+                    <strong>Error:</strong> ${error.message}
+                </div>
+            `;
+        } finally {
+            // Reset button state
+            analyzeBtn.disabled = false;
+            btnText.innerHTML = 'Analyze Website';
+        }
+    });
+
+    function displayResults(data) {
+        const resultsContent = document.getElementById('results-content');
+
+        let html = '';
+
+        // Success message
+        html += '<div class="success-message">✓ Analysis completed successfully</div>';
+
+        // Metadata
+        if (data.metadata) {
+            html += '<div class="result-section">';
+            html += '<div class="metadata-grid">';
+
+            if (data.metadata.url) {
+                html += `
+                    <div class="metadata-item">
+                        <div class="metadata-label">URL</div>
+                        <div class="metadata-value" style="font-size: 0.8rem; word-break: break-all;">${escapeHtml(data.metadata.url)}</div>
+                    </div>
+                `;
+            }
+
+            if (data.metadata.title) {
+                html += `
+                    <div class="metadata-item">
+                        <div class="metadata-label">Page Title</div>
+                        <div class="metadata-value">${escapeHtml(data.metadata.title)}</div>
+                    </div>
+                `;
+            }
+
+            if (data.metadata.analysis_time) {
+                html += `
+                    <div class="metadata-item">
+                        <div class="metadata-label">Analysis Time</div>
+                        <div class="metadata-value">${data.metadata.analysis_time}</div>
+                    </div>
+                `;
+            }
+
+            html += '</div></div>';
+        }
+
+        // AI Analysis Results
+        if (data.analysis) {
+            html += '<div class="result-section">';
+            html += '<h3 class="result-section-title">Analysis Results</h3>';
+            html += '<div class="result-card">';
+            html += `<div class="result-text">${escapeHtml(data.analysis)}</div>`;
+            html += '</div>';
+            html += '</div>';
+        }
+
+        // Extracted Data (if structured)
+        if (data.extracted_data) {
+            html += '<div class="result-section">';
+            html += '<h3 class="result-section-title">Extracted Data</h3>';
+            html += '<div class="result-card">';
+            html += `<pre class="result-text">${escapeHtml(JSON.stringify(data.extracted_data, null, 2))}</pre>`;
+            html += '</div>';
+            html += '</div>';
+        }
+
+        resultsContent.innerHTML = html;
+    }
+
+    function addToHistory(url, prompt, data) {
+        const historyContainer = document.getElementById('history-container');
+        const historyList = document.getElementById('history-list');
+
+        const historyItem = document.createElement('div');
+        historyItem.className = 'history-item';
+        historyItem.innerHTML = `
+            <div class="history-item-header">
+                <div class="history-item-url">${escapeHtml(url)}</div>
+                <div class="history-item-time">${new Date().toLocaleTimeString()}</div>
+            </div>
+            <div class="history-item-prompt">"${escapeHtml(prompt)}"</div>
+        `;
+
+        historyItem.addEventListener('click', () => {
+            displayResults(data);
+            document.getElementById('website-url').value = url;
+            document.getElementById('analysis-prompt').value = prompt;
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        });
+
+        historyList.insertBefore(historyItem, historyList.firstChild);
+        historyContainer.style.display = 'block';
+    }
+
+    // Copy results to clipboard
+    document.getElementById('copy-results-btn').addEventListener('click', () => {
+        const resultsContent = document.getElementById('results-content');
+        const textContent = resultsContent.innerText;
+
+        navigator.clipboard.writeText(textContent).then(() => {
+            const btn = document.getElementById('copy-results-btn');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '✓ Copied!';
+            setTimeout(() => {
+                btn.innerHTML = originalText;
+            }, 2000);
+        });
+    });
+
+    function escapeHtml(text) {
+        const map = {
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#039;'
+        };
+        return text.replace(/[&<>"']/g, m => map[m]);
+    }
+</script>
+{% endblock %}
