@@ -32,7 +32,13 @@ from database import (
     get_archived_count, auto_archive_tier4_accounts,
     find_potential_duplicates, get_import_duplicates_summary,
     save_website_analysis, get_website_analysis, get_latest_website_analysis,
-    get_all_website_analyses, get_accounts_with_websites, delete_website_analysis
+    get_all_website_analyses, get_accounts_with_websites, delete_website_analysis,
+    # WebScraper Accounts
+    populate_webscraper_from_reporadar, get_webscraper_tier_counts, get_webscraper_accounts_datatable,
+    update_webscraper_notes, archive_webscraper_account, unarchive_webscraper_account,
+    delete_webscraper_account, get_webscraper_archived_count, webscraper_bulk_archive,
+    webscraper_bulk_delete, webscraper_bulk_change_tier, get_webscraper_account,
+    WEBSCRAPER_TIER_CONFIG
 )
 from monitors.scanner import deep_scan_generator
 from monitors.discovery import search_github_orgs, resolve_org_fast, discover_companies_via_ai
@@ -1388,6 +1394,12 @@ def experiment():
     return render_template('webscraper.html')
 
 
+@app.route('/webscraper-accounts')
+def webscraper_accounts():
+    """WebScraper Accounts - Scalable website localization analysis."""
+    return render_template('webscraper_accounts.html')
+
+
 @app.route('/api/webscraper/analyze', methods=['POST'])
 def api_webscraper_analyze():
     """
@@ -1614,6 +1626,222 @@ def api_webscraper_analysis_delete(analysis_id):
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+# =============================================================================
+# WEBSCRAPER ACCOUNTS API - Scalable website localization analysis
+# =============================================================================
+
+@app.route('/api/webscraper/accounts/datatable', methods=['GET', 'POST'])
+def api_webscraper_accounts_datatable():
+    """
+    DataTables server-side processing endpoint for WebScraper accounts.
+
+    Handles parameters from DataTables JavaScript library for efficient
+    server-side pagination, searching, and sorting.
+    """
+    # DataTables parameters
+    draw = request.args.get('draw', 1, type=int)
+    start = request.args.get('start', 0, type=int)
+    length = request.args.get('length', 50, type=int)
+    search_value = request.args.get('search[value]', '').strip()
+
+    # Get tier filter if provided
+    tiers = request.args.getlist('tier', type=int)
+    tier_filter = tiers if tiers else None
+
+    # Get ordering parameters
+    order_column = request.args.get('order[0][column]', 0, type=int)
+    order_dir = request.args.get('order[0][dir]', 'asc').lower()
+
+    # Validate parameters
+    length = max(1, min(length, 10000))
+    start = max(0, start)
+
+    # Get data from database
+    result = get_webscraper_accounts_datatable(
+        draw=draw,
+        start=start,
+        length=length,
+        search_value=search_value,
+        tier_filter=tier_filter,
+        order_column=order_column,
+        order_dir=order_dir
+    )
+
+    return jsonify(result)
+
+
+@app.route('/api/webscraper/accounts/tier-counts')
+def api_webscraper_tier_counts():
+    """
+    Get counts of webscraper accounts per tier.
+
+    Returns:
+        JSON with tier counts: {"1": 5, "2": 12, "3": 45, "4": 238, "archived": 3}
+    """
+    counts = get_webscraper_tier_counts()
+    return jsonify(counts)
+
+
+@app.route('/api/webscraper/accounts/populate', methods=['POST'])
+def api_webscraper_populate():
+    """
+    Populate webscraper_accounts from monitored_accounts (RepoRadar).
+
+    This migration creates webscraper account entries for all RepoRadar accounts
+    that don't already have one. All new accounts are set to Tier 4 (Not Scanned).
+
+    Returns:
+        JSON with migration results: {created: int, skipped: int, errors: int}
+    """
+    try:
+        result = populate_webscraper_from_reporadar()
+        return jsonify({
+            'success': True,
+            'message': f"Created {result['created']} accounts, skipped {result['skipped']}, errors: {result['errors']}",
+            **result
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/webscraper/accounts/scan/<int:account_id>', methods=['POST'])
+def api_webscraper_scan_account(account_id):
+    """
+    Queue a webscraper account for scanning.
+
+    This is a placeholder endpoint - actual scanning is not implemented yet.
+    For now, it just returns a queued status.
+
+    Returns:
+        JSON with status: {"status": "queued", "message": "Scan queued"}
+    """
+    # Verify account exists
+    account = get_webscraper_account(account_id)
+    if not account:
+        return jsonify({'error': 'Account not found'}), 404
+
+    # Placeholder - actual scanning not implemented
+    return jsonify({
+        'status': 'queued',
+        'message': 'Scan queued for processing',
+        'account_id': account_id,
+        'company_name': account['company_name']
+    })
+
+
+@app.route('/api/webscraper/accounts/bulk', methods=['POST'])
+def api_webscraper_bulk_action():
+    """
+    Perform bulk actions on webscraper accounts.
+
+    Request JSON:
+        action: One of 'archive', 'unarchive', 'delete', 'change_tier'
+        account_ids: List of account IDs
+        tier: Required if action is 'change_tier' (1-4)
+
+    Returns:
+        JSON with result: {success: bool, affected: int}
+    """
+    try:
+        data = request.get_json() or {}
+        action = data.get('action', '').lower()
+        account_ids = data.get('account_ids', [])
+
+        if not action:
+            return jsonify({'error': 'Missing required field: action'}), 400
+
+        if not account_ids:
+            return jsonify({'error': 'Missing required field: account_ids'}), 400
+
+        if action == 'archive':
+            affected = webscraper_bulk_archive(account_ids)
+            return jsonify({'success': True, 'action': 'archive', 'affected': affected})
+
+        elif action == 'unarchive':
+            # Unarchive one by one
+            affected = 0
+            for aid in account_ids:
+                if unarchive_webscraper_account(aid):
+                    affected += 1
+            return jsonify({'success': True, 'action': 'unarchive', 'affected': affected})
+
+        elif action == 'delete':
+            affected = webscraper_bulk_delete(account_ids)
+            return jsonify({'success': True, 'action': 'delete', 'affected': affected})
+
+        elif action == 'change_tier':
+            new_tier = data.get('tier')
+            if new_tier is None:
+                return jsonify({'error': 'Missing required field: tier'}), 400
+            if new_tier not in [1, 2, 3, 4]:
+                return jsonify({'error': 'Invalid tier. Must be 1, 2, 3, or 4'}), 400
+            affected = webscraper_bulk_change_tier(account_ids, new_tier)
+            return jsonify({'success': True, 'action': 'change_tier', 'tier': new_tier, 'affected': affected})
+
+        else:
+            return jsonify({'error': f'Unknown action: {action}'}), 400
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/webscraper/accounts/<int:account_id>/notes', methods=['PUT'])
+def api_webscraper_update_notes(account_id):
+    """
+    Update the notes field for a webscraper account.
+
+    Request JSON:
+        notes: The new notes text
+
+    Returns:
+        JSON with result: {success: bool, notes: str}
+    """
+    data = request.get_json() or {}
+    notes = data.get('notes', '')
+
+    updated = update_webscraper_notes(account_id, notes)
+    if not updated:
+        return jsonify({'error': 'Account not found'}), 404
+
+    return jsonify({'success': True, 'notes': notes})
+
+
+@app.route('/api/webscraper/accounts/<int:account_id>/archive', methods=['POST'])
+def api_webscraper_archive_account(account_id):
+    """Archive a webscraper account."""
+    archived = archive_webscraper_account(account_id)
+    if not archived:
+        return jsonify({'error': 'Account not found or already archived'}), 404
+    return jsonify({'success': True, 'message': 'Account archived'})
+
+
+@app.route('/api/webscraper/accounts/<int:account_id>/unarchive', methods=['POST'])
+def api_webscraper_unarchive_account(account_id):
+    """Unarchive a webscraper account."""
+    unarchived = unarchive_webscraper_account(account_id)
+    if not unarchived:
+        return jsonify({'error': 'Account not found or not archived'}), 404
+    return jsonify({'success': True, 'message': 'Account unarchived'})
+
+
+@app.route('/api/webscraper/accounts/<int:account_id>', methods=['DELETE'])
+def api_webscraper_delete_account(account_id):
+    """Delete a webscraper account."""
+    deleted = delete_webscraper_account(account_id)
+    if not deleted:
+        return jsonify({'error': 'Account not found'}), 404
+    return jsonify({'success': True, 'message': 'Account deleted'})
+
+
+@app.route('/api/webscraper/accounts/<int:account_id>')
+def api_webscraper_get_account(account_id):
+    """Get a single webscraper account by ID."""
+    account = get_webscraper_account(account_id)
+    if not account:
+        return jsonify({'error': 'Account not found'}), 404
+    return jsonify({'success': True, 'account': account})
 
 
 @app.route('/api/discover')

@@ -26,13 +26,19 @@
                 <a href="{{ url_for('accounts') }}" class="nav-module {% if request.endpoint in ['accounts', 'grow', 'history', 'rules'] %}active{% endif %}">
                     <span>RepoRadar</span>
                 </a>
-                <a href="{{ url_for('experiment') }}" class="nav-module {% if request.endpoint == 'experiment' %}active{% endif %}">
+                <a href="{{ url_for('webscraper_accounts') }}" class="nav-module {% if request.endpoint == 'webscraper_accounts' %}active{% endif %}">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <circle cx="12" cy="12" r="10"></circle>
                         <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
                         <path d="M2 12h20"></path>
                     </svg>
                     <span>WebScraper</span>
+                </a>
+                <a href="{{ url_for('experiment') }}" class="nav-module {% if request.endpoint == 'experiment' %}active{% endif %}">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path>
+                    </svg>
+                    <span>Analyzer</span>
                 </a>
             </div>
         </div>
