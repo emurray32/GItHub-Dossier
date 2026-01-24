@@ -15,6 +15,7 @@ import re
 from typing import Dict, Any, Optional, List
 from urllib.parse import urlparse, urljoin
 from config import Config
+from .enhanced_heuristics import analyze_social_multi_region
 
 try:
     from google import genai
@@ -522,6 +523,16 @@ class WebAnalyzer:
                 soup, url, response_time, response.status_code, images, links
             )
 
+            # Build preliminary website data for social analysis
+            preliminary_data = {
+                'links': links[:100],
+                'hreflang_tags': hreflang_tags,
+                'localization_score': localization_score,
+            }
+
+            # Analyze social multi-region signals (Heuristic #8)
+            social_multi_region = analyze_social_multi_region(preliminary_data)
+
             return {
                 'url': response.url,  # Final URL after redirects
                 'status_code': response.status_code,
@@ -538,7 +549,8 @@ class WebAnalyzer:
                 'image_count': len(images),
                 'localization_score': localization_score,
                 'tech_stack': tech_stack,
-                'quality_metrics': quality_metrics
+                'quality_metrics': quality_metrics,
+                'social_multi_region': social_multi_region
             }
 
         except requests.exceptions.RequestException as e:
@@ -616,6 +628,7 @@ class WebAnalyzer:
         localization_score = website_data.get('localization_score', {})
         tech_stack = website_data.get('tech_stack', {})
         quality_metrics = website_data.get('quality_metrics', {})
+        social_multi_region = website_data.get('social_multi_region', {})
 
         # Build a summary of available data
         data_summary = f"""
@@ -644,6 +657,11 @@ Overall Score: {quality_metrics.get('overall_score', 0)}/100 ({quality_metrics.g
 Performance: {quality_metrics.get('performance', {}).get('grade', 'N/A')} ({quality_metrics.get('performance', {}).get('load_time', 0)}s)
 Mobile-Ready: {quality_metrics.get('mobile', {}).get('has_viewport_meta', False)}
 HTTPS: {quality_metrics.get('security', {}).get('uses_https', False)}
+
+=== SOCIAL & MULTI-REGION SIGNALS ===
+Has Multi-Region Social: {social_multi_region.get('has_multi_region_social', False)}
+OG Locale Count: {social_multi_region.get('og_locale_count', 0)}
+Regional Social Handles: {len(social_multi_region.get('regional_handles', []))} found
 
 === PAGE CONTENT (First 5000 chars) ===
 {text_content[:5000]}
@@ -712,6 +730,7 @@ Please provide your analysis now:
                 ai_result['localization_score'] = website_data['localization_score']
                 ai_result['tech_stack'] = website_data['tech_stack']
                 ai_result['quality_metrics'] = website_data['quality_metrics']
+                ai_result['social_multi_region'] = website_data.get('social_multi_region', {})
 
                 return ai_result
             else:
@@ -724,6 +743,7 @@ Please provide your analysis now:
                     'localization_score': website_data['localization_score'],
                     'tech_stack': website_data['tech_stack'],
                     'quality_metrics': website_data['quality_metrics'],
+                    'social_multi_region': website_data.get('social_multi_region', {}),
                     'metadata': {
                         'url': website_data['url'],
                         'title': website_data['title'],
