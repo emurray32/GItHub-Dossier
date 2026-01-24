@@ -86,6 +86,206 @@
         color: var(--text-secondary);
     }
 
+    .tier-filter-divider {
+        width: 1px;
+        height: 24px;
+        background: var(--border-color);
+        margin: 0 0.5rem;
+    }
+
+    .tier-filter-btn.action-btn {
+        background: var(--bg-secondary);
+        border-color: var(--accent-color);
+        color: var(--accent-color);
+    }
+
+    .tier-filter-btn.action-btn:hover {
+        background: rgba(0, 181, 173, 0.15);
+        border-color: var(--accent-color);
+        color: var(--accent-color);
+    }
+
+    /* Modal styles for Grow, Rule Set, History */
+    .ws-modal-overlay {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.6);
+        z-index: 1000;
+        justify-content: center;
+        align-items: center;
+    }
+
+    .ws-modal-overlay.active {
+        display: flex;
+    }
+
+    .ws-modal {
+        background: var(--bg-primary);
+        border-radius: 12px;
+        max-width: 800px;
+        width: 90%;
+        max-height: 80vh;
+        display: flex;
+        flex-direction: column;
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+    }
+
+    .ws-modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1rem 1.5rem;
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    .ws-modal-header h3 {
+        margin: 0;
+        font-size: 1.1rem;
+        color: var(--text-primary);
+    }
+
+    .ws-modal-close {
+        background: none;
+        border: none;
+        color: var(--text-secondary);
+        cursor: pointer;
+        padding: 0.25rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .ws-modal-close:hover {
+        color: var(--text-primary);
+    }
+
+    .ws-modal-body {
+        padding: 1.5rem;
+        overflow-y: auto;
+        flex: 1;
+    }
+
+    .ws-modal-footer {
+        padding: 1rem 1.5rem;
+        border-top: 1px solid var(--border-color);
+        display: flex;
+        justify-content: flex-end;
+        gap: 0.75rem;
+    }
+
+    .ruleset-category {
+        margin-bottom: 1.5rem;
+    }
+
+    .ruleset-category h4 {
+        color: var(--accent-color);
+        font-size: 0.9rem;
+        margin-bottom: 0.75rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .ruleset-items {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+
+    .ruleset-item {
+        background: var(--bg-secondary);
+        padding: 0.4rem 0.75rem;
+        border-radius: 6px;
+        font-size: 0.8rem;
+        color: var(--text-secondary);
+        border: 1px solid var(--border-color);
+    }
+
+    .ruleset-last-updated {
+        color: var(--text-muted);
+        font-size: 0.75rem;
+        margin-top: 1rem;
+        padding-top: 1rem;
+        border-top: 1px solid var(--border-color);
+    }
+
+    .history-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+    }
+
+    .history-item {
+        background: var(--bg-secondary);
+        padding: 0.75rem 1rem;
+        border-radius: 8px;
+        border: 1px solid var(--border-color);
+    }
+
+    .history-item-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 0.5rem;
+    }
+
+    .history-item-company {
+        font-weight: 500;
+        color: var(--text-primary);
+    }
+
+    .history-item-time {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+    }
+
+    .history-item-details {
+        font-size: 0.85rem;
+        color: var(--text-secondary);
+    }
+
+    .grow-description {
+        color: var(--text-secondary);
+        margin-bottom: 1.5rem;
+        line-height: 1.6;
+    }
+
+    .grow-options {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+    }
+
+    .grow-option {
+        background: var(--bg-secondary);
+        padding: 1rem;
+        border-radius: 8px;
+        border: 1px solid var(--border-color);
+        cursor: pointer;
+        transition: all var(--transition-fast);
+    }
+
+    .grow-option:hover {
+        border-color: var(--accent-color);
+        background: rgba(0, 181, 173, 0.05);
+    }
+
+    .grow-option h4 {
+        margin: 0 0 0.5rem 0;
+        color: var(--text-primary);
+        font-size: 0.95rem;
+    }
+
+    .grow-option p {
+        margin: 0;
+        color: var(--text-secondary);
+        font-size: 0.85rem;
+    }
+
     .search-container {
         position: relative;
         min-width: 250px;
@@ -777,6 +977,33 @@
                         </svg>
                         Archived <span class="tier-count" id="count-archived">0</span>
                     </button>
+
+                    <span class="tier-filter-divider"></span>
+
+                    <button class="tier-filter-btn action-btn" id="grow-btn" onclick="openGrowModal()">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M12 20V10"></path>
+                            <path d="M18 20V4"></path>
+                            <path d="M6 20v-4"></path>
+                        </svg>
+                        Grow
+                    </button>
+                    <button class="tier-filter-btn action-btn" id="ruleset-btn" onclick="openRuleSetModal()">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                            <polyline points="14 2 14 8 20 8"></polyline>
+                            <line x1="16" y1="13" x2="8" y2="13"></line>
+                            <line x1="16" y1="17" x2="8" y2="17"></line>
+                        </svg>
+                        Rule Set
+                    </button>
+                    <button class="tier-filter-btn action-btn" id="history-btn" onclick="openHistoryModal()">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <polyline points="12 6 12 12 16 14"></polyline>
+                        </svg>
+                        History
+                    </button>
                 </div>
             </div>
         </div>
@@ -1425,5 +1652,262 @@ function timeAgo(dateString) {
     const years = Math.floor(months / 12);
     return `${years} year${years === 1 ? '' : 's'} ago`;
 }
+
+// ============================================================
+// GROW MODAL
+// ============================================================
+function openGrowModal() {
+    document.getElementById('grow-modal').classList.add('active');
+}
+
+function closeGrowModal() {
+    document.getElementById('grow-modal').classList.remove('active');
+}
+
+async function growFromRepoRadar() {
+    closeGrowModal();
+    try {
+        const response = await fetch('/api/webscraper/accounts/populate-from-reporadar', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        const result = await response.json();
+        if (response.ok) {
+            alert(`Added ${result.added} new accounts from RepoRadar!\n\nSkipped ${result.skipped} (already exist)`);
+            loadAccounts();
+            loadTierCounts();
+        } else {
+            alert('Failed to populate: ' + (result.error || 'Unknown error'));
+        }
+    } catch (error) {
+        alert('Failed to populate from RepoRadar: ' + error.message);
+    }
+}
+
+// ============================================================
+// RULE SET MODAL
+// ============================================================
+let ruleSetData = null;
+
+async function openRuleSetModal() {
+    document.getElementById('ruleset-modal').classList.add('active');
+    await loadRuleSet();
+}
+
+function closeRuleSetModal() {
+    document.getElementById('ruleset-modal').classList.remove('active');
+}
+
+async function loadRuleSet() {
+    const body = document.getElementById('ruleset-body');
+    body.innerHTML = '<p style="color: var(--text-muted);">Loading rule set...</p>';
+
+    try {
+        const response = await fetch('/api/webscraper/ruleset');
+        ruleSetData = await response.json();
+
+        let html = '';
+
+        // Global Expansion Keywords
+        html += `
+            <div class="ruleset-category">
+                <h4>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="2" y1="12" x2="22" y2="12"></line>
+                        <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+                    </svg>
+                    Global Expansion Keywords
+                </h4>
+                <div class="ruleset-items">
+                    ${ruleSetData.expansion_keywords.map(k => `<span class="ruleset-item">${escapeHtml(k)}</span>`).join('')}
+                </div>
+            </div>
+        `;
+
+        // Locale Detection Patterns
+        html += `
+            <div class="ruleset-category">
+                <h4>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+                        <polyline points="22,6 12,13 2,6"></polyline>
+                    </svg>
+                    Locale Detection Patterns
+                </h4>
+                <div class="ruleset-items">
+                    ${ruleSetData.locale_patterns.map(p => `<span class="ruleset-item">${escapeHtml(p)}</span>`).join('')}
+                </div>
+            </div>
+        `;
+
+        // Tier Classification Rules
+        html += `
+            <div class="ruleset-category">
+                <h4>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+                    </svg>
+                    Tier Classification Rules
+                </h4>
+                <div class="ruleset-items" style="flex-direction: column; align-items: stretch;">
+                    ${Object.entries(ruleSetData.tier_rules).map(([tier, rule]) => `
+                        <div class="ruleset-item" style="display: flex; gap: 0.5rem;">
+                            <strong style="color: var(--accent-color);">Tier ${tier}:</strong>
+                            <span>${escapeHtml(rule)}</span>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+
+        // Last Updated
+        html += `
+            <div class="ruleset-last-updated">
+                <strong>Last Updated:</strong> ${ruleSetData.last_updated || 'Unknown'}
+                <br><small>Rule sets refresh automatically every 24 hours based on scanner.py heuristics.</small>
+            </div>
+        `;
+
+        body.innerHTML = html;
+    } catch (error) {
+        body.innerHTML = `<p style="color: #e74c3c;">Failed to load rule set: ${error.message}</p>`;
+    }
+}
+
+// ============================================================
+// HISTORY MODAL
+// ============================================================
+async function openHistoryModal() {
+    document.getElementById('history-modal').classList.add('active');
+    await loadHistory();
+}
+
+function closeHistoryModal() {
+    document.getElementById('history-modal').classList.remove('active');
+}
+
+async function loadHistory() {
+    const body = document.getElementById('history-body');
+    body.innerHTML = '<p style="color: var(--text-muted);">Loading scan history...</p>';
+
+    try {
+        const response = await fetch('/api/webscraper/history?limit=20');
+        const history = await response.json();
+
+        if (history.length === 0) {
+            body.innerHTML = '<p style="color: var(--text-muted);">No scan history yet.</p>';
+            return;
+        }
+
+        let html = '<div class="history-list">';
+        for (const item of history) {
+            html += `
+                <div class="history-item">
+                    <div class="history-item-header">
+                        <span class="history-item-company">${escapeHtml(item.company_name)}</span>
+                        <span class="history-item-time">${timeAgo(item.scanned_at)}</span>
+                    </div>
+                    <div class="history-item-details">
+                        Tier ${item.tier} | ${item.locale_count} locales | Score: ${item.score || 'N/A'}%
+                        ${item.evidence ? `<br><small>${escapeHtml(item.evidence.substring(0, 100))}${item.evidence.length > 100 ? '...' : ''}</small>` : ''}
+                    </div>
+                </div>
+            `;
+        }
+        html += '</div>';
+        body.innerHTML = html;
+    } catch (error) {
+        body.innerHTML = `<p style="color: #e74c3c;">Failed to load history: ${error.message}</p>`;
+    }
+}
+
+// Close modals when clicking outside
+document.addEventListener('click', (e) => {
+    if (e.target.classList.contains('ws-modal-overlay')) {
+        e.target.classList.remove('active');
+    }
+});
+
+// Close modals with Escape key
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        document.querySelectorAll('.ws-modal-overlay.active').forEach(modal => {
+            modal.classList.remove('active');
+        });
+    }
+});
 </script>
+
+<!-- Grow Modal -->
+<div class="ws-modal-overlay" id="grow-modal">
+    <div class="ws-modal">
+        <div class="ws-modal-header">
+            <h3>Grow Account List</h3>
+            <button class="ws-modal-close" onclick="closeGrowModal()">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+            </button>
+        </div>
+        <div class="ws-modal-body">
+            <p class="grow-description">
+                Expand your WebScraper account list by importing accounts from various sources.
+                Each source will add accounts that have website URLs for localization analysis.
+            </p>
+            <div class="grow-options">
+                <div class="grow-option" onclick="growFromRepoRadar()">
+                    <h4>Import from RepoRadar</h4>
+                    <p>Add accounts from RepoRadar that have website URLs. Useful for cross-referencing GitHub signals with website localization status.</p>
+                </div>
+                <div class="grow-option" onclick="alert('Coming soon: CSV upload for bulk import')">
+                    <h4>Upload CSV</h4>
+                    <p>Import a CSV file with company names and website URLs for batch processing.</p>
+                </div>
+                <div class="grow-option" onclick="alert('Coming soon: Integration with CRM systems')">
+                    <h4>CRM Integration</h4>
+                    <p>Connect to Salesforce, HubSpot, or other CRM systems to sync prospect lists.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Rule Set Modal -->
+<div class="ws-modal-overlay" id="ruleset-modal">
+    <div class="ws-modal">
+        <div class="ws-modal-header">
+            <h3>WebScraper Rule Set</h3>
+            <button class="ws-modal-close" onclick="closeRuleSetModal()">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+            </button>
+        </div>
+        <div class="ws-modal-body" id="ruleset-body">
+            <p style="color: var(--text-muted);">Loading rule set...</p>
+        </div>
+    </div>
+</div>
+
+<!-- History Modal -->
+<div class="ws-modal-overlay" id="history-modal">
+    <div class="ws-modal">
+        <div class="ws-modal-header">
+            <h3>Recent Scan History</h3>
+            <button class="ws-modal-close" onclick="closeHistoryModal()">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+            </button>
+        </div>
+        <div class="ws-modal-body" id="history-body">
+            <p style="color: var(--text-muted);">Loading scan history...</p>
+        </div>
+    </div>
+</div>
+
 {% endblock %}

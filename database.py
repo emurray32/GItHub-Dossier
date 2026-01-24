@@ -120,6 +120,12 @@ def init_db() -> None:
     except sqlite3.OperationalError:
         pass  # Column already exists
 
+    # Migrate: add latest_report_id column for fast report lookups (eliminates expensive ROW_NUMBER JOIN)
+    try:
+        cursor.execute('ALTER TABLE monitored_accounts ADD COLUMN latest_report_id INTEGER')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
     # Migrate reports table: add is_favorite column if it doesn't exist
     try:
         cursor.execute('ALTER TABLE reports ADD COLUMN is_favorite INTEGER DEFAULT 0')
@@ -154,6 +160,23 @@ def init_db() -> None:
     cursor.execute('''
         CREATE INDEX IF NOT EXISTS idx_reports_company_lower
         ON reports(LOWER(company_name))
+    ''')
+
+    # Index for fast latest_report_id lookups
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_accounts_latest_report
+        ON monitored_accounts(latest_report_id)
+    ''')
+
+    # Backfill latest_report_id for existing accounts (runs once, fast due to index)
+    cursor.execute('''
+        UPDATE monitored_accounts
+        SET latest_report_id = (
+            SELECT r.id FROM reports r
+            WHERE LOWER(r.company_name) = LOWER(monitored_accounts.company_name)
+            ORDER BY r.created_at DESC LIMIT 1
+        )
+        WHERE latest_report_id IS NULL
     ''')
 
     # System Settings table - key-value store
@@ -536,6 +559,14 @@ def save_report(
     ))
 
     report_id = cursor.lastrowid
+
+    # Update latest_report_id in monitored_accounts for fast lookups
+    cursor.execute('''
+        UPDATE monitored_accounts
+        SET latest_report_id = ?
+        WHERE LOWER(company_name) = LOWER(?)
+    ''', (report_id, company_name))
+
     conn.commit()
     conn.close()
 
@@ -1336,21 +1367,10 @@ def get_all_accounts(page: int = 1, limit: int = 50, tier_filter: Optional[list]
     offset = (current_page - 1) * limit
 
     # Custom sort: Tier 2 first (priority 1), Tier 1 (priority 2), Tier 0 (priority 3), Tier 3 (priority 4), Tier 4 last (priority 5)
-    # Use LEFT JOIN with ROW_NUMBER() to efficiently fetch latest report per company
+    # Use the cached latest_report_id column (no expensive JOIN needed)
     select_query = f'''
-        SELECT
-            ma.*,
-            lr.id as latest_report_id
+        SELECT ma.*
         FROM monitored_accounts ma
-        LEFT JOIN (
-            SELECT id, company_name
-            FROM (
-                SELECT id, company_name,
-                       ROW_NUMBER() OVER (PARTITION BY LOWER(company_name) ORDER BY created_at DESC) as rn
-                FROM reports
-            )
-            WHERE rn = 1
-        ) lr ON LOWER(lr.company_name) = LOWER(ma.company_name)
         {where_sql}
         ORDER BY
             CASE ma.current_tier
@@ -1500,21 +1520,10 @@ def get_all_accounts_datatable(draw: int, start: int, length: int, search_value:
         sort_order = 'ASC'
 
     # Get paginated and sorted data
-    # Use LEFT JOIN with ROW_NUMBER() to efficiently fetch latest report per company
+    # Use the cached latest_report_id column (no expensive JOIN needed)
     select_query = f'''
-        SELECT
-            ma.*,
-            lr.id as latest_report_id
+        SELECT ma.*
         FROM monitored_accounts ma
-        LEFT JOIN (
-            SELECT id, company_name
-            FROM (
-                SELECT id, company_name,
-                       ROW_NUMBER() OVER (PARTITION BY LOWER(company_name) ORDER BY created_at DESC) as rn
-                FROM reports
-            )
-            WHERE rn = 1
-        ) lr ON LOWER(lr.company_name) = LOWER(ma.company_name)
         {where_sql}
         ORDER BY ma.{sort_column} {sort_order}
         LIMIT ? OFFSET ?
@@ -2281,21 +2290,10 @@ def get_refreshable_accounts() -> list:
     cursor = conn.cursor()
 
     # Select non-archived accounts in Tiers 0, 1, 2 that haven't been scanned in 7+ days
-    # Use LEFT JOIN with ROW_NUMBER() to efficiently fetch latest report per company
+    # Use the cached latest_report_id column (no expensive JOIN needed)
     cursor.execute('''
-        SELECT
-            ma.*,
-            lr.id as latest_report_id
+        SELECT ma.*
         FROM monitored_accounts ma
-        LEFT JOIN (
-            SELECT id, company_name
-            FROM (
-                SELECT id, company_name,
-                       ROW_NUMBER() OVER (PARTITION BY LOWER(company_name) ORDER BY created_at DESC) as rn
-                FROM reports
-            )
-            WHERE rn = 1
-        ) lr ON LOWER(lr.company_name) = LOWER(ma.company_name)
         WHERE ma.archived_at IS NULL
           AND ma.current_tier IN (0, 1, 2)
           AND (
