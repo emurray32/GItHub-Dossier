@@ -19,6 +19,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Generator, Optional, List, Dict
 from config import Config
 from .discovery import discover_organization, get_organization_repos, _get_org_details
+from .enhanced_heuristics import run_enhanced_heuristics
 from utils import get_github_headers
 from database import increment_daily_stat
 from utils import make_github_request
@@ -511,7 +512,7 @@ def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[obje
         'scan_timestamp': datetime.now().isoformat(),
         'total_stars': sum(r.get('stargazers_count', 0) for r in repos_to_scan),
 
-        # 3-Signal Intent Results (plus documentation intent)
+        # 3-Signal Intent Results (plus documentation intent and enhanced heuristics)
         'signals': [],  # List of structured signal objects
         'signal_summary': {
             'rfc_discussion': {
@@ -535,6 +536,24 @@ def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[obje
                 'count': 0,
                 'high_priority_count': 0,
                 'hits': []
+            },
+            # Enhanced Heuristics (10 additional signals)
+            'enhanced_heuristics': {
+                'count': 0,
+                'hits': [],
+                'by_type': {
+                    'job_posting_intent': [],
+                    'regional_domain_detection': [],
+                    'headless_cms_i18n': [],
+                    'payment_multi_currency': [],
+                    'timezone_library': [],
+                    'ci_localization_pipeline': [],
+                    'compliance_documentation': [],
+                    'social_multi_region': [],
+                    'locale_velocity_high': [],
+                    'locale_velocity_medium': [],
+                    'api_international': [],
+                }
             }
         },
         'intent_score': 0,  # Calculated at the end
@@ -722,6 +741,31 @@ def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[obje
             'language': repo.get('language'),
         })
 
+    # Phase 5b: Enhanced Heuristics Scan (Global Expansion Intent)
+    yield _sse_log("")
+    yield _sse_log("PHASE 5b: Enhanced Heuristics Scan (Global Expansion Intent)")
+    yield _sse_log("-" * 40)
+    yield _sse_log("Running 10 enhanced heuristics for global expansion signals...")
+
+    enhanced_count = 0
+    for log_msg, signal in run_enhanced_heuristics(org_login, org_data, repos_to_scan):
+        if log_msg:
+            yield _sse_log(log_msg)
+        if signal:
+            scan_results['signals'].append(signal)
+            scan_results['signal_summary']['enhanced_heuristics']['hits'].append(signal)
+            scan_results['signal_summary']['enhanced_heuristics']['count'] += 1
+            enhanced_count += 1
+
+            # Categorize by type
+            signal_type = signal.get('type', 'unknown')
+            if signal_type in scan_results['signal_summary']['enhanced_heuristics']['by_type']:
+                scan_results['signal_summary']['enhanced_heuristics']['by_type'][signal_type].append(signal)
+
+            yield _sse_signal(signal)
+
+    yield _sse_log(f"Enhanced Heuristics scan complete: {enhanced_count} signals")
+
     # Phase 6: Intent Score Calculation
     yield _sse_log("")
     yield _sse_log("PHASE 6: Intent Score Calculation")
@@ -744,6 +788,7 @@ def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[obje
     yield _sse_log(f"   • Dependency Injection: {dep_count}")
     yield _sse_log(f"   • Documentation Intent: {doc_count} ({doc_high} HIGH)")
     yield _sse_log(f"   • Ghost Branches: {ghost_count}")
+    yield _sse_log(f"   • Enhanced Heuristics: {enhanced_count}")
     yield _sse_log(f"Intent Score: {scan_results['intent_score']}/100")
     yield _sse_log(f"Scan Duration: {duration:.1f}s")
 
@@ -2491,6 +2536,30 @@ def _calculate_intent_score(scan_results: dict) -> int:
     rfc_count = summary.get('rfc_discussion', {}).get('count', 0)
     doc_count = summary.get('documentation_intent', {}).get('count', 0)
 
+    # ============================================================
+    # Check Enhanced Heuristics for strong expansion signals
+    # ============================================================
+    enhanced = summary.get('enhanced_heuristics', {})
+    enhanced_count = enhanced.get('count', 0)
+    enhanced_by_type = enhanced.get('by_type', {})
+
+    # Strong enhanced signals that indicate HIGH intent
+    high_intent_enhanced = (
+        len(enhanced_by_type.get('job_posting_intent', [])) +
+        len(enhanced_by_type.get('ci_localization_pipeline', [])) +
+        len(enhanced_by_type.get('headless_cms_i18n', [])) +
+        len(enhanced_by_type.get('payment_multi_currency', []))
+    )
+
+    # If we have strong enhanced signals, boost to preparing status
+    if high_intent_enhanced >= 2:
+        scan_results['goldilocks_status'] = 'preparing'
+        scan_results['lead_status'] = Config.LEAD_STATUS_LABELS.get('preparing', 'HOT LEAD')
+        scan_results['enhanced_heuristics_boost'] = True
+        base_score = Config.GOLDILOCKS_SCORES.get('preparing_min', 90)
+        bonus = min(high_intent_enhanced * 3, 10)
+        return min(base_score + bonus, Config.GOLDILOCKS_SCORES.get('preparing_max', 100))
+
     if rfc_count > 0 or doc_count > 0:
         scan_results['goldilocks_status'] = 'thinking'
         scan_results['lead_status'] = Config.LEAD_STATUS_LABELS.get('thinking', 'WARM LEAD')
@@ -2506,10 +2575,13 @@ def _calculate_intent_score(scan_results: dict) -> int:
         doc_high_priority = summary.get('documentation_intent', {}).get('high_priority_count', 0)
         doc_bonus = min(doc_high_priority * 8, 15)  # Up to +15 for doc high priority
 
-        # Combined bonus (cap at +25)
-        total_bonus = min(rfc_bonus + doc_bonus, 25)
+        # Bonus for enhanced heuristics signals
+        enhanced_bonus = min(enhanced_count * 3, 10)  # Up to +10 for enhanced signals
 
-        return min(base_score + total_bonus, 65)  # Cap at 65 for thinking
+        # Combined bonus (cap at +30)
+        total_bonus = min(rfc_bonus + doc_bonus + enhanced_bonus, 30)
+
+        return min(base_score + total_bonus, 70)  # Cap at 70 for thinking with enhanced signals
 
     # ============================================================
     # Check for Ghost Branches only (Active experimentation)
@@ -2518,7 +2590,28 @@ def _calculate_intent_score(scan_results: dict) -> int:
     if ghost_count > 0:
         scan_results['goldilocks_status'] = 'thinking'
         scan_results['lead_status'] = Config.LEAD_STATUS_LABELS.get('thinking', 'WARM LEAD')
-        return min(35 + ghost_count * 5, 50)
+        enhanced_bonus = min(enhanced_count * 2, 10)
+        return min(35 + ghost_count * 5 + enhanced_bonus, 55)
+
+    # ============================================================
+    # Check for Enhanced Heuristics only (Expansion signals without i18n)
+    # ============================================================
+    # If we have enhanced heuristics signals but no traditional i18n signals,
+    # this indicates expansion interest/preparation without visible i18n work yet
+    if enhanced_count > 0:
+        scan_results['goldilocks_status'] = 'thinking'
+        scan_results['lead_status'] = Config.LEAD_STATUS_LABELS.get('thinking', 'WARM LEAD')
+        scan_results['enhanced_heuristics_only'] = True
+
+        # Score based on number and type of enhanced signals
+        base_score = 25
+        bonus = min(enhanced_count * 5, 25)
+
+        # Extra bonus for high-intent signals
+        if high_intent_enhanced > 0:
+            bonus += min(high_intent_enhanced * 5, 15)
+
+        return min(base_score + bonus, 60)
 
     # ============================================================
     # MEGA-CORP HEURISTIC: Detect high-maturity orgs without any signals at all

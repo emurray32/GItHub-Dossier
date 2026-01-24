@@ -908,3 +908,468 @@ class Config:
         'ghost_branch': 25,
         'documentation_intent': 15,
     }
+
+    # ============================================================
+    # ENHANCED HEURISTICS - GLOBAL EXPANSION INTENT DETECTION
+    # ============================================================
+    # These additional heuristics identify companies with high intent
+    # on global expansion through multiple signal dimensions.
+
+    # ============================================================
+    # HEURISTIC 1: JOB POSTING INTENT ANALYSIS
+    # ============================================================
+    # Detect job postings that indicate hiring for localization/i18n roles.
+    # These signals indicate organizational commitment to global expansion.
+
+    JOB_INTENT_KEYWORDS = [
+        # Localization-specific roles
+        'localization manager',
+        'localization engineer',
+        'localization specialist',
+        'translation manager',
+        'internationalization engineer',
+        'i18n engineer',
+        'globalization manager',
+        'language program manager',
+        'localization program manager',
+        'translation coordinator',
+        'localization coordinator',
+        'localization lead',
+        'i18n lead',
+        'localization director',
+        'head of localization',
+        'vp of localization',
+        # Regional expansion roles
+        'regional marketing manager',
+        'international marketing',
+        'emea marketing',
+        'apac marketing',
+        'latam marketing',
+        'international growth',
+        'global growth manager',
+        'international expansion',
+        'regional sales manager',
+        'country manager',
+        'international operations',
+        # Content localization
+        'content localization',
+        'multilingual content',
+        'global content',
+        'international content',
+    ]
+
+    # Job posting file patterns in repositories
+    JOB_POSTING_FILES = [
+        'JOBS.md',
+        'CAREERS.md',
+        'HIRING.md',
+        'careers/',
+        'jobs/',
+        '.github/HIRING.md',
+    ]
+
+    # ============================================================
+    # HEURISTIC 2: REGIONAL DOMAIN / ccTLD DETECTION
+    # ============================================================
+    # Detect country-code TLDs and regional domain patterns indicating
+    # existing or planned international presence.
+
+    REGIONAL_CCTLDS = {
+        # Europe
+        'de': 'Germany',
+        'fr': 'France',
+        'es': 'Spain',
+        'it': 'Italy',
+        'nl': 'Netherlands',
+        'be': 'Belgium',
+        'at': 'Austria',
+        'ch': 'Switzerland',
+        'pl': 'Poland',
+        'se': 'Sweden',
+        'no': 'Norway',
+        'dk': 'Denmark',
+        'fi': 'Finland',
+        'pt': 'Portugal',
+        'ie': 'Ireland',
+        'uk': 'United Kingdom',
+        'cz': 'Czech Republic',
+        'hu': 'Hungary',
+        'ro': 'Romania',
+        'gr': 'Greece',
+        # Asia-Pacific
+        'jp': 'Japan',
+        'cn': 'China',
+        'kr': 'South Korea',
+        'tw': 'Taiwan',
+        'hk': 'Hong Kong',
+        'sg': 'Singapore',
+        'au': 'Australia',
+        'nz': 'New Zealand',
+        'in': 'India',
+        'th': 'Thailand',
+        'vn': 'Vietnam',
+        'id': 'Indonesia',
+        'my': 'Malaysia',
+        'ph': 'Philippines',
+        # Americas
+        'ca': 'Canada',
+        'mx': 'Mexico',
+        'br': 'Brazil',
+        'ar': 'Argentina',
+        'cl': 'Chile',
+        'co': 'Colombia',
+        # Middle East / Africa
+        'ae': 'UAE',
+        'sa': 'Saudi Arabia',
+        'il': 'Israel',
+        'za': 'South Africa',
+        'eg': 'Egypt',
+        'tr': 'Turkey',
+        # Russia & CIS
+        'ru': 'Russia',
+        'ua': 'Ukraine',
+    }
+
+    # Regional subdomain patterns
+    REGIONAL_SUBDOMAIN_PATTERNS = [
+        r'^(en|de|fr|es|it|pt|ja|zh|ko|ru|ar|nl|sv|no|da|fi|pl|tr|cs|hu|el|he)[-.]',
+        r'[-.]?(emea|apac|latam|americas|europe|asia)[-.]?',
+        r'^(eu|us|uk|au|jp|cn|kr|br|mx|in)[-.]',
+    ]
+
+    # ============================================================
+    # HEURISTIC 3: HEADLESS CMS LOCALIZATION READINESS
+    # ============================================================
+    # Detect CMS platforms configured for multi-language content.
+
+    HEADLESS_CMS_I18N_CONFIGS = {
+        # Contentful
+        'contentful': {
+            'config_files': ['contentful.config.js', 'contentful.json', '.contentfulrc'],
+            'i18n_indicators': ['locales', 'locale', 'fallbackLocale', 'defaultLocale', 'space'],
+            'code_patterns': ['createClient', 'getEntry', 'getEntries', 'locale:'],
+        },
+        # Sanity
+        'sanity': {
+            'config_files': ['sanity.json', 'sanity.config.ts', 'sanity.config.js'],
+            'i18n_indicators': ['i18n', 'languages', 'baseLanguage', 'document-internationalization'],
+            'code_patterns': ['defineField', 'defineType', '@sanity/document-internationalization'],
+        },
+        # Strapi
+        'strapi': {
+            'config_files': ['config/plugins.js', 'config/plugins.ts', '.strapi'],
+            'i18n_indicators': ['i18n', 'locales', 'defaultLocale'],
+            'code_patterns': ['strapi-plugin-i18n', 'internationalization'],
+        },
+        # Prismic
+        'prismic': {
+            'config_files': ['prismicio.js', 'slicemachine.config.json'],
+            'i18n_indicators': ['locales', 'defaultLocale', 'masterLocale'],
+            'code_patterns': ['@prismicio/client', 'createClient'],
+        },
+        # Storyblok
+        'storyblok': {
+            'config_files': ['storyblok.config.js'],
+            'i18n_indicators': ['languages', 'defaultLanguage', 'locales'],
+            'code_patterns': ['@storyblok/js', '@storyblok/react'],
+        },
+        # DatoCMS
+        'datocms': {
+            'config_files': ['dato.config.js', 'datocms.json'],
+            'i18n_indicators': ['locales', 'allLocales', 'fallbackLocales'],
+            'code_patterns': ['datocms-client', 'buildClient'],
+        },
+    }
+
+    # ============================================================
+    # HEURISTIC 4: MULTI-CURRENCY PAYMENT INFRASTRUCTURE
+    # ============================================================
+    # Detect payment processing configured for multiple currencies/regions.
+
+    PAYMENT_I18N_LIBRARIES = [
+        # Stripe multi-currency
+        'stripe',
+        '@stripe/stripe-js',
+        '@stripe/react-stripe-js',
+        # PayPal international
+        '@paypal/react-paypal-js',
+        'paypal-rest-sdk',
+        # Multi-currency specific
+        'currency.js',
+        'dinero.js',
+        'money.js',
+        'accounting.js',
+        'currency-formatter',
+        # Regional payment providers
+        'razorpay',  # India
+        'paytm',     # India
+        'alipay',    # China
+        'wechat-pay', # China
+        'klarna',    # Europe
+        'adyen',     # Global
+        'mollie',    # Europe
+        'mercadopago', # LATAM
+        'payu',      # LATAM/EMEA
+    ]
+
+    PAYMENT_MULTI_CURRENCY_PATTERNS = [
+        'currency', 'currencies', 'multi-currency', 'multicurrency',
+        'exchange_rate', 'exchangeRate', 'fx_rate', 'fxRate',
+        'price_in_', 'priceIn', 'local_currency', 'localCurrency',
+        'currency_code', 'currencyCode', 'iso_currency', 'isoCurrency',
+        'formatCurrency', 'convertCurrency', 'parseCurrency',
+    ]
+
+    # ============================================================
+    # HEURISTIC 5: TIMEZONE & DATE FORMATTING LIBRARIES
+    # ============================================================
+    # Libraries that handle timezone and locale-aware date formatting
+    # indicate preparation for global users.
+
+    TIMEZONE_I18N_LIBRARIES = [
+        # JavaScript timezone libraries
+        'moment-timezone',
+        'date-fns-tz',
+        'luxon',
+        'dayjs',
+        '@date-io/luxon',
+        '@date-io/dayjs',
+        'spacetime',
+        'timezone-support',
+        'tz-offset',
+        # Full ICU data (heavy i18n intent)
+        'full-icu',
+        'intl',
+        '@formatjs/intl-datetimeformat',
+        '@formatjs/intl-numberformat',
+        '@formatjs/intl-relativetimeformat',
+        '@formatjs/intl-pluralrules',
+        '@formatjs/intl-listformat',
+        '@formatjs/intl-displaynames',
+        # Python
+        'pytz',
+        'python-dateutil',
+        'babel',  # Also handles locale formatting
+        'arrow',
+        # Go
+        'time',  # Standard library, but check for LoadLocation
+    ]
+
+    TIMEZONE_CODE_PATTERNS = [
+        'timezone', 'timeZone', 'time_zone',
+        'userTimezone', 'user_timezone',
+        'localTimezone', 'local_timezone',
+        'detectTimezone', 'detect_timezone',
+        'Intl.DateTimeFormat',
+        'toLocaleString', 'toLocaleDateString', 'toLocaleTimeString',
+        'formatRelative', 'formatDistance',
+        'LoadLocation',  # Go timezone
+        'tz_localize', 'tz_convert',  # Python pandas
+    ]
+
+    # ============================================================
+    # HEURISTIC 6: CI/CD LOCALIZATION PIPELINE DETECTION
+    # ============================================================
+    # GitHub Actions and CI configs that integrate with translation platforms.
+
+    CI_LOCALIZATION_PATTERNS = {
+        # GitHub Actions workflow indicators
+        'github_actions': {
+            'files': ['.github/workflows/*.yml', '.github/workflows/*.yaml'],
+            'patterns': [
+                'crowdin', 'lokalise', 'phrase', 'transifex', 'weblate',
+                'poeditor', 'pontoon', 'smartling', 'memsource',
+                'upload-translations', 'download-translations',
+                'sync-translations', 'pull-translations', 'push-translations',
+                'i18n-sync', 'l10n-sync', 'translation-sync',
+                'crowdin/github-action', 'lokalise/lokalise-cli-action',
+            ],
+        },
+        # Translation platform config files
+        'platform_configs': [
+            'crowdin.yml', 'crowdin.yaml', '.crowdin.yml',
+            'lokalise.yml', 'lokalise.yaml', '.lokalise.yml',
+            'phrase.yml', '.phrase.yml', '.phraseapp.yml',
+            'transifex.yml', '.tx/config',
+            'weblate.yaml', '.weblate',
+        ],
+        # CI integration patterns
+        'ci_scripts': [
+            'scripts/translations',
+            'scripts/i18n',
+            'scripts/l10n',
+            'scripts/sync-translations',
+            'scripts/pull-translations',
+            'scripts/push-translations',
+        ],
+    }
+
+    # ============================================================
+    # HEURISTIC 7: LEGAL/COMPLIANCE DOCUMENTATION SIGNALS
+    # ============================================================
+    # Regional compliance documents often precede market expansion.
+
+    COMPLIANCE_FILES = [
+        # Privacy policies
+        'PRIVACY.md', 'PRIVACY_POLICY.md', 'privacy-policy.md',
+        'privacy/', 'legal/privacy',
+        # GDPR specific
+        'GDPR.md', 'gdpr.md', 'gdpr-compliance.md',
+        'docs/gdpr', 'legal/gdpr',
+        'data-processing-agreement.md', 'dpa.md',
+        # Regional compliance
+        'CCPA.md', 'ccpa.md',  # California
+        'LGPD.md', 'lgpd.md',  # Brazil
+        'PDPA.md', 'pdpa.md',  # Thailand/Singapore
+        'POPIA.md', 'popia.md', # South Africa
+        'APPI.md', 'appi.md',  # Japan
+        # Terms of service variations
+        'legal/', 'docs/legal/',
+        'terms/', 'tos/',
+    ]
+
+    COMPLIANCE_KEYWORDS = [
+        # GDPR (Europe)
+        'gdpr', 'general data protection regulation',
+        'data processing agreement', 'dpa',
+        'data protection officer', 'dpo',
+        'right to be forgotten', 'data portability',
+        'privacy shield', 'standard contractual clauses', 'scc',
+        # Regional regulations
+        'ccpa', 'california consumer privacy',  # California
+        'lgpd', 'lei geral de proteção de dados',  # Brazil
+        'pdpa', 'personal data protection act',  # Singapore/Thailand
+        'popia', 'protection of personal information',  # South Africa
+        'appi', 'act on protection of personal information',  # Japan
+        'pipl', 'personal information protection law',  # China
+        # International indicators
+        'international data transfer',
+        'cross-border data',
+        'data localization',
+        'regional compliance',
+        'multi-jurisdiction',
+    ]
+
+    # ============================================================
+    # HEURISTIC 8: SOCIAL PROOF / MULTI-REGION META TAGS
+    # ============================================================
+    # OpenGraph and social meta tags configured for multiple regions.
+
+    SOCIAL_MULTI_REGION_PATTERNS = {
+        'meta_tags': [
+            'og:locale',
+            'og:locale:alternate',
+            'twitter:site',  # Check for regional variants
+            'al:android:app_name',  # App Links regional
+            'al:ios:app_name',
+        ],
+        'structured_data': [
+            'availableLanguage',
+            'inLanguage',
+            'contentLocation',
+            'areaServed',
+            '@graph',  # JSON-LD with multiple locales
+        ],
+        'regional_social_handles': [
+            '_de', '_fr', '_es', '_it', '_pt', '_jp', '_cn', '_kr',
+            '_brazil', '_mexico', '_uk', '_india', '_apac', '_emea', '_latam',
+            'DE', 'FR', 'ES', 'IT', 'PT', 'JP', 'CN', 'KR',
+        ],
+    }
+
+    # ============================================================
+    # HEURISTIC 9: CONTENT FRESHNESS & UPDATE VELOCITY
+    # ============================================================
+    # Track commit patterns on locale-related files to identify
+    # active localization work vs dormant infrastructure.
+
+    LOCALE_FILE_PATTERNS = [
+        r'locales?/.*\.(json|ya?ml|properties|po|pot|xliff|xlf)$',
+        r'i18n/.*\.(json|ya?ml|properties|po|pot|xliff|xlf)$',
+        r'translations?/.*\.(json|ya?ml|properties|po|pot|xliff|xlf)$',
+        r'lang(uages)?/.*\.(json|ya?ml|properties|po|pot|xliff|xlf)$',
+        r'l10n/.*\.(json|ya?ml|properties|po|pot|xliff|xlf)$',
+        r'messages?/.*\.(json|ya?ml|properties|po|pot|xliff|xlf)$',
+    ]
+
+    # Velocity thresholds (commits in last 90 days)
+    LOCALE_VELOCITY_THRESHOLDS = {
+        'high_activity': 20,    # Very active localization work
+        'medium_activity': 10,  # Moderate localization activity
+        'low_activity': 3,      # Some localization activity
+        'dormant': 0,           # No recent activity
+    }
+
+    # Lookback period for velocity calculation (days)
+    LOCALE_VELOCITY_LOOKBACK_DAYS = 90
+
+    # ============================================================
+    # HEURISTIC 10: API INTERNATIONAL ENDPOINT DETECTION
+    # ============================================================
+    # Detect API patterns that indicate multi-region architecture.
+
+    API_INTERNATIONAL_PATTERNS = {
+        'endpoint_patterns': [
+            r'/api/v\d+/(regions?|countries|locales?|languages?)',
+            r'/api/v\d+/\w+/(region|country|locale|language)',
+            r'\{(region|country|locale|lang(uage)?)\}',
+            r'/(en|de|fr|es|it|pt|ja|zh|ko|ru)/',
+            r'[?&](region|country|locale|lang(uage)?)=',
+        ],
+        'config_patterns': [
+            'regions:', 'countries:', 'locales:', 'languages:',
+            'availableRegions', 'supportedLocales', 'supportedLanguages',
+            'allowedCountries', 'enabledLocales',
+            'regionConfig', 'localeConfig', 'countryConfig',
+        ],
+        'code_patterns': [
+            'getRegion', 'getLocale', 'getCountry', 'getLanguage',
+            'setRegion', 'setLocale', 'setCountry', 'setLanguage',
+            'detectRegion', 'detectLocale', 'detectCountry', 'detectLanguage',
+            'switchRegion', 'switchLocale', 'switchCountry', 'switchLanguage',
+            'regionMiddleware', 'localeMiddleware',
+            'Accept-Language',  # HTTP header handling
+            'Content-Language',
+            'geo.country', 'cf.country',  # CDN geolocation
+        ],
+        'openapi_i18n_fields': [
+            'x-region', 'x-locale', 'x-country', 'x-language',
+            'Accept-Language',
+            'Content-Language',
+        ],
+    }
+
+    # OpenAPI/Swagger file patterns
+    OPENAPI_FILES = [
+        'openapi.yaml', 'openapi.yml', 'openapi.json',
+        'swagger.yaml', 'swagger.yml', 'swagger.json',
+        'api.yaml', 'api.yml', 'api.json',
+        'docs/api/', 'api-docs/',
+    ]
+
+    # ============================================================
+    # ENHANCED INTENT SCORE WEIGHTS
+    # ============================================================
+    # Updated weights including new heuristic signals
+
+    ENHANCED_INTENT_WEIGHTS = {
+        # Original signals
+        'rfc_discussion_high': 30,
+        'rfc_discussion_medium': 15,
+        'dependency_injection': 40,
+        'ghost_branch': 25,
+        'documentation_intent_high': 20,
+        'documentation_intent_medium': 10,
+        # New enhanced signals
+        'job_posting_intent': 35,          # High - organizational commitment
+        'regional_domain_detection': 25,   # Medium-high - existing presence
+        'headless_cms_i18n': 30,           # High - content infrastructure
+        'payment_multi_currency': 30,      # High - commerce infrastructure
+        'timezone_library': 15,            # Medium - UX preparation
+        'ci_localization_pipeline': 35,    # High - active automation
+        'compliance_documentation': 20,    # Medium - legal preparation
+        'social_multi_region': 15,         # Medium - marketing preparation
+        'locale_velocity_high': 25,        # High - active work
+        'locale_velocity_medium': 15,      # Medium - some work
+        'api_international': 25,           # Medium-high - backend preparation
+    }
