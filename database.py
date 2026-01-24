@@ -285,6 +285,75 @@ def init_db() -> None:
         VALUES ('webhook_enabled', 'false')
     ''')
 
+    # WebScraper Accounts table - for website localization analysis at scale
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS webscraper_accounts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            company_name TEXT NOT NULL,
+            website_url TEXT,
+
+            -- Tier system (1-4, default 4)
+            current_tier INTEGER DEFAULT 4,
+            tier_label TEXT DEFAULT 'Not Scanned',
+
+            -- Scores (null until scanned)
+            localization_coverage_score INTEGER,
+            quality_gap_score INTEGER,
+            enterprise_score INTEGER,
+
+            -- Localization metrics
+            locale_count INTEGER DEFAULT 0,
+            languages_detected TEXT,
+            hreflang_tags TEXT,
+            i18n_libraries TEXT,
+
+            -- Scan metadata
+            last_scanned_at TIMESTAMP,
+            scan_status TEXT DEFAULT 'not_scanned',
+            scan_error TEXT,
+
+            -- AI prompt results storage
+            last_prompt TEXT,
+            last_prompt_result TEXT,
+            prompt_history TEXT,
+
+            -- Evidence & signals
+            signals_json TEXT,
+            evidence_summary TEXT,
+
+            -- Linked RepoRadar account (foreign key)
+            monitored_account_id INTEGER,
+
+            -- Metadata
+            notes TEXT,
+            archived_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+            FOREIGN KEY (monitored_account_id) REFERENCES monitored_accounts(id)
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_webscraper_tier
+        ON webscraper_accounts(current_tier)
+    ''')
+
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_webscraper_company
+        ON webscraper_accounts(company_name)
+    ''')
+
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_webscraper_monitored_account
+        ON webscraper_accounts(monitored_account_id)
+    ''')
+
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_webscraper_archived
+        ON webscraper_accounts(archived_at)
+    ''')
+
     conn.commit()
     conn.close()
 
@@ -3557,3 +3626,401 @@ def delete_website_analysis(analysis_id: int) -> bool:
     conn.close()
 
     return deleted
+
+
+# =============================================================================
+# WEBSCRAPER ACCOUNTS - Website localization analysis at scale
+# =============================================================================
+
+# WebScraper Tier Configuration
+WEBSCRAPER_TIER_CONFIG = {
+    1: {'name': 'Enterprise Ready', 'color': '#10b981', 'description': 'Large companies with mature localization'},
+    2: {'name': 'Active Expansion', 'color': '#3b82f6', 'description': 'Growing i18n infrastructure'},
+    3: {'name': 'Partial Coverage', 'color': '#f59e0b', 'description': 'Has gaps, improvement opportunity'},
+    4: {'name': 'Not Scanned', 'color': '#6b7280', 'description': 'Awaiting analysis'},
+}
+
+
+def populate_webscraper_from_reporadar() -> dict:
+    """
+    Populate webscraper_accounts from monitored_accounts (RepoRadar).
+
+    For each RepoRadar account:
+    - Creates a corresponding webscraper_accounts row if it doesn't exist
+    - Copies company_name
+    - Links via monitored_account_id
+    - Extracts website_url from the monitored_accounts website field
+    - Sets current_tier = 4, tier_label = 'Not Scanned', scan_status = 'not_scanned'
+
+    Does NOT trigger any scans.
+
+    Returns:
+        Dictionary with migration results: {created: int, skipped: int, errors: int}
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    created_count = 0
+    skipped_count = 0
+    error_count = 0
+
+    try:
+        # Get all monitored accounts
+        cursor.execute('''
+            SELECT id, company_name, website
+            FROM monitored_accounts
+            WHERE archived_at IS NULL
+        ''')
+        accounts = cursor.fetchall()
+
+        for account in accounts:
+            try:
+                # Check if already exists in webscraper_accounts
+                cursor.execute('''
+                    SELECT id FROM webscraper_accounts
+                    WHERE monitored_account_id = ?
+                ''', (account['id'],))
+
+                if cursor.fetchone():
+                    skipped_count += 1
+                    continue
+
+                # Create new webscraper account
+                cursor.execute('''
+                    INSERT INTO webscraper_accounts (
+                        company_name,
+                        website_url,
+                        current_tier,
+                        tier_label,
+                        scan_status,
+                        monitored_account_id,
+                        created_at,
+                        updated_at
+                    ) VALUES (?, ?, 4, 'Not Scanned', 'not_scanned', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                ''', (account['company_name'], account['website'], account['id']))
+
+                created_count += 1
+
+            except Exception as e:
+                print(f"[WEBSCRAPER] Error creating account for {account['company_name']}: {e}")
+                error_count += 1
+                continue
+
+        conn.commit()
+
+    except Exception as e:
+        print(f"[WEBSCRAPER] Migration error: {e}")
+        conn.rollback()
+    finally:
+        conn.close()
+
+    return {
+        'created': created_count,
+        'skipped': skipped_count,
+        'errors': error_count
+    }
+
+
+def get_webscraper_tier_counts() -> dict:
+    """
+    Get the count of non-archived webscraper accounts in each tier.
+
+    Returns:
+        Dictionary with tier numbers as string keys and counts as values:
+        {'1': count, '2': count, '3': count, '4': count, 'archived': count}
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Get tier counts excluding archived
+    cursor.execute('''
+        SELECT current_tier, COUNT(*) as count
+        FROM webscraper_accounts
+        WHERE archived_at IS NULL
+        GROUP BY current_tier
+    ''')
+
+    rows = cursor.fetchall()
+
+    # Get archived count
+    cursor.execute('''
+        SELECT COUNT(*) as count
+        FROM webscraper_accounts
+        WHERE archived_at IS NOT NULL
+    ''')
+    archived_count = cursor.fetchone()['count']
+
+    conn.close()
+
+    # Initialize with zeros for all tiers
+    tier_counts = {'1': 0, '2': 0, '3': 0, '4': 0, 'archived': archived_count}
+
+    # Populate with actual counts
+    for row in rows:
+        tier = str(row['current_tier'] or 4)
+        if tier in tier_counts:
+            tier_counts[tier] = row['count']
+
+    return tier_counts
+
+
+def get_webscraper_accounts_datatable(
+    draw: int,
+    start: int,
+    length: int,
+    search_value: str = '',
+    tier_filter: Optional[list] = None,
+    order_column: int = 0,
+    order_dir: str = 'asc'
+) -> dict:
+    """
+    Get webscraper accounts data in DataTables format for server-side processing.
+
+    Args:
+        draw: DataTables draw counter
+        start: Start row index
+        length: Number of rows to return
+        search_value: Global search string
+        tier_filter: List of tier integers to include
+        order_column: Column index for sorting
+        order_dir: Sort direction ('asc' or 'desc')
+
+    Returns:
+        Dictionary with DataTables format
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Column mapping for sorting
+    column_map = {
+        0: 'company_name',
+        1: 'website_url',
+        2: 'current_tier',
+        3: 'locale_count',
+        4: 'localization_coverage_score',
+        5: 'last_scanned_at',
+        6: 'evidence_summary',
+    }
+
+    # Get total count without filters (excluding archived)
+    cursor.execute('SELECT COUNT(*) as total FROM webscraper_accounts WHERE archived_at IS NULL')
+    total_records = cursor.fetchone()['total']
+
+    # Build WHERE clause - always exclude archived
+    where_clauses = ['archived_at IS NULL']
+    params = []
+
+    # Tier filter
+    if tier_filter:
+        placeholders = ','.join(['?'] * len(tier_filter))
+        where_clauses.append(f'current_tier IN ({placeholders})')
+        params.extend(tier_filter)
+
+    # Global search
+    if search_value:
+        where_clauses.append('(LOWER(company_name) LIKE ? OR LOWER(website_url) LIKE ?)')
+        search_param = f'%{search_value.lower()}%'
+        params.extend([search_param, search_param])
+
+    where_sql = ' WHERE ' + ' AND '.join(where_clauses)
+
+    # Get filtered count
+    count_query = f'SELECT COUNT(*) as total FROM webscraper_accounts{where_sql}'
+    cursor.execute(count_query, params)
+    filtered_records = cursor.fetchone()['total']
+
+    # Determine sort column
+    sort_column = column_map.get(order_column, 'company_name')
+    sort_order = 'DESC' if order_dir.lower() == 'desc' else 'ASC'
+
+    # Get paginated and sorted data
+    select_query = f'''
+        SELECT
+            id, company_name, website_url, current_tier, tier_label,
+            localization_coverage_score, quality_gap_score, enterprise_score,
+            locale_count, languages_detected, hreflang_tags, i18n_libraries,
+            last_scanned_at, scan_status, scan_error,
+            signals_json, evidence_summary, notes,
+            monitored_account_id, created_at, updated_at
+        FROM webscraper_accounts
+        {where_sql}
+        ORDER BY {sort_column} {sort_order}
+        LIMIT ? OFFSET ?
+    '''
+
+    select_params = list(params) + [length, start]
+    cursor.execute(select_query, select_params)
+    rows = cursor.fetchall()
+    conn.close()
+
+    # Format data for DataTables
+    data = []
+    for row in rows:
+        account = dict(row)
+        account['tier_config'] = WEBSCRAPER_TIER_CONFIG.get(account['current_tier'], WEBSCRAPER_TIER_CONFIG[4])
+        data.append(account)
+
+    return {
+        'draw': draw,
+        'recordsTotal': total_records,
+        'recordsFiltered': filtered_records,
+        'data': data
+    }
+
+
+def update_webscraper_notes(account_id: int, notes: str) -> bool:
+    """Update the notes field for a webscraper account."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        UPDATE webscraper_accounts
+        SET notes = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+    ''', (notes, account_id))
+
+    updated = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+
+    return updated
+
+
+def archive_webscraper_account(account_id: int) -> bool:
+    """Archive a webscraper account."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        UPDATE webscraper_accounts
+        SET archived_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ? AND archived_at IS NULL
+    ''', (account_id,))
+
+    updated = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+
+    return updated
+
+
+def unarchive_webscraper_account(account_id: int) -> bool:
+    """Unarchive a webscraper account."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        UPDATE webscraper_accounts
+        SET archived_at = NULL, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ? AND archived_at IS NOT NULL
+    ''', (account_id,))
+
+    updated = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+
+    return updated
+
+
+def delete_webscraper_account(account_id: int) -> bool:
+    """Delete a webscraper account."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('DELETE FROM webscraper_accounts WHERE id = ?', (account_id,))
+    deleted = cursor.rowcount > 0
+
+    conn.commit()
+    conn.close()
+
+    return deleted
+
+
+def get_webscraper_archived_count() -> int:
+    """Get the count of archived webscraper accounts."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('SELECT COUNT(*) as count FROM webscraper_accounts WHERE archived_at IS NOT NULL')
+    count = cursor.fetchone()['count']
+
+    conn.close()
+    return count
+
+
+def webscraper_bulk_archive(account_ids: list) -> int:
+    """Archive multiple webscraper accounts."""
+    if not account_ids:
+        return 0
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    placeholders = ','.join(['?'] * len(account_ids))
+    cursor.execute(f'''
+        UPDATE webscraper_accounts
+        SET archived_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+        WHERE id IN ({placeholders}) AND archived_at IS NULL
+    ''', account_ids)
+
+    updated = cursor.rowcount
+    conn.commit()
+    conn.close()
+
+    return updated
+
+
+def webscraper_bulk_delete(account_ids: list) -> int:
+    """Delete multiple webscraper accounts."""
+    if not account_ids:
+        return 0
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    placeholders = ','.join(['?'] * len(account_ids))
+    cursor.execute(f'DELETE FROM webscraper_accounts WHERE id IN ({placeholders})', account_ids)
+
+    deleted = cursor.rowcount
+    conn.commit()
+    conn.close()
+
+    return deleted
+
+
+def webscraper_bulk_change_tier(account_ids: list, new_tier: int) -> int:
+    """Change tier for multiple webscraper accounts."""
+    if not account_ids or new_tier not in WEBSCRAPER_TIER_CONFIG:
+        return 0
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    tier_label = WEBSCRAPER_TIER_CONFIG[new_tier]['name']
+    placeholders = ','.join(['?'] * len(account_ids))
+
+    cursor.execute(f'''
+        UPDATE webscraper_accounts
+        SET current_tier = ?, tier_label = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id IN ({placeholders})
+    ''', [new_tier, tier_label] + account_ids)
+
+    updated = cursor.rowcount
+    conn.commit()
+    conn.close()
+
+    return updated
+
+
+def get_webscraper_account(account_id: int) -> Optional[dict]:
+    """Get a single webscraper account by ID."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('SELECT * FROM webscraper_accounts WHERE id = ?', (account_id,))
+    row = cursor.fetchone()
+    conn.close()
+
+    if row:
+        return dict(row)
+    return None
