@@ -3665,11 +3665,13 @@ def populate_webscraper_from_reporadar() -> dict:
     error_count = 0
 
     try:
-        # Get all monitored accounts
+        # Get all monitored accounts that have a website
         cursor.execute('''
             SELECT id, company_name, website
             FROM monitored_accounts
             WHERE archived_at IS NULL
+            AND website IS NOT NULL
+            AND TRIM(website) != ''
         ''')
         accounts = cursor.fetchall()
 
@@ -3719,6 +3721,23 @@ def populate_webscraper_from_reporadar() -> dict:
         'skipped': skipped_count,
         'errors': error_count
     }
+
+
+def is_webscraper_accounts_empty() -> bool:
+    """
+    Check if the webscraper_accounts table has any records.
+
+    Returns:
+        True if the table is empty, False otherwise.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('SELECT COUNT(*) as count FROM webscraper_accounts')
+    row = cursor.fetchone()
+    conn.close()
+
+    return row['count'] == 0
 
 
 def get_webscraper_tier_counts() -> dict:

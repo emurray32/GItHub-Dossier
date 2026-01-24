@@ -38,7 +38,7 @@ from database import (
     update_webscraper_notes, archive_webscraper_account, unarchive_webscraper_account,
     delete_webscraper_account, get_webscraper_archived_count, webscraper_bulk_archive,
     webscraper_bulk_delete, webscraper_bulk_change_tier, get_webscraper_account,
-    WEBSCRAPER_TIER_CONFIG
+    is_webscraper_accounts_empty, WEBSCRAPER_TIER_CONFIG
 )
 from monitors.scanner import deep_scan_generator
 from monitors.discovery import search_github_orgs, resolve_org_fast, discover_companies_via_ai
@@ -1677,9 +1677,17 @@ def api_webscraper_tier_counts():
     """
     Get counts of webscraper accounts per tier.
 
+    If the webscraper_accounts table is empty, this will auto-populate it
+    with existing RepoRadar accounts that have websites.
+
     Returns:
         JSON with tier counts: {"1": 5, "2": 12, "3": 45, "4": 238, "archived": 3}
     """
+    # Auto-populate from RepoRadar if webscraper accounts table is empty
+    # This provides a baseline of existing accounts with websites
+    if is_webscraper_accounts_empty():
+        populate_webscraper_from_reporadar()
+
     counts = get_webscraper_tier_counts()
     return jsonify(counts)
 
