@@ -1718,6 +1718,119 @@ def api_webscraper_populate():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/webscraper/accounts/populate-from-reporadar', methods=['POST'])
+def api_webscraper_populate_from_reporadar():
+    """
+    Populate webscraper accounts from RepoRadar accounts that have websites.
+    """
+    try:
+        result = populate_webscraper_from_reporadar()
+        return jsonify({
+            'success': True,
+            'added': result.get('created', 0),
+            'skipped': result.get('skipped', 0)
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/webscraper/ruleset')
+def api_webscraper_ruleset():
+    """
+    Get the current WebScraper rule set based on scanner.py heuristics.
+
+    This endpoint returns the detection patterns and classification rules
+    used by the WebScraper to analyze websites for localization and
+    global expansion signals. Rules are refreshed every 24 hours.
+    """
+    from config import Config
+    from datetime import datetime
+
+    # Get rule set last updated from system settings
+    last_updated = get_setting('webscraper_ruleset_updated')
+    if not last_updated:
+        # Initialize on first call
+        last_updated = datetime.now().isoformat()
+        set_setting('webscraper_ruleset_updated', last_updated)
+
+    # Check if 24 hours have passed
+    try:
+        last_dt = datetime.fromisoformat(last_updated)
+        if (datetime.now() - last_dt).total_seconds() > 86400:  # 24 hours
+            last_updated = datetime.now().isoformat()
+            set_setting('webscraper_ruleset_updated', last_updated)
+    except (ValueError, TypeError):
+        last_updated = datetime.now().isoformat()
+        set_setting('webscraper_ruleset_updated', last_updated)
+
+    # Build rule set from scanner.py heuristics
+    ruleset = {
+        'expansion_keywords': getattr(Config, 'RFC_HIGH_INTENT_PHRASES', [])[:20],
+        'locale_patterns': [
+            '/[a-z]{2}/', '/[a-z]{2}-[A-Z]{2}/',
+            'hreflang="*"', 'lang="*"',
+            '/locales/', '/i18n/', '/translations/',
+            'formatMessage', 'useTranslation', 't()',
+            'Crowdin', 'Transifex', 'Lokalise', 'Phrase'
+        ],
+        'tier_rules': {
+            '1': 'Global Leader - 10+ supported locales with mature infrastructure',
+            '2': 'Active Expansion - 5-10 locales, actively adding new markets',
+            '3': 'Going Global - 2-4 locales, early expansion phase',
+            '4': 'Not Yet Global - English only, no localization detected'
+        },
+        'smoking_gun_libs': getattr(Config, 'SMOKING_GUN_LIBS', [])[:15],
+        'last_updated': last_updated,
+        'update_frequency': '24 hours'
+    }
+
+    return jsonify(ruleset)
+
+
+@app.route('/api/webscraper/history')
+def api_webscraper_history():
+    """
+    Get recent WebScraper scan history.
+
+    Returns the most recent scans with their results for display in the History modal.
+    """
+    limit = request.args.get('limit', 20, type=int)
+    limit = min(limit, 100)  # Cap at 100
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT
+            company_name,
+            current_tier as tier,
+            locale_count,
+            localization_coverage_score as score,
+            evidence_summary as evidence,
+            last_scanned_at as scanned_at
+        FROM webscraper_accounts
+        WHERE last_scanned_at IS NOT NULL
+        ORDER BY last_scanned_at DESC
+        LIMIT ?
+    ''', (limit,))
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    history = []
+    for row in rows:
+        history.append({
+            'company_name': row['company_name'],
+            'tier': row['tier'] or 4,
+            'locale_count': row['locale_count'] or 0,
+            'score': row['score'],
+            'evidence': row['evidence'],
+            'scanned_at': row['scanned_at']
+        })
+
+    return jsonify(history)
+
+
 @app.route('/api/webscraper/accounts/scan/<int:account_id>', methods=['POST'])
 def api_webscraper_scan_account(account_id):
     """
