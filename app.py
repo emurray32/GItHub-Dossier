@@ -30,11 +30,13 @@ from database import (
     increment_hourly_api_calls, get_current_hour_api_calls, cleanup_old_hourly_stats,
     archive_account, unarchive_account, get_archived_accounts, get_archived_accounts_for_rescan,
     get_archived_count, auto_archive_tier4_accounts,
-    find_potential_duplicates, get_import_duplicates_summary
+    find_potential_duplicates, get_import_duplicates_summary,
+    save_website_analysis, get_website_analysis, get_latest_website_analysis,
+    get_all_website_analyses, get_accounts_with_websites, delete_website_analysis
 )
 from monitors.scanner import deep_scan_generator
 from monitors.discovery import search_github_orgs, resolve_org_fast, discover_companies_via_ai
-from monitors.web_analyzer import analyze_website
+from monitors.web_analyzer import analyze_website, analyze_website_technical
 from ai_summary import generate_analysis
 from pdf_generator import generate_report_pdf
 from agentmail_client import is_agentmail_configured, send_email_draft
@@ -1420,6 +1422,195 @@ def api_webscraper_analyze():
             return jsonify({'error': error_msg}), 500
 
         return jsonify(result), 200
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/webscraper/accounts-with-websites', methods=['GET'])
+def api_webscraper_accounts():
+    """
+    Get all monitored accounts that have websites.
+
+    Query parameters:
+        include_analyzed: Include accounts that already have analyses (default: false)
+
+    Returns JSON list of accounts with websites.
+    """
+    try:
+        include_analyzed = request.args.get('include_analyzed', 'false').lower() == 'true'
+        accounts = get_accounts_with_websites(include_analyzed=include_analyzed)
+
+        return jsonify({
+            'success': True,
+            'count': len(accounts),
+            'accounts': accounts
+        }), 200
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/webscraper/analyze-batch', methods=['POST'])
+def api_webscraper_analyze_batch():
+    """
+    Analyze multiple websites in batch (technical analysis only, no AI prompts).
+
+    Request JSON:
+        account_ids: List of account IDs to analyze
+
+    Returns JSON with batch analysis results.
+    """
+    try:
+        data = request.get_json()
+
+        if not data:
+            return jsonify({'error': 'Invalid JSON payload'}), 400
+
+        account_ids = data.get('account_ids', [])
+
+        if not account_ids:
+            return jsonify({'error': 'Missing required field: account_ids'}), 400
+
+        # Get accounts
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        placeholders = ','.join('?' * len(account_ids))
+        cursor.execute(f'''
+            SELECT id, company_name, website
+            FROM monitored_accounts
+            WHERE id IN ({placeholders})
+              AND website IS NOT NULL
+              AND website != ''
+        ''', account_ids)
+
+        accounts = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+
+        results = []
+
+        for account in accounts:
+            try:
+                # Perform technical analysis only
+                analysis_result = analyze_website_technical(account['website'])
+
+                if analysis_result.get('success'):
+                    # Save to database
+                    analysis_id = save_website_analysis(
+                        company_name=account['company_name'],
+                        website_url=analysis_result['url'],
+                        localization_score=analysis_result['localization_score'],
+                        quality_metrics=analysis_result['quality_metrics'],
+                        tech_stack=analysis_result['tech_stack'],
+                        account_id=account['id']
+                    )
+
+                    results.append({
+                        'account_id': account['id'],
+                        'company_name': account['company_name'],
+                        'website': account['website'],
+                        'success': True,
+                        'analysis_id': analysis_id,
+                        'localization_score': analysis_result['localization_score']['score'],
+                        'quality_score': analysis_result['quality_metrics']['overall_score']
+                    })
+                else:
+                    results.append({
+                        'account_id': account['id'],
+                        'company_name': account['company_name'],
+                        'website': account['website'],
+                        'success': False,
+                        'error': analysis_result.get('error', 'Analysis failed')
+                    })
+
+            except Exception as e:
+                results.append({
+                    'account_id': account['id'],
+                    'company_name': account['company_name'],
+                    'website': account['website'],
+                    'success': False,
+                    'error': str(e)
+                })
+
+        return jsonify({
+            'success': True,
+            'total': len(results),
+            'succeeded': sum(1 for r in results if r['success']),
+            'failed': sum(1 for r in results if not r['success']),
+            'results': results
+        }), 200
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/webscraper/analyses', methods=['GET'])
+def api_webscraper_analyses():
+    """
+    Get all website analyses.
+
+    Query parameters:
+        limit: Maximum number of results (default: 100)
+        offset: Number of results to skip (default: 0)
+
+    Returns JSON list of analyses.
+    """
+    try:
+        limit = request.args.get('limit', 100, type=int)
+        offset = request.args.get('offset', 0, type=int)
+
+        analyses = get_all_website_analyses(limit=limit, offset=offset)
+
+        return jsonify({
+            'success': True,
+            'count': len(analyses),
+            'analyses': analyses
+        }), 200
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/webscraper/analysis/<int:analysis_id>', methods=['GET'])
+def api_webscraper_analysis_detail(analysis_id):
+    """
+    Get detailed website analysis by ID.
+
+    Returns JSON with full analysis data.
+    """
+    try:
+        analysis = get_website_analysis(analysis_id)
+
+        if not analysis:
+            return jsonify({'error': 'Analysis not found'}), 404
+
+        return jsonify({
+            'success': True,
+            'analysis': analysis
+        }), 200
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/webscraper/analysis/<int:analysis_id>', methods=['DELETE'])
+def api_webscraper_analysis_delete(analysis_id):
+    """
+    Delete a website analysis.
+
+    Returns JSON with success status.
+    """
+    try:
+        deleted = delete_website_analysis(analysis_id)
+
+        if not deleted:
+            return jsonify({'error': 'Analysis not found'}), 404
+
+        return jsonify({
+            'success': True,
+            'message': 'Analysis deleted'
+        }), 200
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500

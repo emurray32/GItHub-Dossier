@@ -245,6 +245,40 @@ def init_db() -> None:
         ON scan_signals(timestamp DESC)
     ''')
 
+    # Website Analyses table - stores website quality and localization assessments
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS website_analyses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            account_id INTEGER,
+            company_name TEXT NOT NULL,
+            website_url TEXT NOT NULL,
+            localization_score INTEGER,
+            localization_grade TEXT,
+            quality_score INTEGER,
+            quality_grade TEXT,
+            tech_stack_json TEXT,
+            analysis_details_json TEXT,
+            ai_analysis TEXT,
+            analyzed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (account_id) REFERENCES monitored_accounts(id)
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_website_analyses_account
+        ON website_analyses(account_id)
+    ''')
+
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_website_analyses_company
+        ON website_analyses(company_name)
+    ''')
+
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_website_analyses_analyzed_at
+        ON website_analyses(analyzed_at DESC)
+    ''')
+
     # Set default webhook_enabled to false (paused) if not already set
     cursor.execute('''
         INSERT OR IGNORE INTO system_settings (key, value)
@@ -3278,3 +3312,248 @@ def get_report_preview(report_id: int) -> Optional[dict]:
 
     conn.close()
     return report
+
+
+# =============================================================================
+# WEBSITE ANALYSIS FUNCTIONS
+# =============================================================================
+
+def save_website_analysis(
+    company_name: str,
+    website_url: str,
+    localization_score: dict,
+    quality_metrics: dict,
+    tech_stack: dict,
+    ai_analysis: Optional[str] = None,
+    account_id: Optional[int] = None
+) -> int:
+    """
+    Save a website analysis to the database.
+
+    Args:
+        company_name: Company name
+        website_url: Website URL analyzed
+        localization_score: Localization score dictionary
+        quality_metrics: Quality metrics dictionary
+        tech_stack: Technical stack dictionary
+        ai_analysis: Optional AI analysis text
+        account_id: Optional monitored_accounts ID
+
+    Returns:
+        ID of the saved analysis
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Extract scores and grades
+    loc_score = localization_score.get('score', 0)
+    loc_grade = localization_score.get('grade', 'F')
+    qual_score = quality_metrics.get('overall_score', 0)
+    qual_grade = quality_metrics.get('overall_grade', 'F')
+
+    # Store full details as JSON
+    analysis_details = {
+        'localization': localization_score,
+        'quality': quality_metrics,
+    }
+
+    cursor.execute('''
+        INSERT INTO website_analyses (
+            account_id, company_name, website_url,
+            localization_score, localization_grade,
+            quality_score, quality_grade,
+            tech_stack_json, analysis_details_json, ai_analysis
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (
+        account_id, company_name, website_url,
+        loc_score, loc_grade,
+        qual_score, qual_grade,
+        json.dumps(tech_stack), json.dumps(analysis_details), ai_analysis
+    ))
+
+    analysis_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+
+    return analysis_id
+
+
+def get_website_analysis(analysis_id: int) -> Optional[dict]:
+    """
+    Get a website analysis by ID.
+
+    Args:
+        analysis_id: The analysis ID
+
+    Returns:
+        Dictionary with analysis data or None if not found
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT * FROM website_analyses
+        WHERE id = ?
+    ''', (analysis_id,))
+
+    row = cursor.fetchone()
+    conn.close()
+
+    if not row:
+        return None
+
+    analysis = dict(row)
+
+    # Parse JSON fields
+    if analysis.get('tech_stack_json'):
+        try:
+            analysis['tech_stack'] = json.loads(analysis['tech_stack_json'])
+        except (json.JSONDecodeError, TypeError):
+            analysis['tech_stack'] = {}
+
+    if analysis.get('analysis_details_json'):
+        try:
+            analysis['analysis_details'] = json.loads(analysis['analysis_details_json'])
+        except (json.JSONDecodeError, TypeError):
+            analysis['analysis_details'] = {}
+
+    return analysis
+
+
+def get_latest_website_analysis(company_name: str) -> Optional[dict]:
+    """
+    Get the most recent website analysis for a company.
+
+    Args:
+        company_name: Company name
+
+    Returns:
+        Dictionary with analysis data or None if not found
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT * FROM website_analyses
+        WHERE LOWER(company_name) = LOWER(?)
+        ORDER BY analyzed_at DESC
+        LIMIT 1
+    ''', (company_name,))
+
+    row = cursor.fetchone()
+    conn.close()
+
+    if not row:
+        return None
+
+    analysis = dict(row)
+
+    # Parse JSON fields
+    if analysis.get('tech_stack_json'):
+        try:
+            analysis['tech_stack'] = json.loads(analysis['tech_stack_json'])
+        except (json.JSONDecodeError, TypeError):
+            analysis['tech_stack'] = {}
+
+    if analysis.get('analysis_details_json'):
+        try:
+            analysis['analysis_details'] = json.loads(analysis['analysis_details_json'])
+        except (json.JSONDecodeError, TypeError):
+            analysis['analysis_details'] = {}
+
+    return analysis
+
+
+def get_all_website_analyses(limit: int = 100, offset: int = 0) -> list:
+    """
+    Get all website analyses with pagination.
+
+    Args:
+        limit: Maximum number of results
+        offset: Number of results to skip
+
+    Returns:
+        List of analysis dictionaries
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT id, company_name, website_url,
+               localization_score, localization_grade,
+               quality_score, quality_grade,
+               analyzed_at
+        FROM website_analyses
+        ORDER BY analyzed_at DESC
+        LIMIT ? OFFSET ?
+    ''', (limit, offset))
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    return [dict(row) for row in rows]
+
+
+def get_accounts_with_websites(include_analyzed: bool = False) -> list:
+    """
+    Get all monitored accounts that have a website URL.
+
+    Args:
+        include_analyzed: If False, exclude accounts with existing analyses
+
+    Returns:
+        List of account dictionaries with website URLs
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    if include_analyzed:
+        # Get all accounts with websites
+        cursor.execute('''
+            SELECT id, company_name, website, github_org, annual_revenue
+            FROM monitored_accounts
+            WHERE website IS NOT NULL
+              AND website != ''
+              AND archived_at IS NULL
+            ORDER BY company_name
+        ''')
+    else:
+        # Exclude accounts that already have analyses
+        cursor.execute('''
+            SELECT ma.id, ma.company_name, ma.website, ma.github_org, ma.annual_revenue
+            FROM monitored_accounts ma
+            LEFT JOIN website_analyses wa ON ma.id = wa.account_id
+            WHERE ma.website IS NOT NULL
+              AND ma.website != ''
+              AND ma.archived_at IS NULL
+              AND wa.id IS NULL
+            ORDER BY ma.company_name
+        ''')
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    return [dict(row) for row in rows]
+
+
+def delete_website_analysis(analysis_id: int) -> bool:
+    """
+    Delete a website analysis.
+
+    Args:
+        analysis_id: The analysis ID to delete
+
+    Returns:
+        True if deleted, False if not found
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('DELETE FROM website_analyses WHERE id = ?', (analysis_id,))
+    deleted = cursor.rowcount > 0
+
+    conn.commit()
+    conn.close()
+
+    return deleted
