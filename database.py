@@ -3634,10 +3634,10 @@ def delete_website_analysis(analysis_id: int) -> bool:
 
 # WebScraper Tier Configuration
 WEBSCRAPER_TIER_CONFIG = {
-    1: {'name': 'Enterprise Ready', 'color': '#10b981', 'description': 'Large companies with mature localization'},
-    2: {'name': 'Active Expansion', 'color': '#3b82f6', 'description': 'Growing i18n infrastructure'},
-    3: {'name': 'Partial Coverage', 'color': '#f59e0b', 'description': 'Has gaps, improvement opportunity'},
-    4: {'name': 'Not Scanned', 'color': '#6b7280', 'description': 'Awaiting analysis'},
+    1: {'name': 'Global Leader', 'color': '#10b981', 'description': 'Mature global presence with 10+ locales'},
+    2: {'name': 'Active Expansion', 'color': '#3b82f6', 'description': 'Already global, expanding to new markets'},
+    3: {'name': 'Going Global', 'color': '#f59e0b', 'description': 'First-time global expansion'},
+    4: {'name': 'Not Yet Global', 'color': '#6b7280', 'description': 'No localization signals - potential prospect'},
 }
 
 
@@ -4043,3 +4043,94 @@ def get_webscraper_account(account_id: int) -> Optional[dict]:
     if row:
         return dict(row)
     return None
+
+
+def update_webscraper_scan_results(account_id: int, scan_results: dict) -> bool:
+    """
+    Update a webscraper account with scan results.
+
+    Args:
+        account_id: The account ID to update
+        scan_results: Dictionary containing scan results with keys like:
+            - tier: int (1-4)
+            - tier_label: str
+            - localization_coverage_score: int (0-100)
+            - quality_gap_score: int (0-100)
+            - enterprise_score: int (0-100)
+            - locale_count: int
+            - languages_detected: list or JSON string
+            - hreflang_tags: list or JSON string
+            - i18n_libraries: list or JSON string
+            - signals_json: dict or JSON string (expansion signals)
+            - evidence_summary: str
+            - scan_error: str (if scan failed)
+
+    Returns:
+        True if update was successful
+    """
+    import json
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Convert lists to JSON strings if needed
+    languages = scan_results.get('languages_detected', [])
+    if isinstance(languages, list):
+        languages = json.dumps(languages)
+
+    hreflang = scan_results.get('hreflang_tags', [])
+    if isinstance(hreflang, list):
+        hreflang = json.dumps(hreflang)
+
+    i18n_libs = scan_results.get('i18n_libraries', [])
+    if isinstance(i18n_libs, list):
+        i18n_libs = json.dumps(i18n_libs)
+
+    signals = scan_results.get('signals_json', {})
+    if isinstance(signals, dict):
+        signals = json.dumps(signals)
+
+    # Determine scan status
+    scan_status = 'error' if scan_results.get('scan_error') else 'completed'
+
+    cursor.execute('''
+        UPDATE webscraper_accounts
+        SET
+            current_tier = ?,
+            tier_label = ?,
+            localization_coverage_score = ?,
+            quality_gap_score = ?,
+            enterprise_score = ?,
+            locale_count = ?,
+            languages_detected = ?,
+            hreflang_tags = ?,
+            i18n_libraries = ?,
+            signals_json = ?,
+            evidence_summary = ?,
+            scan_status = ?,
+            scan_error = ?,
+            last_scanned_at = CURRENT_TIMESTAMP,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+    ''', (
+        scan_results.get('tier', 4),
+        scan_results.get('tier_label', 'Not Scanned'),
+        scan_results.get('localization_coverage_score', 0),
+        scan_results.get('quality_gap_score', 100),
+        scan_results.get('enterprise_score', 0),
+        scan_results.get('locale_count', 0),
+        languages,
+        hreflang,
+        i18n_libs,
+        signals,
+        scan_results.get('evidence_summary', ''),
+        scan_status,
+        scan_results.get('scan_error'),
+        account_id
+    ))
+
+    updated = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+
+    return updated

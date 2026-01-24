@@ -38,7 +38,11 @@ from database import (
     update_webscraper_notes, archive_webscraper_account, unarchive_webscraper_account,
     delete_webscraper_account, get_webscraper_archived_count, webscraper_bulk_archive,
     webscraper_bulk_delete, webscraper_bulk_change_tier, get_webscraper_account,
-    is_webscraper_accounts_empty, WEBSCRAPER_TIER_CONFIG
+    is_webscraper_accounts_empty, WEBSCRAPER_TIER_CONFIG, update_webscraper_scan_results
+)
+from monitors.webscraper_utils import (
+    detect_expansion_signals, calculate_webscraper_tier, extract_tier_from_scan_results,
+    generate_evidence_summary, TIER_CONFIG as WEBSCRAPER_TIER_CONFIG_NEW
 )
 from monitors.scanner import deep_scan_generator
 from monitors.discovery import search_github_orgs, resolve_org_fast, discover_companies_via_ai
@@ -1717,26 +1721,109 @@ def api_webscraper_populate():
 @app.route('/api/webscraper/accounts/scan/<int:account_id>', methods=['POST'])
 def api_webscraper_scan_account(account_id):
     """
-    Queue a webscraper account for scanning.
+    Scan a webscraper account's website for localization and global expansion signals.
 
-    This is a placeholder endpoint - actual scanning is not implemented yet.
-    For now, it just returns a queued status.
+    This endpoint performs a comprehensive website analysis including:
+    - Technical localization detection (hreflang tags, i18n libraries)
+    - Global expansion signal detection
+    - Tier classification based on localization maturity
 
     Returns:
-        JSON with status: {"status": "queued", "message": "Scan queued"}
+        JSON with scan results including tier, signals, and evidence
     """
     # Verify account exists
     account = get_webscraper_account(account_id)
     if not account:
         return jsonify({'error': 'Account not found'}), 404
 
-    # Placeholder - actual scanning not implemented
-    return jsonify({
-        'status': 'queued',
-        'message': 'Scan queued for processing',
-        'account_id': account_id,
-        'company_name': account['company_name']
-    })
+    website_url = account.get('website_url')
+    if not website_url:
+        return jsonify({'error': 'Account has no website URL'}), 400
+
+    try:
+        # Perform technical website analysis
+        from monitors.web_analyzer import WebAnalyzer
+        analyzer = WebAnalyzer()
+        website_data = analyzer.fetch_website(website_url)
+
+        # Detect global expansion signals
+        expansion_signals = detect_expansion_signals(website_data)
+
+        # Extract localization metrics
+        localization_score = website_data.get('localization_score', {})
+        tech_stack = website_data.get('tech_stack', {})
+        hreflang_tags = website_data.get('hreflang_tags', [])
+
+        # Build scan results for tier calculation
+        scan_results = {
+            'locale_count': len(hreflang_tags),
+            'languages_detected': [tag.get('hreflang', '') for tag in hreflang_tags],
+            'hreflang_tags': hreflang_tags,
+            'i18n_libraries': tech_stack.get('i18n_libs', []) + localization_score.get('details', {}).get('i18n_libraries', []),
+            'expansion_signals': expansion_signals,
+            'has_language_switcher': localization_score.get('details', {}).get('language_switcher', False),
+        }
+
+        # Calculate tier and scores
+        tier_info = extract_tier_from_scan_results(scan_results)
+
+        # Generate evidence summary
+        evidence_summary = generate_evidence_summary(scan_results, expansion_signals)
+
+        # Prepare final results for database
+        final_results = {
+            'tier': tier_info['tier'],
+            'tier_label': tier_info['tier_label'],
+            'localization_coverage_score': tier_info['localization_coverage_score'],
+            'quality_gap_score': tier_info['quality_gap_score'],
+            'enterprise_score': tier_info.get('enterprise_score', 0),
+            'locale_count': tier_info['locale_count'],
+            'languages_detected': tier_info['languages_detected'],
+            'hreflang_tags': tier_info['hreflang_tags'],
+            'i18n_libraries': list(set(tier_info['i18n_libraries'])),  # Dedupe
+            'signals_json': expansion_signals,
+            'evidence_summary': evidence_summary,
+        }
+
+        # Save results to database
+        update_webscraper_scan_results(account_id, final_results)
+
+        return jsonify({
+            'status': 'completed',
+            'message': 'Scan completed successfully',
+            'account_id': account_id,
+            'company_name': account['company_name'],
+            'results': {
+                'tier': final_results['tier'],
+                'tier_label': final_results['tier_label'],
+                'locale_count': final_results['locale_count'],
+                'localization_score': final_results['localization_coverage_score'],
+                'evidence': evidence_summary,
+                'expansion_signals': {
+                    'is_first_time_global': expansion_signals.get('is_first_time_global', False),
+                    'is_actively_expanding': expansion_signals.get('is_actively_expanding', False),
+                    'expansion_score': expansion_signals.get('expansion_score', 0),
+                    'detected_intent': expansion_signals.get('detected_intent', []),
+                    'new_markets': expansion_signals.get('new_markets', []),
+                }
+            }
+        })
+
+    except Exception as e:
+        # Save error to database
+        update_webscraper_scan_results(account_id, {
+            'tier': 4,
+            'tier_label': 'Not Yet Global',
+            'scan_error': str(e),
+            'evidence_summary': f'Scan failed: {str(e)}'
+        })
+
+        return jsonify({
+            'status': 'error',
+            'message': f'Scan failed: {str(e)}',
+            'account_id': account_id,
+            'company_name': account['company_name']
+        }), 500
 
 
 @app.route('/api/webscraper/accounts/bulk', methods=['POST'])
@@ -1787,6 +1874,96 @@ def api_webscraper_bulk_action():
                 return jsonify({'error': 'Invalid tier. Must be 1, 2, 3, or 4'}), 400
             affected = webscraper_bulk_change_tier(account_ids, new_tier)
             return jsonify({'success': True, 'action': 'change_tier', 'tier': new_tier, 'affected': affected})
+
+        elif action == 'scan':
+            # Perform bulk scanning with progress tracking
+            results = {
+                'completed': 0,
+                'failed': 0,
+                'skipped': 0,
+                'details': []
+            }
+
+            from monitors.web_analyzer import WebAnalyzer
+            analyzer = WebAnalyzer()
+
+            for aid in account_ids:
+                account = get_webscraper_account(aid)
+                if not account:
+                    results['skipped'] += 1
+                    results['details'].append({'id': aid, 'status': 'skipped', 'reason': 'Account not found'})
+                    continue
+
+                website_url = account.get('website_url')
+                if not website_url:
+                    results['skipped'] += 1
+                    results['details'].append({'id': aid, 'status': 'skipped', 'reason': 'No website URL'})
+                    continue
+
+                try:
+                    # Perform scan
+                    website_data = analyzer.fetch_website(website_url)
+                    expansion_signals = detect_expansion_signals(website_data)
+
+                    # Extract metrics
+                    localization_score = website_data.get('localization_score', {})
+                    tech_stack = website_data.get('tech_stack', {})
+                    hreflang_tags = website_data.get('hreflang_tags', [])
+
+                    scan_results = {
+                        'locale_count': len(hreflang_tags),
+                        'languages_detected': [tag.get('hreflang', '') for tag in hreflang_tags],
+                        'hreflang_tags': hreflang_tags,
+                        'i18n_libraries': tech_stack.get('i18n_libs', []) + localization_score.get('details', {}).get('i18n_libraries', []),
+                        'expansion_signals': expansion_signals,
+                    }
+
+                    tier_info = extract_tier_from_scan_results(scan_results)
+                    evidence_summary = generate_evidence_summary(scan_results, expansion_signals)
+
+                    final_results = {
+                        'tier': tier_info['tier'],
+                        'tier_label': tier_info['tier_label'],
+                        'localization_coverage_score': tier_info['localization_coverage_score'],
+                        'quality_gap_score': tier_info['quality_gap_score'],
+                        'enterprise_score': tier_info.get('enterprise_score', 0),
+                        'locale_count': tier_info['locale_count'],
+                        'languages_detected': tier_info['languages_detected'],
+                        'hreflang_tags': tier_info['hreflang_tags'],
+                        'i18n_libraries': list(set(tier_info['i18n_libraries'])),
+                        'signals_json': expansion_signals,
+                        'evidence_summary': evidence_summary,
+                    }
+
+                    update_webscraper_scan_results(aid, final_results)
+                    results['completed'] += 1
+                    results['details'].append({
+                        'id': aid,
+                        'status': 'completed',
+                        'tier': tier_info['tier'],
+                        'tier_label': tier_info['tier_label']
+                    })
+
+                except Exception as e:
+                    results['failed'] += 1
+                    results['details'].append({'id': aid, 'status': 'failed', 'reason': str(e)})
+                    # Save error state
+                    update_webscraper_scan_results(aid, {
+                        'tier': 4,
+                        'tier_label': 'Not Yet Global',
+                        'scan_error': str(e),
+                        'evidence_summary': f'Scan failed: {str(e)}'
+                    })
+
+            return jsonify({
+                'success': True,
+                'action': 'scan',
+                'completed': results['completed'],
+                'failed': results['failed'],
+                'skipped': results['skipped'],
+                'total': len(account_ids),
+                'details': results['details']
+            })
 
         else:
             return jsonify({'error': f'Unknown action: {action}'}), 400
