@@ -787,30 +787,30 @@
         <div class="legend-item tier-1">
             <div class="legend-header">
                 <span class="status-dot"></span>
-                <span class="status-title">Tier 1: Enterprise Ready</span>
+                <span class="status-title">Tier 1: Global Leader</span>
             </div>
-            <span class="status-desc">Large companies with mature localization</span>
+            <span class="status-desc">Mature global presence (10+ locales)</span>
         </div>
         <div class="legend-item tier-2">
             <div class="legend-header">
                 <span class="status-dot"></span>
                 <span class="status-title">Tier 2: Active Expansion</span>
             </div>
-            <span class="status-desc">Growing i18n infrastructure</span>
+            <span class="status-desc">Already global, expanding to new markets</span>
         </div>
         <div class="legend-item tier-3">
             <div class="legend-header">
                 <span class="status-dot"></span>
-                <span class="status-title">Tier 3: Partial Coverage</span>
+                <span class="status-title">Tier 3: Going Global</span>
             </div>
-            <span class="status-desc">Has gaps, improvement opportunity</span>
+            <span class="status-desc">First-time global expansion</span>
         </div>
         <div class="legend-item tier-4">
             <div class="legend-header">
                 <span class="status-dot"></span>
-                <span class="status-title">Tier 4: Not Scanned</span>
+                <span class="status-title">Tier 4: Not Yet Global</span>
             </div>
-            <span class="status-desc">Awaiting analysis</span>
+            <span class="status-desc">No localization signals - potential prospect</span>
         </div>
     </div>
 
@@ -862,7 +862,7 @@
     <div class="bulk-command-bar hidden" id="bulk-bar">
         <span class="bulk-command-count"><span id="selected-count">0</span> accounts selected</span>
         <div class="bulk-command-actions">
-            <button type="button" class="btn-scan" id="bulk-scan" disabled title="Scanning not yet implemented">
+            <button type="button" class="btn-scan" id="bulk-scan" title="Scan selected accounts for localization signals">
                 Scan Selected
             </button>
             <button type="button" class="btn-secondary" id="bulk-export">
@@ -988,6 +988,7 @@ function setupEventListeners() {
     document.getElementById('bulk-delete').addEventListener('click', bulkDelete);
     document.getElementById('bulk-export').addEventListener('click', exportCSV);
     document.getElementById('bulk-tier-change').addEventListener('click', bulkChangeTier);
+    document.getElementById('bulk-scan').addEventListener('click', bulkScan);
 
     // Sort headers
     document.querySelectorAll('.accounts-table th.sortable').forEach(th => {
@@ -1073,11 +1074,11 @@ function renderTable(accounts) {
             : '<span class="not-scanned">-</span>';
 
         const tierLabel = {
-            1: 'Enterprise',
+            1: 'Global Leader',
             2: 'Expanding',
-            3: 'Partial',
-            4: 'Not Scanned'
-        }[account.current_tier] || 'Not Scanned';
+            3: 'Going Global',
+            4: 'Not Yet Global'
+        }[account.current_tier] || 'Not Yet Global';
 
         const localeCount = account.locale_count !== null && account.locale_count !== undefined
             ? account.locale_count
@@ -1162,12 +1163,32 @@ function updateBulkBar() {
 
 // Actions
 async function scanAccount(id) {
+    const btn = event.target;
+    const originalText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Scanning...';
+
     try {
         const response = await fetch(`/api/webscraper/accounts/scan/${id}`, { method: 'POST' });
         const result = await response.json();
-        alert(result.message || 'Scan queued');
+
+        if (result.status === 'completed') {
+            // Show success with tier info
+            const tierLabel = result.results?.tier_label || 'Unknown';
+            const localeCount = result.results?.locale_count || 0;
+            alert(`Scan complete!\n\nTier: ${tierLabel}\nLocales: ${localeCount}\nEvidence: ${result.results?.evidence || 'N/A'}`);
+            loadAccounts();
+            loadTierCounts();
+        } else if (result.status === 'error') {
+            alert(`Scan failed: ${result.message}`);
+        } else {
+            alert(result.message || 'Scan completed');
+        }
     } catch (error) {
-        alert('Failed to queue scan');
+        alert('Failed to scan account: ' + error.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = originalText;
     }
 }
 
@@ -1294,6 +1315,63 @@ function exportCSV() {
     a.download = 'webscraper_accounts.csv';
     a.click();
     window.URL.revokeObjectURL(url);
+}
+
+async function bulkScan() {
+    if (selectedIds.size === 0) return;
+
+    const count = selectedIds.size;
+    if (!confirm(`Scan ${count} account(s) for localization and global expansion signals?\n\nThis may take a few moments.`)) return;
+
+    // Show scanning progress
+    const bulkScanBtn = document.getElementById('bulk-scan');
+    const originalText = bulkScanBtn.textContent;
+    bulkScanBtn.disabled = true;
+    bulkScanBtn.textContent = `Scanning 0/${count}...`;
+
+    try {
+        const response = await fetch('/api/webscraper/accounts/bulk', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'scan', account_ids: Array.from(selectedIds) })
+        });
+
+        const result = await response.json();
+
+        if (response.ok) {
+            // Build result message
+            let message = `Scan Complete!\n\n`;
+            message += `Completed: ${result.completed}\n`;
+            message += `Failed: ${result.failed}\n`;
+            message += `Skipped: ${result.skipped}\n`;
+
+            // Show tier breakdown if there are completed scans
+            if (result.details && result.completed > 0) {
+                const tierCounts = {1: 0, 2: 0, 3: 0, 4: 0};
+                result.details.filter(d => d.status === 'completed').forEach(d => {
+                    tierCounts[d.tier] = (tierCounts[d.tier] || 0) + 1;
+                });
+                message += `\nTier Breakdown:\n`;
+                message += `  Tier 1 (Global Leader): ${tierCounts[1]}\n`;
+                message += `  Tier 2 (Active Expansion): ${tierCounts[2]}\n`;
+                message += `  Tier 3 (Going Global): ${tierCounts[3]}\n`;
+                message += `  Tier 4 (Not Yet Global): ${tierCounts[4]}`;
+            }
+
+            alert(message);
+            selectedIds.clear();
+            updateBulkBar();
+            loadAccounts();
+            loadTierCounts();
+        } else {
+            alert(`Bulk scan failed: ${result.error || 'Unknown error'}`);
+        }
+    } catch (error) {
+        alert('Failed to perform bulk scan: ' + error.message);
+    } finally {
+        bulkScanBtn.disabled = false;
+        bulkScanBtn.textContent = originalText;
+    }
 }
 
 // Utility functions
