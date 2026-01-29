@@ -1445,7 +1445,8 @@ def get_tier_counts() -> dict:
 
 def get_all_accounts_datatable(draw: int, start: int, length: int, search_value: str = '',
                                tier_filter: Optional[list] = None, order_column: int = 0,
-                               order_dir: str = 'asc') -> dict:
+                               order_dir: str = 'asc', last_scanned_filter: str = None,
+                               revenue_min: int = None, revenue_max: int = None) -> dict:
     """
     Get accounts data in DataTables format for server-side processing.
 
@@ -1453,6 +1454,8 @@ def get_all_accounts_datatable(draw: int, start: int, length: int, search_value:
     - Pagination (start, length)
     - Global search (search_value)
     - Tier filtering
+    - Last scanned filtering (never, 7d, 30d, 90d, older)
+    - Revenue range filtering (in millions)
     - Sorting
 
     Args:
@@ -1463,6 +1466,9 @@ def get_all_accounts_datatable(draw: int, start: int, length: int, search_value:
         tier_filter: List of tier integers to include (optional)
         order_column: Column index for sorting (0=company, 1=org, 2=tier, etc.)
         order_dir: Sort direction ('asc' or 'desc')
+        last_scanned_filter: Filter by last scanned time ('never', '7d', '30d', '90d', 'older')
+        revenue_min: Minimum revenue in millions (optional)
+        revenue_max: Maximum revenue in millions (optional)
 
     Returns:
         Dictionary with DataTables format:
@@ -1503,6 +1509,48 @@ def get_all_accounts_datatable(draw: int, start: int, length: int, search_value:
         where_clauses.append('(LOWER(company_name) LIKE ? OR LOWER(github_org) LIKE ?)')
         search_param = f'%{search_value.lower()}%'
         params.extend([search_param, search_param])
+
+    # Last scanned filter
+    if last_scanned_filter:
+        if last_scanned_filter == 'never':
+            where_clauses.append('last_scanned_at IS NULL')
+        elif last_scanned_filter == '7d':
+            where_clauses.append("last_scanned_at >= datetime('now', '-7 days')")
+        elif last_scanned_filter == '30d':
+            where_clauses.append("last_scanned_at >= datetime('now', '-30 days')")
+        elif last_scanned_filter == '90d':
+            where_clauses.append("last_scanned_at >= datetime('now', '-90 days')")
+        elif last_scanned_filter == 'older':
+            where_clauses.append("last_scanned_at < datetime('now', '-90 days')")
+
+    # Revenue range filter (in millions)
+    # Revenue is stored as text, so we need to parse it for comparison
+    # Common formats: "$100M", "100000000", "$1.5B", "1500000000", etc.
+    if revenue_min is not None or revenue_max is not None:
+        # Use a subquery to parse the revenue and filter
+        # This handles formats like "$100M", "$1.5B", "100000000", etc.
+        revenue_clause = """
+            CASE
+                WHEN annual_revenue IS NULL OR annual_revenue = '' THEN NULL
+                WHEN annual_revenue LIKE '%B%' OR annual_revenue LIKE '%b%' THEN
+                    CAST(REPLACE(REPLACE(REPLACE(REPLACE(annual_revenue, '$', ''), 'B', ''), 'b', ''), ',', '') AS REAL) * 1000
+                WHEN annual_revenue LIKE '%M%' OR annual_revenue LIKE '%m%' THEN
+                    CAST(REPLACE(REPLACE(REPLACE(REPLACE(annual_revenue, '$', ''), 'M', ''), 'm', ''), ',', '') AS REAL)
+                WHEN annual_revenue LIKE '%K%' OR annual_revenue LIKE '%k%' THEN
+                    CAST(REPLACE(REPLACE(REPLACE(REPLACE(annual_revenue, '$', ''), 'K', ''), 'k', ''), ',', '') AS REAL) / 1000
+                ELSE
+                    CAST(REPLACE(REPLACE(annual_revenue, '$', ''), ',', '') AS REAL) / 1000000
+            END
+        """
+        if revenue_min is not None and revenue_max is not None:
+            where_clauses.append(f'({revenue_clause}) >= ? AND ({revenue_clause}) <= ?')
+            params.extend([revenue_min, revenue_max])
+        elif revenue_min is not None:
+            where_clauses.append(f'({revenue_clause}) >= ?')
+            params.append(revenue_min)
+        elif revenue_max is not None:
+            where_clauses.append(f'({revenue_clause}) <= ?')
+            params.append(revenue_max)
 
     where_sql = ' WHERE ' + ' AND '.join(where_clauses)
 

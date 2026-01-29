@@ -2185,6 +2185,23 @@
                 <option value="processing">Processing</option>
                 <option value="stuck">Stuck</option>
             </select>
+            <select id="last-scanned-filter" class="filter-select" aria-label="Filter by last scanned">
+                <option value="">All scan times</option>
+                <option value="never">Never scanned</option>
+                <option value="7d">Last 7 days</option>
+                <option value="30d">Last 30 days</option>
+                <option value="90d">Last 90 days</option>
+                <option value="older">Older than 90 days</option>
+            </select>
+            <select id="revenue-filter" class="filter-select" aria-label="Filter by revenue range">
+                <option value="">All revenue</option>
+                <option value="0-10">Under $10M</option>
+                <option value="10-50">$10M - $50M</option>
+                <option value="50-100">$50M - $100M</option>
+                <option value="100-500">$100M - $500M</option>
+                <option value="500-1000">$500M - $1B</option>
+                <option value="1000-">Over $1B</option>
+            </select>
             <button type="button" class="btn-clear-filters" id="clear-filters-btn">Clear filters</button>
         </div>
     </div>
@@ -3170,6 +3187,58 @@
                 }
             });
         });
+
+        // Setup last scanned filter dropdown
+        const lastScannedFilter = document.getElementById('last-scanned-filter');
+        if (lastScannedFilter) {
+            lastScannedFilter.addEventListener('change', () => {
+                paginationState.currentPage = 1;
+                reloadAccountsTable();
+            });
+        }
+
+        // Setup revenue filter dropdown
+        const revenueFilter = document.getElementById('revenue-filter');
+        if (revenueFilter) {
+            revenueFilter.addEventListener('change', () => {
+                paginationState.currentPage = 1;
+                reloadAccountsTable();
+            });
+        }
+
+        // Setup clear filters button
+        const clearFiltersBtn = document.getElementById('clear-filters-btn');
+        if (clearFiltersBtn) {
+            clearFiltersBtn.addEventListener('click', () => {
+                // Clear search input
+                if (searchInput) {
+                    searchInput.value = '';
+                }
+                // Clear tier filters in URL
+                const urlParams = new URLSearchParams(window.location.search);
+                urlParams.delete('tier');
+                urlParams.delete('q');
+                window.history.replaceState({}, '', '?' + urlParams.toString());
+                // Clear dropdown filters
+                if (lastScannedFilter) {
+                    lastScannedFilter.value = '';
+                }
+                if (revenueFilter) {
+                    revenueFilter.value = '';
+                }
+                // Reset "All" tier button to active
+                tierButtons.forEach(btn => {
+                    if (btn.dataset.tierId === 'all') {
+                        btn.classList.add('active');
+                    } else {
+                        btn.classList.remove('active');
+                    }
+                });
+                // Reload table
+                paginationState.currentPage = 1;
+                reloadAccountsTable();
+            });
+        }
     }
 
     // Loading state management
@@ -3245,6 +3314,12 @@
         const searchValue = searchInput ? searchInput.value : urlParams.get('q') || '';
         const tierFilters = urlParams.getAll('tier').map(t => parseInt(t));
 
+        // Get new filter values
+        const lastScannedFilter = document.getElementById('last-scanned-filter');
+        const revenueFilter = document.getElementById('revenue-filter');
+        const lastScannedValue = lastScannedFilter ? lastScannedFilter.value : '';
+        const revenueValue = revenueFilter ? revenueFilter.value : '';
+
         // Calculate start offset
         const start = (paginationState.currentPage - 1) * paginationState.pageSize;
 
@@ -3260,6 +3335,22 @@
         tierFilters.forEach(tier => {
             params.append('tier', tier);
         });
+
+        // Add last scanned filter
+        if (lastScannedValue) {
+            params.set('last_scanned', lastScannedValue);
+        }
+
+        // Add revenue filter (parse range like "10-50" into min/max)
+        if (revenueValue) {
+            const [minStr, maxStr] = revenueValue.split('-');
+            if (minStr) {
+                params.set('revenue_min', minStr);
+            }
+            if (maxStr) {
+                params.set('revenue_max', maxStr);
+            }
+        }
 
         // Fetch data from server
         fetch(`/api/accounts/datatable?${params.toString()}`)

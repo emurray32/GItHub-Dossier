@@ -1302,6 +1302,12 @@ def api_accounts_datatable():
 
     Handles parameters from DataTables JavaScript library for efficient
     server-side pagination, searching, and sorting.
+
+    Supports filters:
+    - tier: Multi-select tier filter (0-4)
+    - last_scanned: Filter by last scan time ('never', '7d', '30d', '90d', 'older')
+    - revenue_min: Minimum revenue in millions
+    - revenue_max: Maximum revenue in millions
     """
     # DataTables parameters
     draw = request.args.get('draw', 1, type=int)
@@ -1312,6 +1318,13 @@ def api_accounts_datatable():
     # Get tier filter if provided
     tiers = request.args.getlist('tier', type=int)
     tier_filter = tiers if tiers else None
+
+    # Get last scanned filter
+    last_scanned_filter = request.args.get('last_scanned', '').strip() or None
+
+    # Get revenue range filter (in millions)
+    revenue_min = request.args.get('revenue_min', type=int)
+    revenue_max = request.args.get('revenue_max', type=int)
 
     # Get ordering parameters
     order_column = request.args.get('order[0][column]', 0, type=int)
@@ -1329,7 +1342,10 @@ def api_accounts_datatable():
         search_value=search_value,
         tier_filter=tier_filter,
         order_column=order_column,
-        order_dir=order_dir
+        order_dir=order_dir,
+        last_scanned_filter=last_scanned_filter,
+        revenue_min=revenue_min,
+        revenue_max=revenue_max
     )
 
     # Ensure scan status is set
