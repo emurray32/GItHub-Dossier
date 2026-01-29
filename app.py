@@ -794,7 +794,16 @@ def process_import_batch_worker(batch_id: int):
         # Mark batch as completed
         update_batch_progress(batch_id, processed_count, status='completed')
         print(f"[BATCH-WORKER] Batch {batch_id} completed: {len(added)} added, {len(skipped)} skipped")
-        
+
+        # Run deduplication after import to clean up any duplicates that slipped through
+        try:
+            dedup_result = cleanup_duplicate_accounts()
+            dedup_removed = dedup_result.get('deleted', 0)
+            if dedup_removed > 0:
+                print(f"[BATCH-WORKER] Post-import deduplication removed {dedup_removed} duplicate accounts")
+        except Exception as e:
+            print(f"[BATCH-WORKER] Post-import deduplication error: {e}")
+
         # Auto-queue newly imported accounts for scanning (with throttling)
         # Limit initial queue to prevent overwhelming the executor
         MAX_AUTO_QUEUE = 50  # Queue at most 50 accounts immediately, rest will be picked up by watchdog
@@ -2882,6 +2891,36 @@ def api_queue_status():
     })
 
 
+@app.route('/api/deduplicate', methods=['POST'])
+def api_deduplicate():
+    """
+    Manually trigger deduplication of accounts.
+
+    Removes duplicate accounts based on company name (case-insensitive) and
+    GitHub organization. Keeps the 'best' account for each duplicate group:
+    highest tier > most recent scan > newest ID.
+
+    Returns:
+        JSON with deduplication results including count of removed duplicates.
+    """
+    try:
+        result = cleanup_duplicate_accounts()
+        deleted = result.get('deleted', 0)
+        groups = result.get('groups', [])
+
+        return jsonify({
+            'status': 'success',
+            'deleted': deleted,
+            'groups_cleaned': len(groups),
+            'details': groups
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
 @app.route('/api/queue-details')
 def api_queue_details():
     """
@@ -4266,6 +4305,50 @@ def start_archived_rescan_scheduler():
     thread.start()
 
 
+def _deduplication_worker():
+    """
+    Background worker that runs daily to clean up duplicate accounts.
+
+    Duplicates are identified by:
+    1. Company name (case-insensitive) - keeps highest tier, most recent scan, newest ID
+    2. GitHub organization (case-insensitive) - same priority logic
+
+    This ensures the database stays clean even if duplicates slip through during imports.
+    Runs once per day at a quiet time (4am).
+    """
+    DEDUP_CHECK_INTERVAL = 86400  # Check once per day (in seconds)
+
+    print("[DEDUPLICATION] Background thread started - will run daily cleanup")
+
+    while True:
+        try:
+            # Run the deduplication cleanup
+            result = cleanup_duplicate_accounts()
+            deleted = result.get('deleted', 0)
+
+            if deleted > 0:
+                print(f"[DEDUPLICATION] Removed {deleted} duplicate accounts")
+                for group in result.get('groups', []):
+                    if group.get('type') == 'name':
+                        print(f"[DEDUPLICATION]   - Consolidated '{group.get('name')}' ({group.get('removed_count')} duplicates)")
+                    else:
+                        print(f"[DEDUPLICATION]   - Consolidated org '{group.get('org')}' ({group.get('removed_count')} duplicates)")
+            else:
+                print("[DEDUPLICATION] No duplicates found")
+
+        except Exception as e:
+            print(f"[DEDUPLICATION] Error in deduplication worker: {e}")
+
+        # Sleep for 24 hours before checking again
+        time.sleep(DEDUP_CHECK_INTERVAL)
+
+
+def start_deduplication_scheduler():
+    """Start the deduplication scheduler in a background daemon thread."""
+    thread = threading.Thread(target=_deduplication_worker, daemon=True, name="DeduplicationScheduler")
+    thread.start()
+
+
 if __name__ == '__main__':
     # Initialize when running directly
     print("[APP] Starting application...")
@@ -4288,6 +4371,9 @@ if __name__ == '__main__':
 
     # Start the archived accounts rescan scheduler (re-scans every 4 weeks)
     start_archived_rescan_scheduler()
+
+    # Start the deduplication scheduler (runs daily to clean up duplicates)
+    start_deduplication_scheduler()
 
     # IMPORTANT: Recover stuck queued accounts BEFORE reset_all_scan_statuses
     # This captures accounts stuck in 'queued' state and re-queues them
