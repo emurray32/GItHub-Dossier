@@ -2882,6 +2882,34 @@ def api_queue_status():
     })
 
 
+@app.route('/api/queue-details')
+def api_queue_details():
+    """
+    Get full account details for queued and processing accounts.
+
+    Returns:
+        JSON with complete account information for all queued and processing accounts.
+    """
+    from database import get_queue_account_details
+    queue_data = get_queue_account_details()
+
+    # Map scan_start_time to scan_started_at for API compatibility
+    for account in queue_data['processing']:
+        if account.get('scan_start_time'):
+            account['scan_started_at'] = account['scan_start_time']
+
+    for account in queue_data['queued']:
+        if account.get('scan_start_time'):
+            account['scan_started_at'] = account['scan_start_time']
+
+    return jsonify({
+        'queued': queue_data['queued'],
+        'processing': queue_data['processing'],
+        'queued_count': len(queue_data['queued']),
+        'processing_count': len(queue_data['processing'])
+    })
+
+
 @app.route('/api/status-counts')
 def api_status_counts():
     """
