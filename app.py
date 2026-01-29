@@ -2429,8 +2429,6 @@ def api_import():
             "message": "Import batch created and queued for processing"
         }
     """
-    from database import find_potential_duplicates
-
     data = request.get_json() or {}
     companies = data.get('companies', [])
     skip_duplicates = data.get('skip_duplicates', False)
@@ -2438,43 +2436,67 @@ def api_import():
     if not isinstance(companies, list) or not companies:
         return jsonify({'error': 'Invalid payload: expected {"companies": [...]}'}), 400
 
-    # If skip_duplicates is enabled, filter out potential duplicates
-    filtered_companies = []
-    skipped_duplicates = []
+    # For large imports (> 100 companies), skip synchronous duplicate checking
+    # The batch worker will handle duplicates during processing
+    # This prevents request timeouts on large CSV imports
+    if len(companies) > 100:
+        # Just normalize the companies list without duplicate checking
+        filtered_companies = []
+        for company_item in companies:
+            if isinstance(company_item, dict):
+                company_name = company_item.get('name', '').strip()
+            else:
+                company_name = str(company_item).strip()
+            if company_name:
+                filtered_companies.append(company_item)
+        
+        if not filtered_companies:
+            return jsonify({
+                'batch_id': None,
+                'total_count': 0,
+                'status': 'skipped',
+                'message': 'No valid companies to import',
+            })
+    else:
+        # For smaller imports, do synchronous duplicate checking
+        from database import find_potential_duplicates
+        
+        filtered_companies = []
+        skipped_duplicates = []
 
-    for company_item in companies:
-        if isinstance(company_item, dict):
-            company_name = company_item.get('name', '').strip()
-            github_org = company_item.get('github_org', '').strip() if company_item.get('github_org') else None
-            website = company_item.get('website', '').strip() if company_item.get('website') else None
-        else:
-            company_name = str(company_item).strip()
-            github_org = None
-            website = None
+        for company_item in companies:
+            if isinstance(company_item, dict):
+                company_name = company_item.get('name', '').strip()
+                github_org = company_item.get('github_org', '').strip() if company_item.get('github_org') else None
+                website = company_item.get('website', '').strip() if company_item.get('website') else None
+            else:
+                company_name = str(company_item).strip()
+                github_org = None
+                website = None
 
-        if not company_name:
-            continue
-
-        if skip_duplicates:
-            duplicates = find_potential_duplicates(company_name, github_org, website)
-            if duplicates:
-                skipped_duplicates.append({
-                    'company': company_name,
-                    'existing_match': duplicates[0].get('company_name'),
-                    'match_reason': duplicates[0].get('match_reason'),
-                })
+            if not company_name:
                 continue
 
-        filtered_companies.append(company_item)
+            if skip_duplicates:
+                duplicates = find_potential_duplicates(company_name, github_org, website)
+                if duplicates:
+                    skipped_duplicates.append({
+                        'company': company_name,
+                        'existing_match': duplicates[0].get('company_name'),
+                        'match_reason': duplicates[0].get('match_reason'),
+                    })
+                    continue
 
-    if not filtered_companies:
-        return jsonify({
-            'batch_id': None,
-            'total_count': 0,
-            'status': 'skipped',
-            'message': 'All companies were duplicates - nothing to import',
-            'skipped_duplicates': skipped_duplicates if skip_duplicates else [],
-        })
+            filtered_companies.append(company_item)
+
+        if not filtered_companies:
+            return jsonify({
+                'batch_id': None,
+                'total_count': 0,
+                'status': 'skipped',
+                'message': 'All companies were duplicates - nothing to import',
+                'skipped_duplicates': skipped_duplicates if skip_duplicates else [],
+            })
 
     # Create persistent batch in database with filtered companies
     batch_id = create_import_batch(filtered_companies)
@@ -2492,7 +2514,8 @@ def api_import():
         'message': 'Import batch created and queued for processing',
     }
 
-    if skip_duplicates and skipped_duplicates:
+    # Only include skipped_duplicates for small imports (where we did synchronous checking)
+    if len(companies) <= 100 and skip_duplicates and skipped_duplicates:
         response['skipped_duplicates'] = skipped_duplicates
         response['skipped_count'] = len(skipped_duplicates)
 
