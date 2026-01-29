@@ -165,7 +165,8 @@ class Config:
     WEBHOOK_URL = os.getenv('WEBHOOK_URL')
 
     # Scan Configuration
-    MAX_REPOS_TO_SCAN = 50  # Top N most active repos
+    MAX_REPOS_TO_SCAN = 50  # Top N most active repos to consider
+    REPOS_PER_PHASE = 5     # Top N repos to scan deeply per phase (full 10-signal deep scan)
     REPO_INACTIVITY_DAYS = 730  # Skip repos not pushed in this many days (2 years)
     REPO_INACTIVITY_FALLBACK = 10  # If all repos filtered, take top N anyway
 
