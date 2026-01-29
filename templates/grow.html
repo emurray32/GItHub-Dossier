@@ -1269,17 +1269,26 @@
                     document.getElementById('fileSelectedInfo').style.display = 'none';
                     document.getElementById('processCSVBtn').style.display = 'none';
 
-                    // Poll for batch completion
-                    await pollBatchProgress(data.batch_id, data.total_count);
+                    // Batch is now queued - redirect immediately (processing continues in background)
+                    addConsoleEntry('', 'info');
+                    addConsoleEntry('Import queued successfully - processing in background', 'success');
+                    addConsoleEntry(`${data.total_count} accounts will be processed automatically`, 'info');
+                    addConsoleEntry('You can navigate away - no need to wait on this page', 'info');
+                    addConsoleEntry('', 'info');
+                    addConsoleEntry('Redirecting to Accounts page...', 'info');
+                    setTimeout(() => {
+                        window.location.href = `/accounts?highlight_batch=${data.batch_id}`;
+                    }, 1500);
                 } else if (data.results) {
                     // Legacy synchronous response format (if ever used)
                     handleLegacyImportResponse(data);
                 } else {
                     addConsoleEntry('Import started successfully', 'success');
                     if (data.batch_id) {
+                        addConsoleEntry('Redirecting to Accounts page...', 'info');
                         setTimeout(() => {
                             window.location.href = `/accounts?highlight_batch=${data.batch_id}`;
-                        }, 2000);
+                        }, 1500);
                     }
                 }
             } else {
