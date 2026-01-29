@@ -794,6 +794,25 @@ def process_import_batch_worker(batch_id: int):
         # Mark batch as completed
         update_batch_progress(batch_id, processed_count, status='completed')
         print(f"[BATCH-WORKER] Batch {batch_id} completed: {len(added)} added, {len(skipped)} skipped")
+        
+        # Auto-queue newly imported accounts for scanning (with throttling)
+        # Limit initial queue to prevent overwhelming the executor
+        MAX_AUTO_QUEUE = 50  # Queue at most 50 accounts immediately, rest will be picked up by watchdog
+        if added:
+            queued_for_scan = 0
+            to_queue = added[:MAX_AUTO_QUEUE]  # Only queue first batch
+            for company_name in to_queue:
+                try:
+                    spawn_background_scan(company_name)
+                    queued_for_scan += 1
+                except Exception as e:
+                    print(f"[BATCH-WORKER] Error queuing {company_name} for scan: {e}")
+            
+            remaining = len(added) - queued_for_scan
+            if remaining > 0:
+                print(f"[BATCH-WORKER] Auto-queued {queued_for_scan} accounts for scanning ({remaining} more will be queued by watchdog)")
+            else:
+                print(f"[BATCH-WORKER] Auto-queued {queued_for_scan} new accounts for scanning")
 
     except Exception as e:
         print(f"[BATCH-WORKER] Batch {batch_id} failed with error: {str(e)}")

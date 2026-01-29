@@ -939,6 +939,17 @@
     let discoveryMode = 'ai';
     let selectedCSVData = null;
     let csvFileInput = null;
+    
+    // Restore CSV data from localStorage on page load (fixes data loss between page states)
+    try {
+        const savedCSVData = localStorage.getItem('pendingCSVImport');
+        if (savedCSVData) {
+            selectedCSVData = JSON.parse(savedCSVData);
+            console.log('[CSV Import] Restored', selectedCSVData.length, 'companies from localStorage');
+        }
+    } catch (e) {
+        console.error('[CSV Import] Error restoring from localStorage:', e);
+    }
     let leadStreamOffset = 0;
     let leadStreamTotal = 0;
     let addedLeadsCount = 0;
@@ -1035,6 +1046,13 @@
                     }
 
                     selectedCSVData = companies;
+                    // Save to localStorage as backup (fixes data loss between page states)
+                    try {
+                        localStorage.setItem('pendingCSVImport', JSON.stringify(companies));
+                        console.log('[CSV Import] Saved', companies.length, 'companies to localStorage');
+                    } catch (e) {
+                        console.error('[CSV Import] Error saving to localStorage:', e);
+                    }
                     const infoDiv = document.getElementById('fileSelectedInfo');
 
                     // Show initial loading message
@@ -1200,8 +1218,24 @@
     }
 
     async function processCSVImport() {
+        console.log('[CSV Import] processCSVImport called, selectedCSVData:', selectedCSVData ? selectedCSVData.length : 'null');
+        
+        // Try to restore from localStorage if selectedCSVData is null
         if (!selectedCSVData || selectedCSVData.length === 0) {
-            addConsoleEntry('No CSV data loaded', 'error');
+            try {
+                const savedData = localStorage.getItem('pendingCSVImport');
+                if (savedData) {
+                    selectedCSVData = JSON.parse(savedData);
+                    console.log('[CSV Import] Restored from localStorage:', selectedCSVData.length, 'companies');
+                }
+            } catch (e) {
+                console.error('[CSV Import] Error restoring from localStorage:', e);
+            }
+        }
+        
+        if (!selectedCSVData || selectedCSVData.length === 0) {
+            addConsoleEntry('No CSV data loaded - please re-upload the file', 'error');
+            console.error('[CSV Import] No CSV data available after localStorage check');
             return;
         }
 
@@ -1210,6 +1244,7 @@
 
         clearConsole();
         addConsoleEntry(`Starting batch import of ${selectedCSVData.length} companies from CSV (auto-skipping duplicates)...`, 'info');
+        console.log('[CSV Import] Sending', selectedCSVData.length, 'companies to /api/import');
 
         try {
             const response = await fetch('/api/import', {
@@ -1226,8 +1261,10 @@
                     addConsoleEntry(`Import batch #${data.batch_id} queued (${data.total_count} companies)`, 'info');
                     addConsoleEntry('Processing in background...', 'info');
 
-                    // Reset CSV immediately
+                    // Reset CSV immediately and clear localStorage
                     selectedCSVData = null;
+                    localStorage.removeItem('pendingCSVImport');
+                    console.log('[CSV Import] Cleared localStorage after successful import');
                     document.getElementById('csvFileInput').value = '';
                     document.getElementById('fileSelectedInfo').style.display = 'none';
                     document.getElementById('processCSVBtn').style.display = 'none';
@@ -1346,8 +1383,10 @@
             }
         });
 
-        // Reset CSV
+        // Reset CSV and clear localStorage
         selectedCSVData = null;
+        localStorage.removeItem('pendingCSVImport');
+        console.log('[CSV Import] Cleared localStorage after legacy import');
         document.getElementById('csvFileInput').value = '';
         document.getElementById('fileSelectedInfo').style.display = 'none';
         document.getElementById('processCSVBtn').style.display = 'none';
@@ -1937,6 +1976,30 @@
 
             textarea.addEventListener('input', resizeTextarea);
             resizeTextarea();
+        }
+        
+        // Restore UI state if there's pending CSV data
+        if (selectedCSVData && selectedCSVData.length > 0) {
+            console.log('[CSV Import] Restoring UI for', selectedCSVData.length, 'pending companies');
+            const infoDiv = document.getElementById('fileSelectedInfo');
+            if (infoDiv) {
+                infoDiv.textContent = `${selectedCSVData.length} companies ready to import (restored from previous session)`;
+                infoDiv.style.display = 'block';
+                infoDiv.style.background = 'rgba(34, 197, 94, 0.1)';
+                infoDiv.style.color = 'var(--success-color)';
+            }
+            const processBtn = document.getElementById('processCSVBtn');
+            if (processBtn) {
+                processBtn.style.display = 'block';
+            }
+            // Switch to CSV tab
+            const csvTab = document.getElementById('csvTab');
+            const manualTab = document.getElementById('manualTab');
+            if (csvTab && manualTab) {
+                manualTab.classList.remove('active');
+                csvTab.classList.add('active');
+            }
+            addConsoleEntry(`Restored ${selectedCSVData.length} companies from previous session - click "Process CSV" to import`, 'info');
         }
     });
 </script>
