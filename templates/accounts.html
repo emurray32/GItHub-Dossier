@@ -231,6 +231,269 @@
         color: var(--text-muted);
     }
 
+    /* Integrations Modal Styles */
+    .integrations-modal-overlay {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.6);
+        z-index: 9999;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .integrations-modal-overlay.active {
+        display: flex;
+    }
+
+    .integrations-modal {
+        background: var(--bg-primary);
+        border-radius: 12px;
+        width: 90%;
+        max-width: 600px;
+        max-height: 85vh;
+        display: flex;
+        flex-direction: column;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    }
+
+    .integrations-modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1rem 1.5rem;
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    .integrations-modal-header h2 {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin: 0;
+    }
+
+    .integrations-modal-close {
+        background: none;
+        border: none;
+        color: var(--text-muted);
+        cursor: pointer;
+        padding: 0.5rem;
+        border-radius: 6px;
+        transition: all var(--transition-fast);
+    }
+
+    .integrations-modal-close:hover {
+        background: var(--bg-secondary);
+        color: var(--text-primary);
+    }
+
+    .integrations-modal-body {
+        flex: 1;
+        overflow-y: auto;
+        padding: 1.5rem;
+    }
+
+    .integration-section {
+        margin-bottom: 2rem;
+    }
+
+    .integration-section:last-child {
+        margin-bottom: 0;
+    }
+
+    .integration-section h3 {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 1rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin: 0 0 0.5rem 0;
+    }
+
+    .integration-section h3 svg {
+        width: 20px;
+        height: 20px;
+        color: #34a853;
+    }
+
+    .integration-description {
+        font-size: 0.85rem;
+        color: var(--text-secondary);
+        margin-bottom: 1rem;
+        line-height: 1.5;
+    }
+
+    .integration-form-group {
+        margin-bottom: 1rem;
+    }
+
+    .integration-form-group label {
+        display: block;
+        font-size: 0.85rem;
+        font-weight: 500;
+        color: var(--text-primary);
+        margin-bottom: 0.5rem;
+    }
+
+    .integration-input {
+        width: 100%;
+        padding: 0.6rem 0.75rem;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        color: var(--text-primary);
+        font-size: 0.85rem;
+        transition: border-color var(--transition-fast);
+    }
+
+    .integration-input:focus {
+        outline: none;
+        border-color: var(--accent-color);
+    }
+
+    .integration-input::placeholder {
+        color: var(--text-muted);
+    }
+
+    .integration-toggle {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+    }
+
+    .integration-toggle input[type="checkbox"] {
+        width: 40px;
+        height: 22px;
+        appearance: none;
+        background: var(--border-color);
+        border-radius: 11px;
+        position: relative;
+        cursor: pointer;
+        transition: background var(--transition-fast);
+    }
+
+    .integration-toggle input[type="checkbox"]::before {
+        content: '';
+        position: absolute;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: white;
+        top: 2px;
+        left: 2px;
+        transition: transform var(--transition-fast);
+    }
+
+    .integration-toggle input[type="checkbox"]:checked {
+        background: var(--accent-color);
+    }
+
+    .integration-toggle input[type="checkbox"]:checked::before {
+        transform: translateX(18px);
+    }
+
+    .integration-toggle span {
+        font-size: 0.85rem;
+        color: var(--text-secondary);
+    }
+
+    .integration-actions {
+        display: flex;
+        gap: 0.75rem;
+        margin-top: 1rem;
+    }
+
+    .integration-btn {
+        padding: 0.5rem 1rem;
+        border-radius: 6px;
+        font-size: 0.85rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all var(--transition-fast);
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+    }
+
+    .integration-btn-primary {
+        background: var(--accent-color);
+        border: none;
+        color: white;
+    }
+
+    .integration-btn-primary:hover {
+        background: var(--accent-hover);
+    }
+
+    .integration-btn-primary:disabled {
+        background: var(--border-color);
+        cursor: not-allowed;
+    }
+
+    .integration-btn-secondary {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        color: var(--text-secondary);
+    }
+
+    .integration-btn-secondary:hover {
+        border-color: var(--accent-color);
+        color: var(--accent-color);
+    }
+
+    .integration-status {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.5rem 0.75rem;
+        border-radius: 6px;
+        font-size: 0.8rem;
+        margin-top: 0.75rem;
+    }
+
+    .integration-status.success {
+        background: rgba(34, 197, 94, 0.1);
+        color: #22c55e;
+    }
+
+    .integration-status.error {
+        background: rgba(239, 68, 68, 0.1);
+        color: #ef4444;
+    }
+
+    .integration-status.info {
+        background: rgba(59, 130, 246, 0.1);
+        color: #3b82f6;
+    }
+
+    .integration-help {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        margin-top: 0.5rem;
+    }
+
+    .integration-help a {
+        color: var(--accent-color);
+        text-decoration: none;
+    }
+
+    .integration-help a:hover {
+        text-decoration: underline;
+    }
+
+    .integration-divider {
+        height: 1px;
+        background: var(--border-color);
+        margin: 1.5rem 0;
+    }
+
     .search-container {
         position: relative;
         min-width: 250px;
@@ -2123,6 +2386,13 @@
                         </svg>
                         <span>History</span>
                     </a>
+                    <button type="button" class="nav-btn" onclick="openIntegrationsModal()">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                        </svg>
+                        <span>Integrations</span>
+                    </button>
                 </div>
 
             </div>
@@ -2535,6 +2805,95 @@
             </div>
             <div id="archived-accounts-list" class="archived-accounts-list">
                 <div class="archived-loading">Loading archived accounts...</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Integrations Modal -->
+<div id="integrations-modal" class="integrations-modal-overlay">
+    <div class="integrations-modal">
+        <div class="integrations-modal-header">
+            <h2>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                </svg>
+                Integrations
+            </h2>
+            <button type="button" class="integrations-modal-close" onclick="closeIntegrationsModal()" aria-label="Close modal">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+            </button>
+        </div>
+        <div class="integrations-modal-body">
+            <!-- Google Sheets Integration -->
+            <div class="integration-section">
+                <h3>
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M19.385 2H4.615C3.17 2 2 3.17 2 4.615v14.77C2 20.83 3.17 22 4.615 22h14.77C20.83 22 22 20.83 22 19.385V4.615C22 3.17 20.83 2 19.385 2zM8 18H6v-7h2v7zm4 0h-2V8h2v10zm4 0h-2v-4h2v4z"/>
+                    </svg>
+                    Google Sheets Export
+                </h3>
+                <p class="integration-description">
+                    Automatically export new Tier 1 and Tier 2 accounts to a Google Sheet when they're detected.
+                    The data will match your RepoRadar table format with Company, Revenue, GitHub Org, Tier, Evidence Summary, and more.
+                </p>
+
+                <div class="integration-form-group">
+                    <label for="gsheet-webhook-url">Google Apps Script Web App URL</label>
+                    <input type="url" id="gsheet-webhook-url" class="integration-input"
+                           placeholder="https://script.google.com/macros/s/XXXXX/exec">
+                    <p class="integration-help">
+                        Deploy the <a href="/docs/google-sheets-webhook-script.js" target="_blank">Apps Script</a> to your Google Sheet and paste the Web App URL here.
+                    </p>
+                </div>
+
+                <div class="integration-form-group">
+                    <div class="integration-toggle">
+                        <input type="checkbox" id="gsheet-webhook-enabled">
+                        <span>Enable automatic export to Google Sheets</span>
+                    </div>
+                </div>
+
+                <div class="integration-actions">
+                    <button type="button" class="integration-btn integration-btn-primary" onclick="saveGSheetSettings()">
+                        Save Settings
+                    </button>
+                    <button type="button" class="integration-btn integration-btn-secondary" onclick="testGSheetWebhook()">
+                        Test Webhook
+                    </button>
+                </div>
+
+                <div id="gsheet-status" class="integration-status" style="display: none;"></div>
+            </div>
+
+            <div class="integration-divider"></div>
+
+            <!-- Setup Instructions -->
+            <div class="integration-section">
+                <h3>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="16" x2="12" y2="12"></line>
+                        <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                    </svg>
+                    Setup Instructions
+                </h3>
+                <div class="integration-description">
+                    <ol style="margin: 0; padding-left: 1.25rem; line-height: 1.8;">
+                        <li>Open your Google Sheet</li>
+                        <li>Go to <strong>Extensions &rarr; Apps Script</strong></li>
+                        <li>Copy the <a href="/docs/google-sheets-webhook-script.js" target="_blank">webhook script</a> into the editor</li>
+                        <li>Click <strong>Deploy &rarr; New deployment</strong></li>
+                        <li>Select <strong>Web app</strong> as the type</li>
+                        <li>Set "Who has access" to <strong>Anyone</strong></li>
+                        <li>Copy the Web App URL and paste it above</li>
+                        <li>Enable the integration and save</li>
+                    </ol>
+                </div>
             </div>
         </div>
     </div>
@@ -5220,6 +5579,125 @@
     document.getElementById('archived-modal').addEventListener('click', (e) => {
         if (e.target.classList.contains('archived-modal-overlay')) {
             closeArchivedModal();
+        }
+    });
+
+    // =============================================================================
+    // Integrations Modal - Google Sheets Webhook Configuration
+    // =============================================================================
+
+    function openIntegrationsModal() {
+        const modal = document.getElementById('integrations-modal');
+        modal.classList.add('active');
+        loadGSheetSettings();
+    }
+
+    function closeIntegrationsModal() {
+        const modal = document.getElementById('integrations-modal');
+        modal.classList.remove('active');
+        // Clear status message
+        const status = document.getElementById('gsheet-status');
+        status.style.display = 'none';
+    }
+
+    async function loadGSheetSettings() {
+        try {
+            const response = await fetch('/api/settings/gsheet');
+            const data = await response.json();
+
+            document.getElementById('gsheet-webhook-url').value = data.gsheet_webhook_url || '';
+            document.getElementById('gsheet-webhook-enabled').checked = data.gsheet_webhook_enabled || false;
+        } catch (error) {
+            console.error('Error loading Google Sheets settings:', error);
+        }
+    }
+
+    async function saveGSheetSettings() {
+        const url = document.getElementById('gsheet-webhook-url').value.trim();
+        const enabled = document.getElementById('gsheet-webhook-enabled').checked;
+        const statusEl = document.getElementById('gsheet-status');
+
+        // Validate URL if enabled
+        if (enabled && !url) {
+            showGSheetStatus('error', 'Please enter a webhook URL before enabling the integration.');
+            return;
+        }
+
+        if (url && !url.startsWith('https://')) {
+            showGSheetStatus('error', 'Webhook URL must start with https://');
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/settings/gsheet', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    gsheet_webhook_url: url,
+                    gsheet_webhook_enabled: enabled
+                })
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                showGSheetStatus('success', 'Settings saved successfully! New Tier 1/2 accounts will be exported automatically.');
+            } else {
+                showGSheetStatus('error', data.message || 'Failed to save settings');
+            }
+        } catch (error) {
+            console.error('Error saving Google Sheets settings:', error);
+            showGSheetStatus('error', 'Error saving settings. Please try again.');
+        }
+    }
+
+    async function testGSheetWebhook() {
+        const url = document.getElementById('gsheet-webhook-url').value.trim();
+
+        if (!url) {
+            showGSheetStatus('error', 'Please enter a webhook URL first.');
+            return;
+        }
+
+        showGSheetStatus('info', 'Sending test webhook... This may take a few seconds.');
+
+        try {
+            const response = await fetch('/api/settings/gsheet/test', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                showGSheetStatus('success', data.message || 'Test successful! Check your Google Sheet for a new row.');
+            } else {
+                showGSheetStatus('error', data.message || 'Test failed. Please check your webhook URL and Apps Script deployment.');
+            }
+        } catch (error) {
+            console.error('Error testing webhook:', error);
+            showGSheetStatus('error', 'Error testing webhook. Please try again.');
+        }
+    }
+
+    function showGSheetStatus(type, message) {
+        const statusEl = document.getElementById('gsheet-status');
+        statusEl.className = `integration-status ${type}`;
+        statusEl.textContent = message;
+        statusEl.style.display = 'flex';
+    }
+
+    // Close integrations modal when clicking overlay
+    document.getElementById('integrations-modal').addEventListener('click', (e) => {
+        if (e.target.classList.contains('integrations-modal-overlay')) {
+            closeIntegrationsModal();
+        }
+    });
+
+    // Update Escape key handler to close integrations modal
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            closeIntegrationsModal();
         }
     });
 </script>

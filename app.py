@@ -493,6 +493,144 @@ def trigger_webhook(event_type: str, company_data: dict) -> None:
 
 
 # =============================================================================
+# GOOGLE SHEETS WEBHOOK - Export Tier 1/2 accounts to Google Sheets
+# =============================================================================
+
+def format_gsheet_payload(event_type: str, company_data: dict) -> dict:
+    """
+    Format webhook data for Google Sheets Apps Script.
+
+    Creates a flat JSON payload matching the RepoRadar table columns:
+    - company_name, annual_revenue, github_org, tier, tier_name, status
+    - last_scanned_at, evidence_summary, report_link, notes
+
+    Args:
+        event_type: Type of event (e.g., 'tier_change')
+        company_data: Dictionary with company info, tier, signals, etc.
+
+    Returns:
+        Dictionary formatted for Google Apps Script webhook receiver
+    """
+    tier = company_data.get('tier', 0)
+    tier_config = TIER_CONFIG.get(tier, TIER_CONFIG[0])
+
+    # Get base URL for report links
+    try:
+        from flask import request, has_request_context
+        if has_request_context():
+            base_url = request.host_url.rstrip('/')
+        else:
+            base_url = os.environ.get('BASE_URL', 'http://localhost:5000')
+    except Exception:
+        base_url = os.environ.get('BASE_URL', 'http://localhost:5000')
+
+    # Build report link
+    report_id = company_data.get('report_id')
+    report_link = f"{base_url}/report/{report_id}" if report_id else ""
+
+    # Format last scanned timestamp
+    last_scanned = company_data.get('last_scanned_at', '')
+    if not last_scanned:
+        last_scanned = datetime.now().isoformat()
+
+    return {
+        'event_type': event_type,
+        'timestamp': datetime.now().isoformat(),
+        'company': {
+            'company_name': company_data.get('company', company_data.get('company_name', '')),
+            'annual_revenue': company_data.get('revenue', company_data.get('annual_revenue', '')),
+            'github_org': company_data.get('github_org', ''),
+            'current_tier': tier,
+            'tier_name': tier_config.get('name', 'Unknown'),
+            'tier_status': tier_config.get('status', ''),
+            'last_scanned_at': last_scanned,
+            'evidence_summary': company_data.get('evidence', company_data.get('evidence_summary', '')),
+            'report_id': report_id,
+            'report_link': report_link,
+            'notes': company_data.get('notes', ''),
+            'website': company_data.get('website', ''),
+            # Include signals summary if available
+            'signals_summary': company_data.get('signals_summary', [])
+        }
+    }
+
+
+def trigger_gsheet_webhook(event_type: str, company_data: dict) -> None:
+    """
+    Send a webhook notification to Google Sheets Apps Script.
+
+    This function runs in a background thread to avoid blocking the UI.
+    Fetches the Google Sheets webhook URL from system_settings and sends a POST request.
+
+    The Google Apps Script will receive the data and append/update a row in the sheet.
+
+    Args:
+        event_type: Type of event (e.g., 'tier_change', 'scan_complete')
+        company_data: Dictionary containing company information to send
+    """
+    # Check if Google Sheets webhook is enabled
+    gsheet_enabled = get_setting('gsheet_webhook_enabled')
+    if gsheet_enabled != 'true':
+        print("[GSHEET WEBHOOK] Google Sheets webhook is disabled, skipping")
+        return
+
+    gsheet_url = get_setting('gsheet_webhook_url')
+    if not gsheet_url:
+        print("[GSHEET WEBHOOK] No gsheet_webhook_url configured, skipping")
+        return
+
+    # Only send Tier 1 and Tier 2 accounts
+    tier = company_data.get('tier', 0)
+    if tier not in [1, 2]:
+        print(f"[GSHEET WEBHOOK] Skipping tier {tier} - only Tier 1 and 2 are exported")
+        return
+
+    def send_gsheet_webhook():
+        company_name = company_data.get('company', company_data.get('company_name', 'Unknown'))
+
+        try:
+            # Format payload for Google Apps Script
+            payload = format_gsheet_payload(event_type, company_data)
+
+            response = requests.post(
+                gsheet_url,
+                json=payload,
+                headers={'Content-Type': 'application/json'},
+                timeout=30  # Google Apps Script can be slow
+            )
+
+            if response.status_code >= 200 and response.status_code < 300:
+                print(f"[GSHEET WEBHOOK] Success: {company_name} exported to Google Sheets (status: {response.status_code})")
+                try:
+                    log_webhook(f'gsheet_{event_type}', company_name, 'success')
+                except Exception as db_err:
+                    print(f"[GSHEET WEBHOOK] DB logging error: {db_err}")
+            else:
+                print(f"[GSHEET WEBHOOK] Failed: {company_name} (status: {response.status_code}, response: {response.text[:200]})")
+                try:
+                    log_webhook(f'gsheet_{event_type}', company_name, 'fail')
+                except Exception as db_err:
+                    print(f"[GSHEET WEBHOOK] DB logging error: {db_err}")
+
+        except requests.exceptions.Timeout:
+            print(f"[GSHEET WEBHOOK] Timeout: {company_name} -> {gsheet_url}")
+            try:
+                log_webhook(f'gsheet_{event_type}', company_name, 'fail')
+            except Exception:
+                pass
+        except requests.exceptions.RequestException as e:
+            print(f"[GSHEET WEBHOOK] Error: {company_name} -> {str(e)}")
+            try:
+                log_webhook(f'gsheet_{event_type}', company_name, 'fail')
+            except Exception:
+                pass
+
+    # Run in background thread to avoid blocking
+    gsheet_thread = threading.Thread(target=send_gsheet_webhook, daemon=True, name="GSheetWebhookSender")
+    gsheet_thread.start()
+
+
+# =============================================================================
 # THREAD POOL EXECUTOR - Concurrent scan processing with DB-backed state
 # =============================================================================
 
@@ -641,6 +779,8 @@ def perform_background_scan(company_name: str):
                 # Enrich with report details and signals
                 webhook_data = enrich_webhook_data(webhook_data, report_id)
                 trigger_webhook('tier_change', webhook_data)
+                # Also trigger Google Sheets export for Tier 1/2 accounts
+                trigger_gsheet_webhook('tier_change', webhook_data)
                 print(f"[WORKER] Webhook triggered for {company_name} (Tier {result.get('tier')})")
         except Exception as e:
             # Store the error for user visibility instead of silently failing
@@ -959,6 +1099,8 @@ def stream_scan(company: str):
                 # Enrich with report details and signals
                 webhook_data = enrich_webhook_data(webhook_data, report_id)
                 trigger_webhook('tier_change', webhook_data)
+                # Also trigger Google Sheets export for Tier 1/2 accounts
+                trigger_gsheet_webhook('tier_change', webhook_data)
                 yield f"data: LOG:Webhook notification sent for {tier_name} lead\n\n"
 
         except Exception as e:
@@ -3265,6 +3407,135 @@ def api_settings_zapier():
         'status': 'success',
         'zapier_url': zapier_url
     })
+
+
+@app.route('/api/settings/gsheet', methods=['GET', 'POST'])
+def api_settings_gsheet():
+    """
+    GET/POST Google Sheets webhook settings.
+
+    GET: Returns current Google Sheets webhook settings
+    POST: Updates Google Sheets webhook URL and enabled status
+
+    The Google Sheets webhook automatically exports Tier 1 and Tier 2 accounts
+    to a Google Sheet via a Google Apps Script web app.
+
+    POST payload: {
+        "gsheet_webhook_url": "https://script.google.com/macros/s/XXXXX/exec",
+        "gsheet_webhook_enabled": true
+    }
+
+    Returns:
+        JSON with current settings and status.
+    """
+    if request.method == 'GET':
+        gsheet_enabled = get_setting('gsheet_webhook_enabled')
+        return jsonify({
+            'gsheet_webhook_url': get_setting('gsheet_webhook_url') or '',
+            'gsheet_webhook_enabled': gsheet_enabled == 'true'
+        })
+
+    # POST - update settings
+    data = request.get_json() or {}
+
+    # Update Google Sheets webhook URL if provided
+    if 'gsheet_webhook_url' in data:
+        gsheet_url = data['gsheet_webhook_url'].strip()
+
+        # Validate URL format (must be empty or start with https://script.google.com or http(s)://)
+        if gsheet_url and not (gsheet_url.startswith('http://') or gsheet_url.startswith('https://')):
+            return jsonify({
+                'status': 'error',
+                'message': 'Google Sheets webhook URL must start with http:// or https://'
+            }), 400
+
+        set_setting('gsheet_webhook_url', gsheet_url)
+
+    # Update enabled status if provided
+    if 'gsheet_webhook_enabled' in data:
+        gsheet_enabled = data['gsheet_webhook_enabled']
+        set_setting('gsheet_webhook_enabled', 'true' if gsheet_enabled else 'false')
+
+    gsheet_enabled = get_setting('gsheet_webhook_enabled')
+    return jsonify({
+        'status': 'success',
+        'gsheet_webhook_url': get_setting('gsheet_webhook_url') or '',
+        'gsheet_webhook_enabled': gsheet_enabled == 'true'
+    })
+
+
+@app.route('/api/settings/gsheet/test', methods=['POST'])
+def api_settings_gsheet_test():
+    """
+    Test the Google Sheets webhook with a sample payload.
+
+    Sends a test company to verify the webhook is configured correctly.
+
+    Returns:
+        JSON with test status and response details.
+    """
+    gsheet_url = get_setting('gsheet_webhook_url')
+    if not gsheet_url:
+        return jsonify({
+            'status': 'error',
+            'message': 'Google Sheets webhook URL not configured'
+        }), 400
+
+    # Create test payload
+    test_payload = format_gsheet_payload('test', {
+        'company': 'Test Company (RepoRadar)',
+        'tier': 2,
+        'tier_name': 'Preparing',
+        'evidence': 'This is a test webhook from RepoRadar to verify your Google Sheets integration is working.',
+        'github_org': 'test-org',
+        'revenue': '$10M',
+        'report_id': None,
+        'notes': 'Test entry - you can delete this row'
+    })
+
+    try:
+        response = requests.post(
+            gsheet_url,
+            json=test_payload,
+            headers={'Content-Type': 'application/json'},
+            timeout=30
+        )
+
+        if response.status_code >= 200 and response.status_code < 300:
+            return jsonify({
+                'status': 'success',
+                'message': 'Test webhook sent successfully! Check your Google Sheet for a new row.',
+                'response_status': response.status_code
+            })
+        else:
+            return jsonify({
+                'status': 'error',
+                'message': f'Webhook returned status {response.status_code}',
+                'response_text': response.text[:500]
+            }), 400
+
+    except requests.exceptions.Timeout:
+        return jsonify({
+            'status': 'error',
+            'message': 'Request timed out. Google Apps Script may be slow on first run.'
+        }), 408
+    except requests.exceptions.RequestException as e:
+        return jsonify({
+            'status': 'error',
+            'message': f'Request failed: {str(e)}'
+        }), 500
+
+
+@app.route('/docs/<path:filename>')
+def serve_docs(filename):
+    """
+    Serve documentation files from the docs directory.
+
+    Used to serve the Google Apps Script for Google Sheets integration.
+    """
+    import os
+    docs_dir = os.path.join(os.path.dirname(__file__), 'docs')
+    return send_file(os.path.join(docs_dir, filename))
 
 
 @app.route('/api/integrations/zapier/trigger', methods=['POST'])
