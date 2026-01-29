@@ -49,6 +49,7 @@ python app.py
   - Added auto-queuing: newly imported accounts are automatically submitted for GitHub scanning
   - Throttled auto-queue to max 50 accounts per batch to prevent executor overload
   - Remaining accounts are picked up by the watchdog process
+  - Changed import UX: immediate redirect to Accounts page after batch queued (no polling/waiting required)
 - 2026-01-14: Fixed AgentMail integration and SKILL.md cold email generation
   - Rewrote agentmail_client.py to use the official AgentMail Python SDK
   - Fixed inbox retrieval (inbox_id attribute) and message sending (inboxes.messages.send)
