@@ -177,32 +177,63 @@
         gap: 0.75rem;
     }
 
-    .ruleset-category {
-        margin-bottom: 1.5rem;
+    /* Rule Set Table Styles */
+    .ruleset-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.8rem;
+        margin-bottom: 1rem;
     }
 
-    .ruleset-category h4 {
+    .ruleset-table th {
+        background: var(--bg-secondary);
+        padding: 0.5rem 0.75rem;
+        text-align: left;
+        font-weight: 500;
         color: var(--accent-color);
-        font-size: 0.9rem;
-        margin-bottom: 0.75rem;
+        border-bottom: 1px solid var(--border-color);
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .ruleset-table td {
+        padding: 0.4rem 0.75rem;
+        border-bottom: 1px solid var(--border-color);
+        color: var(--text-secondary);
+        vertical-align: top;
+    }
+
+    .ruleset-table tr:hover td {
+        background: rgba(0, 181, 173, 0.03);
+    }
+
+    .ruleset-table .category-cell {
+        font-weight: 500;
+        color: var(--text-primary);
+        white-space: nowrap;
+        width: 140px;
+    }
+
+    .ruleset-table .pattern-cell {
+        font-family: 'Monaco', 'Menlo', monospace;
+        font-size: 0.75rem;
+    }
+
+    .ruleset-section-header {
+        color: var(--accent-color);
+        font-size: 0.85rem;
+        font-weight: 500;
+        margin: 1rem 0 0.5rem 0;
+        padding-bottom: 0.25rem;
+        border-bottom: 1px solid var(--border-color);
         display: flex;
         align-items: center;
         gap: 0.5rem;
     }
 
-    .ruleset-items {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.5rem;
-    }
-
-    .ruleset-item {
-        background: var(--bg-secondary);
-        padding: 0.4rem 0.75rem;
-        border-radius: 6px;
-        font-size: 0.8rem;
-        color: var(--text-secondary);
-        border: 1px solid var(--border-color);
+    .ruleset-section-header:first-child {
+        margin-top: 0;
     }
 
     .ruleset-last-updated {
@@ -1708,58 +1739,115 @@ async function loadRuleSet() {
 
         let html = '';
 
-        // Global Expansion Keywords
+        // Tier Classification Rules Table
         html += `
-            <div class="ruleset-category">
-                <h4>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <circle cx="12" cy="12" r="10"></circle>
-                        <line x1="2" y1="12" x2="22" y2="12"></line>
-                        <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
-                    </svg>
-                    Global Expansion Keywords
-                </h4>
-                <div class="ruleset-items">
-                    ${ruleSetData.expansion_keywords.map(k => `<span class="ruleset-item">${escapeHtml(k)}</span>`).join('')}
-                </div>
+            <div class="ruleset-section-header">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+                </svg>
+                Tier Classification
             </div>
-        `;
-
-        // Locale Detection Patterns
-        html += `
-            <div class="ruleset-category">
-                <h4>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
-                        <polyline points="22,6 12,13 2,6"></polyline>
-                    </svg>
-                    Locale Detection Patterns
-                </h4>
-                <div class="ruleset-items">
-                    ${ruleSetData.locale_patterns.map(p => `<span class="ruleset-item">${escapeHtml(p)}</span>`).join('')}
-                </div>
-            </div>
-        `;
-
-        // Tier Classification Rules
-        html += `
-            <div class="ruleset-category">
-                <h4>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
-                    </svg>
-                    Tier Classification Rules
-                </h4>
-                <div class="ruleset-items" style="flex-direction: column; align-items: stretch;">
+            <table class="ruleset-table">
+                <thead>
+                    <tr>
+                        <th>Tier</th>
+                        <th>Classification Rule</th>
+                    </tr>
+                </thead>
+                <tbody>
                     ${Object.entries(ruleSetData.tier_rules).map(([tier, rule]) => `
-                        <div class="ruleset-item" style="display: flex; gap: 0.5rem;">
-                            <strong style="color: var(--accent-color);">Tier ${tier}:</strong>
-                            <span>${escapeHtml(rule)}</span>
-                        </div>
+                        <tr>
+                            <td class="category-cell">Tier ${tier}</td>
+                            <td>${escapeHtml(rule)}</td>
+                        </tr>
                     `).join('')}
-                </div>
-            </div>
+                </tbody>
+            </table>
         `;
+
+        // Expansion Keywords Table
+        html += `
+            <div class="ruleset-section-header">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="2" y1="12" x2="22" y2="12"></line>
+                    <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+                </svg>
+                Expansion Keywords
+            </div>
+            <table class="ruleset-table">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Keyword / Phrase</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${ruleSetData.expansion_keywords.map((k, i) => `
+                        <tr>
+                            <td class="category-cell">${i + 1}</td>
+                            <td class="pattern-cell">${escapeHtml(k)}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        `;
+
+        // Locale Detection Patterns Table
+        html += `
+            <div class="ruleset-section-header">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+                    <polyline points="22,6 12,13 2,6"></polyline>
+                </svg>
+                Locale Detection Patterns
+            </div>
+            <table class="ruleset-table">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Pattern</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${ruleSetData.locale_patterns.map((p, i) => `
+                        <tr>
+                            <td class="category-cell">${i + 1}</td>
+                            <td class="pattern-cell">${escapeHtml(p)}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        `;
+
+        // Smoking Gun Libraries (if available)
+        if (ruleSetData.smoking_gun_libs && ruleSetData.smoking_gun_libs.length > 0) {
+            html += `
+                <div class="ruleset-section-header">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                        <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                    </svg>
+                    Smoking Gun Libraries
+                </div>
+                <table class="ruleset-table">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Library Name</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${ruleSetData.smoking_gun_libs.map((lib, i) => `
+                            <tr>
+                                <td class="category-cell">${i + 1}</td>
+                                <td class="pattern-cell">${escapeHtml(lib)}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+        }
 
         // Last Updated
         html += `
