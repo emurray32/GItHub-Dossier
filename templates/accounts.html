@@ -4848,17 +4848,16 @@
     }
 
     function populateQueueModal() {
-        fetch('/api/accounts?limit=1000')
+        fetch('/api/queue-details')
             .then(response => response.json())
             .then(data => {
-                // Separate queued and processing accounts from the paginated response
-                const accounts = data.accounts || [];
-                const queuedAccounts = accounts.filter(a => a.scan_status === 'queued');
-                const processingAccounts = accounts.filter(a => a.scan_status === 'processing');
+                // Get queued and processing accounts from the dedicated endpoint
+                const queuedAccounts = data.queued || [];
+                const processingAccounts = data.processing || [];
 
                 // Update counts
-                document.getElementById('processing-count').textContent = processingAccounts.length;
-                document.getElementById('queued-count').textContent = queuedAccounts.length;
+                document.getElementById('processing-count').textContent = data.processing_count || 0;
+                document.getElementById('queued-count').textContent = data.queued_count || 0;
 
                 // Populate processing list
                 const processingList = document.getElementById('processing-list');

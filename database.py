@@ -2676,6 +2676,43 @@ def get_queued_and_processing_accounts() -> dict:
     return result
 
 
+def get_queue_account_details() -> dict:
+    """
+    Get full account details for all queued and processing accounts.
+
+    Returns:
+        Dictionary with 'queued' and 'processing' lists containing full account details.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT *
+        FROM monitored_accounts
+        WHERE scan_status IN (?, ?)
+        ORDER BY
+            CASE
+                WHEN scan_status = ? THEN 1
+                WHEN scan_status = ? THEN 2
+            END,
+            scan_start_time ASC
+    ''', (SCAN_STATUS_QUEUED, SCAN_STATUS_PROCESSING,
+          SCAN_STATUS_PROCESSING, SCAN_STATUS_QUEUED))
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    result = {'queued': [], 'processing': []}
+    for row in rows:
+        account = dict(row)
+        if account['scan_status'] == SCAN_STATUS_QUEUED:
+            result['queued'].append(account)
+        else:
+            result['processing'].append(account)
+
+    return result
+
+
 def get_status_counts(stuck_timeout_minutes: int = 5) -> dict:
     """
     Get counts of accounts by scan status, including stuck accounts.
