@@ -587,9 +587,10 @@ def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[obje
     yield _sse_log("-" * 40)
     yield _sse_log("Scanning Issues and Discussions for high-intent keywords...")
 
-    for idx, repo in enumerate(repos_to_scan[:5], 1):  # Top 5 repos for issues
+    repos_per_phase = getattr(Config, 'REPOS_PER_PHASE', 3)
+    for idx, repo in enumerate(repos_to_scan[:repos_per_phase], 1):
         repo_name = repo.get('name')
-        yield _sse_log(f"  [{idx}/5] Scanning issues in: {repo_name}")
+        yield _sse_log(f"  [{idx}/{repos_per_phase}] Scanning issues in: {repo_name}")
 
         for log_msg, signal in _scan_rfc_discussion(org_login, repo_name, company_name, since_timestamp=last_scanned_at):
             if log_msg:
@@ -612,11 +613,11 @@ def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[obje
     yield _sse_log("-" * 40)
     yield _sse_log("Checking for i18n libraries WITHOUT locale folders...")
 
-    for idx, repo in enumerate(repos_to_scan[:5], 1):  # Top 5 repos
+    for idx, repo in enumerate(repos_to_scan[:repos_per_phase], 1):
         repo_name = repo.get('name')
         is_fork = repo.get('fork', False)
         fork_indicator = " (fork)" if is_fork else ""
-        yield _sse_log(f"  [{idx}/5] Scanning dependencies in: {repo_name}{fork_indicator}")
+        yield _sse_log(f"  [{idx}/{repos_per_phase}] Scanning dependencies in: {repo_name}{fork_indicator}")
 
         for log_msg, signal in _scan_dependency_injection(org_login, repo_name, company_name, is_fork=is_fork):
             if log_msg:
@@ -636,11 +637,11 @@ def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[obje
     yield _sse_log("-" * 40)
     yield _sse_log("Checking for mobile i18n infrastructure without translations...")
 
-    for idx, repo in enumerate(repos_to_scan[:5], 1):  # Top 5 repos
+    for idx, repo in enumerate(repos_to_scan[:repos_per_phase], 1):
         repo_name = repo.get('name')
         is_fork = repo.get('fork', False)
         fork_indicator = " (fork)" if is_fork else ""
-        yield _sse_log(f"  [{idx}/5] Scanning mobile architecture in: {repo_name}{fork_indicator}")
+        yield _sse_log(f"  [{idx}/{repos_per_phase}] Scanning mobile architecture in: {repo_name}{fork_indicator}")
 
         for log_msg, signal in _scan_mobile_architecture(org_login, repo_name, company_name, is_fork=is_fork):
             if log_msg:
@@ -663,11 +664,11 @@ def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[obje
     yield _sse_log("-" * 40)
     yield _sse_log("Checking for i18n routing config without translations...")
 
-    for idx, repo in enumerate(repos_to_scan[:5], 1):  # Top 5 repos
+    for idx, repo in enumerate(repos_to_scan[:repos_per_phase], 1):
         repo_name = repo.get('name')
         is_fork = repo.get('fork', False)
         fork_indicator = " (fork)" if is_fork else ""
-        yield _sse_log(f"  [{idx}/5] Scanning framework configs in: {repo_name}{fork_indicator}")
+        yield _sse_log(f"  [{idx}/{repos_per_phase}] Scanning framework configs in: {repo_name}{fork_indicator}")
 
         for log_msg, signal in _scan_framework_configs(org_login, repo_name, company_name, is_fork=is_fork):
             if log_msg:
@@ -690,9 +691,9 @@ def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[obje
     yield _sse_log("-" * 40)
     yield _sse_log("Checking documentation for i18n intent signals...")
 
-    for idx, repo in enumerate(repos_to_scan[:5], 1):  # Top 5 repos
+    for idx, repo in enumerate(repos_to_scan[:repos_per_phase], 1):
         repo_name = repo.get('name')
-        yield _sse_log(f"  [{idx}/5] Scanning documentation in: {repo_name}")
+        yield _sse_log(f"  [{idx}/{repos_per_phase}] Scanning documentation in: {repo_name}")
 
         for log_msg, signal in _scan_documentation_files(org_login, repo_name, company_name):
             if log_msg:
@@ -715,9 +716,9 @@ def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[obje
     yield _sse_log("-" * 40)
     yield _sse_log("Scanning for WIP i18n branches and unmerged PRs...")
 
-    for idx, repo in enumerate(repos_to_scan[:5], 1):  # Top 5 repos
+    for idx, repo in enumerate(repos_to_scan[:repos_per_phase], 1):
         repo_name = repo.get('name')
-        yield _sse_log(f"  [{idx}/5] Scanning branches in: {repo_name}")
+        yield _sse_log(f"  [{idx}/{repos_per_phase}] Scanning branches in: {repo_name}")
 
         for log_msg, signal in _scan_ghost_branches(org_login, repo_name, company_name, since_timestamp=last_scanned_at):
             if log_msg:
@@ -742,29 +743,46 @@ def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[obje
         })
 
     # Phase 5b: Enhanced Heuristics Scan (Global Expansion Intent)
-    yield _sse_log("")
-    yield _sse_log("PHASE 5b: Enhanced Heuristics Scan (Global Expansion Intent)")
-    yield _sse_log("-" * 40)
-    yield _sse_log("Running 10 enhanced heuristics for global expansion signals...")
+    # PERFORMANCE OPTIMIZATION: Skip this expensive phase if we already have strong primary signals
+    # Primary signals (dependency injection, RFC discussion, smoking gun fork) are sufficient for tier classification
+    primary_signal_count = (
+        scan_results['signal_summary']['dependency_injection']['count'] +
+        scan_results['signal_summary']['rfc_discussion']['count'] +
+        scan_results['signal_summary']['smoking_gun_fork']['count'] +
+        scan_results['signal_summary']['ghost_branch']['count']
+    )
 
     enhanced_count = 0
-    for log_msg, signal in run_enhanced_heuristics(org_login, org_data, repos_to_scan):
-        if log_msg:
-            yield _sse_log(log_msg)
-        if signal:
-            scan_results['signals'].append(signal)
-            scan_results['signal_summary']['enhanced_heuristics']['hits'].append(signal)
-            scan_results['signal_summary']['enhanced_heuristics']['count'] += 1
-            enhanced_count += 1
+    if primary_signal_count >= 2:
+        # We have enough strong signals - skip enhanced heuristics to save API calls
+        yield _sse_log("")
+        yield _sse_log("PHASE 5b: Enhanced Heuristics Scan (SKIPPED)")
+        yield _sse_log("-" * 40)
+        yield _sse_log(f"Skipping: Already found {primary_signal_count} strong primary signals")
+        yield _sse_log("Enhanced heuristics not needed for tier classification")
+    else:
+        yield _sse_log("")
+        yield _sse_log("PHASE 5b: Enhanced Heuristics Scan (Global Expansion Intent)")
+        yield _sse_log("-" * 40)
+        yield _sse_log("Running 10 enhanced heuristics for global expansion signals...")
 
-            # Categorize by type
-            signal_type = signal.get('type', 'unknown')
-            if signal_type in scan_results['signal_summary']['enhanced_heuristics']['by_type']:
-                scan_results['signal_summary']['enhanced_heuristics']['by_type'][signal_type].append(signal)
+        for log_msg, signal in run_enhanced_heuristics(org_login, org_data, repos_to_scan):
+            if log_msg:
+                yield _sse_log(log_msg)
+            if signal:
+                scan_results['signals'].append(signal)
+                scan_results['signal_summary']['enhanced_heuristics']['hits'].append(signal)
+                scan_results['signal_summary']['enhanced_heuristics']['count'] += 1
+                enhanced_count += 1
 
-            yield _sse_signal(signal)
+                # Categorize by type
+                signal_type = signal.get('type', 'unknown')
+                if signal_type in scan_results['signal_summary']['enhanced_heuristics']['by_type']:
+                    scan_results['signal_summary']['enhanced_heuristics']['by_type'][signal_type].append(signal)
 
-    yield _sse_log(f"Enhanced Heuristics scan complete: {enhanced_count} signals")
+                yield _sse_signal(signal)
+
+        yield _sse_log(f"Enhanced Heuristics scan complete: {enhanced_count} signals")
 
     # Phase 6: Intent Score Calculation
     yield _sse_log("")

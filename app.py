@@ -634,8 +634,11 @@ def trigger_gsheet_webhook(event_type: str, company_data: dict) -> None:
 # THREAD POOL EXECUTOR - Concurrent scan processing with DB-backed state
 # =============================================================================
 
-# Configurable number of workers (default 5)
-MAX_SCAN_WORKERS = int(os.environ.get('SCAN_WORKERS', 5))
+# Configurable number of workers (default 20)
+# Increased from 5 to 20 to improve queue processing throughput
+# With 4000+ items in queue, 5 workers would take ~33 days
+# With 20 workers, we can process ~4x faster (assuming sufficient API tokens)
+MAX_SCAN_WORKERS = int(os.environ.get('SCAN_WORKERS', 20))
 
 # Thread pool executor for concurrent scans
 _executor = None
