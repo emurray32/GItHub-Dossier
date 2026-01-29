@@ -587,7 +587,7 @@ def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[obje
     yield _sse_log("-" * 40)
     yield _sse_log("Scanning Issues and Discussions for high-intent keywords...")
 
-    repos_per_phase = getattr(Config, 'REPOS_PER_PHASE', 3)
+    repos_per_phase = getattr(Config, 'REPOS_PER_PHASE', 5)
     for idx, repo in enumerate(repos_to_scan[:repos_per_phase], 1):
         repo_name = repo.get('name')
         yield _sse_log(f"  [{idx}/{repos_per_phase}] Scanning issues in: {repo_name}")
@@ -743,46 +743,29 @@ def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[obje
         })
 
     # Phase 5b: Enhanced Heuristics Scan (Global Expansion Intent)
-    # PERFORMANCE OPTIMIZATION: Skip this expensive phase if we already have strong primary signals
-    # Primary signals (dependency injection, RFC discussion, smoking gun fork) are sufficient for tier classification
-    primary_signal_count = (
-        scan_results['signal_summary']['dependency_injection']['count'] +
-        scan_results['signal_summary']['rfc_discussion']['count'] +
-        scan_results['signal_summary']['smoking_gun_fork']['count'] +
-        scan_results['signal_summary']['ghost_branch']['count']
-    )
+    yield _sse_log("")
+    yield _sse_log("PHASE 5b: Enhanced Heuristics Scan (Global Expansion Intent)")
+    yield _sse_log("-" * 40)
+    yield _sse_log("Running 10 enhanced heuristics for global expansion signals...")
 
     enhanced_count = 0
-    if primary_signal_count >= 2:
-        # We have enough strong signals - skip enhanced heuristics to save API calls
-        yield _sse_log("")
-        yield _sse_log("PHASE 5b: Enhanced Heuristics Scan (SKIPPED)")
-        yield _sse_log("-" * 40)
-        yield _sse_log(f"Skipping: Already found {primary_signal_count} strong primary signals")
-        yield _sse_log("Enhanced heuristics not needed for tier classification")
-    else:
-        yield _sse_log("")
-        yield _sse_log("PHASE 5b: Enhanced Heuristics Scan (Global Expansion Intent)")
-        yield _sse_log("-" * 40)
-        yield _sse_log("Running 10 enhanced heuristics for global expansion signals...")
+    for log_msg, signal in run_enhanced_heuristics(org_login, org_data, repos_to_scan):
+        if log_msg:
+            yield _sse_log(log_msg)
+        if signal:
+            scan_results['signals'].append(signal)
+            scan_results['signal_summary']['enhanced_heuristics']['hits'].append(signal)
+            scan_results['signal_summary']['enhanced_heuristics']['count'] += 1
+            enhanced_count += 1
 
-        for log_msg, signal in run_enhanced_heuristics(org_login, org_data, repos_to_scan):
-            if log_msg:
-                yield _sse_log(log_msg)
-            if signal:
-                scan_results['signals'].append(signal)
-                scan_results['signal_summary']['enhanced_heuristics']['hits'].append(signal)
-                scan_results['signal_summary']['enhanced_heuristics']['count'] += 1
-                enhanced_count += 1
+            # Categorize by type
+            signal_type = signal.get('type', 'unknown')
+            if signal_type in scan_results['signal_summary']['enhanced_heuristics']['by_type']:
+                scan_results['signal_summary']['enhanced_heuristics']['by_type'][signal_type].append(signal)
 
-                # Categorize by type
-                signal_type = signal.get('type', 'unknown')
-                if signal_type in scan_results['signal_summary']['enhanced_heuristics']['by_type']:
-                    scan_results['signal_summary']['enhanced_heuristics']['by_type'][signal_type].append(signal)
+            yield _sse_signal(signal)
 
-                yield _sse_signal(signal)
-
-        yield _sse_log(f"Enhanced Heuristics scan complete: {enhanced_count} signals")
+    yield _sse_log(f"Enhanced Heuristics scan complete: {enhanced_count} signals")
 
     # Phase 6: Intent Score Calculation
     yield _sse_log("")
