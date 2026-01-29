@@ -854,7 +854,7 @@
             <div class="bulk-import-tab-content" id="csvTab">
                 <div class="file-upload-area" id="fileUploadArea" onclick="document.getElementById('csvFileInput').click()">
                     <span class="file-upload-label">📁 Choose CSV File or Drag Here</span>
-                    <span class="file-upload-hint">CSV should have a "company_name" column. Optional: "annual_revenue", "website"</span>
+                    <span class="file-upload-hint">CSV should have "Account Name", "Company Name", "Company", or "Account" column. Optional: "annual_revenue", "website"</span>
                     <button type="button" class="csv-upload-btn">Select File</button>
                 </div>
                 <input type="file" id="csvFileInput" accept=".csv" onchange="handleCSVFile(event)">
@@ -1015,7 +1015,7 @@
                     const companies = results.data
                         .map(row => {
                             // Find company name column (try multiple common names)
-                            const companyName = row['company_name'] || row['name'] || row['company'] || row['company name'];
+                            const companyName = row['account name'] || row['company name'] || row['company'] || row['account'] || row['company_name'] || row['name'];
                             if (!companyName || !companyName.trim()) return null;
 
                             // Find optional fields
@@ -1024,7 +1024,7 @@
 
                             // Collect metadata (all other fields)
                             const metadata = {};
-                            const knownFields = new Set(['company_name', 'name', 'company', 'company name', 'annual_revenue', 'revenue', 'annual revenue', 'estimated_revenue', 'website', 'url', 'company_website', 'company website', 'site']);
+                            const knownFields = new Set(['account name', 'company name', 'company', 'account', 'company_name', 'name', 'annual_revenue', 'revenue', 'annual revenue', 'estimated_revenue', 'website', 'url', 'company_website', 'company website', 'site']);
                             for (const [key, value] of Object.entries(row)) {
                                 if (!knownFields.has(key.toLowerCase()) && value && value.trim()) {
                                     metadata[key] = value.trim();
@@ -1164,11 +1164,11 @@
         const header = lines[0].split(',').map(h => stripQuotes(h).toLowerCase());
         const originalHeader = lines[0].split(',').map(h => stripQuotes(h)); // Preserve original case for metadata keys
         const companyNameIndex = header.findIndex(h =>
-            h === 'company_name' || h === 'name' || h === 'company' || h === 'company name'
+            h === 'account name' || h === 'company name' || h === 'company' || h === 'account' || h === 'company_name' || h === 'name'
         );
 
         if (companyNameIndex === -1) {
-            throw new Error('CSV must have a "company_name", "name", or "company" column');
+            throw new Error('CSV must have "Account Name", "Company Name", "Company", or "Account" column');
         }
 
         // Find annual_revenue column (optional)
