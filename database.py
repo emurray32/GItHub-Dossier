@@ -857,7 +857,14 @@ def calculate_tier_from_scan(scan_data: dict) -> tuple[int, str]:
     # =========================================================================
     # TIER 2: PREPARING (GOLDILOCKS) - i18n libraries WITHOUT locale folders
     # =========================================================================
-    if dependency_count > 0:
+    # Count total distinct signal types for multi-signal requirement
+    total_signal_types = sum(1 for s in [rfc_count, dependency_count, ghost_count] if s > 0)
+    
+    # Check for silver bullet (smoking gun fork) - this alone qualifies for Tier 2
+    smoking_gun_count = signal_summary.get('smoking_gun_fork', {}).get('count', 0)
+    has_silver_bullet = smoking_gun_count > 0
+    
+    if dependency_count > 0 and (has_silver_bullet or total_signal_types >= 2):
         dep_names = []
         for hit in dependency_hits:
             if isinstance(hit, dict):
@@ -888,6 +895,24 @@ def calculate_tier_from_scan(scan_data: dict) -> tuple[int, str]:
             evidence = "INFRASTRUCTURE READY: i18n library installed but NO translations found."
         return TIER_PREPARING, evidence
 
+    # Single dependency signal without silver bullet -> downgrade to TIER 1 (Thinking)
+    # Rationale: One i18n library alone could be a dev doing things right, not org investment
+    if dependency_count > 0 and not has_silver_bullet and total_signal_types < 2:
+        dep_names = []
+        dependency_hits = signal_summary.get('dependency_injection', {}).get('hits', [])
+        for hit in dependency_hits:
+            if isinstance(hit, dict):
+                libs = hit.get('libraries_found', [])
+                if libs:
+                    dep_names.extend(libs)
+                else:
+                    lib_name = hit.get('library', hit.get('name', ''))
+                    if lib_name:
+                        dep_names.append(lib_name)
+        lib_list = ', '.join(dep_names[:3]) if dep_names else 'i18n library'
+        evidence = f"Found {lib_list} (single signal - needs corroborating evidence for Hot Lead)"
+        return TIER_THINKING, evidence
+    
     # =========================================================================
     # TIER 1: THINKING - RFC discussions OR Ghost Branches found
     # =========================================================================
@@ -959,6 +984,8 @@ def update_account_status(scan_data: dict, report_id: Optional[int] = None) -> d
 
     # Calculate tier and evidence
     new_tier, evidence_summary = calculate_tier_from_scan(scan_data)
+    # Guard against None tier values to prevent comparison errors
+    new_tier = new_tier if new_tier is not None else 0
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -979,6 +1006,7 @@ def update_account_status(scan_data: dict, report_id: Optional[int] = None) -> d
 
     if existing:
         existing_tier = existing['current_tier']
+        existing_tier = existing_tier if existing_tier is not None else 0
         tier_changed = existing_tier != new_tier
 
         if tier_changed:

@@ -79,6 +79,38 @@ def _safe_json_parse(response: requests.Response, default=None):
         return default
 
 
+
+def _classify_company_size(scan_results: dict) -> str:
+    """
+    Classify company size using GitHub-native heuristics.
+    Returns: 'small' (< ~50 people), 'medium' (50-500), 'large' (500+), 'enterprise' (mega-corp)
+    """
+    total_stars = scan_results.get('total_stars', 0)
+    public_repos = scan_results.get('org_public_repos', 0)
+    if total_stars > 20000 or public_repos > 400:
+        return 'enterprise'
+    elif total_stars > 5000 or public_repos > 100:
+        return 'large'
+    elif total_stars > 500 or public_repos > 20:
+        return 'medium'
+    else:
+        return 'small'
+
+
+def _get_size_weight(company_size: str) -> float:
+    """
+    Return a scoring weight multiplier based on company size.
+    Medium companies (50-500 employees proxy) get the highest weight.
+    """
+    weights = {
+        'small': 0.6,
+        'medium': 1.2,
+        'large': 1.0,
+        'enterprise': 0.7,
+    }
+    return weights.get(company_size, 1.0)
+
+
 def _is_open_protocol_project(org_description: Optional[str]) -> Optional[str]:
     """
     Check if an organization description matches open protocol/decentralized project patterns.
@@ -2481,7 +2513,13 @@ def _calculate_intent_score(scan_results: dict) -> int:
         if ghost_count > 0:
             bonus = 10  # Max bonus if actively working on it
 
-        return min(base_score + bonus, Config.GOLDILOCKS_SCORES.get('preparing_max', 100))
+        # Apply company size weighting
+        company_size = _classify_company_size(scan_results)
+        size_weight = _get_size_weight(company_size)
+        weighted_score = int((base_score + bonus) * size_weight)
+        scan_results['company_size_class'] = company_size
+        scan_results['size_weight'] = size_weight
+        return min(weighted_score, Config.GOLDILOCKS_SCORES.get('preparing_max', 100))
 
     # ============================================================
     # MEGA-CORP WITH WEAK SIGNALS ONLY
@@ -2612,7 +2650,13 @@ def _calculate_intent_score(scan_results: dict) -> int:
         if high_intent_enhanced > 0:
             bonus += min(high_intent_enhanced * 5, 15)
 
-        return min(base_score + bonus, 60)
+        # Apply company size weighting to thinking score
+        company_size = _classify_company_size(scan_results)
+        size_weight = _get_size_weight(company_size)
+        weighted_score = int((base_score + bonus) * size_weight)
+        scan_results['company_size_class'] = company_size
+        scan_results['size_weight'] = size_weight
+        return min(weighted_score, 60)
 
     # ============================================================
     # MEGA-CORP HEURISTIC: Detect high-maturity orgs without any signals at all

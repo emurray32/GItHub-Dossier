@@ -789,6 +789,7 @@ def perform_background_scan(company_name: str):
             # Store the error for user visibility instead of silently failing
             scan_error = f"Tier classification failed: {str(e)}"
             print(f"[WORKER] {scan_error}")
+            import traceback; traceback.print_exc()
 
         print(f"[WORKER] Completed scan for {company_name} in {duration:.1f}s")
 
@@ -4463,47 +4464,86 @@ def api_rules_explain_all():
 
 def _scheduled_rules_update():
     """
-    Scheduled task to update rules timestamp at 7am EST daily.
+    Watches rules/heuristics/scanner files for changes and updates the
+    rules timestamp whenever a change is detected. Also does a daily
+    update at 7am EST as a fallback.
 
-    This runs in a background thread and updates the timestamp to indicate
-    rules are current. In a production system, this could also pull rules
-    from a remote config or notify the team.
+    This allows rapid iteration — edit a rule or heuristic, and the
+    timestamp updates within seconds instead of waiting for the next day.
     """
     import pytz
-    from datetime import time as dt_time
+    import hashlib
+    from datetime import time as dt_time, timedelta
 
     est = pytz.timezone('US/Eastern')
 
+    # Files to watch for changes
+    WATCHED_FILES = [
+        'config.py',
+        'database.py',
+        'monitors/scanner.py',
+        'monitors/enhanced_heuristics.py',
+        'monitors/discovery.py',
+        'monitors/web_analyzer.py',
+        'monitors/webscraper_utils.py',
+    ]
+
+    def _get_file_hashes():
+        """Get a dict of file path -> content hash for all watched files."""
+        hashes = {}
+        for filepath in WATCHED_FILES:
+            try:
+                with open(filepath, 'rb') as f:
+                    hashes[filepath] = hashlib.md5(f.read()).hexdigest()
+            except FileNotFoundError:
+                hashes[filepath] = None
+        return hashes
+
+    # Initialize with current file hashes
+    last_hashes = _get_file_hashes()
+    print(f"[RULES] File watcher initialized, monitoring {len(WATCHED_FILES)} files for changes")
+
+    CHECK_INTERVAL = 5  # Check for file changes every 5 seconds
+    
     while True:
         try:
+            # Check for file changes
+            current_hashes = _get_file_hashes()
+            changed_files = []
+            for filepath in WATCHED_FILES:
+                if current_hashes.get(filepath) != last_hashes.get(filepath):
+                    changed_files.append(filepath)
+            
+            if changed_files:
+                last_hashes = current_hashes
+                _update_rules_timestamp()
+                print(f"[RULES] Detected changes in: {', '.join(changed_files)} — rules timestamp updated at {datetime.now(est).isoformat()}")
+            
+            # Also do the daily 7am EST update as a fallback
             now_est = datetime.now(est)
-            target_time = now_est.replace(hour=7, minute=0, second=0, microsecond=0)
+            # Check if it's within the first CHECK_INTERVAL seconds of 7:00 AM
+            target_7am = now_est.replace(hour=7, minute=0, second=0, microsecond=0)
+            diff = abs((now_est - target_7am).total_seconds())
+            if diff < CHECK_INTERVAL:
+                _update_rules_timestamp()
+                print(f"[RULES] Daily 7am EST rules timestamp updated: {now_est.isoformat()}")
+                # Sleep past the 7am window to avoid duplicate daily updates
+                time.sleep(CHECK_INTERVAL + 1)
+                last_hashes = _get_file_hashes()  # Refresh hashes after sleep
+                continue
 
-            # If we're past 7am today, schedule for tomorrow
-            if now_est >= target_time:
-                target_time = target_time + timedelta(days=1)
-
-            # Calculate seconds until target time
-            seconds_until_target = (target_time - now_est).total_seconds()
-
-            print(f"[RULES] Next rules update scheduled for {target_time.strftime('%Y-%m-%d %H:%M:%S %Z')}")
-            time.sleep(seconds_until_target)
-
-            # Update the timestamp
-            _update_rules_timestamp()
-            print(f"[RULES] Rules timestamp updated at 7am EST: {datetime.now(est).isoformat()}")
+            time.sleep(CHECK_INTERVAL)
 
         except Exception as e:
-            print(f"[RULES] Error in scheduled update: {e}")
-            # Sleep for an hour on error and retry
-            time.sleep(3600)
+            print(f"[RULES] Error in rules watcher: {e}")
+            # Sleep briefly on error and retry
+            time.sleep(30)
 
 
 def start_rules_scheduler():
-    """Start the rules update scheduler in a background daemon thread."""
+    """Start the rules file watcher and scheduler in a background daemon thread."""
     thread = threading.Thread(target=_scheduled_rules_update, daemon=True, name="RulesScheduler")
     thread.start()
-
 
 def _watchdog_worker():
     """

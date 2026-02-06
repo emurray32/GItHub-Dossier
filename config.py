@@ -354,7 +354,7 @@ class Config:
     ]
 
     # Minimum word context window for NLP filtering
-    RFC_NLP_CONTEXT_WINDOW = 50  # words before and after keyword
+    RFC_NLP_CONTEXT_WINDOW = 100  # words before and after keyword (widened from 50 to reduce CSS translate() false positives in issue titles)
 
     # ============================================================
     # SIGNAL 2: DEPENDENCY INJECTION (Preparing Phase)
