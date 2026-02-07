@@ -1086,6 +1086,7 @@ def update_account_status(scan_data: dict, report_id: Optional[int] = None) -> d
         'report_id': report_id,
         'webhook_event': webhook_event,
         'revenue': existing['annual_revenue'] if existing else None,
+        'website': existing['website'] if existing else None,
         'archived': archived,
         'unarchived': unarchived
     }

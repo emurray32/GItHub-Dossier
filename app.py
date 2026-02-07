@@ -777,7 +777,8 @@ def perform_background_scan(company_name: str):
                     'tier_name': tier_name,
                     'evidence': result.get('evidence', ''),
                     'github_org': scan_data.get('org_login', ''),
-                    'revenue': result.get('revenue')
+                    'revenue': result.get('revenue'),
+                    'website': result.get('website', '')
                 }
                 # Enrich with report details and signals
                 webhook_data = enrich_webhook_data(webhook_data, report_id)
