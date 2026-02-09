@@ -1,0 +1,778 @@
+{% extends "base.html" %}
+
+{% block title %}Rule Set - Lead Machine{% endblock %}
+
+{% block breadcrumb %}
+<nav class="breadcrumb-container" aria-label="Breadcrumb">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item">
+            <a href="{{ url_for('accounts') }}">
+                <svg class="breadcrumb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                    <polyline points="9 22 9 12 15 12 15 22"></polyline>
+                </svg>
+                Accounts
+            </a>
+        </li>
+        <li class="breadcrumb-separator">/</li>
+        <li class="breadcrumb-item active" aria-current="page">Rule Set</li>
+    </ol>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <header class="page-header">
+        <div class="page-header-content">
+            <div class="page-header-text">
+                <h1>Scanning Rule Set</h1>
+                <p class="subtitle">Detection rules and scoring configuration for identifying i18n signals</p>
+            </div>
+            <div class="page-header-actions">
+                <a href="/api/rules/download" class="btn-download" title="Download rules for LLM">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="7 10 12 15 17 10"></polyline>
+                        <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                    <span>Download Rules</span>
+                </a>
+                <div class="rules-meta">
+                    <span id="rules-last-updated" class="rules-timestamp">Loading...</span>
+                    <button id="rules-refresh-btn" class="rules-refresh-btn" title="Mark rules as reviewed">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="23 4 23 10 17 10"></polyline>
+                            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Loading State -->
+    <div class="loading-state" id="loading-state" aria-live="polite">
+        <div class="loading-spinner" aria-hidden="true"></div>
+        <p>Loading rules...</p>
+    </div>
+
+    <!-- Rules Content -->
+    <div id="rules-content" class="rules-content hidden">
+        <!-- Will be populated by JavaScript -->
+    </div>
+</div>
+
+<style>
+/* Page Header */
+.page-header {
+    margin-bottom: 2rem;
+}
+
+.page-header-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.page-header-text h1 {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 0.25rem;
+}
+
+.page-header-text .subtitle {
+    color: var(--text-secondary);
+    font-size: 0.95rem;
+}
+
+.page-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.btn-download {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.625rem 1rem;
+    background: var(--accent-color);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    text-decoration: none;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.btn-download:hover {
+    background: var(--accent-hover);
+    color: white;
+    transform: translateY(-1px);
+}
+
+.btn-download svg {
+    width: 18px;
+    height: 18px;
+}
+
+.rules-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.rules-timestamp {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    background: var(--bg-secondary);
+    padding: 0.375rem 0.75rem;
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+}
+
+.rules-refresh-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    cursor: pointer;
+    color: var(--text-secondary);
+    transition: all var(--transition-fast);
+}
+
+.rules-refresh-btn:hover {
+    background: var(--bg-secondary);
+    color: var(--accent-color);
+    border-color: var(--accent-color);
+}
+
+.rules-refresh-btn.refreshing svg {
+    animation: spin 1s linear infinite;
+}
+
+.rules-refresh-btn svg {
+    width: 18px;
+    height: 18px;
+}
+
+/* Loading State */
+.loading-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 4rem 2rem;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+}
+
+.loading-spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid var(--border-color);
+    border-top-color: var(--accent-color);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-bottom: 1rem;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Rules Content Layout */
+.rules-content {
+    display: grid;
+    gap: 1.5rem;
+}
+
+.rules-content.hidden {
+    display: none;
+}
+
+/* Summary Cards Row */
+.rules-summary-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 1.5rem;
+}
+
+/* Rules Card */
+.rules-card {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.rules-card-header {
+    padding: 1rem 1.25rem;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.rules-card-header h2 {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0;
+}
+
+.rules-card-body {
+    padding: 1.25rem;
+}
+
+/* Scoring Grid */
+.scoring-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 0.75rem;
+}
+
+.scoring-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    background: var(--bg-secondary);
+    border-radius: 8px;
+}
+
+.scoring-label {
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+}
+
+.scoring-value {
+    font-weight: 600;
+    color: var(--accent-color);
+    font-family: var(--font-mono);
+    font-size: 0.9rem;
+}
+
+/* Config Grid */
+.config-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 0.75rem;
+}
+
+.config-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    background: var(--bg-secondary);
+    border-radius: 8px;
+}
+
+.config-label {
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+}
+
+.config-value {
+    font-weight: 600;
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    font-size: 0.9rem;
+}
+
+/* Rules Categories Section */
+.rules-categories {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+    gap: 1.5rem;
+}
+
+.category-card {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.category-header {
+    padding: 1rem 1.25rem;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.category-header h3 {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0;
+}
+
+.phase-badge {
+    font-size: 0.6875rem;
+    font-weight: 500;
+    padding: 0.25rem 0.625rem;
+    border-radius: 4px;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.category-body {
+    padding: 1.25rem;
+}
+
+.category-description {
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    margin-bottom: 1rem;
+}
+
+.category-lookback {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    font-style: italic;
+    margin-bottom: 1rem;
+}
+
+/* Explain Button */
+.explain-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.625rem 1rem;
+    margin-bottom: 1rem;
+    background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+    border: 1px solid #bbf7d0;
+    border-radius: 8px;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: #166534;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    width: 100%;
+    text-align: left;
+}
+
+.explain-btn:hover {
+    background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%);
+    border-color: #86efac;
+}
+
+.explain-btn:disabled {
+    opacity: 0.7;
+    cursor: wait;
+}
+
+.explain-btn.open {
+    border-radius: 8px 8px 0 0;
+    margin-bottom: 0;
+    border-bottom-color: transparent;
+}
+
+.explain-btn .icon {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+}
+
+.explain-btn .chevron {
+    width: 14px;
+    height: 14px;
+    margin-left: auto;
+    flex-shrink: 0;
+    transition: transform var(--transition-fast);
+}
+
+.explain-btn.open .chevron {
+    transform: rotate(180deg);
+}
+
+/* Explanation Dropdown */
+.explanation-dropdown {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease, padding 0.3s ease;
+    background: #f0fdf4;
+    border: 1px solid #bbf7d0;
+    border-top: none;
+    border-radius: 0 0 8px 8px;
+    margin-bottom: 1rem;
+}
+
+.explanation-dropdown.open {
+    max-height: 300px;
+    padding: 1rem;
+}
+
+.explanation-text {
+    font-size: 0.875rem;
+    line-height: 1.6;
+    color: #14532d;
+}
+
+.explanation-text.loading {
+    color: #166534;
+    font-style: italic;
+}
+
+.explanation-loading {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.explanation-loading::before {
+    content: '';
+    width: 14px;
+    height: 14px;
+    border: 2px solid #86efac;
+    border-top-color: #16a34a;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+/* Rule Items (Tags) */
+.rule-items {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.rule-item {
+    display: inline-block;
+    padding: 0.375rem 0.75rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-family: var(--font-mono);
+    color: var(--text-secondary);
+    word-break: break-word;
+}
+
+/* Status Labels Section */
+.status-labels-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.status-label-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 0.875rem 1rem;
+    background: var(--bg-secondary);
+    border-radius: 8px;
+}
+
+.status-key {
+    font-weight: 600;
+    color: var(--text-primary);
+    min-width: 100px;
+    flex-shrink: 0;
+    font-size: 0.8125rem;
+    text-transform: uppercase;
+}
+
+.status-value {
+    color: var(--text-secondary);
+    line-height: 1.5;
+    font-size: 0.8125rem;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .page-header-content {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .page-header-actions {
+        justify-content: flex-start;
+    }
+
+    .rules-categories {
+        grid-template-columns: 1fr;
+    }
+
+    .rules-summary-row {
+        grid-template-columns: 1fr;
+    }
+
+    .scoring-grid,
+    .config-grid {
+        grid-template-columns: 1fr;
+    }
+}
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const rulesContent = document.getElementById('rules-content');
+    const loadingState = document.getElementById('loading-state');
+    const rulesLastUpdated = document.getElementById('rules-last-updated');
+    const rulesRefreshBtn = document.getElementById('rules-refresh-btn');
+
+    let explanationsCache = {};
+
+    // Map category names to rule keys for AI explanations
+    const categoryToRuleKey = {
+        'Signal 1: RFC & Discussion Keywords': 'rfc_keywords',
+        'Signal 2: Smoking Gun Libraries': 'smoking_gun_libs',
+        'Signal 2b: Smoking Gun Fork Repos': 'smoking_gun_fork_repos',
+        'Signal 2c: Linter Libraries': 'linter_libraries',
+        'Signal 2d: CMS i18n Libraries': 'cms_i18n_libs',
+        'Signal 3: Ghost Branch Patterns': 'ghost_branch_patterns',
+        'Signal 4: Documentation Intent Keywords': 'documentation_intent_keywords',
+        'Documentation Context Keywords': 'documentation_context_keywords',
+        'Exclusion Folders (Disqualifiers)': 'exclusion_folders',
+        'Source Locale Patterns (Goldilocks Exception)': 'source_locale_patterns',
+        'Dependency Files Scanned': 'dependency_injection_files',
+        'Framework Config Files': 'framework_config_files',
+        'Documentation Files Scanned': 'documentation_files',
+        'i18n Script Keywords': 'i18n_script_keywords',
+        'Build Script i18n Keywords': 'build_script_i18n_keywords',
+        'Open Protocol Disqualifiers': 'open_protocol_disqualifiers',
+        'High-Value Repo Patterns': 'high_value_patterns',
+        'Low-Value Repo Patterns': 'low_value_patterns',
+        'High-Value Languages': 'high_value_languages',
+        'Launched Indicators (Negative)': 'documentation_launched_indicators'
+    };
+
+    function formatTimestamp(isoString) {
+        const date = new Date(isoString);
+        return date.toLocaleString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit',
+            hour12: true
+        });
+    }
+
+    function getPhaseColor(phase) {
+        const colors = {
+            'THINKING': '#3b82f6',
+            'PREPARING': '#16a34a',
+            'ACTIVE': '#8b5cf6',
+            'LAUNCHED': '#dc2626',
+            'DISQUALIFIED': '#6b7280',
+            'SCORING': '#d97706'
+        };
+        return colors[phase] || '#64748b';
+    }
+
+    function getPhaseLabel(phase) {
+        const labels = {
+            'THINKING': 'Thinking Phase',
+            'PREPARING': 'Preparing Phase',
+            'ACTIVE': 'Active Phase',
+            'LAUNCHED': 'Already Launched',
+            'DISQUALIFIED': 'Disqualifier',
+            'SCORING': 'Scoring'
+        };
+        return labels[phase] || phase;
+    }
+
+    async function loadExplanation(ruleKey, explanationEl, btn) {
+        if (explanationsCache[ruleKey]) {
+            explanationEl.textContent = explanationsCache[ruleKey];
+            explanationEl.classList.remove('loading');
+            return;
+        }
+
+        explanationEl.innerHTML = '<span class="explanation-loading">Loading explanation...</span>';
+        explanationEl.classList.add('loading');
+        btn.disabled = true;
+
+        try {
+            const response = await fetch('/api/rules/explain', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ rules: [ruleKey] })
+            });
+            const data = await response.json();
+
+            if (data.explanations && data.explanations[ruleKey]) {
+                explanationsCache[ruleKey] = data.explanations[ruleKey];
+                explanationEl.textContent = data.explanations[ruleKey];
+            } else {
+                explanationEl.textContent = 'Unable to load explanation.';
+            }
+        } catch (error) {
+            console.error('Failed to load explanation:', error);
+            explanationEl.textContent = 'Failed to load explanation. Please try again.';
+        } finally {
+            explanationEl.classList.remove('loading');
+            btn.disabled = false;
+        }
+    }
+
+    window.toggleExplanation = function(btn) {
+        const card = btn.closest('.category-card');
+        const dropdown = card.querySelector('.explanation-dropdown');
+        const explanationEl = dropdown.querySelector('.explanation-text');
+        const ruleKey = btn.dataset.ruleKey;
+        const isOpen = dropdown.classList.contains('open');
+
+        if (isOpen) {
+            dropdown.classList.remove('open');
+            btn.classList.remove('open');
+        } else {
+            dropdown.classList.add('open');
+            btn.classList.add('open');
+            if (!explanationEl.textContent || explanationEl.classList.contains('loading')) {
+                loadExplanation(ruleKey, explanationEl, btn);
+            }
+        }
+    };
+
+    async function loadRules() {
+        try {
+            const response = await fetch('/api/rules');
+            const data = await response.json();
+
+            rulesLastUpdated.textContent = 'Updated: ' + formatTimestamp(data.last_updated);
+
+            let html = '';
+
+            // Summary Cards Row
+            html += '<div class="rules-summary-row">';
+
+            // Scoring Weights Card
+            html += '<div class="rules-card">';
+            html += '<div class="rules-card-header"><h2>Intent Score Weights</h2></div>';
+            html += '<div class="rules-card-body">';
+            html += '<div class="scoring-grid">';
+            for (const [key, value] of Object.entries(data.scoring.weights)) {
+                const label = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                html += `<div class="scoring-item"><span class="scoring-label">${label}</span><span class="scoring-value">${value} pts</span></div>`;
+            }
+            html += '</div>';
+            html += '<h4 style="margin: 1.25rem 0 0.75rem; font-size: 0.875rem; font-weight: 600; color: var(--text-secondary);">Goldilocks Scores</h4>';
+            html += '<div class="scoring-grid">';
+            for (const [key, value] of Object.entries(data.scoring.goldilocks_scores)) {
+                const label = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                html += `<div class="scoring-item"><span class="scoring-label">${label}</span><span class="scoring-value">${value}</span></div>`;
+            }
+            html += '</div>';
+            html += '</div></div>';
+
+            // Scan Configuration Card
+            html += '<div class="rules-card">';
+            html += '<div class="rules-card-header"><h2>Scan Configuration</h2></div>';
+            html += '<div class="rules-card-body">';
+            html += '<div class="config-grid">';
+            html += `<div class="config-item"><span class="config-label">Max Repos to Scan</span><span class="config-value">${data.scan_config.max_repos_to_scan}</span></div>`;
+            html += `<div class="config-item"><span class="config-label">Repo Inactivity Days</span><span class="config-value">${data.scan_config.repo_inactivity_days}</span></div>`;
+            html += `<div class="config-item"><span class="config-label">RFC Lookback Days</span><span class="config-value">${data.scan_config.rfc_lookback_days}</span></div>`;
+            html += `<div class="config-item"><span class="config-label">Doc Proximity Chars</span><span class="config-value">${data.scan_config.documentation_proximity_chars}</span></div>`;
+            html += '</div>';
+            html += '</div></div>';
+
+            html += '</div>'; // End summary row
+
+            // Categories Section
+            html += '<div class="rules-categories">';
+
+            for (const category of data.categories) {
+                const phaseColor = getPhaseColor(category.phase);
+                const phaseLabel = getPhaseLabel(category.phase);
+                const ruleKey = categoryToRuleKey[category.name] || '';
+
+                html += '<div class="category-card">';
+                html += '<div class="category-header">';
+                html += `<h3>${category.name}</h3>`;
+                html += `<span class="phase-badge" style="background-color: ${phaseColor}20; color: ${phaseColor}; border: 1px solid ${phaseColor}40;">${phaseLabel}</span>`;
+                html += '</div>';
+                html += '<div class="category-body">';
+                html += `<p class="category-description">${category.description}</p>`;
+
+                if (category.lookback_days) {
+                    html += `<p class="category-lookback">Lookback: ${category.lookback_days} days</p>`;
+                }
+
+                // Add "What does this mean?" dropdown
+                if (ruleKey) {
+                    html += `<button class="explain-btn" data-rule-key="${ruleKey}" onclick="toggleExplanation(this)">`;
+                    html += `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>`;
+                    html += `<span>What does this mean?</span>`;
+                    html += `<svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>`;
+                    html += `</button>`;
+                    html += `<div class="explanation-dropdown">`;
+                    html += `<div class="explanation-text"></div>`;
+                    html += `</div>`;
+                }
+
+                html += '<div class="rule-items">';
+                for (const item of category.items) {
+                    html += `<span class="rule-item">${item}</span>`;
+                }
+                html += '</div>';
+                html += '</div></div>';
+            }
+
+            html += '</div>'; // End categories
+
+            // Lead Status Labels Card
+            html += '<div class="rules-card">';
+            html += '<div class="rules-card-header"><h2>Lead Status Labels</h2></div>';
+            html += '<div class="rules-card-body">';
+            html += '<div class="status-labels-grid">';
+            for (const [key, value] of Object.entries(data.scoring.lead_status_labels)) {
+                html += `<div class="status-label-item"><span class="status-key">${key.toUpperCase()}</span><span class="status-value">${value}</span></div>`;
+            }
+            html += '</div>';
+            html += '</div></div>';
+
+            rulesContent.innerHTML = html;
+            loadingState.classList.add('hidden');
+            rulesContent.classList.remove('hidden');
+
+        } catch (error) {
+            console.error('Failed to load rules:', error);
+            loadingState.innerHTML = '<div class="rules-error">Failed to load rules. Please try again.</div>';
+        }
+    }
+
+    async function refreshRulesTimestamp() {
+        try {
+            rulesRefreshBtn.disabled = true;
+            rulesRefreshBtn.classList.add('refreshing');
+            const response = await fetch('/api/rules/refresh', { method: 'POST' });
+            const data = await response.json();
+            if (data.success) {
+                rulesLastUpdated.textContent = 'Updated: ' + formatTimestamp(data.last_updated);
+            }
+        } catch (error) {
+            console.error('Failed to refresh rules timestamp:', error);
+        } finally {
+            rulesRefreshBtn.disabled = false;
+            rulesRefreshBtn.classList.remove('refreshing');
+        }
+    }
+
+    rulesRefreshBtn.addEventListener('click', refreshRulesTimestamp);
+
+    // Load rules on page load
+    loadRules();
+});
+</script>
+{% endblock %}
