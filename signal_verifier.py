@@ -301,9 +301,10 @@ def apply_llm_verification(scan_data: dict) -> dict:
         scan_data['verification'] = verification
         return scan_data
     
-    api_key = os.environ.get('OPENAI_API_KEY', '')
-    if not api_key:
-        verification['llm_verification'] = 'SKIPPED - no API key'
+    api_key = os.environ.get('AI_INTEGRATIONS_OPENAI_API_KEY', '')
+    base_url = os.environ.get('AI_INTEGRATIONS_OPENAI_BASE_URL', '')
+    if not api_key or not base_url:
+        verification['llm_verification'] = 'SKIPPED - no API key or base URL'
         scan_data['verification'] = verification
         return scan_data
     
@@ -369,7 +370,7 @@ RESPOND WITH EXACTLY THIS JSON:
 }}"""
 
     try:
-        client = OpenAI(api_key=api_key)
+        client = OpenAI(api_key=api_key, base_url=base_url)
         response = client.chat.completions.create(
             model="gpt-4o-mini",  # Cost-effective model
             messages=[
