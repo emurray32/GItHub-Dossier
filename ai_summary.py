@@ -80,69 +80,85 @@ def _get_cold_email_instructions() -> str:
 """
 
 try:
+    from openai import OpenAI
+    OPENAI_AVAILABLE = True
+except ImportError:
+    OPENAI_AVAILABLE = False
+
+try:
     from google import genai
     GENAI_AVAILABLE = True
 except ImportError:
     GENAI_AVAILABLE = False
 
+AI_INTEGRATIONS_OPENAI_API_KEY = os.environ.get("AI_INTEGRATIONS_OPENAI_API_KEY")
+AI_INTEGRATIONS_OPENAI_BASE_URL = os.environ.get("AI_INTEGRATIONS_OPENAI_BASE_URL")
+
 
 def generate_analysis(scan_data: dict) -> Generator[str, None, dict]:
     """
     Generate AI-powered sales intelligence from 3-Signal scan data.
-
-    Args:
-        scan_data: The complete scan results dictionary.
-
-    Yields:
-        SSE-formatted progress messages.
-
-    Returns:
-        Analysis result dictionary with sales assets.
+    Uses OpenAI GPT-5-mini via Replit AI Integrations (primary),
+    falls back to Gemini, then rule-based analysis.
     """
     yield _sse_log("Initializing AI Sales Intelligence Engine...")
 
-    if not GENAI_AVAILABLE:
-        yield _sse_log("Warning: google-genai not installed, using fallback analysis")
-        analysis = _generate_fallback_analysis(scan_data)
-        yield _sse_data('ANALYSIS_COMPLETE', analysis)
-        return analysis
+    if OPENAI_AVAILABLE and AI_INTEGRATIONS_OPENAI_API_KEY and AI_INTEGRATIONS_OPENAI_BASE_URL:
+        yield _sse_log("Preparing 3-Signal data for OpenAI GPT-5-mini...")
+        prompt = _build_sales_intelligence_prompt(scan_data)
+        yield _sse_log("Sending to GPT-5-mini...")
 
-    if not Config.GEMINI_API_KEY:
-        yield _sse_log("Warning: GEMINI_API_KEY not configured, using fallback analysis")
-        analysis = _generate_fallback_analysis(scan_data)
-        yield _sse_data('ANALYSIS_COMPLETE', analysis)
-        return analysis
+        try:
+            client = OpenAI(
+                api_key=AI_INTEGRATIONS_OPENAI_API_KEY,
+                base_url=AI_INTEGRATIONS_OPENAI_BASE_URL
+            )
+            # the newest OpenAI model is "gpt-5" which was released August 7, 2025.
+            # do not change this unless explicitly requested by the user
+            response = client.chat.completions.create(
+                model="gpt-5-mini",
+                messages=[
+                    {"role": "system", "content": "You are a sales strategist for a Localization Platform. Return your analysis as valid JSON only, with no markdown formatting."},
+                    {"role": "user", "content": prompt}
+                ],
+                response_format={"type": "json_object"},
+                max_completion_tokens=8192
+            )
 
-    yield _sse_log("Preparing 3-Signal data for Gemini...")
+            yield _sse_log("Processing AI response...")
+            analysis = _parse_ai_response(response.choices[0].message.content, scan_data)
+            yield _sse_log("AI Sales Intelligence Complete (GPT-5-mini)")
+            yield _sse_data('ANALYSIS_COMPLETE', analysis)
+            return analysis
 
-    # Build prompt
-    prompt = _build_sales_intelligence_prompt(scan_data)
+        except Exception as e:
+            yield _sse_log(f"OpenAI error: {str(e)}")
+            yield _sse_log("Falling back to Gemini...")
 
-    yield _sse_log("Sending to Gemini 2.5 Flash...")
+    if GENAI_AVAILABLE and Config.GEMINI_API_KEY:
+        yield _sse_log("Preparing 3-Signal data for Gemini...")
+        prompt = _build_sales_intelligence_prompt(scan_data)
+        yield _sse_log("Sending to Gemini 2.5 Flash...")
 
-    try:
-        client = genai.Client(api_key=Config.GEMINI_API_KEY)
+        try:
+            client = genai.Client(api_key=Config.GEMINI_API_KEY)
+            response = client.models.generate_content(
+                model=Config.GEMINI_MODEL,
+                contents=prompt
+            )
+            yield _sse_log("Processing AI response...")
+            analysis = _parse_ai_response(response.text, scan_data)
+            yield _sse_log("AI Sales Intelligence Complete (Gemini)")
+            yield _sse_data('ANALYSIS_COMPLETE', analysis)
+            return analysis
 
-        response = client.models.generate_content(
-            model=Config.GEMINI_MODEL,
-            contents=prompt
-        )
+        except Exception as e:
+            yield _sse_log(f"Gemini error: {str(e)}")
 
-        yield _sse_log("Processing AI response...")
-
-        analysis = _parse_gemini_response(response.text, scan_data)
-
-        yield _sse_log("AI Sales Intelligence Complete")
-        yield _sse_data('ANALYSIS_COMPLETE', analysis)
-
-        return analysis
-
-    except Exception as e:
-        yield _sse_log(f"AI analysis error: {str(e)}")
-        yield _sse_log("Falling back to rule-based analysis...")
-        analysis = _generate_fallback_analysis(scan_data)
-        yield _sse_data('ANALYSIS_COMPLETE', analysis)
-        return analysis
+    yield _sse_log("Using rule-based analysis...")
+    analysis = _generate_fallback_analysis(scan_data)
+    yield _sse_data('ANALYSIS_COMPLETE', analysis)
+    return analysis
 
 
 def _build_sales_intelligence_prompt(scan_data: dict) -> str:
@@ -304,8 +320,8 @@ Generate a JSON response with these fields. USE BOLD, PUNCHY, NON-TECHNICAL LANG
     return prompt
 
 
-def _parse_gemini_response(response_text: str, scan_data: dict) -> dict:
-    """Parse Gemini response into structured analysis."""
+def _parse_ai_response(response_text: str, scan_data: dict) -> dict:
+    """Parse AI response (OpenAI or Gemini) into structured analysis."""
     try:
         # Clean up response text
         text = response_text.strip()
@@ -319,38 +335,33 @@ def _parse_gemini_response(response_text: str, scan_data: dict) -> dict:
 
         analysis = json.loads(text)
 
-        # Map to legacy fields for UI compatibility
-        analysis['pain_point_analysis'] = analysis.get('phase_assessment', {}).get('conclusion', 'Phase analysis complete.')
+        phase = analysis.get('phase_assessment', {})
+        analysis['pain_point_analysis'] = phase.get('bdr_explanation', phase.get('conclusion', 'Phase analysis complete.'))
         analysis['tech_stack_hook'] = analysis.get('conversation_angle', 'Discuss their i18n journey.')
 
-        # Map timing to semantic analysis
         timing = analysis.get('timing_window', {})
+        urgency = timing.get('urgency', '')
         analysis['semantic_analysis'] = {
-            'severity': 'major' if timing.get('urgency') == 'Strike Now' else 'minor',
+            'severity': 'major' if urgency in ('CALL NOW', 'Strike Now') else 'minor',
             'primary_pain_category': 'pre_launch_intent',
             'description': timing.get('reasoning', 'Timing analysis complete.')
         }
 
-        # Map email draft
         if 'cold_email_draft' in analysis:
             analysis['email_draft'] = analysis['cold_email_draft']
 
-        # Map talking points to key findings
-        if 'key_talking_points' in analysis:
+        if 'key_talking_points' in analysis and 'key_findings' not in analysis:
             analysis['key_findings'] = [
                 {'finding': point, 'significance': 'high', 'sales_angle': 'Use in outreach'}
                 for point in analysis['key_talking_points']
             ]
 
-        # Ensure all required fields exist
         analysis.setdefault('compliance_risk', {'level': 'low', 'description': 'N/A for pre-launch detection'})
         analysis.setdefault('top_prospects', [])
         analysis.setdefault('outreach_suggestions', [])
         analysis.setdefault('next_steps', ['Review signals', 'Draft personalized outreach', 'Research decision makers'])
 
-        # Add metadata
-        analysis['_source'] = 'gemini'
-        analysis['_model'] = Config.GEMINI_MODEL
+        analysis['_source'] = 'ai'
 
         return analysis
 

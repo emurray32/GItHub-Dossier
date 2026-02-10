@@ -1,14 +1,14 @@
 # Lead Machine - Deep-Dive Research Engine
 
 ## Overview
-A Flask application for analyzing GitHub organizations to detect localization signals. The app scans GitHub repositories, commits, and PRs to find internationalization (i18n) indicators and provides AI-powered analysis using Google Gemini.
+A Flask application for analyzing GitHub organizations to detect localization signals. The app scans GitHub repositories, commits, and PRs to find internationalization (i18n) indicators and provides AI-powered analysis using OpenAI GPT-5-mini (via Replit AI Integrations) with Gemini as fallback.
 
 ## Project Structure
 ```
 ├── app.py              # Main Flask application
 ├── config.py           # Configuration settings
 ├── database.py         # SQLite database module
-├── ai_summary.py       # AI-powered analysis using Gemini
+├── ai_summary.py       # AI-powered analysis (OpenAI GPT-5-mini primary, Gemini fallback)
 ├── monitors/           # GitHub scanning modules
 │   ├── discovery.py    # GitHub org discovery
 │   └── scanner.py      # Deep scan functionality
@@ -35,15 +35,22 @@ python app.py
 - `FLASK_SECRET_KEY` - Flask secret key (optional, has default)
 - `FLASK_DEBUG` - Enable debug mode (optional)
 - `GITHUB_TOKEN` - GitHub API token for scanning
-- `GEMINI_API_KEY` - Google Gemini API key for AI analysis
+- `GEMINI_API_KEY` - Google Gemini API key for AI analysis (fallback)
+- `AI_INTEGRATIONS_OPENAI_API_KEY` - Auto-managed by Replit AI Integrations
+- `AI_INTEGRATIONS_OPENAI_BASE_URL` - Auto-managed by Replit AI Integrations
 
 ## Technology Stack
 - **Backend**: Python 3.11, Flask
 - **Database**: SQLite (local file-based)
 - **Frontend**: HTML, CSS, JavaScript with Server-Sent Events
-- **AI**: Google Gemini API
+- **AI**: OpenAI GPT-5-mini (via Replit AI Integrations), Google Gemini (fallback)
 
 ## Recent Changes
+- 2026-02-10: Switched AI engine from Gemini to OpenAI GPT-5-mini
+  - Installed Replit AI Integrations for OpenAI (no API key needed, billed to credits)
+  - GPT-5-mini is now the primary AI engine for scan analysis
+  - Gemini kept as fallback if OpenAI is unavailable
+  - Rule-based analysis remains as final fallback
 - 2026-01-29: Fixed CSV import data loss and added auto-scan functionality
   - Added localStorage backup for CSV data to prevent data loss between page states
   - Added auto-queuing: newly imported accounts are automatically submitted for GitHub scanning
