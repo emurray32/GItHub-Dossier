@@ -336,7 +336,10 @@ def _parse_ai_response(response_text: str, scan_data: dict) -> dict:
         analysis = json.loads(text)
 
         phase = analysis.get('phase_assessment', {})
-        analysis['pain_point_analysis'] = phase.get('bdr_explanation', phase.get('conclusion', 'Phase analysis complete.'))
+        analysis['pain_point_analysis'] = phase.get('bdr_explanation', phase.get('conclusion', ''))
+        SYSTEM_MESSAGES = ['Phase analysis complete.', 'Analysis complete', 'Processing done', 'Timing analysis complete.', 'N/A for pre-launch detection']
+        if analysis.get('pain_point_analysis') in SYSTEM_MESSAGES:
+            analysis['pain_point_analysis'] = ''
         analysis['tech_stack_hook'] = analysis.get('conversation_angle', 'Discuss their i18n journey.')
 
         timing = analysis.get('timing_window', {})

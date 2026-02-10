@@ -1634,25 +1634,6 @@
             <span>Revenue: <span class="revenue-display" data-raw="{{ report.annual_revenue }}">{{ report.annual_revenue }}</span></span>
             {% endif %}
         </div>
-        <div style="margin-top: 1.5rem; display: flex; justify-content: center; gap: 1rem; flex-wrap: wrap;">
-            <a href="{{ url_for('index') }}" class="btn secondary">Analyze New Company</a>
-            <a href="{{ url_for('download_pdf', report_id=report.id) }}" class="btn primary"
-                style="background: var(--accent-color); color: white; padding: 0.5rem 1.5rem; border-radius: 8px; text-decoration: none; font-weight: 500;">
-                Download PDF Report
-            </a>
-            {% set goldilocks_status = report.scan_data.goldilocks_status or report.ai_analysis.goldilocks_status or 'none' %}
-            {% if goldilocks_status in ['thinking', 'preparing', 'launched'] %}
-            <button class="deep-dive-btn" onclick="runDeepDive(this)" id="deepDiveBtn" data-report-id="{{ report.id }}">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="11" cy="11" r="8"></circle>
-                    <path d="M21 21l-4.35-4.35"></path>
-                    <path d="M11 8v6"></path>
-                    <path d="M8 11h6"></path>
-                </svg>
-                <span class="btn-text">Run Deep Dive</span>
-            </button>
-            {% endif %}
-        </div>
     </header>
 
     <!-- Goldilocks Zone Status Banner -->
@@ -1732,32 +1713,6 @@
     </div>
     {% endif %}
 
-    <!-- Deep Dive Section (populated via JavaScript) -->
-    {% set goldilocks_status_check = report.scan_data.goldilocks_status or report.ai_analysis.goldilocks_status or 'none' %}
-    {% if goldilocks_status_check in ['thinking', 'preparing', 'launched'] %}
-    <div id="deepDiveSection" class="deep-dive-section" style="display: none;">
-        <div class="deep-dive-header">
-            <h3>
-                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="11" cy="11" r="8"></circle>
-                    <path d="M21 21l-4.35-4.35"></path>
-                </svg>
-                Deep Dive Analysis
-            </h3>
-            <span class="ai-badge">
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M12 2L2 7l10 5 10-5-10-5z"></path>
-                    <path d="M2 17l10 5 10-5"></path>
-                    <path d="M2 12l10 5 10-5"></path>
-                </svg>
-                Powered by Gemini
-            </span>
-        </div>
-        <div class="deep-dive-content" id="deepDiveContent">
-            <!-- Content populated by JavaScript -->
-        </div>
-    </div>
-    {% endif %}
 
     <!-- Email Draft (One-Click Cold Email Generator) - PROMINENT POSITION -->
     {% if report.ai_analysis.email_draft %}
@@ -1833,7 +1788,7 @@
         <h2 class="reachout-title">Why Reach Out</h2>
         <div class="reachout-subtitle">Clear, plain-language reasons to start a conversation.</div>
         <ul class="reachout-list">
-            {% if report.ai_analysis.pain_point_analysis %}
+            {% if report.ai_analysis.pain_point_analysis and report.ai_analysis.pain_point_analysis not in ['Phase analysis complete.', 'Analysis complete', 'Processing done', 'Timing analysis complete.'] %}
             <li class="reachout-item">
                 <span class="reachout-label">Pain signals</span>
                 <span class="reachout-text">{{ report.ai_analysis.pain_point_analysis }}</span>
@@ -1864,16 +1819,6 @@
             <li class="reachout-item">
                 <span class="reachout-label">Greenfield gap</span>
                 <span class="reachout-text">Mature repo footprint with no localization tooling in place.</span>
-            </li>
-            {% endif %}
-            {% if report.ai_analysis.key_findings %}
-            <li class="reachout-item">
-                <span class="reachout-label">Key evidence</span>
-                <span class="reachout-text">
-                    {% for finding in report.ai_analysis.key_findings[:3] %}
-                    {{ finding.finding }}{% if not loop.last %}; {% endif %}
-                    {% endfor %}
-                </span>
             </li>
             {% endif %}
         </ul>
@@ -1961,23 +1906,6 @@
         </div>
         {% endif %}
 
-        {% if report.ai_analysis.semantic_analysis %}
-        <div style="margin-top: 1.5rem; padding: 1rem; background: var(--bg-tertiary); border-radius: 8px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-                <h3 style="margin: 0; font-size: 1rem;">Semantic Intelligence</h3>
-                <span class="severity-badge severity-{{ report.ai_analysis.semantic_analysis.severity }}">
-                    {{ report.ai_analysis.semantic_analysis.severity }}
-                </span>
-            </div>
-            <p style="font-size: 0.875rem; margin-bottom: 0.25rem;">
-                <strong>Category:</strong> {{ report.ai_analysis.semantic_analysis.primary_pain_category.replace('_', '
-                ').title() }}
-            </p>
-            <p style="font-size: 0.875rem; margin: 0; font-style: italic;">
-                "{{ report.ai_analysis.semantic_analysis.description }}"
-            </p>
-        </div>
-        {% endif %}
 
         {% if report.ai_analysis.compliance_risk %}
         <div style="margin-top: 1rem; padding: 1rem; background: var(--bg-tertiary); border-radius: 8px;">
