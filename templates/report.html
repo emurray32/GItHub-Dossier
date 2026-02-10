@@ -1594,7 +1594,192 @@
         font-size: 0.75rem;
         font-weight: 500;
     }
-</style>
+
+    /* Contributor Email Workflow */
+    .prospect-email-section {
+        margin-top: 0.75rem;
+        padding-top: 0.75rem;
+        border-top: 1px solid var(--border-color);
+    }
+    .btn-fetch-email {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.3rem 0.75rem;
+        font-size: 0.8rem;
+        font-weight: 500;
+        color: var(--accent-color);
+        background: transparent;
+        border: 1px solid var(--accent-color);
+        border-radius: 6px;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .btn-fetch-email:hover {
+        background: var(--accent-color);
+        color: white;
+    }
+    .btn-fetch-email:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+    .email-result {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-top: 0.4rem;
+        font-size: 0.85rem;
+    }
+    .email-address {
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+    .email-badge {
+        display: inline-block;
+        padding: 0.15rem 0.5rem;
+        font-size: 0.7rem;
+        font-weight: 600;
+        border-radius: 10px;
+        text-transform: uppercase;
+    }
+    .email-badge.verified {
+        background: #d4edda;
+        color: #155724;
+    }
+    .email-badge.unverified {
+        background: #fff3cd;
+        color: #856404;
+    }
+    .email-badge.unknown {
+        background: #e2e3e5;
+        color: #383d41;
+    }
+    .btn-compose-email {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.3rem 0.75rem;
+        font-size: 0.8rem;
+        font-weight: 500;
+        color: white;
+        background: var(--accent-color);
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: all 0.2s;
+        margin-left: 0.5rem;
+    }
+    .btn-compose-email:hover {
+        opacity: 0.85;
+    }
+    .inline-email-composer {
+        display: none;
+        margin-top: 0.75rem;
+        padding: 1rem;
+        background: var(--bg-tertiary);
+        border-radius: 8px;
+        border: 1px solid var(--border-color);
+    }
+    .inline-email-composer.active {
+        display: block;
+    }
+    .composer-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 0.75rem;
+    }
+    .composer-header h4 {
+        margin: 0;
+        font-size: 0.9rem;
+        color: var(--text-primary);
+    }
+    .composer-field {
+        margin-bottom: 0.5rem;
+    }
+    .composer-field label {
+        display: block;
+        font-size: 0.75rem;
+        font-weight: 600;
+        color: var(--text-secondary);
+        margin-bottom: 0.25rem;
+        text-transform: uppercase;
+    }
+    .composer-field input,
+    .composer-field textarea {
+        width: 100%;
+        padding: 0.5rem;
+        font-size: 0.85rem;
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        background: white;
+        font-family: inherit;
+        box-sizing: border-box;
+    }
+    .composer-field textarea {
+        min-height: 150px;
+        resize: vertical;
+    }
+    .composer-actions {
+        display: flex;
+        gap: 0.5rem;
+        margin-top: 0.75rem;
+        align-items: center;
+    }
+    .btn-enroll {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.5rem 1.25rem;
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: white;
+        background: #1a1a2e;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .btn-enroll:hover {
+        background: #16213e;
+    }
+    .btn-enroll:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+    .btn-cancel-compose {
+        padding: 0.5rem 1rem;
+        font-size: 0.85rem;
+        color: var(--text-secondary);
+        background: transparent;
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        cursor: pointer;
+    }
+    .send-status {
+        font-size: 0.8rem;
+        margin-left: 0.5rem;
+    }
+    .prospect-card.selected {
+        border: 2px solid var(--accent-color);
+        box-shadow: 0 0 0 3px rgba(0, 166, 153, 0.15);
+    }
+    .selected-contact-banner {
+        display: none;
+        padding: 0.75rem 1rem;
+        background: linear-gradient(135deg, var(--accent-color), #0d9488);
+        color: white;
+        border-radius: 8px;
+        margin-bottom: 1rem;
+        font-size: 0.9rem;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    .selected-contact-banner.active {
+        display: flex;
+    }
+
+    </style>
 {% endblock %}
 
 {% block breadcrumbs %}
@@ -1720,6 +1905,7 @@
         <div class="email-draft-header">
             <div style="display: flex; align-items: center; gap: 0.75rem;">
                 <h3 style="margin: 0;">Ready-to-Send Cold Email</h3>
+                <div id="selected-contact-banner" class="selected-contact-banner"></div>
                 <span class="badge badge-primary">Skill Applied: Cold Outreach</span>
             </div>
             <div class="email-actions">
@@ -2104,6 +2290,43 @@
                         <br>
                         <strong style="color: var(--accent-color);">Icebreaker:</strong> {{ prospect.icebreaker }}
                     </div>
+                    <!-- Email Workflow -->
+                    <div class="prospect-email-section">
+                        <button class="btn-fetch-email" onclick="fetchApolloEmail(this, '{{ prospect.name }}', '{{ prospect.login }}', '{{ report.company_name }}')" data-login="{{ prospect.login }}">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                            Fetch Email
+                        </button>
+                        <span class="email-result" id="email-result-{{ prospect.login }}" style="display:none;"></span>
+                        <button class="btn-compose-email" id="compose-btn-{{ prospect.login }}" style="display:none;" onclick="openComposer('{{ prospect.login }}', '{{ prospect.name }}')">
+                            Compose &amp; Send
+                        </button>
+                        <div class="inline-email-composer" id="composer-{{ prospect.login }}">
+                            <div class="composer-header">
+                                <h4>Email to {{ prospect.name }}</h4>
+                                <button class="btn-cancel-compose" onclick="closeComposer('{{ prospect.login }}')">Cancel</button>
+                            </div>
+                            <div class="composer-field">
+                                <label>To</label>
+                                <input type="email" id="composer-to-{{ prospect.login }}" readonly>
+                            </div>
+                            <div class="composer-field">
+                                <label>Subject</label>
+                                <input type="text" id="composer-subject-{{ prospect.login }}">
+                            </div>
+                            <div class="composer-field">
+                                <label>Body</label>
+                                <textarea id="composer-body-{{ prospect.login }}"></textarea>
+                            </div>
+                            <div class="composer-actions">
+                                <button class="btn-enroll" onclick="sendOutreachEmail('{{ prospect.login }}', '{{ report.company_name }}', '{{ report.id }}')" id="send-btn-{{ prospect.login }}">
+                                    Enroll
+                                </button>
+                                <button class="btn-cancel-compose" onclick="closeComposer('{{ prospect.login }}')">Cancel</button>
+                                <span class="send-status" id="send-status-{{ prospect.login }}"></span>
+                            </div>
+                        </div>
+                    </div>
+
                 </div>
             </div>
             {% endfor %}
@@ -2146,6 +2369,43 @@
                     <div class="contact-bio">"{{ details.bio }}"</div>
                     {% endif %}
                     <div class="contact-reason">{{ contact.outreach_reason }}</div>
+                    <!-- Email Workflow for Contact -->
+                    <div class="prospect-email-section">
+                        <button class="btn-fetch-email" onclick="fetchApolloEmail(this, '{{ contact.name }}', '{{ contact.login }}', '{{ report.company_name }}')" data-login="{{ contact.login }}">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                            Fetch Email
+                        </button>
+                        <span class="email-result" id="email-result-{{ contact.login }}" style="display:none;"></span>
+                        <button class="btn-compose-email" id="compose-btn-{{ contact.login }}" style="display:none;" onclick="openComposer('{{ contact.login }}', '{{ contact.name }}')">
+                            Compose &amp; Send
+                        </button>
+                        <div class="inline-email-composer" id="composer-{{ contact.login }}">
+                            <div class="composer-header">
+                                <h4>Email to {{ contact.name }}</h4>
+                                <button class="btn-cancel-compose" onclick="closeComposer('{{ contact.login }}')">Cancel</button>
+                            </div>
+                            <div class="composer-field">
+                                <label>To</label>
+                                <input type="email" id="composer-to-{{ contact.login }}" readonly>
+                            </div>
+                            <div class="composer-field">
+                                <label>Subject</label>
+                                <input type="text" id="composer-subject-{{ contact.login }}">
+                            </div>
+                            <div class="composer-field">
+                                <label>Body</label>
+                                <textarea id="composer-body-{{ contact.login }}"></textarea>
+                            </div>
+                            <div class="composer-actions">
+                                <button class="btn-enroll" onclick="sendOutreachEmail('{{ contact.login }}', '{{ report.company_name }}', '{{ report.id }}')" id="send-btn-{{ contact.login }}">
+                                    Enroll
+                                </button>
+                                <button class="btn-cancel-compose" onclick="closeComposer('{{ contact.login }}')">Cancel</button>
+                                <span class="send-status" id="send-status-{{ contact.login }}"></span>
+                            </div>
+                        </div>
+                    </div>
+
                 </div>
             </div>
             {% endfor %}
@@ -2748,5 +3008,144 @@
         div.textContent = text;
         return div.innerHTML;
     }
-</script>
+
+    // --- Contributor Email Workflow ---
+    async function fetchApolloEmail(button, name, login, company) {
+        button.disabled = true;
+        button.innerHTML = '<span style="display:inline-block;width:14px;height:14px;border:2px solid #ccc;border-top-color:var(--accent-color);border-radius:50%;animation:spin 0.8s linear infinite;"></span> Looking up...';
+        
+        // Try to extract domain from company website
+        let domain = '';
+        const websiteEl = document.querySelector('.company-website a');
+        if (websiteEl) {
+            try { domain = new URL(websiteEl.href).hostname; } catch(e) {}
+        }
+        if (!domain && company) {
+            domain = company.toLowerCase().replace(/[^a-z0-9]/g, '') + '.com';
+        }
+        
+        try {
+            const resp = await fetch('/api/apollo-lookup', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ name, github_login: login, domain })
+            });
+            const data = await resp.json();
+            
+            const resultEl = document.getElementById(`email-result-${login}`);
+            const composeBtn = document.getElementById(`compose-btn-${login}`);
+            
+            if (data.status === 'success' && data.email) {
+                const badgeClass = data.email_status === 'verified' ? 'verified' : 
+                                   data.email_status === 'guessed' ? 'unverified' : 'unknown';
+                const statusLabel = data.email_status === 'verified' ? 'Verified' :
+                                    data.email_status === 'guessed' ? 'Likely' : data.email_status || 'Unknown';
+                resultEl.innerHTML = `<span class="email-address">${data.email}</span><span class="email-badge ${badgeClass}">${statusLabel}</span>`;
+                resultEl.style.display = 'inline-flex';
+                composeBtn.style.display = 'inline-flex';
+                button.innerHTML = '&#10003; Found';
+                button.style.color = '#155724';
+                button.style.borderColor = '#155724';
+                
+                // Pre-fill the composer
+                document.getElementById(`composer-to-${login}`).value = data.email;
+                const subjectEl = document.getElementById('emailSubject');
+                const bodyEl = document.getElementById('emailBody');
+                if (subjectEl) document.getElementById(`composer-subject-${login}`).value = subjectEl.value;
+                if (bodyEl) {
+                    let body = bodyEl.value;
+                    // Personalize: replace generic greeting with name
+                    if (data.name) {
+                        const firstName = data.name.split(' ')[0];
+                        body = body.replace(/^Hi\b.*?,/m, `Hi ${firstName},`);
+                        body = body.replace(/^Hey\b.*?,/m, `Hey ${firstName},`);
+                    }
+                    document.getElementById(`composer-body-${login}`).value = body;
+                }
+            } else {
+                resultEl.innerHTML = '<span style="color: #856404;">No email found</span>';
+                resultEl.style.display = 'inline-flex';
+                button.innerHTML = 'Not found';
+                button.style.color = '#856404';
+                button.style.borderColor = '#856404';
+            }
+        } catch(e) {
+            button.innerHTML = 'Error';
+            button.style.color = '#dc3545';
+            button.style.borderColor = '#dc3545';
+            console.error('Apollo lookup error:', e);
+        }
+    }
+    
+    function openComposer(login, name) {
+        // Close any other open composers
+        document.querySelectorAll('.inline-email-composer.active').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.prospect-card.selected').forEach(el => el.classList.remove('selected'));
+        
+        const composer = document.getElementById(`composer-${login}`);
+        const card = composer.closest('.prospect-card');
+        composer.classList.add('active');
+        if (card) card.classList.add('selected');
+        
+        // Show selected contact banner in email section
+        const banner = document.getElementById('selected-contact-banner');
+        if (banner) {
+            banner.textContent = `Composing email to: ${name}`;
+            banner.classList.add('active');
+        }
+        
+        composer.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    
+    function closeComposer(login) {
+        const composer = document.getElementById(`composer-${login}`);
+        const card = composer.closest('.prospect-card');
+        composer.classList.remove('active');
+        if (card) card.classList.remove('selected');
+        
+        const banner = document.getElementById('selected-contact-banner');
+        if (banner) banner.classList.remove('active');
+    }
+    
+    async function sendOutreachEmail(login, company, reportId) {
+        const toEmail = document.getElementById(`composer-to-${login}`).value;
+        const subject = document.getElementById(`composer-subject-${login}`).value;
+        const body = document.getElementById(`composer-body-${login}`).value;
+        const btn = document.getElementById(`send-btn-${login}`);
+        const status = document.getElementById(`send-status-${login}`);
+        
+        if (!toEmail || !subject || !body) {
+            status.innerHTML = '<span style="color: #dc3545;">Please fill all fields</span>';
+            return;
+        }
+        
+        btn.disabled = true;
+        btn.textContent = 'Sending...';
+        status.innerHTML = '';
+        
+        try {
+            const resp = await fetch('/api/send-outreach-email', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ to_email: toEmail, subject, body, company_name: company, report_id: reportId })
+            });
+            const data = await resp.json();
+            
+            if (data.status === 'success') {
+                btn.textContent = 'Sent!';
+                btn.style.background = '#155724';
+                status.innerHTML = '<span style="color: #155724;">&#10003; Email sent successfully</span>';
+            } else {
+                btn.disabled = false;
+                btn.textContent = 'Enroll';
+                status.innerHTML = `<span style="color: #dc3545;">${data.message || 'Failed to send'}</span>`;
+            }
+        } catch(e) {
+            btn.disabled = false;
+            btn.textContent = 'Enroll';
+            status.innerHTML = '<span style="color: #dc3545;">Network error</span>';
+        }
+    }
+
+    </script>
 {% endblock %}

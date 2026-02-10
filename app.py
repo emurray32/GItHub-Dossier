@@ -4680,6 +4680,127 @@ def start_deduplication_scheduler():
     thread.start()
 
 
+
+@app.route('/api/apollo-lookup', methods=['POST'])
+def apollo_lookup():
+    """Look up a contact's email via Apollo People Match API."""
+    import requests as req
+    data = request.get_json()
+    if not data:
+        return jsonify({'status': 'error', 'message': 'No data provided'}), 400
+    
+    first_name = data.get('first_name', '')
+    last_name = data.get('last_name', '')
+    name = data.get('name', '')
+    domain = data.get('domain', '')
+    github_login = data.get('github_login', '')
+    
+    # Parse name if first/last not provided
+    if not first_name and name:
+        parts = name.strip().split(' ', 1)
+        first_name = parts[0]
+        last_name = parts[1] if len(parts) > 1 else ''
+    
+    apollo_key = os.environ.get('APOLLO_API_KEY', '')
+    if not apollo_key:
+        return jsonify({'status': 'error', 'message': 'Apollo API key not configured'}), 500
+    
+    try:
+        # Try Apollo People Match API
+        match_url = 'https://api.apollo.io/v1/people/match'
+        payload = {
+            'api_key': apollo_key,
+            'first_name': first_name,
+            'last_name': last_name,
+        }
+        if domain:
+            payload['organization_domain'] = domain
+        
+        resp = req.post(match_url, json=payload, timeout=15)
+        if resp.status_code == 200:
+            person = resp.json().get('person', {})
+            if person:
+                email = person.get('email', '')
+                email_status = person.get('email_status', 'unknown')
+                return jsonify({
+                    'status': 'success',
+                    'email': email,
+                    'email_status': email_status,
+                    'name': person.get('name', name),
+                    'title': person.get('title', ''),
+                    'linkedin_url': person.get('linkedin_url', ''),
+                    'organization': person.get('organization', {}).get('name', ''),
+                })
+        
+        # Fallback: search by name + domain
+        search_url = 'https://api.apollo.io/v1/mixed_people/search'
+        search_payload = {
+            'api_key': apollo_key,
+            'q_keywords': f'{first_name} {last_name}'.strip(),
+            'per_page': 3,
+        }
+        if domain:
+            search_payload['q_organization_domains'] = domain
+        
+        resp = req.post(search_url, json=search_payload, timeout=15)
+        if resp.status_code == 200:
+            people = resp.json().get('people', [])
+            if people:
+                person = people[0]
+                return jsonify({
+                    'status': 'success',
+                    'email': person.get('email', ''),
+                    'email_status': person.get('email_status', 'unknown'),
+                    'name': person.get('name', name),
+                    'title': person.get('title', ''),
+                    'linkedin_url': person.get('linkedin_url', ''),
+                    'organization': person.get('organization', {}).get('name', ''),
+                })
+        
+        return jsonify({'status': 'not_found', 'message': 'No matching contact found in Apollo'})
+    except Exception as e:
+        print(f"[APOLLO LOOKUP ERROR] {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@app.route('/api/send-outreach-email', methods=['POST'])
+def send_outreach_email():
+    """Send an outreach email to a contributor via AgentMail."""
+    data = request.get_json()
+    if not data:
+        return jsonify({'status': 'error', 'message': 'No data provided'}), 400
+    
+    to_email = data.get('to_email', '')
+    subject = data.get('subject', '')
+    body = data.get('body', '')
+    company_name = data.get('company_name', '')
+    report_id = data.get('report_id', '')
+    
+    if not to_email or not subject or not body:
+        return jsonify({'status': 'error', 'message': 'Missing required fields: to_email, subject, body'}), 400
+    
+    try:
+        report_url = None
+        if report_id:
+            report_url = request.url_root.rstrip('/') + f'/report/{report_id}'
+        
+        result = send_email_draft(
+            to_email=to_email,
+            subject=subject,
+            body=body,
+            company_name=company_name,
+            report_url=report_url
+        )
+        
+        if result and result.get('status') == 'success':
+            return jsonify({'status': 'success', 'message': f'Email sent to {to_email}'})
+        else:
+            return jsonify({'status': 'error', 'message': result.get('message', 'Failed to send email')}), 500
+    except Exception as e:
+        print(f"[SEND EMAIL ERROR] {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
 if __name__ == '__main__':
     # Initialize when running directly
     print("[APP] Starting application...")
