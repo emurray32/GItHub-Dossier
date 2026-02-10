@@ -8,6 +8,7 @@ import time
 from datetime import datetime, timedelta
 from typing import Optional
 from config import Config
+from signal_verifier import verify_signals
 
 
 def get_db_connection() -> sqlite3.Connection:
@@ -819,6 +820,23 @@ def calculate_tier_from_scan(scan_data: dict) -> tuple[int, str]:
     Returns:
         Tuple of (tier_number, evidence_summary)
     """
+    # ============================================================
+    # SIGNAL VERIFICATION: Filter false positives before tiering
+    # ============================================================
+    try:
+        scan_data = verify_signals(scan_data, use_llm=True)
+        verification = scan_data.get('verification', {})
+        
+        # If verification flagged as definitive false positive, downgrade to Tier 0
+        if verification.get('is_false_positive'):
+            recommended_tier = verification.get('recommended_tier', 0)
+            fp_reasons = verification.get('false_positive_reasons', ['Unknown reason'])
+            evidence = f"VERIFIED FALSE POSITIVE: {fp_reasons[0]}"
+            print(f"[TIER] Signal verification overrode tier: {evidence}")
+            return recommended_tier, evidence
+    except Exception as e:
+        print(f"[TIER] Signal verification error (continuing with normal tiering): {e}")
+
     signal_summary = scan_data.get('signal_summary', {})
 
     # Extract key signals
