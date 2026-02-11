@@ -337,8 +337,20 @@ def _parse_ai_response(response_text: str, scan_data: dict) -> dict:
 
         phase = analysis.get('phase_assessment', {})
         analysis['pain_point_analysis'] = phase.get('bdr_explanation', phase.get('conclusion', ''))
-        SYSTEM_MESSAGES = ['Phase analysis complete.', 'Analysis complete', 'Processing done', 'Timing analysis complete.', 'N/A for pre-launch detection']
-        if analysis.get('pain_point_analysis') in SYSTEM_MESSAGES:
+        SYSTEM_MESSAGES = [
+        'Phase analysis complete.', 'Phase analysis complete', 
+        'Phase analysis is complete.', 'Phase analysis is complete',
+        'Analysis complete.', 'Analysis complete',
+        'Processing done.', 'Processing done',
+        'Timing analysis complete.', 'Timing analysis complete',
+        'N/A for pre-launch detection', 'N/A for pre-launch detection.',
+        'Scan complete.', 'Scan complete',
+        'Data collection complete.', 'Data collection complete',
+        'Report generated.', 'Report generated',
+        'No pain signals detected.', 'No pain signals detected',
+    ]
+        pain_val = analysis.get('pain_point_analysis', '').strip()
+        if pain_val in SYSTEM_MESSAGES or pain_val.lower().rstrip('.') in [m.lower().rstrip('.') for m in SYSTEM_MESSAGES] or any(pain_val.lower().startswith(m.lower().rstrip('.')) for m in SYSTEM_MESSAGES):
             analysis['pain_point_analysis'] = ''
         analysis['tech_stack_hook'] = analysis.get('conversation_angle', 'Discuss their i18n journey.')
 

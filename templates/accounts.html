@@ -5011,33 +5011,13 @@
                             statusCell.classList.remove('status-cell-active');
                         }
                         else if (newStatus === 'processing') {
-                            // Determine elapsed time styling
-                            let elapsedClass = 'elapsed-time';
-                            if (elapsed >= TIMEOUT_DANGER_SECONDS) {
-                                elapsedClass += ' elapsed-time-danger';
-                            } else if (elapsed >= TIMEOUT_WARNING_SECONDS) {
-                                elapsedClass += ' elapsed-time-warning';
-                            }
-
-                            if (isStuck) {
-                                // Show stuck/timeout state
-                                content = `
-                                    <div class="status-container">
-                                        <span class="status-badge status-badge-stuck" style="cursor: pointer;" onclick="openQueueModal()" title="Click to view processing details">
-                                            ${statusIcons.stuck}
-                                            <span>May Be Stuck</span>
-                                        </span>
-                                        <span class="${elapsedClass}">${formatElapsedTime(elapsed)} • Click for help</span>
-                                    </div>
-                                    <div class="progress-line-stuck"></div>
-                                `;
-                            } else {
-                                // Normal processing state
-                                content = `
-                                    <div style="display: flex; align-items: center; gap: 0.5rem; color: #94a3b8; font-size: 0.8rem;"><span style="display: inline-block; width: 14px; height: 14px; border: 2px solid #e2e8f0; border-top-color: #64748b; border-radius: 50%; animation: spin 0.8s linear infinite;"></span> Scanning...</div>
-                                `;
-                            }
-                            statusCell.classList.add('status-cell-active');
+                        // Simple scanning indicator
+                        content = `
+                            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                <span style="display: inline-block; width: 14px; height: 14px; border: 2px solid #e2e8f0; border-top-color: #94a3b8; border-radius: 50%; animation: spin 0.8s linear infinite;"></span>
+                                <span style="color: #94a3b8; font-size: 0.85rem;">Scanning...</span>
+                            </div>`;
+                        statusCell.classList.add('status-cell-active');
                         }
                         else {
                             // Check for scan errors

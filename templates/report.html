@@ -1417,172 +1417,6 @@
     }
 
     /* Deep Dive Section Styles */
-    .deep-dive-btn {
-        background: linear-gradient(135deg, #6366f1, #8b5cf6);
-        color: white;
-        border: none;
-        padding: 0.5rem 1.25rem;
-        border-radius: 8px;
-        font-weight: 600;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        transition: all 0.2s;
-        box-shadow: 0 2px 4px rgba(99, 102, 241, 0.3);
-    }
-
-    .deep-dive-btn:hover {
-        transform: translateY(-1px);
-        box-shadow: 0 4px 8px rgba(99, 102, 241, 0.4);
-    }
-
-    .deep-dive-btn:disabled {
-        opacity: 0.6;
-        cursor: not-allowed;
-        transform: none;
-    }
-
-    .deep-dive-btn.loading {
-        background: linear-gradient(135deg, #818cf8, #a78bfa);
-    }
-
-    .deep-dive-btn svg {
-        width: 18px;
-        height: 18px;
-    }
-
-    .deep-dive-section {
-        background: var(--bg-primary);
-        border: 2px solid #6366f1;
-        border-radius: 12px;
-        margin-bottom: 2rem;
-        overflow: hidden;
-        box-shadow: 0 4px 12px rgba(99, 102, 241, 0.15);
-    }
-
-    .deep-dive-header {
-        background: linear-gradient(135deg, #6366f1, #8b5cf6);
-        color: white;
-        padding: 1rem 1.5rem;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-    }
-
-    .deep-dive-header h3 {
-        margin: 0;
-        font-size: 1.125rem;
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-    }
-
-    .deep-dive-content {
-        padding: 1.5rem;
-    }
-
-    .deep-dive-subsection {
-        margin-bottom: 1.5rem;
-    }
-
-    .deep-dive-subsection:last-child {
-        margin-bottom: 0;
-    }
-
-    .deep-dive-subsection h4 {
-        font-size: 1rem;
-        color: #6366f1;
-        margin: 0 0 0.75rem 0;
-        padding-bottom: 0.5rem;
-        border-bottom: 1px solid var(--border-color);
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-    }
-
-    .timeline-event {
-        display: flex;
-        gap: 1rem;
-        padding: 0.75rem;
-        background: var(--bg-secondary);
-        border-radius: 8px;
-        margin-bottom: 0.5rem;
-        border-left: 3px solid #6366f1;
-    }
-
-    .timeline-event-date {
-        font-weight: 600;
-        color: #6366f1;
-        min-width: 80px;
-        font-size: 0.875rem;
-    }
-
-    .timeline-event-content {
-        flex: 1;
-    }
-
-    .timeline-event-title {
-        font-weight: 500;
-        color: var(--text-primary);
-        margin-bottom: 0.25rem;
-    }
-
-    .timeline-event-significance {
-        font-size: 0.8125rem;
-        color: var(--text-secondary);
-        font-style: italic;
-    }
-
-    .code-insight-item {
-        padding: 0.75rem 1rem;
-        background: var(--bg-secondary);
-        border-radius: 8px;
-        margin-bottom: 0.5rem;
-        border-left: 3px solid #22c55e;
-        line-height: 1.5;
-    }
-
-    .outreach-narrative {
-        background: linear-gradient(135deg, #f0fdf4, #ecfdf5);
-        border: 1px solid #86efac;
-        border-radius: 8px;
-        padding: 1.25rem;
-        line-height: 1.7;
-        font-size: 1rem;
-        color: #166534;
-    }
-
-    .deep-dive-loading {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 0.75rem;
-        padding: 2rem;
-        color: var(--text-secondary);
-    }
-
-    .deep-dive-loading .spinner {
-        width: 24px;
-        height: 24px;
-        border: 3px solid var(--border-color);
-        border-top-color: #6366f1;
-        border-radius: 50%;
-        animation: spin 1s linear infinite;
-    }
-
-    @keyframes spin {
-        to { transform: rotate(360deg); }
-    }
-
-    .deep-dive-error {
-        padding: 1rem;
-        background: #fef2f2;
-        border: 1px solid #fecaca;
-        border-radius: 8px;
-        color: #991b1b;
-        text-align: center;
-    }
 
     .ai-badge {
         display: inline-flex;
@@ -1779,6 +1613,171 @@
         display: flex;
     }
 
+
+        /* Contributor Email Workflow */
+        .contributor-card {
+            cursor: pointer;
+            transition: all 0.2s ease;
+            position: relative;
+        }
+        .contributor-card:hover {
+            border-color: var(--accent-color);
+            box-shadow: 0 2px 8px rgba(99, 102, 241, 0.15);
+        }
+        .contributor-card.selected {
+            border-color: var(--accent-color);
+            box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.3);
+            background: rgba(99, 102, 241, 0.05);
+        }
+        .contributor-actions {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: 0.75rem;
+            flex-wrap: wrap;
+        }
+        .btn-fetch-email, .btn-send-email, .btn-select-contributor {
+            padding: 0.35rem 0.75rem;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-weight: 500;
+            cursor: pointer;
+            border: 1px solid;
+            transition: all 0.2s ease;
+        }
+        .btn-fetch-email {
+            background: var(--bg-secondary);
+            border-color: var(--border-color);
+            color: var(--text-primary);
+        }
+        .btn-fetch-email:hover {
+            background: var(--accent-color);
+            color: white;
+            border-color: var(--accent-color);
+        }
+        .btn-fetch-email:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .btn-select-contributor {
+            background: var(--accent-color);
+            border-color: var(--accent-color);
+            color: white;
+        }
+        .btn-select-contributor:hover {
+            opacity: 0.9;
+        }
+        .btn-send-email {
+            background: #10b981;
+            border-color: #10b981;
+            color: white;
+        }
+        .btn-send-email:hover {
+            background: #059669;
+            border-color: #059669;
+        }
+        .contributor-email-display {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-top: 0.5rem;
+            font-size: 0.8rem;
+        }
+        .email-badge {
+            padding: 0.15rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            font-weight: 600;
+        }
+        .email-badge-verified {
+            background: #d1fae5;
+            color: #065f46;
+        }
+        .email-badge-unverified {
+            background: #fef3c7;
+            color: #92400e;
+        }
+        .email-badge-not-found {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+        .inline-email-composer {
+            display: none;
+            margin-top: 1rem;
+            padding: 1rem;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+        }
+        .inline-email-composer.active {
+            display: block;
+        }
+        .inline-email-composer label {
+            font-size: 0.8rem;
+            font-weight: 500;
+            color: var(--text-secondary);
+            display: block;
+            margin-bottom: 0.25rem;
+        }
+        .inline-email-composer input,
+        .inline-email-composer textarea {
+            width: 100%;
+            padding: 0.5rem;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            font-size: 0.85rem;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            margin-bottom: 0.75rem;
+            box-sizing: border-box;
+        }
+        .inline-email-composer textarea {
+            min-height: 150px;
+            resize: vertical;
+            font-family: inherit;
+        }
+        .composer-actions {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+        }
+        .btn-enroll {
+            padding: 0.5rem 1.25rem;
+            background: #10b981;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .btn-enroll:hover {
+            background: #059669;
+        }
+        .btn-enroll:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .selected-contact-indicator {
+            display: none;
+            padding: 0.75rem 1rem;
+            background: rgba(99, 102, 241, 0.1);
+            border: 1px solid rgba(99, 102, 241, 0.3);
+            border-radius: 8px;
+            margin-bottom: 1rem;
+            font-size: 0.85rem;
+            color: var(--text-primary);
+        }
+        .selected-contact-indicator.visible {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .selected-contact-indicator .contact-avatar-sm {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+        }
     </style>
 {% endblock %}
 
@@ -1974,7 +1973,7 @@
         <h2 class="reachout-title">Why Reach Out</h2>
         <div class="reachout-subtitle">Clear, plain-language reasons to start a conversation.</div>
         <ul class="reachout-list">
-            {% if report.ai_analysis.pain_point_analysis and report.ai_analysis.pain_point_analysis not in ['Phase analysis complete.', 'Analysis complete', 'Processing done', 'Timing analysis complete.'] %}
+            {% if report.ai_analysis.pain_point_analysis and report.ai_analysis.pain_point_analysis and report.ai_analysis.pain_point_analysis.strip() not in ['Phase analysis complete.', 'Phase analysis is complete.', 'Analysis complete', 'Analysis complete.', 'Processing done', 'Processing done.', 'Timing analysis complete.', 'Timing analysis complete', 'Scan complete.', 'N/A for pre-launch detection', 'No pain signals detected.', 'Report generated.', 'Data collection complete.', ''] %}
             <li class="reachout-item">
                 <span class="reachout-label">Pain signals</span>
                 <span class="reachout-text">{{ report.ai_analysis.pain_point_analysis }}</span>
@@ -2011,209 +2010,13 @@
     </div>
 
     <!-- Maturity & Opportunity - Goldilocks Zone Focused -->
-    <div class="section">
-        <h2 class="section-title">Assessment</h2>
 
-        <!-- Goldilocks Zone Status -->
-        <div style="margin-bottom: 1.5rem; padding: 1rem; background: var(--bg-tertiary); border-radius: 8px;">
-            <p style="margin: 0 0 0.75rem 0;">
-                <strong>Goldilocks Status:</strong>
-                {% if goldilocks_status == 'preparing' %}
-                <span class="badge badge-success">
-                    Preparing - Call Now
-                </span>
-                {% elif goldilocks_status == 'thinking' %}
-                <span class="badge badge-warning">
-                    Thinking - Warm Lead
-                </span>
-                {% elif goldilocks_status == 'launched' %}
-                <span class="badge badge-neutral">
-                    Launched - Too Late
-                </span>
-                {% else %}
-                <span class="badge badge-neutral">
-                    No Signals
-                </span>
-                {% endif %}
-            </p>
-            <p style="margin: 0; font-size: 0.875rem; color: var(--text-secondary);">
-                {% if goldilocks_status == 'preparing' %}
-                <strong style="color: #166534;">Infrastructure is ready, but no translations exist yet.</strong> This is
-                our ideal customer.
-                {% elif goldilocks_status == 'thinking' %}
-                Company is discussing i18n but hasn't started building. Worth nurturing.
-                {% elif goldilocks_status == 'launched' %}
-                Company already has translation files. Low priority for greenfield sales.
-                {% else %}
-                No significant i18n signals detected in scanned repositories.
-                {% endif %}
-            </p>
-        </div>
-
-        {% set opp_type = report.ai_analysis.opportunity_type or goldilocks_status or 'unknown' %}
-        <p>
-            <strong>Opportunity Type:</strong>
-            <span
-                class="maturity-badge maturity-{{ 'mature' if opp_type == 'launched' else 'emerging' if opp_type == 'preparing' else 'developing' }}">
-                {% if opp_type == 'preparing' %}Goldilocks Zone{% elif opp_type == 'launched' %}Already Localized{% else
-                %}{{ opp_type|replace('_', ' ')|title }}{% endif %}
-            </span>
-        </p>
-
-        {% set maturity = report.ai_analysis.localization_maturity or ('launched' if goldilocks_status == 'launched'
-        else 'emerging') %}
-        <p>
-            <strong>Localization Maturity:</strong>
-            <span class="maturity-badge maturity-{{ maturity }}">{{ maturity }}</span>
-        </p>
-
-        {% set score = report.ai_analysis.opportunity_score or 5 %}
-        <div class="opportunity-score">
-            <strong>Opportunity Score:</strong>
-            <div class="score-bar">
-                <div class="score-fill" style="width: {{ score * 10 }}%"></div>
-            </div>
-            <span
-                class="score-value {% if score >= 8 %}confidence-high{% elif score >= 5 %}confidence-medium{% else %}confidence-low{% endif %}">{{
-                score }}/10</span>
-        </div>
-
-        {% if goldilocks_status == 'preparing' %}
-        <div class="bdr-highlight bdr-highlight-critical" style="margin-top: 1rem;">
-            <div class="bdr-label">Why This Score</div>
-            <div class="bdr-text">Found i18n libraries installed WITHOUT any locale/translation folders. The shelves are
-                built, books are missing!</div>
-        </div>
-        {% elif goldilocks_status == 'launched' %}
-        <div class="bdr-highlight bdr-highlight-warning" style="margin-top: 1rem;">
-            <div class="bdr-label">Why Low Score</div>
-            <div class="bdr-text">Company already has locale folders with translations. They have a working system - we
-                missed the window.</div>
-        </div>
-        {% endif %}
-
-
-        {% if report.ai_analysis.compliance_risk %}
-        <div style="margin-top: 1rem; padding: 1rem; background: var(--bg-tertiary); border-radius: 8px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-                <h3 style="margin: 0; font-size: 1rem;">Compliance Risk</h3>
-                <span
-                    class="severity-badge severity-{{ 'critical' if report.ai_analysis.compliance_risk.level == 'high' else 'minor' }}">
-                    {{ report.ai_analysis.compliance_risk.level }}
-                </span>
-            </div>
-            <p style="font-size: 0.875rem; margin: 0;">
-                {{ report.ai_analysis.compliance_risk.description }}
-            </p>
-        </div>
-        {% endif %}
-    </div>
-
-    <!-- Confidence Score -->
-    {% set confidence = report.scan_data.confidence_score or 0 %}
-    {% if confidence > 0 %}
-    <div class="confidence-score-section">
-        <div class="confidence-header">
-            <div>
-                <h3 style="margin: 0 0 0.25rem 0;">Lead Confidence Score</h3>
-                <span class="confidence-label">Calculated from {{ report.signals_found }} signals across {{
-                    report.repos_scanned }} repositories</span>
-            </div>
-            <span
-                class="confidence-value {% if confidence >= 70 %}confidence-high{% elif confidence >= 40 %}confidence-medium{% else %}confidence-low{% endif %}">
-                {{ confidence }}/100
-            </span>
-        </div>
-        <div class="confidence-bar">
-            <div class="confidence-fill {% if confidence >= 70 %}high{% elif confidence >= 40 %}medium{% else %}low{% endif %}"
-                style="width: {{ confidence }}%"></div>
-        </div>
-        <div class="confidence-label">
-            {% if confidence >= 70 %}
-            High probability lead - Strong localization signals detected
-            {% elif confidence >= 40 %}
-            Medium probability lead - Some localization activity detected
-            {% else %}
-            Low probability lead - Limited signals, may require more research
-            {% endif %}
-        </div>
-    </div>
-    {% endif %}
-
-    <!-- Key Findings - BDR-Optimized -->
-    {% if report.ai_analysis.key_findings %}
-    <div class="section">
-        <h2 class="section-title">Key Findings</h2>
-        <p style="color: var(--text-secondary); margin-bottom: 1rem; font-style: italic;">
-            Technical signals translated into plain language for sales outreach.
-        </p>
-        <ul class="findings-list">
-            {% for finding in report.ai_analysis.key_findings %}
-            <li
-                class="finding-item {% if finding.significance == 'critical' %}critical-finding{% elif finding.significance == 'low' %}low-priority-finding{% endif %}">
-                <div class="finding-header">
-                    <span class="finding-text">
-                        <strong>{{ finding.finding }}</strong>
-                    </span>
-                    <span class="finding-significance significance-{{ finding.significance }}">
-                        {% if finding.significance == 'critical' %}GOLDILOCKS{% else %}{{ finding.significance }}{%
-                        endif %}
-                    </span>
-                </div>
-                {% if finding.sales_angle %}
-                <div class="bdr-highlight" style="margin-top: 0.75rem; margin-bottom: 0;">
-                    <div class="bdr-label">Sales Angle</div>
-                    <div class="bdr-text">{{ finding.sales_angle }}</div>
-                </div>
-                {% endif %}
-                {% if finding.bdr_explanation %}
-                <div style="font-size: 0.875rem; color: var(--text-secondary); margin-top: 0.5rem; font-style: italic;">
-                    {{ finding.bdr_explanation }}
-                </div>
-                {% endif %}
-                {% if finding.evidence %}
-                <div class="finding-evidence" style="margin-top: 0.5rem;">{{ finding.evidence }}</div>
-                {% endif %}
-            </li>
-            {% endfor %}
-        </ul>
-    </div>
-    {% endif %}
-
-    <!-- Sales Narrative -->
-    {% if report.ai_analysis.sales_narrative %}
-    <div class="section">
-        <h2 class="section-title">Sales Narrative</h2>
-        <div class="narrative-box">{{ report.ai_analysis.sales_narrative }}</div>
-    </div>
-    {% endif %}
 
 
     <!-- Risk Intelligence: Compliance -->
     {% if report.scan_data and report.scan_data.get('compliance_assets') %}
     {% set compliance_assets = report.scan_data.get('compliance_assets', {}) %}
     {% if compliance_assets.get('detected_files') %}
-    <div class="section">
-        <h2 class="section-title">Compliance Asset Intelligence</h2>
-        <p class="text-secondary">Detected legal and privacy assets across repositories.</p>
-        <div class="compliance-grid">
-            {% for asset in compliance_assets.get('detected_files', []) %}
-            <div class="compliance-card">
-                <div>
-                    <div style="font-weight: 600;">{{ asset.file }}</div>
-                    <div style="font-size: 0.75rem; color: var(--text-muted);">{{ asset.repo }}</div>
-                </div>
-                <div>
-                    {% if asset.is_localized %}
-                    <span class="risk-badge risk-low">LOCALIZED</span>
-                    {% else %}
-                    <span class="risk-badge risk-high">GLOBAL ONLY</span>
-                    {% endif %}
-                </div>
-            </div>
-            {% endfor %}
-        </div>
-    </div>
     {% endif %}
     {% endif %}
 
@@ -2247,93 +2050,8 @@
     </div>
     {% endif %}
 
-    <!-- Timeline Insights -->
-    {% if report.ai_analysis.timeline_insights %}
-    <div class="section">
-        <h2 class="section-title">Timeline Insights</h2>
-        <ul class="timeline-list">
-            {% for insight in report.ai_analysis.timeline_insights %}
-            <li class="timeline-item">
-                <span class="timeline-period">{{ insight.period }}</span>
-                <div class="timeline-content">
-                    <div class="timeline-activity">{{ insight.activity }}</div>
-                    <div class="timeline-implication">{{ insight.implication }}</div>
-                </div>
-            </li>
-            {% endfor %}
-        </ul>
-    </div>
-    {% endif %}
-
     <!-- Key Contacts -->
     {% if report.ai_analysis.top_prospects %}
-    <div class="section">
-        <h2 class="section-title">Top Outreach Prospects</h2>
-        <div class="prospects-list">
-            {% for prospect in report.ai_analysis.top_prospects %}
-            <div class="prospect-card">
-                {% set details = report.scan_data.contributors.get(prospect.login, {}) %}
-                <img src="{{ details.avatar_url or 'https://github.com/identicons/' ~ prospect.login ~ '.png' }}"
-                    class="prospect-avatar">
-                <div class="prospect-info">
-                    <div style="display: flex; justify-content: space-between;">
-                        <h3>{{ prospect.name }} (@{{ prospect.login }})</h3>
-                        <a href="https://github.com/{{ prospect.login }}" target="_blank" class="signal-link">GitHub
-                            Profile</a>
-                    </div>
-                    <div class="prospect-role">{{ prospect.role_inference }}</div>
-                    {% if details.bio %}
-                    <div class="prospect-bio">"{{ details.bio }}"</div>
-                    {% endif %}
-                    <div class="strategy-box">
-                        <strong>Strategy:</strong> {{ prospect.outreach_strategy }}
-                        <br>
-                        <strong style="color: var(--accent-color);">Icebreaker:</strong> {{ prospect.icebreaker }}
-                    </div>
-                    <!-- Email Workflow -->
-                    <div class="prospect-email-section">
-                        <button class="btn-fetch-email" onclick="fetchApolloEmail(this, '{{ prospect.name }}', '{{ prospect.login }}', '{{ report.company_name }}')" data-login="{{ prospect.login }}">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-                            Fetch Email
-                        </button>
-                        <span class="email-result" id="email-result-{{ prospect.login }}" style="display:none;"></span>
-                        <button class="btn-compose-email" id="compose-btn-{{ prospect.login }}" style="display:none;" onclick="openComposer('{{ prospect.login }}', '{{ prospect.name }}')">
-                            Compose &amp; Send
-                        </button>
-                        <div class="inline-email-composer" id="composer-{{ prospect.login }}">
-                            <div class="composer-header">
-                                <h4>Email to {{ prospect.name }}</h4>
-                                <button class="btn-cancel-compose" onclick="closeComposer('{{ prospect.login }}')">Cancel</button>
-                            </div>
-                            <div class="composer-field">
-                                <label>To</label>
-                                <input type="email" id="composer-to-{{ prospect.login }}" readonly>
-                            </div>
-                            <div class="composer-field">
-                                <label>Subject</label>
-                                <input type="text" id="composer-subject-{{ prospect.login }}">
-                            </div>
-                            <div class="composer-field">
-                                <label>Body</label>
-                                <textarea id="composer-body-{{ prospect.login }}"></textarea>
-                            </div>
-                            <div class="composer-actions">
-                                <button class="btn-enroll" onclick="sendOutreachEmail('{{ prospect.login }}', '{{ report.company_name }}', '{{ report.id }}')" id="send-btn-{{ prospect.login }}">
-                                    Enroll
-                                </button>
-                                <button class="btn-cancel-compose" onclick="closeComposer('{{ prospect.login }}')">Cancel</button>
-                                <span class="send-status" id="send-status-{{ prospect.login }}"></span>
-                            </div>
-                        </div>
-                    </div>
-
-                </div>
-            </div>
-            {% endfor %}
-        </div>
-    </div>
-    {% endif %}
-
     <!-- Key Contacts Needed -->
     {% if report.ai_analysis.key_contacts_to_find %}
     <div class="section">
@@ -2426,6 +2144,7 @@
     </div>
     {% endif %}
 
+{% endif %}
     <!-- Contributors Section -->
     {% if report.scan_data.contributors %}
     {% set signal_repos = [] %}
@@ -2477,12 +2196,36 @@
             {% for repo in contrib_repos %}
                 {% for signal in report.scan_data.signals %}
                     {% if signal.repo == repo and repo not in i18n_repos %}
+                    <!-- Contributor Actions -->
+                    <div class="contributor-actions" onclick="event.stopPropagation();">
+                        <button class="btn-fetch-email" onclick="fetchContributorEmail(this, '{{ contributor.name or contributor.login }}', '{{ report.company_name|title }}')">
+                            Fetch Email
+                        </button>
+                        <button class="btn-select-contributor" onclick="selectContributor(this.closest('.contributor-card'), '{{ contributor.name or contributor.login }}', '{{ contributor.login }}', '{{ report.company_name|title }}')">
+                            Select & Email
+                        </button>
+                    </div>
+                    <div class="contributor-email-display" id="email-display-{{ contributor.login }}" style="display:none;"></div>
+                    <div class="inline-email-composer" id="composer-{{ contributor.login }}">
+                        <div class="composer-actions" style="margin-bottom: 0.75rem;">
+                            <button class="btn-enroll" onclick="sendContributorEmail('{{ contributor.login }}', '{{ report.company_name|title }}')">
+                                Enroll
+                            </button>
+                            <span style="font-size: 0.75rem; color: var(--text-secondary);">Send personalized outreach email</span>
+                        </div>
+                        <label>To:</label>
+                        <input type="text" id="composer-to-{{ contributor.login }}" placeholder="Fetch email first..." readonly>
+                        <label>Subject:</label>
+                        <input type="text" id="composer-subject-{{ contributor.login }}" value="{{ report.ai_analysis.email_draft.subject if report.ai_analysis and report.ai_analysis.email_draft else '' }}">
+                        <label>Body:</label>
+                        <textarea id="composer-body-{{ contributor.login }}">{{ report.ai_analysis.email_draft.body if report.ai_analysis and report.ai_analysis.email_draft else '' }}</textarea>
+                    </div>
                         {% set _ = i18n_repos.append(repo) %}
                     {% endif %}
                 {% endfor %}
             {% endfor %}
             {% set is_i18n_involved = i18n_repos|length > 0 %}
-            <div class="contributor-card{% if is_i18n_involved %} i18n-involved{% endif %}">
+            <div class="contributor-card{% if is_i18n_involved %} i18n-involved{% endif %}" onclick="selectContributor(this, '{{ contributor.name or contributor.login }}', '{{ contributor.login }}', '{{ report.company_name|title }}')" data-contributor-name="{{ contributor.name or contributor.login }}" data-contributor-login="{{ contributor.login }}">
                 <span class="contributor-rank{% if loop.index == 1 %} rank-1{% elif loop.index == 2 %} rank-2{% elif loop.index == 3 %} rank-3{% endif %}">#{{ loop.index }}</span>
                 <img src="{{ contributor.avatar_url or 'https://github.com/identicons/' ~ contributor.login ~ '.png' }}"
                     class="contributor-avatar" alt="{{ contributor.name }} avatar">
@@ -2538,37 +2281,6 @@
     </div>
     {% endif %}
 
-    <!-- Detected Signals -->
-    {% if report.scan_data.signals %}
-    <div class="section signals-section">
-        <h2 class="section-title">Detected Signals ({{ report.scan_data.signals|length }})</h2>
-        {% for signal in report.scan_data.signals[:20] %}
-        <div class="signal-card">
-            <div class="signal-header">
-                <span class="signal-type">{{ signal.type }}</span>
-                <span class="signal-repo">{{ signal.repo }}</span>
-            </div>
-            <div class="signal-content">
-                {% if signal.type == 'commit_message' %}
-                {{ signal.message[:150] }}{% if signal.message|length > 150 %}...{% endif %}
-                {% elif signal.type == 'pull_request' %}
-                PR #{{ signal.number }}: {{ signal.title }}
-                {% elif signal.type == 'file_change' %}
-                {{ signal.file }} ({{ signal.status }})
-                {% elif signal.type == 'hreflang' %}
-                hreflang detected in {{ signal.file }}
-                {% endif %}
-            </div>
-            {% if signal.url %}
-            <a href="{{ signal.url }}" target="_blank" class="signal-link">View on GitHub</a>
-            {% endif %}
-        </div>
-        {% endfor %}
-        {% if report.scan_data.signals|length > 20 %}
-        <p class="text-muted">Showing 20 of {{ report.scan_data.signals|length }} signals</p>
-        {% endif %}
-    </div>
-    {% endif %}
 </div>
 
 <button class="print-button" onclick="window.print()" title="Print Report" aria-label="Print Report">
@@ -2848,246 +2560,7 @@
         });
     });
 
-    // Deep Dive functionality
-    async function runDeepDive(button) {
-        const reportId = button.dataset.reportId;
-        const btnText = button.querySelector('.btn-text');
-        const originalText = btnText.textContent;
-        const section = document.getElementById('deepDiveSection');
-        const content = document.getElementById('deepDiveContent');
-
-        // Disable button and show loading state
-        button.disabled = true;
-        button.classList.add('loading');
-        btnText.textContent = 'Analyzing...';
-
-        // Show section with loading indicator
-        section.style.display = 'block';
-        content.innerHTML = `
-            <div class="deep-dive-loading">
-                <div class="spinner"></div>
-                <span>Gemini is analyzing the codebase data...</span>
-            </div>
-        `;
-
-        // Scroll to the section
-        section.scrollIntoView({ behavior: 'smooth', block: 'center' });
-
-        try {
-            const response = await fetch(`/api/report/${reportId}/deep-dive`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                }
-            });
-
-            const data = await response.json();
-
-            if (!response.ok) {
-                throw new Error(data.error || 'Failed to generate Deep Dive');
-            }
-
-            if (data.status === 'success' && data.deep_dive) {
-                // Render the Deep Dive results
-                renderDeepDive(data.deep_dive);
-
-                // Update button to show success
-                button.classList.remove('loading');
-                btnText.textContent = 'Deep Dive Complete';
-
-                // Keep button disabled since analysis is done
-                setTimeout(() => {
-                    btnText.textContent = 'View Deep Dive';
-                    button.onclick = () => {
-                        section.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                    };
-                    button.disabled = false;
-                }, 2000);
-            } else {
-                throw new Error(data.error || 'Invalid response from server');
-            }
-
-        } catch (error) {
-            console.error('Deep Dive error:', error);
-            content.innerHTML = `
-                <div class="deep-dive-error">
-                    <strong>Error:</strong> ${error.message}
-                    <br><br>
-                    <button onclick="runDeepDive(document.getElementById('deepDiveBtn'))"
-                            style="padding: 0.5rem 1rem; background: #dc2626; color: white; border: none; border-radius: 6px; cursor: pointer;">
-                        Try Again
-                    </button>
-                </div>
-            `;
-            button.classList.remove('loading');
-            button.disabled = false;
-            btnText.textContent = originalText;
-        }
-    }
-
-    function renderDeepDive(deepDive) {
-        const content = document.getElementById('deepDiveContent');
-
-        let html = '';
-
-        // Timeline Events
-        if (deepDive.timeline_events && deepDive.timeline_events.length > 0) {
-            html += `
-                <div class="deep-dive-subsection">
-                    <h4>
-                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-                            <circle cx="12" cy="12" r="10"></circle>
-                            <polyline points="12,6 12,12 16,14"></polyline>
-                        </svg>
-                        Timeline Events
-                    </h4>
-                    <div class="timeline-events-list">
-            `;
-
-            for (const event of deepDive.timeline_events) {
-                html += `
-                    <div class="timeline-event">
-                        <div class="timeline-event-date">${escapeHtml(event.date || 'Unknown')}</div>
-                        <div class="timeline-event-content">
-                            <div class="timeline-event-title">${escapeHtml(event.event || '')}</div>
-                            <div class="timeline-event-significance">${escapeHtml(event.significance || '')}</div>
-                        </div>
-                    </div>
-                `;
-            }
-
-            html += '</div></div>';
-        }
-
-        // Code Insights
-        if (deepDive.code_insights && deepDive.code_insights.length > 0) {
-            html += `
-                <div class="deep-dive-subsection">
-                    <h4>
-                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-                            <polyline points="16,18 22,12 16,6"></polyline>
-                            <polyline points="8,6 2,12 8,18"></polyline>
-                        </svg>
-                        Key Code Insights
-                    </h4>
-            `;
-
-            for (const insight of deepDive.code_insights) {
-                html += `<div class="code-insight-item">${escapeHtml(insight)}</div>`;
-            }
-
-            html += '</div>';
-        }
-
-        // Outreach Narrative
-        if (deepDive.outreach_narrative) {
-            html += `
-                <div class="deep-dive-subsection">
-                    <h4>
-                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-                        </svg>
-                        Why Reach Out
-                    </h4>
-                    <div class="outreach-narrative">${escapeHtml(deepDive.outreach_narrative)}</div>
-                </div>
-            `;
-        }
-
-        // If no content, show a message
-        if (!html) {
-            html = '<p style="text-align: center; color: var(--text-secondary);">No deep dive data available.</p>';
-        }
-
-        content.innerHTML = html;
-    }
-
-    function escapeHtml(text) {
-        if (!text) return '';
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-    }
-
-    // --- Contributor Email Workflow ---
-    async function fetchApolloEmail(button, name, login, company) {
-        button.disabled = true;
-        button.innerHTML = '<span style="display:inline-block;width:14px;height:14px;border:2px solid #ccc;border-top-color:var(--accent-color);border-radius:50%;animation:spin 0.8s linear infinite;"></span> Looking up...';
-        
-        // Try to extract domain from company website
-        let domain = '';
-        const websiteEl = document.querySelector('.company-website a');
-        if (websiteEl) {
-            try { domain = new URL(websiteEl.href).hostname; } catch(e) {}
-        }
-        if (!domain && company) {
-            domain = company.toLowerCase().replace(/[^a-z0-9]/g, '') + '.com';
-        }
-        
-        try {
-            const resp = await fetch('/api/apollo-lookup', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ name, github_login: login, domain })
-            });
-            const data = await resp.json();
-            
-            const resultEl = document.getElementById(`email-result-${login}`);
-            const composeBtn = document.getElementById(`compose-btn-${login}`);
-            
-            if (data.status === 'success' && data.email) {
-                const badgeClass = data.email_status === 'verified' ? 'verified' : 
-                                   data.email_status === 'guessed' ? 'unverified' : 'unknown';
-                const statusLabel = data.email_status === 'verified' ? 'Verified' :
-                                    data.email_status === 'guessed' ? 'Likely' : data.email_status || 'Unknown';
-                resultEl.innerHTML = `<span class="email-address">${data.email}</span><span class="email-badge ${badgeClass}">${statusLabel}</span>`;
-                resultEl.style.display = 'inline-flex';
-                composeBtn.style.display = 'inline-flex';
-                button.innerHTML = '&#10003; Found';
-                button.style.color = '#155724';
-                button.style.borderColor = '#155724';
-                
-                // Pre-fill the composer
-                document.getElementById(`composer-to-${login}`).value = data.email;
-                const subjectEl = document.getElementById('emailSubject');
-                const bodyEl = document.getElementById('emailBody');
-                if (subjectEl) document.getElementById(`composer-subject-${login}`).value = subjectEl.value;
-                if (bodyEl) {
-                    let body = bodyEl.value;
-                    // Personalize: replace generic greeting with name
-                    if (data.name) {
-                        const firstName = data.name.split(' ')[0];
-                        body = body.replace(/^Hi\b.*?,/m, `Hi ${firstName},`);
-                        body = body.replace(/^Hey\b.*?,/m, `Hey ${firstName},`);
-                    }
-                    document.getElementById(`composer-body-${login}`).value = body;
-                }
-            } else {
-                resultEl.innerHTML = '<span style="color: #856404;">No email found</span>';
-                resultEl.style.display = 'inline-flex';
-                button.innerHTML = 'Not found';
-                button.style.color = '#856404';
-                button.style.borderColor = '#856404';
-            }
-        } catch(e) {
-            button.innerHTML = 'Error';
-            button.style.color = '#dc3545';
-            button.style.borderColor = '#dc3545';
-            console.error('Apollo lookup error:', e);
-        }
-    }
-    
-    function openComposer(login, name) {
-        // Close any other open composers
-        document.querySelectorAll('.inline-email-composer.active').forEach(el => el.classList.remove('active'));
-        document.querySelectorAll('.prospect-card.selected').forEach(el => el.classList.remove('selected'));
-        
-        const composer = document.getElementById(`composer-${login}`);
-        const card = composer.closest('.prospect-card');
-        composer.classList.add('active');
-        if (card) card.classList.add('selected');
-        
-        // Show selected contact banner in email section
+    // Show selected contact banner in email section
         const banner = document.getElementById('selected-contact-banner');
         if (banner) {
             banner.textContent = `Composing email to: ${name}`;
@@ -3146,6 +2619,174 @@
             status.innerHTML = '<span style="color: #dc3545;">Network error</span>';
         }
     }
+
+    
+        // ============================================
+        // Contributor Email Workflow
+        // ============================================
+        
+        let selectedContributor = null;
+        
+        function selectContributor(card, name, login, company) {
+            // Deselect previous
+            document.querySelectorAll('.contributor-card.selected').forEach(c => c.classList.remove('selected'));
+            
+            // Select this card
+            card.classList.add('selected');
+            selectedContributor = { name, login, company };
+            
+            // Show selected contact indicator in email draft section
+            const banner = document.getElementById('selected-contact-banner');
+            if (banner) {
+                banner.className = 'selected-contact-indicator visible';
+                const avatarUrl = `https://github.com/${login}.png`;
+                banner.innerHTML = `
+                    <img src="${avatarUrl}" class="contact-avatar-sm" alt="${name}">
+                    <strong>Selected:</strong> ${name} (@${login})
+                    <span style="margin-left: auto; font-size: 0.75rem; color: var(--text-secondary);">Email will be sent to this contributor</span>
+                `;
+            }
+            
+            // Update the email draft with personalized content for this contributor
+            const subjectEl = document.getElementById('emailSubject');
+            const bodyEl = document.getElementById('emailBody');
+            if (subjectEl && bodyEl) {
+                // Keep subject as-is, personalize body opening
+                const currentBody = bodyEl.value;
+                if (!currentBody.includes(`Hi ${name}`)) {
+                    bodyEl.value = currentBody.replace(/^Hi .*?,/m, `Hi ${name},`).replace(/^Hello .*?,/m, `Hi ${name},`);
+                }
+            }
+            
+            // Show inline composer on the card
+            document.querySelectorAll('.inline-email-composer').forEach(c => c.classList.remove('active'));
+            const composer = document.getElementById(`composer-${login}`);
+            if (composer) {
+                composer.classList.add('active');
+                // Pre-fill the to field if we have an email
+                const emailDisplay = document.getElementById(`email-display-${login}`);
+                if (emailDisplay && emailDisplay.dataset.email) {
+                    document.getElementById(`composer-to-${login}`).value = emailDisplay.dataset.email;
+                }
+            }
+            
+            // Scroll to email draft section
+            const emailSection = document.querySelector('.email-draft-section');
+            if (emailSection) {
+                emailSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        }
+        
+        async function fetchContributorEmail(button, name, company) {
+            const originalText = button.textContent;
+            button.disabled = true;
+            button.textContent = 'Fetching...';
+            
+            try {
+                const response = await fetch('/api/apollo-lookup', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: name, company: company })
+                });
+                
+                const data = await response.json();
+                
+                const card = button.closest('.contributor-card');
+                const login = card.dataset.contributorLogin;
+                const emailDisplay = document.getElementById(`email-display-${login}`);
+                
+                if (data.status === 'found' && data.email) {
+                    const isVerified = data.email_status === 'verified';
+                    emailDisplay.innerHTML = `
+                        <span>${data.email}</span>
+                        <span class="email-badge ${isVerified ? 'email-badge-verified' : 'email-badge-unverified'}">
+                            ${isVerified ? 'Verified' : 'Unverified'}
+                        </span>
+                    `;
+                    emailDisplay.dataset.email = data.email;
+                    emailDisplay.style.display = 'flex';
+                    
+                    // Update composer to field
+                    const composerTo = document.getElementById(`composer-to-${login}`);
+                    if (composerTo) composerTo.value = data.email;
+                    
+                    button.textContent = 'Email Found';
+                    button.style.background = '#d1fae5';
+                    button.style.color = '#065f46';
+                    button.style.borderColor = '#a7f3d0';
+                } else if (data.status === 'not_found') {
+                    emailDisplay.innerHTML = `
+                        <span style="color: var(--text-secondary);">No email found</span>
+                        <span class="email-badge email-badge-not-found">Not Found</span>
+                    `;
+                    emailDisplay.style.display = 'flex';
+                    button.textContent = 'Not Found';
+                    button.style.background = '#fee2e2';
+                    button.style.color = '#991b1b';
+                } else {
+                    button.textContent = 'Error';
+                    button.style.background = '#fee2e2';
+                    button.style.color = '#991b1b';
+                }
+            } catch (error) {
+                console.error('Email fetch error:', error);
+                button.textContent = 'Error';
+                button.style.background = '#fee2e2';
+                button.style.color = '#991b1b';
+            }
+            
+            setTimeout(() => { button.disabled = false; }, 2000);
+        }
+        
+        async function sendContributorEmail(login, company) {
+            const toEl = document.getElementById(`composer-to-${login}`);
+            const subjectEl = document.getElementById(`composer-subject-${login}`);
+            const bodyEl = document.getElementById(`composer-body-${login}`);
+            
+            if (!toEl || !toEl.value) {
+                alert('Please fetch the email address first.');
+                return;
+            }
+            
+            const enrollBtn = event.target;
+            enrollBtn.disabled = true;
+            enrollBtn.textContent = 'Sending...';
+            
+            try {
+                const response = await fetch('/api/send-outreach-email', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        to_email: toEl.value,
+                        subject: subjectEl.value,
+                        body: bodyEl.value,
+                        company_name: company,
+                        report_id: '{{ report.id }}'
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    enrollBtn.textContent = 'Sent!';
+                    enrollBtn.style.background = '#059669';
+                } else {
+                    enrollBtn.textContent = 'Failed';
+                    enrollBtn.style.background = '#ef4444';
+                    alert('Send failed: ' + (data.message || 'Unknown error'));
+                }
+            } catch (error) {
+                console.error('Send error:', error);
+                enrollBtn.textContent = 'Error';
+                enrollBtn.style.background = '#ef4444';
+            }
+            
+            setTimeout(() => {
+                enrollBtn.disabled = false;
+                enrollBtn.textContent = 'Enroll';
+                enrollBtn.style.background = '#10b981';
+            }, 3000);
+        }
 
     </script>
 {% endblock %}
