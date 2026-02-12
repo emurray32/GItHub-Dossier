@@ -38,7 +38,11 @@ from database import (
     update_webscraper_notes, archive_webscraper_account, unarchive_webscraper_account,
     delete_webscraper_account, get_webscraper_archived_count, webscraper_bulk_archive,
     webscraper_bulk_delete, webscraper_bulk_change_tier, get_webscraper_account,
-    is_webscraper_accounts_empty, WEBSCRAPER_TIER_CONFIG, update_webscraper_scan_results
+    is_webscraper_accounts_empty, WEBSCRAPER_TIER_CONFIG, update_webscraper_scan_results,
+    # Contributors
+    save_contributor, save_contributors_batch, get_contributors_datatable,
+    get_contributor_stats, update_contributor_apollo_status,
+    increment_contributor_emails, get_contributor_by_id, delete_contributor
 )
 from monitors.webscraper_utils import (
     detect_expansion_signals, calculate_webscraper_tier, extract_tier_from_scan_results,
@@ -1581,6 +1585,176 @@ def grow():
 def rules():
     """View the scanning rule set configuration."""
     return render_template('rules.html')
+
+
+@app.route('/contributors')
+def contributors():
+    """View top GitHub contributors for BDR outreach."""
+    stats = get_contributor_stats()
+    return render_template('contributors.html', stats=stats)
+
+
+@app.route('/api/contributors/datatable', methods=['GET'])
+def api_contributors_datatable():
+    """Server-side datatable endpoint for contributors."""
+    draw = request.args.get('draw', 1, type=int)
+    start = request.args.get('start', 0, type=int)
+    length = request.args.get('length', 50, type=int)
+    search_value = request.args.get('search[value]', '').strip()
+
+    order_column = request.args.get('order[0][column]', 6, type=int)
+    order_dir = request.args.get('order[0][dir]', 'desc').lower()
+
+    apollo_filter = request.args.get('apollo_filter', '').strip() or None
+
+    length = max(1, min(length, 10000))
+    start = max(0, start)
+
+    result = get_contributors_datatable(
+        draw=draw, start=start, length=length,
+        search_value=search_value,
+        order_column=order_column, order_dir=order_dir,
+        apollo_filter=apollo_filter
+    )
+    return jsonify(result)
+
+
+@app.route('/api/contributors/stats')
+def api_contributors_stats():
+    """Get aggregate contributor stats."""
+    stats = get_contributor_stats()
+    return jsonify(stats)
+
+
+@app.route('/api/contributors/<int:contributor_id>/apollo', methods=['POST'])
+def api_update_contributor_apollo(contributor_id: int):
+    """Update Apollo/sequence enrollment status for a contributor."""
+    data = request.get_json() or {}
+    status = data.get('status', 'sent')
+    sequence_name = data.get('sequence_name', '')
+
+    updated = update_contributor_apollo_status(contributor_id, status, sequence_name)
+    if not updated:
+        return jsonify({'error': 'Contributor not found'}), 404
+    return jsonify({'status': 'success'})
+
+
+@app.route('/api/contributors/<int:contributor_id>/send-email', methods=['POST'])
+def api_contributor_send_email(contributor_id: int):
+    """Send an outreach email to a contributor via AgentMail."""
+    contributor = get_contributor_by_id(contributor_id)
+    if not contributor:
+        return jsonify({'error': 'Contributor not found'}), 404
+
+    data = request.get_json() or {}
+    to_email = data.get('to_email', contributor.get('email', ''))
+    subject = data.get('subject', f"Quick question about {contributor.get('company', 'your work')}")
+    body = data.get('body', '')
+
+    if not to_email:
+        return jsonify({'error': 'No email address available for this contributor'}), 400
+
+    result = send_email_draft(
+        to_email=to_email,
+        subject=subject,
+        body=body,
+        company_name=contributor.get('company', contributor.get('name', ''))
+    )
+
+    if result.get('success'):
+        increment_contributor_emails(contributor_id)
+
+    return jsonify(result)
+
+
+@app.route('/api/contributors/<int:contributor_id>', methods=['DELETE'])
+def api_delete_contributor(contributor_id: int):
+    """Delete a contributor."""
+    deleted = delete_contributor(contributor_id)
+    if not deleted:
+        return jsonify({'error': 'Contributor not found'}), 404
+    return jsonify({'status': 'success'})
+
+
+@app.route('/api/contributors/fetch', methods=['POST'])
+def api_fetch_contributors():
+    """
+    Fetch top contributors from GitHub for all scanned accounts (or a specific org).
+    Stores them in the contributors table.
+    """
+    from utils import make_github_request
+
+    data = request.get_json() or {}
+    specific_org = data.get('org', '').strip()
+    limit_per_repo = data.get('limit', 5)
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    if specific_org:
+        cursor.execute('''
+            SELECT DISTINCT company_name, github_org, annual_revenue
+            FROM monitored_accounts
+            WHERE github_org = ? AND archived_at IS NULL
+        ''', (specific_org,))
+    else:
+        cursor.execute('''
+            SELECT DISTINCT company_name, github_org, annual_revenue
+            FROM monitored_accounts
+            WHERE github_org IS NOT NULL AND github_org != '' AND archived_at IS NULL
+        ''')
+
+    accounts = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+
+    total_saved = 0
+    errors = []
+
+    for account in accounts:
+        org = account['github_org']
+        company = account['company_name']
+        revenue = account.get('annual_revenue', '')
+
+        try:
+            url = f"{Config.GITHUB_API_BASE}/orgs/{org}/repos"
+            response = make_github_request(url, params={'per_page': 5, 'sort': 'pushed'}, timeout=15)
+            if response.status_code != 200:
+                continue
+
+            repos = response.json()
+            for repo in repos[:3]:
+                repo_name = repo['name']
+                contributors_list = get_top_contributors(org, repo_name, limit=limit_per_repo)
+
+                batch = []
+                for c in contributors_list:
+                    batch.append({
+                        'github_login': c['login'],
+                        'github_url': c.get('github_url', f"https://github.com/{c['login']}"),
+                        'name': c.get('name', c['login']),
+                        'email': c.get('email', ''),
+                        'blog': c.get('blog', ''),
+                        'company': company,
+                        'annual_revenue': revenue,
+                        'repo_source': f"{org}/{repo_name}",
+                        'github_org': org,
+                        'contributions': c.get('contributions', 0),
+                        'insight': f"Top contributor to {org}/{repo_name} — active in {company}'s codebase."
+                    })
+
+                if batch:
+                    saved = save_contributors_batch(batch)
+                    total_saved += saved
+
+        except Exception as e:
+            errors.append(f"{org}: {str(e)}")
+
+    return jsonify({
+        'status': 'success',
+        'accounts_processed': len(accounts),
+        'contributors_saved': total_saved,
+        'errors': errors
+    })
 
 
 @app.route('/experiment')
