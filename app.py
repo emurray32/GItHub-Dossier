@@ -123,6 +123,58 @@ def get_top_contributors(org_login: str, repo_name: str, limit: int = 5) -> list
     return []
 
 
+def save_scan_contributors(scan_data: dict) -> int:
+    """
+    Extract contributors from scan results and save them to the contributors table.
+    Called automatically after every scan completes, regardless of tier.
+
+    Args:
+        scan_data: The full scan_data dict from deep_scan_generator
+
+    Returns:
+        Number of contributors saved.
+    """
+    contributors_map = scan_data.get('contributors', {})
+    if not contributors_map:
+        return 0
+
+    org_login = scan_data.get('org_login', '')
+    company_name = scan_data.get('company_name', '')
+
+    # Look up revenue from the monitored account
+    revenue = ''
+    try:
+        account = get_account_by_company_case_insensitive(company_name)
+        if account:
+            revenue = account.get('annual_revenue', '') or ''
+    except Exception:
+        pass
+
+    batch = []
+    for login, c in contributors_map.items():
+        repos_list = c.get('repos', [])
+        repo_source = f"{org_login}/{repos_list[0]}" if repos_list else org_login
+
+        batch.append({
+            'github_login': c.get('login', login),
+            'github_url': c.get('github_url', f"https://github.com/{login}"),
+            'name': c.get('name', login),
+            'email': c.get('email', ''),
+            'blog': c.get('blog', ''),
+            'company': c.get('company', '') or company_name,
+            'company_size': '',
+            'annual_revenue': revenue,
+            'repo_source': repo_source,
+            'github_org': org_login,
+            'contributions': c.get('contributions', 0),
+            'insight': f"Top contributor to {repo_source} — active in {company_name}'s codebase."
+        })
+
+    if batch:
+        return save_contributors_batch(batch)
+    return 0
+
+
 # Custom Jinja2 filter to normalize URLs
 @app.template_filter('normalize_url')
 def normalize_url_filter(url):
@@ -796,6 +848,14 @@ def perform_background_scan(company_name: str):
             print(f"[WORKER] {scan_error}")
             import traceback; traceback.print_exc()
 
+        # Phase 5b: Save contributors from scan results to contributors table
+        try:
+            contrib_count = save_scan_contributors(scan_data)
+            if contrib_count:
+                print(f"[WORKER] Saved {contrib_count} contributors for {company_name}")
+        except Exception as e:
+            print(f"[WORKER] Warning: Could not save contributors: {e}")
+
         print(f"[WORKER] Completed scan for {company_name} in {duration:.1f}s")
 
     except Exception as e:
@@ -1114,6 +1174,14 @@ def stream_scan(company: str):
 
         except Exception as e:
             yield f"data: LOG:Warning: Could not update account status: {str(e)}\n\n"
+
+        # Phase 3.7: Save contributors from scan results to contributors table
+        try:
+            contrib_count = save_scan_contributors(scan_data)
+            if contrib_count:
+                yield f"data: LOG:Saved {contrib_count} contributors to outreach table\n\n"
+        except Exception as e:
+            yield f"data: LOG:Warning: Could not save contributors: {str(e)}\n\n"
 
         # Phase 4: Send final result
         final_result = {
