@@ -378,6 +378,48 @@ def init_db() -> None:
         ON webscraper_accounts(archived_at)
     ''')
 
+    # Contributors table - tracks top GitHub contributors across scanned repos
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS contributors (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            github_login TEXT NOT NULL,
+            github_url TEXT,
+            name TEXT,
+            email TEXT,
+            blog TEXT,
+            company TEXT,
+            company_size TEXT,
+            annual_revenue TEXT,
+            repo_source TEXT,
+            github_org TEXT,
+            contributions INTEGER DEFAULT 0,
+            insight TEXT,
+            apollo_status TEXT DEFAULT 'not_sent',
+            emails_sent INTEGER DEFAULT 0,
+            enrolled_in_sequence INTEGER DEFAULT 0,
+            sequence_name TEXT,
+            enrolled_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(github_login, github_org)
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_contributors_login
+        ON contributors(github_login)
+    ''')
+
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_contributors_org
+        ON contributors(github_org)
+    ''')
+
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_contributors_apollo
+        ON contributors(apollo_status)
+    ''')
+
     conn.commit()
     conn.close()
 
@@ -4264,3 +4306,268 @@ def update_webscraper_scan_results(account_id: int, scan_results: dict) -> bool:
     conn.close()
 
     return updated
+
+
+# =============================================================================
+# CONTRIBUTORS - GitHub contributor tracking for BDR outreach
+# =============================================================================
+
+def save_contributor(contributor_data: dict) -> Optional[int]:
+    """
+    Save or update a contributor record.
+    Uses UPSERT on (github_login, github_org) to avoid duplicates.
+
+    Returns the contributor ID or None on failure.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute('''
+            INSERT INTO contributors (
+                github_login, github_url, name, email, blog,
+                company, company_size, annual_revenue, repo_source,
+                github_org, contributions, insight
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(github_login, github_org) DO UPDATE SET
+                name = COALESCE(excluded.name, contributors.name),
+                email = COALESCE(excluded.email, contributors.email),
+                blog = COALESCE(excluded.blog, contributors.blog),
+                company = COALESCE(excluded.company, contributors.company),
+                company_size = COALESCE(excluded.company_size, contributors.company_size),
+                annual_revenue = COALESCE(excluded.annual_revenue, contributors.annual_revenue),
+                repo_source = COALESCE(excluded.repo_source, contributors.repo_source),
+                contributions = COALESCE(excluded.contributions, contributors.contributions),
+                insight = COALESCE(excluded.insight, contributors.insight),
+                updated_at = CURRENT_TIMESTAMP
+        ''', (
+            contributor_data.get('github_login', ''),
+            contributor_data.get('github_url', ''),
+            contributor_data.get('name', ''),
+            contributor_data.get('email', ''),
+            contributor_data.get('blog', ''),
+            contributor_data.get('company', ''),
+            contributor_data.get('company_size', ''),
+            contributor_data.get('annual_revenue', ''),
+            contributor_data.get('repo_source', ''),
+            contributor_data.get('github_org', ''),
+            contributor_data.get('contributions', 0),
+            contributor_data.get('insight', '')
+        ))
+
+        contributor_id = cursor.lastrowid
+        conn.commit()
+        return contributor_id
+    except Exception as e:
+        print(f"[CONTRIBUTORS] Error saving contributor: {e}")
+        conn.rollback()
+        return None
+    finally:
+        conn.close()
+
+
+def save_contributors_batch(contributors: list) -> int:
+    """Save multiple contributors in a single transaction. Returns count saved."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    saved = 0
+
+    try:
+        for c in contributors:
+            cursor.execute('''
+                INSERT INTO contributors (
+                    github_login, github_url, name, email, blog,
+                    company, company_size, annual_revenue, repo_source,
+                    github_org, contributions, insight
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(github_login, github_org) DO UPDATE SET
+                    name = COALESCE(excluded.name, contributors.name),
+                    email = COALESCE(excluded.email, contributors.email),
+                    blog = COALESCE(excluded.blog, contributors.blog),
+                    company = COALESCE(excluded.company, contributors.company),
+                    company_size = COALESCE(excluded.company_size, contributors.company_size),
+                    annual_revenue = COALESCE(excluded.annual_revenue, contributors.annual_revenue),
+                    repo_source = COALESCE(excluded.repo_source, contributors.repo_source),
+                    contributions = COALESCE(excluded.contributions, contributors.contributions),
+                    insight = COALESCE(excluded.insight, contributors.insight),
+                    updated_at = CURRENT_TIMESTAMP
+            ''', (
+                c.get('github_login', ''),
+                c.get('github_url', ''),
+                c.get('name', ''),
+                c.get('email', ''),
+                c.get('blog', ''),
+                c.get('company', ''),
+                c.get('company_size', ''),
+                c.get('annual_revenue', ''),
+                c.get('repo_source', ''),
+                c.get('github_org', ''),
+                c.get('contributions', 0),
+                c.get('insight', '')
+            ))
+            saved += 1
+
+        conn.commit()
+    except Exception as e:
+        print(f"[CONTRIBUTORS] Batch save error: {e}")
+        conn.rollback()
+    finally:
+        conn.close()
+
+    return saved
+
+
+def get_contributors_datatable(draw=1, start=0, length=50, search_value='',
+                                order_column=0, order_dir='asc',
+                                apollo_filter=None) -> dict:
+    """
+    Server-side datatable processing for contributors.
+    Returns paginated, sorted, and filtered contributor data.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Column mapping for sorting
+    columns = ['github_login', 'name', 'company', 'company_size',
+               'github_url', 'annual_revenue', 'contributions',
+               'apollo_status', 'emails_sent', 'insight']
+
+    sort_col = columns[order_column] if 0 <= order_column < len(columns) else 'contributions'
+    sort_dir = 'DESC' if order_dir.lower() == 'desc' else 'ASC'
+
+    # Build WHERE clause
+    conditions = []
+    params = []
+
+    if search_value:
+        conditions.append('''
+            (LOWER(github_login) LIKE ? OR LOWER(name) LIKE ?
+             OR LOWER(company) LIKE ? OR LOWER(email) LIKE ?
+             OR LOWER(github_org) LIKE ? OR LOWER(repo_source) LIKE ?
+             OR LOWER(insight) LIKE ?)
+        ''')
+        sv = f'%{search_value.lower()}%'
+        params.extend([sv, sv, sv, sv, sv, sv, sv])
+
+    if apollo_filter:
+        conditions.append('apollo_status = ?')
+        params.append(apollo_filter)
+
+    where_clause = ''
+    if conditions:
+        where_clause = 'WHERE ' + ' AND '.join(conditions)
+
+    # Total records (unfiltered)
+    cursor.execute('SELECT COUNT(*) as cnt FROM contributors')
+    total_records = cursor.fetchone()['cnt']
+
+    # Filtered records
+    cursor.execute(f'SELECT COUNT(*) as cnt FROM contributors {where_clause}', params)
+    filtered_records = cursor.fetchone()['cnt']
+
+    # Fetch data
+    query = f'''
+        SELECT * FROM contributors
+        {where_clause}
+        ORDER BY {sort_col} {sort_dir}
+        LIMIT ? OFFSET ?
+    '''
+    params.extend([length, start])
+    cursor.execute(query, params)
+
+    rows = cursor.fetchall()
+    data = [dict(row) for row in rows]
+
+    conn.close()
+
+    return {
+        'draw': draw,
+        'recordsTotal': total_records,
+        'recordsFiltered': filtered_records,
+        'data': data
+    }
+
+
+def get_contributor_stats() -> dict:
+    """Get aggregate stats for contributors: total, enrolled, emails sent."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT
+            COUNT(*) as total_contributors,
+            SUM(CASE WHEN apollo_status = 'sent' OR enrolled_in_sequence = 1 THEN 1 ELSE 0 END) as total_enrolled,
+            SUM(emails_sent) as total_emails_sent
+        FROM contributors
+    ''')
+    row = cursor.fetchone()
+    conn.close()
+
+    return {
+        'total_contributors': row['total_contributors'] or 0,
+        'total_enrolled': row['total_enrolled'] or 0,
+        'total_emails_sent': row['total_emails_sent'] or 0
+    }
+
+
+def update_contributor_apollo_status(contributor_id: int, status: str, sequence_name: str = '') -> bool:
+    """Update Apollo enrollment status for a contributor."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    enrolled = 1 if status == 'sent' else 0
+    enrolled_at = datetime.now().isoformat() if status == 'sent' else None
+
+    cursor.execute('''
+        UPDATE contributors
+        SET apollo_status = ?,
+            enrolled_in_sequence = ?,
+            sequence_name = ?,
+            enrolled_at = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+    ''', (status, enrolled, sequence_name, enrolled_at, contributor_id))
+
+    updated = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return updated
+
+
+def increment_contributor_emails(contributor_id: int) -> bool:
+    """Increment email count for a contributor."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        UPDATE contributors
+        SET emails_sent = emails_sent + 1,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+    ''', (contributor_id,))
+
+    updated = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return updated
+
+
+def get_contributor_by_id(contributor_id: int) -> Optional[dict]:
+    """Get a single contributor by ID."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM contributors WHERE id = ?', (contributor_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def delete_contributor(contributor_id: int) -> bool:
+    """Delete a contributor by ID."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM contributors WHERE id = ?', (contributor_id,))
+    deleted = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return deleted

@@ -23,7 +23,7 @@
                 Lead Machine
             </a>
             <div class="nav-modules">
-                <a href="{{ url_for('accounts') }}" class="nav-module {% if request.endpoint in ['accounts', 'grow', 'history', 'rules'] %}active{% endif %}">
+                <a href="{{ url_for('accounts') }}" class="nav-module {% if request.endpoint in ['accounts', 'grow', 'history', 'rules', 'contributors'] %}active{% endif %}">
                     <span>RepoRadar</span>
                 </a>
                 <a href="{{ url_for('webscraper_accounts') }}" class="nav-module {% if request.endpoint == 'webscraper_accounts' %}active{% endif %}">
