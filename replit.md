@@ -46,6 +46,12 @@ python app.py
 - **AI**: OpenAI GPT-5-mini (via Replit AI Integrations), Google Gemini (fallback)
 
 ## Recent Changes
+- 2026-02-13: Added Apollo sequence enrollment to report page
+  - New API: GET /api/apollo/sequences fetches available Apollo email sequences
+  - New API: POST /api/apollo/enroll-sequence searches/creates contact and enrolls in sequence
+  - "Enroll in Sequence" button added to each contributor card in report.html
+  - Sequence selector dropdown with caching, auto-email-fetch, and enrollment status badges
+  - Fixed corrupted /api/send-outreach-email route decorator
 - 2026-02-10: Switched AI engine from Gemini to OpenAI GPT-5-mini
   - Installed Replit AI Integrations for OpenAI (no API key needed, billed to credits)
   - GPT-5-mini is now the primary AI engine for scan analysis
