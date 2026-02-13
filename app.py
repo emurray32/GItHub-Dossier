@@ -4982,6 +4982,122 @@ def send_outreach_email():
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
+@app.route('/api/apollo/sequences')
+def api_apollo_sequences():
+    """Fetch available Apollo email sequences."""
+    import requests as req
+    
+    apollo_key = os.environ.get('APOLLO_API_KEY', '')
+    if not apollo_key:
+        return jsonify({'status': 'error', 'code': 'NO_API_KEY', 'message': 'Apollo API key not configured. Add APOLLO_API_KEY in Settings.'}), 400
+    
+    try:
+        resp = req.post('https://api.apollo.io/api/v1/emailer_campaigns/search', 
+                       json={'api_key': apollo_key},
+                       timeout=15)
+        
+        if resp.status_code != 200:
+            return jsonify({'status': 'error', 'message': f'Apollo API returned {resp.status_code}'}), 502
+        
+        campaigns = resp.json().get('emailer_campaigns', [])
+        sequences = []
+        for c in campaigns:
+            sequences.append({
+                'id': c.get('id'),
+                'name': c.get('name', 'Unnamed Sequence'),
+                'active': c.get('active', False),
+                'num_steps': len(c.get('emailer_steps', [])),
+                'created_at': c.get('created_at', ''),
+            })
+        
+        return jsonify({'status': 'success', 'sequences': sequences})
+    except Exception as e:
+        print(f"[APOLLO SEQUENCES ERROR] {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@app.route('/api/apollo/enroll-sequence', methods=['POST'])
+def api_apollo_enroll_sequence():
+    """Enroll a contact into an Apollo email sequence."""
+    import requests as req
+    
+    apollo_key = os.environ.get('APOLLO_API_KEY', '')
+    if not apollo_key:
+        return jsonify({'status': 'error', 'code': 'NO_API_KEY', 'message': 'Apollo API key not configured'}), 400
+    
+    data = request.get_json()
+    if not data:
+        return jsonify({'status': 'error', 'message': 'No data provided'}), 400
+    
+    email = data.get('email', '').strip()
+    first_name = data.get('first_name', '').strip()
+    last_name = data.get('last_name', '').strip()
+    sequence_id = data.get('sequence_id', '').strip()
+    company_name = data.get('company_name', '').strip()
+    
+    if not email or not sequence_id:
+        return jsonify({'status': 'error', 'message': 'Missing required fields: email and sequence_id'}), 400
+    
+    try:
+        # Step 1: Search for existing contact
+        contact_id = None
+        search_resp = req.post('https://api.apollo.io/api/v1/contacts/search',
+                              json={'api_key': apollo_key, 'q_keywords': email, 'per_page': 1},
+                              timeout=15)
+        
+        if search_resp.status_code == 200:
+            contacts = search_resp.json().get('contacts', [])
+            if contacts:
+                contact_id = contacts[0].get('id')
+                print(f"[APOLLO ENROLL] Found existing contact {contact_id} for {email}")
+        
+        # Step 2: Create contact if not found
+        if not contact_id:
+            create_payload = {
+                'api_key': apollo_key,
+                'first_name': first_name or email.split('@')[0],
+                'last_name': last_name or '',
+                'email': email,
+                'organization_name': company_name,
+            }
+            create_resp = req.post('https://api.apollo.io/api/v1/contacts',
+                                  json=create_payload,
+                                  timeout=15)
+            
+            if create_resp.status_code in (200, 201):
+                contact_data = create_resp.json().get('contact', {})
+                contact_id = contact_data.get('id')
+                print(f"[APOLLO ENROLL] Created new contact {contact_id} for {email}")
+            else:
+                error_msg = create_resp.json().get('message', create_resp.text[:200])
+                return jsonify({'status': 'error', 'message': f'Failed to create Apollo contact: {error_msg}'}), 502
+        
+        if not contact_id:
+            return jsonify({'status': 'error', 'message': 'Could not find or create contact in Apollo'}), 500
+        
+        # Step 3: Enroll in sequence
+        enroll_resp = req.post(
+            f'https://api.apollo.io/api/v1/emailer_campaigns/{sequence_id}/add_contact_ids',
+            json={'api_key': apollo_key, 'contact_ids': [contact_id]},
+            timeout=15
+        )
+        
+        if enroll_resp.status_code in (200, 201):
+            print(f"[APOLLO ENROLL] Enrolled {email} (contact {contact_id}) in sequence {sequence_id}")
+            return jsonify({
+                'status': 'success',
+                'message': f'Successfully enrolled {email} in sequence',
+                'contact_id': contact_id,
+            })
+        else:
+            error_msg = enroll_resp.json().get('message', enroll_resp.text[:200]) if enroll_resp.text else 'Unknown error'
+            return jsonify({'status': 'error', 'message': f'Failed to enroll in sequence: {error_msg}'}), 502
+    
+    except Exception as e:
+        print(f"[APOLLO ENROLL ERROR] {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
 if __name__ == '__main__':
     # Initialize when running directly
     print("[APP] Starting application...")

@@ -926,6 +926,136 @@
         height: 16px;
     }
 
+    /* Apollo Sequence Enrollment */
+    .btn-enroll-sequence {
+        background: #1a1a1a;
+        color: white;
+        border: none;
+        padding: 0.35rem 0.75rem;
+        border-radius: 6px;
+        font-size: 0.75rem;
+        font-weight: 500;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        transition: all 0.2s ease;
+        position: relative;
+    }
+    .btn-enroll-sequence:hover {
+        background: #333;
+    }
+    .btn-enroll-sequence:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+    .btn-enroll-sequence.loading {
+        background: #444;
+        pointer-events: none;
+    }
+    .btn-enroll-sequence.success {
+        background: #166534;
+    }
+    .btn-enroll-sequence.error {
+        background: #991b1b;
+    }
+
+    .sequence-selector-dropdown {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        z-index: 100;
+        background: white;
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+        min-width: 280px;
+        max-height: 240px;
+        overflow-y: auto;
+        display: none;
+        margin-top: 4px;
+    }
+    .sequence-selector-dropdown.open {
+        display: block;
+    }
+    .sequence-selector-header {
+        padding: 0.6rem 0.75rem;
+        font-size: 0.7rem;
+        font-weight: 600;
+        color: var(--text-secondary);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        border-bottom: 1px solid var(--border-color);
+    }
+    .sequence-option {
+        padding: 0.6rem 0.75rem;
+        cursor: pointer;
+        font-size: 0.8rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-bottom: 1px solid rgba(0,0,0,0.04);
+        transition: background 0.15s;
+    }
+    .sequence-option:hover {
+        background: #f8fafc;
+    }
+    .sequence-option:last-child {
+        border-bottom: none;
+    }
+    .sequence-option-name {
+        font-weight: 500;
+        color: var(--text-primary);
+    }
+    .sequence-option-meta {
+        font-size: 0.7rem;
+        color: var(--text-secondary);
+    }
+    .sequence-option-active {
+        display: inline-block;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        margin-right: 6px;
+    }
+    .sequence-option-active.active {
+        background: #10b981;
+    }
+    .sequence-option-active.inactive {
+        background: #94a3b8;
+    }
+    .sequence-loading, .sequence-error, .sequence-empty {
+        padding: 1rem;
+        text-align: center;
+        font-size: 0.8rem;
+        color: var(--text-secondary);
+    }
+    .sequence-error {
+        color: #dc2626;
+    }
+    .enrollment-status {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+        font-size: 0.7rem;
+        font-weight: 500;
+        padding: 0.2rem 0.5rem;
+        border-radius: 4px;
+        margin-top: 0.25rem;
+    }
+    .enrollment-status.enrolled {
+        background: #d1fae5;
+        color: #065f46;
+    }
+    .enrollment-status.pending {
+        background: #fef3c7;
+        color: #92400e;
+    }
+    .enrollment-status.error {
+        background: #fee2e2;
+        color: #991b1b;
+    }
+
     /* BDR Modal */
     .bdr-modal {
         display: none;
@@ -2204,7 +2334,15 @@
                         <button class="btn-select-contributor" onclick="selectContributor(this.closest('.contributor-card'), '{{ contributor.name or contributor.login }}', '{{ contributor.login }}', '{{ report.company_name|title }}')">
                             Select & Email
                         </button>
+                        <div style="position: relative; display: inline-block;">
+                            <button class="btn-enroll-sequence" id="enroll-seq-btn-{{ contributor.login }}" data-login="{{ contributor.login }}" data-name="{{ (contributor.name or contributor.login)|e }}" data-company="{{ report.company_name|title|e }}" onclick="event.stopPropagation(); showSequenceSelector(this.dataset.login, this.dataset.name, this.dataset.company)">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
+                                Enroll in Sequence
+                            </button>
+                            <div class="sequence-selector-dropdown" id="seq-dropdown-{{ contributor.login }}"></div>
+                        </div>
                     </div>
+                    <div id="enrollment-status-{{ contributor.login }}"></div>
                     <div class="contributor-email-display" id="email-display-{{ contributor.login }}" style="display:none;"></div>
                     <div class="inline-email-composer" id="composer-{{ contributor.login }}">
                         <div class="composer-actions" style="margin-bottom: 0.75rem;">
@@ -2787,6 +2925,219 @@
                 enrollBtn.style.background = '#10b981';
             }, 3000);
         }
+
+        // ============================================
+        // Apollo Sequence Enrollment
+        // ============================================
+
+        let apolloSequencesCache = null;
+        let sequencesCacheLoading = false;
+        let sequencesCacheCallbacks = [];
+
+        async function loadApolloSequences() {
+            if (apolloSequencesCache) return apolloSequencesCache;
+
+            if (sequencesCacheLoading) {
+                return new Promise((resolve, reject) => {
+                    sequencesCacheCallbacks.push({ resolve, reject });
+                });
+            }
+
+            sequencesCacheLoading = true;
+            try {
+                const resp = await fetch('/api/apollo/sequences');
+                const data = await resp.json();
+
+                if (data.status === 'success') {
+                    apolloSequencesCache = data.sequences;
+                } else {
+                    apolloSequencesCache = { error: data.message || data.code || 'Failed to load sequences' };
+                }
+                sequencesCacheCallbacks.forEach(cb => cb.resolve(apolloSequencesCache));
+                sequencesCacheCallbacks = [];
+                return apolloSequencesCache;
+            } catch (e) {
+                const err = { error: 'Network error loading sequences' };
+                sequencesCacheCallbacks.forEach(cb => cb.resolve(err));
+                sequencesCacheCallbacks = [];
+                apolloSequencesCache = err;
+                return err;
+            } finally {
+                sequencesCacheLoading = false;
+            }
+        }
+
+        function closeAllSequenceDropdowns() {
+            document.querySelectorAll('.sequence-selector-dropdown.open').forEach(d => d.classList.remove('open'));
+        }
+
+        async function showSequenceSelector(login, name, company) {
+            closeAllSequenceDropdowns();
+
+            const dropdown = document.getElementById(`seq-dropdown-${login}`);
+            if (!dropdown) return;
+
+            dropdown.innerHTML = '<div class="sequence-loading">Loading sequences...</div>';
+            dropdown.classList.add('open');
+
+            const sequences = await loadApolloSequences();
+
+            if (sequences.error) {
+                dropdown.innerHTML = `<div class="sequence-error">${sequences.error}</div>`;
+                return;
+            }
+
+            if (!sequences.length) {
+                dropdown.innerHTML = '<div class="sequence-empty">No sequences found in Apollo</div>';
+                return;
+            }
+
+            let html = '<div class="sequence-selector-header">Select a Sequence</div>';
+            sequences.forEach(seq => {
+                const dotClass = seq.active ? 'active' : 'inactive';
+                const safeName = seq.name.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+                html += `
+                    <div class="sequence-option" data-seq-id="${seq.id}" data-seq-name="${safeName}" data-login="${login}" onclick="event.stopPropagation(); enrollInSequence(this.dataset.login, this.closest('.sequence-selector-dropdown').previousElementSibling.dataset.name, this.closest('.sequence-selector-dropdown').previousElementSibling.dataset.company, this.dataset.seqId, this.dataset.seqName)">
+                        <div>
+                            <span class="sequence-option-active ${dotClass}"></span>
+                            <span class="sequence-option-name">${safeName}</span>
+                        </div>
+                        <span class="sequence-option-meta">${seq.num_steps} steps</span>
+                    </div>
+                `;
+            });
+
+            dropdown.innerHTML = html;
+        }
+
+        async function enrollInSequence(login, name, company, sequenceId, sequenceName) {
+            closeAllSequenceDropdowns();
+
+            const btn = document.getElementById(`enroll-seq-btn-${login}`);
+            const statusEl = document.getElementById(`enrollment-status-${login}`);
+
+            if (btn) {
+                btn.classList.add('loading');
+                btn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg> Enrolling...';
+            }
+
+            // Step 1: Check if email is already fetched
+            const emailDisplay = document.getElementById(`email-display-${login}`);
+            let email = emailDisplay ? emailDisplay.dataset.email : null;
+
+            if (!email) {
+                // Auto-fetch email first
+                if (statusEl) statusEl.innerHTML = '<span class="enrollment-status pending">Fetching email...</span>';
+                const card = btn ? btn.closest('.contributor-card') : null;
+                const fetchBtn = card ? card.querySelector('.btn-fetch-email') : null;
+
+                try {
+                    const lookupResp = await fetch('/api/apollo-lookup', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ name: name, company: company })
+                    });
+                    const lookupData = await lookupResp.json();
+
+                    if (lookupData.status === 'success' && lookupData.email) {
+                        email = lookupData.email;
+                        if (emailDisplay) {
+                            const isVerified = lookupData.email_status === 'verified';
+                            emailDisplay.innerHTML = `
+                                <span>${email}</span>
+                                <span class="email-badge ${isVerified ? 'email-badge-verified' : 'email-badge-unverified'}">${isVerified ? 'Verified' : 'Unverified'}</span>
+                            `;
+                            emailDisplay.dataset.email = email;
+                            emailDisplay.style.display = 'flex';
+                        }
+                        if (fetchBtn) {
+                            fetchBtn.textContent = 'Email Found';
+                            fetchBtn.style.background = '#d1fae5';
+                            fetchBtn.style.color = '#065f46';
+                            fetchBtn.style.borderColor = '#a7f3d0';
+                        }
+                    } else {
+                        if (btn) {
+                            btn.classList.remove('loading');
+                            btn.classList.add('error');
+                            btn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg> No Email Found';
+                            setTimeout(() => { resetEnrollBtn(btn); }, 3000);
+                        }
+                        if (statusEl) statusEl.innerHTML = '<span class="enrollment-status error">Could not find email for this contributor</span>';
+                        return;
+                    }
+                } catch (e) {
+                    if (btn) {
+                        btn.classList.remove('loading');
+                        btn.classList.add('error');
+                        btn.innerHTML = 'Lookup Failed';
+                        setTimeout(() => { resetEnrollBtn(btn); }, 3000);
+                    }
+                    if (statusEl) statusEl.innerHTML = '<span class="enrollment-status error">Email lookup failed</span>';
+                    return;
+                }
+            }
+
+            // Step 2: Enroll in sequence
+            if (statusEl) statusEl.innerHTML = `<span class="enrollment-status pending">Enrolling in "${sequenceName}"...</span>`;
+
+            const nameParts = name.trim().split(' ');
+            const firstName = nameParts[0] || '';
+            const lastName = nameParts.slice(1).join(' ') || '';
+
+            try {
+                const resp = await fetch('/api/apollo/enroll-sequence', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        email: email,
+                        first_name: firstName,
+                        last_name: lastName,
+                        sequence_id: sequenceId,
+                        company_name: company,
+                        github_login: login
+                    })
+                });
+                const data = await resp.json();
+
+                if (data.status === 'success') {
+                    if (btn) {
+                        btn.classList.remove('loading');
+                        btn.classList.add('success');
+                        btn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Enrolled!';
+                    }
+                    if (statusEl) statusEl.innerHTML = `<span class="enrollment-status enrolled">Enrolled in "${sequenceName}"</span>`;
+                } else {
+                    if (btn) {
+                        btn.classList.remove('loading');
+                        btn.classList.add('error');
+                        btn.innerHTML = 'Failed';
+                        setTimeout(() => { resetEnrollBtn(btn); }, 4000);
+                    }
+                    if (statusEl) statusEl.innerHTML = `<span class="enrollment-status error">${data.message || 'Enrollment failed'}</span>`;
+                }
+            } catch (e) {
+                if (btn) {
+                    btn.classList.remove('loading');
+                    btn.classList.add('error');
+                    btn.innerHTML = 'Error';
+                    setTimeout(() => { resetEnrollBtn(btn); }, 4000);
+                }
+                if (statusEl) statusEl.innerHTML = '<span class="enrollment-status error">Network error during enrollment</span>';
+            }
+        }
+
+        function resetEnrollBtn(btn) {
+            btn.classList.remove('loading', 'success', 'error');
+            btn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg> Enroll in Sequence';
+        }
+
+        // Close dropdowns when clicking outside
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('.btn-enroll-sequence') && !e.target.closest('.sequence-selector-dropdown')) {
+                closeAllSequenceDropdowns();
+            }
+        });
 
     </script>
 {% endblock %}
