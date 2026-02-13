@@ -2730,13 +2730,18 @@ def api_check_duplicates():
                 'match_confidence': dup.get('match_confidence'),
             })
 
-        is_duplicate = len(matches) > 0
+        # Only flag as confirmed duplicate for 100% confidence matches
+        confirmed_matches = [m for m in matches if m.get('match_confidence', 0) >= 100]
+        potential_matches = [m for m in matches if m.get('match_confidence', 0) < 100]
+        is_duplicate = len(confirmed_matches) > 0
+        is_potential = len(potential_matches) > 0
         if is_duplicate:
             duplicates_count += 1
 
         results.append({
             'company': company_name,
             'is_duplicate': is_duplicate,
+            'is_potential_duplicate': is_potential and not is_duplicate,
             'matches': matches,
         })
 
@@ -2825,11 +2830,13 @@ def api_import():
 
             if skip_duplicates:
                 duplicates = find_potential_duplicates(company_name, github_org, website)
-                if duplicates:
+                # Only block import for 100% confidence matches (exact name, github org, website domain)
+                confirmed_duplicates = [d for d in duplicates if d.get('match_confidence', 0) >= 100]
+                if confirmed_duplicates:
                     skipped_duplicates.append({
                         'company': company_name,
-                        'existing_match': duplicates[0].get('company_name'),
-                        'match_reason': duplicates[0].get('match_reason'),
+                        'existing_match': confirmed_duplicates[0].get('company_name'),
+                        'match_reason': confirmed_duplicates[0].get('match_reason'),
                     })
                     continue
 

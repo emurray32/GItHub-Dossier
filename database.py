@@ -1250,7 +1250,7 @@ def add_account_to_tier_0(company_name: str, github_org: str, annual_revenue: Op
                 company_name, github_org, annual_revenue, website, current_tier, last_scanned_at,
                 status_changed_at, evidence_summary, next_scan_due, metadata
             ) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)
-        ''', (company_name_normalized, github_org, annual_revenue, website, TIER_TRACKING, now,
+        ''', (company_name.strip(), github_org, annual_revenue, website, TIER_TRACKING, now,
               "Added via Grow pipeline", next_scan_iso, metadata_json))
         account_id = cursor.lastrowid
 
@@ -1790,12 +1790,12 @@ def find_potential_duplicates(company_name: str, github_org: str = None, website
         if existing_normalized and company_normalized:
             if existing_normalized == company_normalized:
                 account['match_reason'] = 'normalized_name'
-                account['match_confidence'] = 90
+                account['match_confidence'] = 80
                 duplicates.append(account)
             # Check if one contains the other (for variations like "Acme" vs "Acme Inc")
             elif existing_normalized in company_normalized or company_normalized in existing_normalized:
                 account['match_reason'] = 'partial_name'
-                account['match_confidence'] = 75
+                account['match_confidence'] = 50
                 duplicates.append(account)
 
     # 3. GitHub org match (if provided)
@@ -1810,7 +1810,7 @@ def find_potential_duplicates(company_name: str, github_org: str = None, website
             if any(d['id'] == account['id'] for d in duplicates):
                 continue
             account['match_reason'] = 'github_org'
-            account['match_confidence'] = 95
+            account['match_confidence'] = 100
             duplicates.append(account)
 
     # 4. Website domain match (if provided)
@@ -1826,7 +1826,7 @@ def find_potential_duplicates(company_name: str, github_org: str = None, website
                 existing_domain = _extract_domain(account.get('website', ''))
                 if existing_domain and existing_domain == website_domain:
                     account['match_reason'] = 'website_domain'
-                    account['match_confidence'] = 85
+                    account['match_confidence'] = 100
                     duplicates.append(account)
 
     conn.close()
@@ -1953,7 +1953,7 @@ def find_potential_duplicates_bulk(companies: list) -> dict:
                     if account['id'] not in seen_ids:
                         account_copy = account.copy()
                         account_copy['match_reason'] = 'normalized_name'
-                        account_copy['match_confidence'] = 90
+                        account_copy['match_confidence'] = 80
                         duplicates.append(account_copy)
                         seen_ids.add(account['id'])
 
@@ -1965,7 +1965,7 @@ def find_potential_duplicates_bulk(companies: list) -> dict:
                             if account['id'] not in seen_ids:
                                 account_copy = account.copy()
                                 account_copy['match_reason'] = 'partial_name'
-                                account_copy['match_confidence'] = 75
+                                account_copy['match_confidence'] = 50
                                 duplicates.append(account_copy)
                                 seen_ids.add(account['id'])
 
@@ -1977,7 +1977,7 @@ def find_potential_duplicates_bulk(companies: list) -> dict:
                     if account['id'] not in seen_ids:
                         account_copy = account.copy()
                         account_copy['match_reason'] = 'github_org'
-                        account_copy['match_confidence'] = 95
+                        account_copy['match_confidence'] = 100
                         duplicates.append(account_copy)
                         seen_ids.add(account['id'])
 
@@ -1989,7 +1989,7 @@ def find_potential_duplicates_bulk(companies: list) -> dict:
                     if account['id'] not in seen_ids:
                         account_copy = account.copy()
                         account_copy['match_reason'] = 'website_domain'
-                        account_copy['match_confidence'] = 85
+                        account_copy['match_confidence'] = 100
                         duplicates.append(account_copy)
                         seen_ids.add(account['id'])
 
@@ -2107,7 +2107,9 @@ def get_import_duplicates_summary(companies_list: list) -> dict:
 
         potential_dups = find_potential_duplicates(company_name, github_org, website)
 
-        if potential_dups:
+        # Only count as confirmed duplicate if any match is 100% confidence
+        confirmed_dups = [d for d in potential_dups if d.get('match_confidence', 0) >= 100]
+        if confirmed_dups:
             results['duplicates'] += 1
             results['details'].append({
                 'company': company_name,
@@ -2120,7 +2122,10 @@ def get_import_duplicates_summary(companies_list: list) -> dict:
                     for d in potential_dups
                 ]
             })
+        elif not potential_dups:
+            results['new'] += 1
         else:
+            # Has potential matches but none at 100% confidence - treat as new
             results['new'] += 1
 
     return results
@@ -2174,26 +2179,25 @@ def mark_account_as_invalid(company_name: str, reason: str) -> dict:
     existing = cursor.fetchone()
 
     if existing:
-        # Update existing account to Tier 4 and auto-archive
+        # Update existing account to Tier 4 (keep on main table, do NOT auto-archive)
         cursor.execute('''
             UPDATE monitored_accounts
             SET current_tier = ?,
                 last_scanned_at = ?,
                 status_changed_at = ?,
                 evidence_summary = ?,
-                next_scan_due = NULL,
-                archived_at = ?
+                next_scan_due = NULL
             WHERE LOWER(company_name) = ?
-        ''', (TIER_INVALID, now, now, reason, now, company_name_normalized))
+        ''', (TIER_INVALID, now, now, reason, company_name_normalized))
         account_id = existing['id']
     else:
-        # Create new account at Tier 4 and auto-archive (use normalized name)
+        # Create new account at Tier 4 (keep on main table, do NOT auto-archive) (use normalized name)
         cursor.execute('''
             INSERT INTO monitored_accounts (
                 company_name, github_org, current_tier, last_scanned_at,
-                status_changed_at, evidence_summary, next_scan_due, archived_at
-            ) VALUES (?, ?, ?, ?, ?, ?, NULL, ?)
-        ''', (company_name_normalized, '', TIER_INVALID, now, now, reason, now))
+                status_changed_at, evidence_summary, next_scan_due
+            ) VALUES (?, ?, ?, ?, ?, ?, NULL)
+        ''', (company_name_normalized, '', TIER_INVALID, now, now, reason))
         account_id = cursor.lastrowid
 
     conn.commit()
@@ -2275,6 +2279,9 @@ def auto_archive_tier4_accounts() -> int:
     Returns:
         Number of accounts archived.
     """
+    # DISABLED: accounts should remain on main table
+    return 0
+
     conn = get_db_connection()
     cursor = conn.cursor()
 
