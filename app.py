@@ -3778,8 +3778,7 @@ def serve_docs(filename):
     return send_file(os.path.join(docs_dir, filename))
 
 
-@app.route('/api/integrationapollo/sequences
-s/zapier/trigger', methods=['POST'])
+@app.route('/api/integrations/zapier/trigger', methods=['POST'])
 def api_zapier_trigger():
     """
     Trigger a Zapier webhook to enroll a lead into Apollo/outreach sequence.
