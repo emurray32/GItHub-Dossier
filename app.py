@@ -31,6 +31,14 @@ from monitors.discovery import search_github_orgs, resolve_org_fast, discover_co
 from ai_summary import generate_analysis
 from pdf_generator import generate_report_pdf
 from agentmail_client import is_agentmail_configured, send_email_draft
+from sheets_client import is_sheets_configured, get_sheet_info
+from sheets_sync import (
+    run_sync as sheets_run_sync,
+    get_sync_config as sheets_get_sync_config,
+    set_sync_config as sheets_set_sync_config,
+    start_cron_scheduler as sheets_start_cron,
+    is_sync_in_progress as sheets_sync_in_progress
+)
 
 
 app = Flask(__name__)
@@ -1461,6 +1469,108 @@ def api_worker_restart():
     })
 
 
+# =============================================================================
+# GOOGLE SHEETS INTEGRATION - Coefficient-synced account ingest
+# =============================================================================
+
+@app.route('/api/sheets/status')
+def api_sheets_status():
+    """
+    Get Google Sheets integration status.
+
+    Returns:
+        JSON with configuration status, sheet title, tabs, and any errors.
+    """
+    info = get_sheet_info()
+    return jsonify(info)
+
+
+@app.route('/api/sheets/config', methods=['GET', 'POST'])
+def api_sheets_config():
+    """
+    Get or update Google Sheets sync configuration.
+
+    GET: Returns current sync settings.
+    POST: Updates sync settings from JSON payload.
+    """
+    if request.method == 'GET':
+        config = sheets_get_sync_config()
+        return jsonify(config)
+
+    # POST - update config
+    data = request.get_json() or {}
+    sheets_set_sync_config(data)
+
+    return jsonify({
+        'status': 'success',
+        **sheets_get_sync_config()
+    })
+
+
+@app.route('/api/sheets/sync', methods=['POST'])
+def api_sheets_sync():
+    """
+    Trigger a Google Sheets sync.
+
+    Reads unprocessed accounts from the configured Google Sheet,
+    resolves their GitHub orgs, adds to Tier 0, and queues for scanning.
+
+    JSON payload (all optional):
+        limit: Max accounts to import (default from config, usually 300)
+        sheet_name: Sheet tab to read from (default from config)
+        auto_scan: Whether to auto-queue for scanning (default true)
+        dry_run: If true, preview without importing (default false)
+
+    Returns:
+        JSON with sync results: added, skipped, failed counts and details.
+    """
+    if sheets_sync_in_progress():
+        return jsonify({
+            'status': 'error',
+            'error': 'A sync is already in progress'
+        }), 409
+
+    data = request.get_json() or {}
+    limit = data.get('limit')
+    sheet_name = data.get('sheet_name')
+    auto_scan = data.get('auto_scan', True)
+    dry_run = data.get('dry_run', False)
+
+    # Run the sync
+    result = sheets_run_sync(
+        limit=limit,
+        sheet_name=sheet_name,
+        auto_scan=auto_scan,
+        dry_run=dry_run
+    )
+
+    status_code = 200 if result.get('status') == 'success' else 500
+    return jsonify(result), status_code
+
+
+@app.route('/api/sheets/enable-cron', methods=['POST'])
+def api_sheets_enable_cron():
+    """
+    Enable or disable the daily Google Sheets sync cron.
+
+    JSON payload:
+        enabled: true/false
+        cron_hour: Hour to run (0-23, default 6)
+        cron_minute: Minute to run (0-59, default 0)
+
+    Returns:
+        JSON with updated config.
+    """
+    data = request.get_json() or {}
+    sheets_set_sync_config(data)
+
+    config = sheets_get_sync_config()
+    return jsonify({
+        'status': 'success',
+        **config
+    })
+
+
 @app.errorhandler(404)
 def page_not_found(e):
     """Handle 404 errors."""
@@ -1766,6 +1876,10 @@ if __name__ == '__main__':
 
     # Start the background watchdog thread
     start_watchdog()
+
+    # Start Google Sheets cron scheduler
+    sheets_start_cron()
+    print("[APP] Google Sheets cron scheduler started")
 
     # IMPORTANT: Recover stuck queued accounts BEFORE reset_all_scan_statuses
     # This captures accounts stuck in 'queued' state and re-queues them
