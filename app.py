@@ -8,7 +8,7 @@ import time
 import os
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from typing import Optional
+from typing import Optional, Sequence
 import requests
 from datetime import datetime
 from flask import Flask, render_template, Response, request, jsonify, redirect, url_for, stream_with_context, send_file
@@ -3724,7 +3724,8 @@ def serve_docs(filename):
     return send_file(os.path.join(docs_dir, filename))
 
 
-@app.route('/api/integrations/zapier/trigger', methods=['POST'])
+@app.route('/api/integrationapollo/sequences
+s/zapier/trigger', methods=['POST'])
 def api_zapier_trigger():
     """
     Trigger a Zapier webhook to enroll a lead into Apollo/outreach sequence.
@@ -5012,7 +5013,7 @@ def api_apollo_sequences():
         
         return jsonify({'status': 'success', 'sequences': sequences})
     except Exception as e:
-        print(f"[APOLLO SEQUENCES ERROR] {e}")
+        print(f"[APOLLO SEQUEnroll in SequenceENCES ERROR] {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
