@@ -825,6 +825,7 @@
             <div class="bulk-import-tabs">
                 <button class="bulk-import-tab active" onclick="switchImportTab('manual')">Manual Entry</button>
                 <button class="bulk-import-tab" onclick="switchImportTab('csv')">Upload CSV</button>
+                <button class="bulk-import-tab" onclick="switchImportTab('sheets')">Google Sheets</button>
             </div>
 
             <!-- Manual Entry Tab -->
@@ -862,6 +863,50 @@
                 <button type="button" class="process-batch-btn" id="processCSVBtn" style="display: none;" onclick="processCSVImport()">
                     ▶ Process CSV
                 </button>
+            </div>
+
+            <!-- Google Sheets Tab -->
+            <div class="bulk-import-tab-content" id="sheetsTab">
+                <div id="sheetsStatus" style="margin-bottom: 1rem;">
+                    <div style="text-align: center; padding: 1rem; color: var(--text-muted);">
+                        Loading Google Sheets status...
+                    </div>
+                </div>
+                <div id="sheetsConfigured" style="display: none;">
+                    <div style="display: flex; gap: 0.75rem; margin-bottom: 1rem; align-items: center; flex-wrap: wrap;">
+                        <label class="import-label" style="margin: 0;">Daily Limit:</label>
+                        <input type="number" id="sheetsDailyLimit" value="300" min="1" max="1000"
+                            style="width: 80px; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-primary); color: var(--text-primary);">
+                        <label class="import-label" style="margin: 0;">Sheet Tab:</label>
+                        <select id="sheetsTabSelect"
+                            style="padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-primary); color: var(--text-primary);">
+                            <option value="Sheet1">Sheet1</option>
+                        </select>
+                        <button type="button" class="process-batch-btn" style="margin: 0; padding: 0.6rem 1rem; font-size: 0.9rem;"
+                            onclick="previewSheetSync()">
+                            Preview
+                        </button>
+                    </div>
+                    <div id="sheetsPreview" style="display: none; margin-bottom: 1rem;"></div>
+                    <div style="display: flex; gap: 0.75rem; margin-bottom: 1rem;">
+                        <button type="button" class="process-batch-btn" id="syncSheetsBtn" style="margin: 0; flex: 1;"
+                            onclick="runSheetSync()">
+                            Sync Now
+                        </button>
+                    </div>
+                    <div style="padding: 0.75rem; background: var(--bg-secondary); border-radius: 6px; font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 1rem;">
+                        <div id="sheetsLastSync">Last sync: Never</div>
+                        <div id="sheetsCronStatus" style="margin-top: 0.25rem;">Daily cron: Checking...</div>
+                    </div>
+                </div>
+                <div id="sheetsNotConfigured" style="display: none;">
+                    <div style="padding: 2rem; text-align: center; color: var(--text-secondary);">
+                        <p style="font-size: 1.1rem; margin-bottom: 1rem;">Google Sheets integration not configured</p>
+                        <p style="font-size: 0.85rem; margin-bottom: 0.5rem;">Add these to your Replit Secrets:</p>
+                        <pre style="text-align: left; background: var(--bg-secondary); padding: 1rem; border-radius: 8px; font-size: 0.8rem; overflow-x: auto; margin-bottom: 1rem;">GOOGLE_SHEETS_SPREADSHEET_ID=your_spreadsheet_id
+GOOGLE_SHEETS_CREDENTIALS_JSON={"type":"service_account",...}</pre>
+                    </div>
+                </div>
             </div>
 
             <label class="import-label" for="consoleLog" style="margin-top: 1.5rem;">Console Log</label>
@@ -963,12 +1008,16 @@
         // Update tab contents
         document.getElementById('manualTab').classList.remove('active');
         document.getElementById('csvTab').classList.remove('active');
+        document.getElementById('sheetsTab').classList.remove('active');
 
         if (tab === 'manual') {
             document.getElementById('manualTab').classList.add('active');
-        } else {
+        } else if (tab === 'csv') {
             document.getElementById('csvTab').classList.add('active');
             setupDragDrop();
+        } else if (tab === 'sheets') {
+            document.getElementById('sheetsTab').classList.add('active');
+            loadSheetsStatus();
         }
     }
 
@@ -1973,6 +2022,125 @@
     }
 
     // Initialize on page load
+    // =================================================================
+    // GOOGLE SHEETS INTEGRATION
+    // =================================================================
+
+    async function loadSheetsStatus() {
+        try {
+            const response = await fetch('/api/sheets/status');
+            const data = await response.json();
+
+            if (data.configured) {
+                document.getElementById('sheetsConfigured').style.display = 'block';
+                document.getElementById('sheetsNotConfigured').style.display = 'none';
+                document.getElementById('sheetsStatus').style.display = 'none';
+
+                if (data.tabs && data.tabs.length > 0) {
+                    const select = document.getElementById('sheetsTabSelect');
+                    select.innerHTML = data.tabs.map(tab =>
+                        `<option value="${escapeHtml(tab.name)}">${escapeHtml(tab.name)}</option>`
+                    ).join('');
+                }
+
+                if (data.title) {
+                    addConsoleEntry(`Connected to: "${data.title}"`, 'info');
+                }
+
+                const configResp = await fetch('/api/sheets/config');
+                const config = await configResp.json();
+                if (config.daily_limit) document.getElementById('sheetsDailyLimit').value = config.daily_limit;
+                if (config.sheet_name) document.getElementById('sheetsTabSelect').value = config.sheet_name;
+                if (config.last_sync_at) document.getElementById('sheetsLastSync').textContent = `Last sync: ${config.last_sync_at}`;
+                const cronEnabled = config.enabled ? 'Enabled' : 'Disabled';
+                const cronTime = `${String(config.cron_hour || 6).padStart(2, '0')}:${String(config.cron_minute || 0).padStart(2, '0')}`;
+                document.getElementById('sheetsCronStatus').textContent = `Daily cron: ${cronEnabled} (${cronTime})`;
+            } else {
+                document.getElementById('sheetsConfigured').style.display = 'none';
+                document.getElementById('sheetsNotConfigured').style.display = 'block';
+                document.getElementById('sheetsStatus').style.display = 'none';
+                if (data.errors) data.errors.forEach(err => addConsoleEntry(`Sheets: ${err}`, 'warning'));
+            }
+        } catch (error) {
+            document.getElementById('sheetsStatus').innerHTML =
+                `<div style="padding: 1rem; color: var(--error-color);">Error loading Sheets status: ${escapeHtml(error.message)}</div>`;
+        }
+    }
+
+    async function previewSheetSync() {
+        const limit = document.getElementById('sheetsDailyLimit').value;
+        const sheetName = document.getElementById('sheetsTabSelect').value;
+        clearConsole();
+        addConsoleEntry(`Previewing ${limit} accounts from "${sheetName}"...`, 'info');
+        try {
+            const response = await fetch('/api/sheets/sync', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ limit: parseInt(limit), sheet_name: sheetName, dry_run: true })
+            });
+            const data = await response.json();
+            if (data.status === 'success' || data.preview) {
+                addConsoleEntry(`Total rows in sheet: ${data.total_rows_in_sheet}`, 'info');
+                addConsoleEntry(`Unprocessed rows: ${data.unprocessed_rows}`, 'info');
+                addConsoleEntry(`Accounts to import: ${data.accounts_read}`, 'info');
+                if (data.headers_found) addConsoleEntry(`Mapped columns: ${data.headers_found.join(', ')}`, 'info');
+                if (data.preview && data.preview.length > 0) {
+                    addConsoleEntry(``, 'info');
+                    addConsoleEntry(`Preview (first 10):`, 'info');
+                    data.preview.slice(0, 10).forEach((a, i) => {
+                        const domain = a.domain ? ` (${a.domain})` : '';
+                        addConsoleEntry(`  ${i + 1}. ${a.company_name}${domain}`, 'success');
+                    });
+                    if (data.preview.length > 10) addConsoleEntry(`  ... and ${data.preview.length - 10} more`, 'info');
+                }
+            } else {
+                addConsoleEntry(`Error: ${data.error || 'Unknown error'}`, 'error');
+            }
+        } catch (error) {
+            addConsoleEntry(`Network Error: ${error.message}`, 'error');
+        }
+    }
+
+    async function runSheetSync() {
+        const btn = document.getElementById('syncSheetsBtn');
+        const limit = document.getElementById('sheetsDailyLimit').value;
+        const sheetName = document.getElementById('sheetsTabSelect').value;
+        btn.disabled = true;
+        btn.textContent = 'Syncing...';
+        clearConsole();
+        addConsoleEntry(`Starting Google Sheets sync (limit: ${limit})...`, 'info');
+        try {
+            const response = await fetch('/api/sheets/sync', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ limit: parseInt(limit), sheet_name: sheetName })
+            });
+            const data = await response.json();
+            addConsoleEntry('', 'info');
+            addConsoleEntry('Sync Complete', 'success');
+            addConsoleEntry(`Added: ${(data.added || []).length}`, 'success');
+            addConsoleEntry(`Skipped (existing): ${(data.skipped_existing || []).length}`, 'warning');
+            addConsoleEntry(`Failed (no GitHub): ${(data.failed_resolve || []).length}`, 'error');
+            if (data.scan_queued > 0) addConsoleEntry(`Queued for scanning: ${data.scan_queued}`, 'info');
+            if (data.added && data.added.length > 0) {
+                addConsoleEntry('', 'info');
+                data.added.forEach(a => addConsoleEntry(`  Added: ${a.company} -> ${a.github_org}`, 'success'));
+            }
+            if (data.errors && data.errors.length > 0) data.errors.forEach(e => addConsoleEntry(`Warning: ${e}`, 'warning'));
+            document.getElementById('sheetsLastSync').textContent = `Last sync: ${data.timestamp || 'Just now'}`;
+            if (data.added && data.added.length > 0) {
+                addConsoleEntry('', 'info');
+                addConsoleEntry('Redirecting to accounts...', 'info');
+                setTimeout(() => { window.location.href = '/accounts'; }, 3000);
+            }
+        } catch (error) {
+            addConsoleEntry(`Network Error: ${error.message}`, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Sync Now';
+        }
+    }
+
     document.addEventListener('DOMContentLoaded', function () {
         setDiscoveryMode('ai');
 

@@ -54,6 +54,14 @@ from monitors.web_analyzer import analyze_website, analyze_website_technical
 from ai_summary import generate_analysis
 from pdf_generator import generate_report_pdf
 from agentmail_client import is_agentmail_configured, send_email_draft
+from sheets_client import is_sheets_configured, get_sheet_info
+from sheets_sync import (
+    run_sync as sheets_run_sync,
+    get_sync_config as sheets_get_sync_config,
+    set_sync_config as sheets_set_sync_config,
+    start_cron_scheduler as sheets_start_cron,
+    is_sync_in_progress as sheets_sync_in_progress
+)
 
 
 app = Flask(__name__)
@@ -3343,6 +3351,52 @@ def api_worker_restart():
     })
 
 
+# =============================================================================
+# GOOGLE SHEETS INTEGRATION - Coefficient-synced account ingest
+# =============================================================================
+
+@app.route('/api/sheets/status')
+def api_sheets_status():
+    """Get Google Sheets integration status."""
+    info = get_sheet_info()
+    return jsonify(info)
+
+
+@app.route('/api/sheets/config', methods=['GET', 'POST'])
+def api_sheets_config():
+    """Get or update Google Sheets sync configuration."""
+    if request.method == 'GET':
+        config = sheets_get_sync_config()
+        return jsonify(config)
+    data = request.get_json() or {}
+    sheets_set_sync_config(data)
+    return jsonify({'status': 'success', **sheets_get_sync_config()})
+
+
+@app.route('/api/sheets/sync', methods=['POST'])
+def api_sheets_sync():
+    """Trigger a Google Sheets sync - reads accounts, resolves GitHub orgs, queues for scanning."""
+    if sheets_sync_in_progress():
+        return jsonify({'status': 'error', 'error': 'A sync is already in progress'}), 409
+    data = request.get_json() or {}
+    result = sheets_run_sync(
+        limit=data.get('limit'),
+        sheet_name=data.get('sheet_name'),
+        auto_scan=data.get('auto_scan', True),
+        dry_run=data.get('dry_run', False)
+    )
+    status_code = 200 if result.get('status') == 'success' else 500
+    return jsonify(result), status_code
+
+
+@app.route('/api/sheets/enable-cron', methods=['POST'])
+def api_sheets_enable_cron():
+    """Enable or disable the daily Google Sheets sync cron."""
+    data = request.get_json() or {}
+    sheets_set_sync_config(data)
+    return jsonify({'status': 'success', **sheets_get_sync_config()})
+
+
 @app.errorhandler(404)
 def page_not_found(e):
     """Handle 404 errors."""
@@ -5115,6 +5169,10 @@ if __name__ == '__main__':
 
     # Start the background watchdog thread
     start_watchdog()
+
+    # Start Google Sheets cron scheduler
+    sheets_start_cron()
+    print("[APP] Google Sheets cron scheduler started")
 
     # Start the rules scheduler for 7am EST daily updates
     start_rules_scheduler()
