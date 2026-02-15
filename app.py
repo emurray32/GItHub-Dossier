@@ -142,6 +142,30 @@ def normalize_url_filter(url):
         return 'https://' + url
     return url
 
+@app.template_filter('format_revenue')
+def format_revenue_filter(value):
+    """Format revenue as human-readable currency (e.g., $431.7M)."""
+    if not value:
+        return ''
+    # If already formatted (contains $ or letters), return as-is
+    s = str(value).strip()
+    if any(c.isalpha() or c == '$' for c in s):
+        return s
+    try:
+        num = float(s.replace(',', ''))
+    except (ValueError, TypeError):
+        return s
+    if num >= 1_000_000_000:
+        formatted = num / 1_000_000_000
+        return f'${formatted:.1f}B' if formatted != int(formatted) else f'${int(formatted)}B'
+    elif num >= 1_000_000:
+        formatted = num / 1_000_000
+        return f'${formatted:.1f}M' if formatted != int(formatted) else f'${int(formatted)}M'
+    elif num >= 1_000:
+        formatted = num / 1_000
+        return f'${formatted:.1f}K' if formatted != int(formatted) else f'${int(formatted)}K'
+    return f'${num:,.0f}'
+
 
 # =============================================================================
 # WEBHOOK NOTIFICATIONS - Push leads to Slack/Zapier/Salesforce

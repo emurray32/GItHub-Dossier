@@ -791,6 +791,15 @@
         box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05);
     }
 
+    .email-draft-section.email-draft-deprioritized {
+        opacity: 0.6;
+        border-style: dashed;
+        box-shadow: none;
+    }
+    .email-draft-section.email-draft-deprioritized:hover {
+        opacity: 1;
+    }
+
     .email-draft-header {
         background: var(--bg-secondary);
         color: var(--text-primary);
@@ -1198,35 +1207,56 @@
 
     .email-edit-field {
         width: 100%;
-        border: none;
-        background: transparent;
+        border: 1px solid var(--border-color);
+        background: var(--bg-primary);
         color: var(--text-primary);
         font: inherit;
         outline: none;
+        padding: 0.6rem 0.75rem;
+        border-radius: 6px;
+        transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .email-edit-field:hover {
+        border-color: color-mix(in srgb, var(--accent-color) 40%, var(--border-color));
     }
 
     .email-edit-field:focus {
-        box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-color) 50%, transparent);
-        border-radius: 4px;
+        border-color: var(--accent-color);
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-color) 15%, transparent);
     }
 
     .email-subject-input {
         font-weight: 600;
+        font-size: 1rem;
+    }
+
+    .email-edit-hint {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        margin-bottom: 0.75rem;
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+    }
+
+    .email-edit-hint::before {
+        content: "✏️";
+        font-size: 0.8rem;
     }
 
     .email-body {
         line-height: 1.8;
-        padding: 1rem;
         background: var(--bg-primary);
         border-radius: 6px;
         white-space: pre-line;
-        border: 1px solid var(--border-color);
     }
 
     .email-body-textarea {
         min-height: 180px;
-        resize: none;
+        resize: vertical;
         line-height: 1.8;
+        font-family: var(--font-sans, system-ui, sans-serif);
     }
 
     .email-body-label {
@@ -1759,11 +1789,82 @@
             box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.3);
             background: rgba(99, 102, 241, 0.05);
         }
-        .contributor-actions {
+        .contributor-action-bar {
             display: flex;
+            align-items: center;
             gap: 0.5rem;
             margin-top: 0.75rem;
+            padding-top: 0.75rem;
+            border-top: 1px solid var(--border-color);
             flex-wrap: wrap;
+        }
+        .enrollment-status-inline {
+            font-size: 0.75rem;
+            margin-left: auto;
+        }
+        .email-verify-badge {
+            display: inline-block;
+            padding: 0.15rem 0.5rem;
+            font-size: 0.65rem;
+            font-weight: 600;
+            border-radius: 10px;
+            text-transform: uppercase;
+            vertical-align: middle;
+        }
+        .btn-fetch-email.email-found {
+            cursor: default;
+            font-size: 0.7rem;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .spin-icon {
+            animation: spin 1s linear infinite;
+        }
+        .action-bar-divider {
+            width: 1px;
+            height: 20px;
+            background: var(--border-color);
+            margin: 0 0.25rem;
+        }
+        .btn-enrich-enroll {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            padding: 0.35rem 0.75rem;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            cursor: pointer;
+            border: 1px solid var(--accent-color);
+            background: var(--accent-color);
+            color: white;
+            transition: all 0.2s ease;
+        }
+        .btn-enrich-enroll:hover {
+            opacity: 0.9;
+            transform: translateY(-1px);
+        }
+        .btn-enrich-enroll:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .btn-enrich-enroll.step-email {
+            background: #3b82f6;
+            border-color: #3b82f6;
+        }
+        .btn-enrich-enroll.step-enroll {
+            background: #8b5cf6;
+            border-color: #8b5cf6;
+        }
+        .btn-enrich-enroll.step-done {
+            background: #059669;
+            border-color: #059669;
+        }
+        .btn-enrich-enroll.step-error {
+            background: #ef4444;
+            border-color: #ef4444;
         }
         .btn-fetch-email, .btn-send-email, .btn-select-contributor {
             padding: 0.35rem 0.75rem;
@@ -1925,7 +2026,7 @@
             <span>Website: <a href="{{ report.website|normalize_url }}" target="_blank">{{ report.website }}</a></span>
             {% endif %}
             {% if report.annual_revenue %}
-            <span>Revenue: <span class="revenue-display" data-raw="{{ report.annual_revenue }}">{{ report.annual_revenue }}</span></span>
+            <span>Revenue: <span class="revenue-display">{{ report.annual_revenue|format_revenue }}</span></span>
             {% endif %}
         </div>
     </header>
@@ -2008,9 +2109,24 @@
     {% endif %}
 
 
-    <!-- Email Draft (One-Click Cold Email Generator) - PROMINENT POSITION -->
+    <!-- BDR Quick Action Box (moved above email for action hierarchy) -->
+    {% if goldilocks_status == 'preparing' %}
+    <div class="bdr-highlight bdr-highlight-critical">
+        <div class="bdr-label">BDR Action Required</div>
+        <div class="bdr-text">This company has installed i18n libraries but has ZERO translation files. The
+            infrastructure is ready, waiting for content. CALL TODAY!</div>
+    </div>
+    {% elif goldilocks_status == 'launched' %}
+    <div class="bdr-highlight bdr-highlight-warning">
+        <div class="bdr-label">Low Priority Lead</div>
+        <div class="bdr-text">This company already has translation files in place. They have a working i18n system.
+            Focus on higher-priority leads. The email draft below is available if needed, but consider other accounts first.</div>
+    </div>
+    {% endif %}
+
+    <!-- Email Draft (One-Click Cold Email Generator) -->
     {% if report.ai_analysis.email_draft %}
-    <div class="email-draft-section">
+    <div class="email-draft-section{% if goldilocks_status == 'launched' %} email-draft-deprioritized{% endif %}">
         <div class="email-draft-header">
             <div style="display: flex; align-items: center; gap: 0.75rem;">
                 <h3 style="margin: 0;">Ready-to-Send Cold Email</h3>
@@ -2044,38 +2160,23 @@
                 </button>
             </div>
         </div>
-        <div class="email-draft-content">
-            <div class="email-edit-hint">Personalized draft following Expert BDR rules.</div>
-            <div class="email-subject">
+        <div class="email-draft-content" style="padding: 1.25rem 1.5rem;">
+            <div class="email-edit-hint">Click any field to personalize before sending. Merge tags auto-resolve when a contributor is selected.</div>
+            <div class="email-subject" style="margin-bottom: 1rem;">
                 <span class="email-subject-label">Subject Line</span>
                 <input id="emailSubject" class="email-edit-field email-subject-input" type="text"
-                    value="{{ report.ai_analysis.email_draft.subject }}">
+                    value="{{ report.ai_analysis.email_draft.subject }}" placeholder="Enter subject line...">
             </div>
             <div>
                 <span class="email-body-label">Email Body</span>
-                <div class="email-body">
-                    <textarea id="emailBody" class="email-edit-field email-body-textarea"
-                        style="min-height: 200px;">{{ report.ai_analysis.email_draft.body }}</textarea>
-                </div>
+                <textarea id="emailBody" class="email-edit-field email-body-textarea"
+                    style="min-height: 200px;" placeholder="Write your email body...">{{ report.ai_analysis.email_draft.body }}</textarea>
             </div>
         </div>
     </div>
     {% endif %}
 
-    <!-- BDR Quick Action Box (for Goldilocks Zone) -->
-    {% if goldilocks_status == 'preparing' %}
-    <div class="bdr-highlight bdr-highlight-critical">
-        <div class="bdr-label">BDR Action Required</div>
-        <div class="bdr-text">This company has installed i18n libraries but has ZERO translation files. The
-            infrastructure is ready, waiting for content. CALL TODAY!</div>
-    </div>
-    {% elif goldilocks_status == 'launched' %}
-    <div class="bdr-highlight bdr-highlight-warning">
-        <div class="bdr-label">Low Priority Notice</div>
-        <div class="bdr-text">This company already has translation files in place. They have a working i18n system.
-            Focus on higher-priority leads.</div>
-    </div>
-    {% endif %}
+    <!-- BDR Quick Action Box moved above email draft for visibility -->
 
     <!-- Why Reach Out -->
     {% set scan_data = report.scan_data or {} %}
@@ -2134,7 +2235,7 @@
     {% if report.ai_analysis.outreach_suggestions %}
     <div class="section">
         <h2 class="section-title">Outreach Suggestions</h2>
-        <p class="text-secondary">10 tactical angles for who to reach, why now, and what to say.</p>
+        <p class="text-secondary">{{ report.ai_analysis.outreach_suggestions|length }} tactical angle{{ 's' if report.ai_analysis.outreach_suggestions|length != 1 else '' }} for who to reach, why now, and what to say.</p>
         <div class="suggestions-grid">
             {% for suggestion in report.ai_analysis.outreach_suggestions %}
             <div class="suggestion-card">
@@ -2360,39 +2461,32 @@
                         <strong>i18n Context:</strong> Contributed to repos with i18n signals: {{ i18n_repos|join(', ') }}
                     </div>
                     {% endif %}
+
+                    <!-- Integrated Action Bar -->
+                    <div class="contributor-action-bar" onclick="event.stopPropagation();">
+                        <button class="btn-fetch-email" onclick='fetchContributorEmail(this, {{ (contributor.name or contributor.login)|tojson }}, {{ report.company_name|tojson }})'>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                            Find Email
+                        </button>
+                        <button class="btn-select-contributor" onclick='selectContributor(this.closest(".contributor-card"), {{ (contributor.name or contributor.login)|tojson }}, {{ contributor.login|tojson }}, {{ report.company_name|tojson }})'>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                            Select & Email
+                        </button>
+                        <div style="position: relative; display: inline-block;">
+                            <button class="btn-enroll-sequence" id="enroll-seq-btn-{{ contributor.login }}" data-login="{{ contributor.login }}" data-name="{{ (contributor.name or contributor.login)|e }}" data-company="{{ report.company_name|title|e }}" onclick="event.stopPropagation(); showSequenceSelector(this.dataset.login, this.dataset.name, this.dataset.company)">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
+                                Enroll in Sequence
+                            </button>
+                            <div class="sequence-selector-dropdown" id="seq-dropdown-{{ contributor.login }}"></div>
+                        </div>
+                        <span class="action-bar-divider"></span>
+                        <button class="btn-enrich-enroll" data-login="{{ contributor.login }}" data-name="{{ (contributor.name or contributor.login)|e }}" data-company="{{ report.company_name|title|e }}" onclick='event.stopPropagation(); enrichAndEnroll(this)'>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                            Enrich & Enroll
+                        </button>
+                        <div id="enrollment-status-{{ contributor.login }}" class="enrollment-status-inline"></div>
+                    </div>
                 </div>
-            </div>
-            <!-- Contributor Actions (once per contributor) -->
-            <div class="contributor-actions" onclick="event.stopPropagation();">
-                <button class="btn-fetch-email" onclick="fetchContributorEmail(this, {{ (contributor.name or contributor.login)|tojson }}, {{ report.company_name|tojson }})">
-                    Fetch Email
-                </button>
-                <button class="btn-select-contributor" onclick="selectContributor(this.closest('.contributor-card'), {{ (contributor.name or contributor.login)|tojson }}, {{ contributor.login|tojson }}, {{ report.company_name|tojson }})">
-                    Select & Email
-                </button>
-                <div style="position: relative; display: inline-block;">
-                    <button class="btn-enroll-sequence" id="enroll-seq-btn-{{ contributor.login }}" data-login="{{ contributor.login }}" data-name="{{ (contributor.name or contributor.login)|e }}" data-company="{{ report.company_name|title|e }}" onclick="event.stopPropagation(); showSequenceSelector(this.dataset.login, this.dataset.name, this.dataset.company)">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
-                        Enroll in Sequence
-                    </button>
-                    <div class="sequence-selector-dropdown" id="seq-dropdown-{{ contributor.login }}"></div>
-                </div>
-            </div>
-            <div id="enrollment-status-{{ contributor.login }}"></div>
-            <div class="contributor-email-display" id="email-display-{{ contributor.login }}" style="display:none;"></div>
-            <div class="inline-email-composer" id="composer-{{ contributor.login }}">
-                <div class="composer-actions" style="margin-bottom: 0.75rem;">
-                    <button class="btn-enroll" onclick="sendContributorEmail({{ contributor.login|tojson }}, {{ report.company_name|tojson }})">
-                        Enroll
-                    </button>
-                    <span style="font-size: 0.75rem; color: var(--text-secondary);">Send personalized outreach email</span>
-                </div>
-                <label>To:</label>
-                <input type="text" id="composer-to-{{ contributor.login }}" placeholder="Fetch email first..." readonly>
-                <label>Subject:</label>
-                <input type="text" id="composer-subject-{{ contributor.login }}" value="{{ report.ai_analysis.email_draft.subject if report.ai_analysis and report.ai_analysis.email_draft else '' }}">
-                <label>Body:</label>
-                <textarea id="composer-body-{{ contributor.login }}">{{ report.ai_analysis.email_draft.body if report.ai_analysis and report.ai_analysis.email_draft else '' }}</textarea>
             </div>
             {% endfor %}
         </div>
@@ -2781,16 +2875,10 @@
                 }
             }
             
-            // Show inline composer on the card
-            document.querySelectorAll('.inline-email-composer').forEach(c => c.classList.remove('active'));
-            const composer = document.getElementById(`composer-${login}`);
-            if (composer) {
-                composer.classList.add('active');
-                // Pre-fill the to field if we have an email
-                const emailDisplay = document.getElementById(`email-display-${login}`);
-                if (emailDisplay && emailDisplay.dataset.email) {
-                    document.getElementById(`composer-to-${login}`).value = emailDisplay.dataset.email;
-                }
+            // Pre-fill composer to field if we have an email from the card
+            const composerTo = document.getElementById(`composer-to-${login}`);
+            if (composerTo && card && card.dataset.email) {
+                composerTo.value = card.dataset.email;
             }
             
             // Scroll to email draft section
@@ -2801,63 +2889,64 @@
         }
         
         async function fetchContributorEmail(button, name, company) {
-            const originalText = button.textContent;
             button.disabled = true;
-            button.textContent = 'Fetching...';
-            
+            button.innerHTML = '<svg class="spin-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg> Fetching...';
+
+            const card = button.closest('.contributor-card');
+            const login = card ? card.dataset.contributorLogin : null;
+
             try {
                 const response = await fetch('/api/apollo-lookup', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ name: name, company: company })
                 });
-                
+
                 const data = await response.json();
-                
-                const card = button.closest('.contributor-card');
-                const login = card.dataset.contributorLogin;
-                const emailDisplay = document.getElementById(`email-display-${login}`);
-                
+
                 if (data.status === 'found' && data.email) {
                     const isVerified = data.email_status === 'verified';
-                    emailDisplay.innerHTML = `
-                        <span>${data.email}</span>
-                        <span class="email-badge ${isVerified ? 'email-badge-verified' : 'email-badge-unverified'}">
-                            ${isVerified ? 'Verified' : 'Unverified'}
-                        </span>
-                    `;
-                    emailDisplay.dataset.email = data.email;
-                    emailDisplay.style.display = 'flex';
-                    
-                    // Update composer to field
-                    const composerTo = document.getElementById(`composer-to-${login}`);
-                    if (composerTo) composerTo.value = data.email;
-                    
-                    button.textContent = 'Email Found';
+                    // Store email on the card for later use by enroll
+                    if (card) card.dataset.email = data.email;
+
+                    button.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> ${data.email}`;
                     button.style.background = '#d1fae5';
                     button.style.color = '#065f46';
                     button.style.borderColor = '#a7f3d0';
+                    button.classList.add('email-found');
+
+                    // Show verification badge next to button
+                    let badge = button.nextElementSibling;
+                    if (!badge || !badge.classList.contains('email-verify-badge')) {
+                        badge = document.createElement('span');
+                        badge.className = 'email-verify-badge';
+                        button.after(badge);
+                    }
+                    badge.className = `email-verify-badge ${isVerified ? 'email-badge-verified' : 'email-badge-unverified'}`;
+                    badge.textContent = isVerified ? 'Verified' : 'Unverified';
+
+                    // Update composer to field if exists
+                    if (login) {
+                        const composerTo = document.getElementById(`composer-to-${login}`);
+                        if (composerTo) composerTo.value = data.email;
+                    }
                 } else if (data.status === 'not_found') {
-                    emailDisplay.innerHTML = `
-                        <span style="color: var(--text-secondary);">No email found</span>
-                        <span class="email-badge email-badge-not-found">Not Found</span>
-                    `;
-                    emailDisplay.style.display = 'flex';
-                    button.textContent = 'Not Found';
+                    button.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg> Not Found';
                     button.style.background = '#fee2e2';
                     button.style.color = '#991b1b';
+                    button.style.borderColor = '#fecaca';
                 } else {
-                    button.textContent = 'Error';
+                    button.innerHTML = 'Error';
                     button.style.background = '#fee2e2';
                     button.style.color = '#991b1b';
                 }
             } catch (error) {
                 console.error('Email fetch error:', error);
-                button.textContent = 'Error';
+                button.innerHTML = 'Error';
                 button.style.background = '#fee2e2';
                 button.style.color = '#991b1b';
             }
-            
+
             setTimeout(() => { button.disabled = false; }, 2000);
         }
         
@@ -3006,15 +3095,13 @@
                 btn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg> Enrolling...';
             }
 
-            // Step 1: Check if email is already fetched
-            const emailDisplay = document.getElementById(`email-display-${login}`);
-            let email = emailDisplay ? emailDisplay.dataset.email : null;
+            // Step 1: Check if email is already fetched (stored on the card)
+            const card = btn ? btn.closest('.contributor-card') : null;
+            let email = card ? card.dataset.email : null;
 
             if (!email) {
                 // Auto-fetch email first
                 if (statusEl) statusEl.innerHTML = '<span class="enrollment-status pending">Fetching email...</span>';
-                const card = btn ? btn.closest('.contributor-card') : null;
-                const fetchBtn = card ? card.querySelector('.btn-fetch-email') : null;
 
                 try {
                     const lookupResp = await fetch('/api/apollo-lookup', {
@@ -3024,22 +3111,17 @@
                     });
                     const lookupData = await lookupResp.json();
 
-                    if (lookupData.status === 'success' && lookupData.email) {
+                    if (lookupData.status === 'found' && lookupData.email) {
                         email = lookupData.email;
-                        if (emailDisplay) {
-                            const isVerified = lookupData.email_status === 'verified';
-                            emailDisplay.innerHTML = `
-                                <span>${email}</span>
-                                <span class="email-badge ${isVerified ? 'email-badge-verified' : 'email-badge-unverified'}">${isVerified ? 'Verified' : 'Unverified'}</span>
-                            `;
-                            emailDisplay.dataset.email = email;
-                            emailDisplay.style.display = 'flex';
-                        }
+                        if (card) card.dataset.email = email;
+                        const fetchBtn = card ? card.querySelector('.btn-fetch-email') : null;
                         if (fetchBtn) {
-                            fetchBtn.textContent = 'Email Found';
+                            const isVerified = lookupData.email_status === 'verified';
+                            fetchBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> ${email}`;
                             fetchBtn.style.background = '#d1fae5';
                             fetchBtn.style.color = '#065f46';
                             fetchBtn.style.borderColor = '#a7f3d0';
+                            fetchBtn.classList.add('email-found');
                         }
                     } else {
                         if (btn) {
@@ -3093,13 +3175,26 @@
                     }
                     if (statusEl) statusEl.innerHTML = `<span class="enrollment-status enrolled">Enrolled in "${sequenceName}"</span>`;
                 } else {
+                    // Translate raw API errors to user-friendly messages
+                    let friendlyMsg = 'Enrollment failed. Please try again.';
+                    const rawMsg = (data.message || '').toLowerCase();
+                    if (rawMsg.includes('422') || rawMsg.includes('unprocessable')) {
+                        friendlyMsg = 'Find a valid email first before enrolling in a sequence.';
+                    } else if (rawMsg.includes('404') || rawMsg.includes('not found')) {
+                        friendlyMsg = 'Sequence not found. It may have been deleted in Apollo.';
+                    } else if (rawMsg.includes('401') || rawMsg.includes('unauthorized')) {
+                        friendlyMsg = 'Apollo API key is invalid or expired. Check settings.';
+                    } else if (rawMsg.includes('already') || rawMsg.includes('duplicate')) {
+                        friendlyMsg = 'This contact is already enrolled in this sequence.';
+                    }
+
                     if (btn) {
                         btn.classList.remove('loading');
                         btn.classList.add('error');
-                        btn.innerHTML = 'Failed';
+                        btn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg> Failed';
                         setTimeout(() => { resetEnrollBtn(btn); }, 4000);
                     }
-                    if (statusEl) statusEl.innerHTML = `<span class="enrollment-status error">${data.message || 'Enrollment failed'}</span>`;
+                    if (statusEl) statusEl.innerHTML = `<span class="enrollment-status error">${friendlyMsg}</span>`;
                 }
             } catch (e) {
                 if (btn) {
@@ -3108,7 +3203,7 @@
                     btn.innerHTML = 'Error';
                     setTimeout(() => { resetEnrollBtn(btn); }, 4000);
                 }
-                if (statusEl) statusEl.innerHTML = '<span class="enrollment-status error">Network error during enrollment</span>';
+                if (statusEl) statusEl.innerHTML = '<span class="enrollment-status error">Could not connect to Apollo. Check your network and try again.</span>';
             }
         }
 
@@ -3123,6 +3218,180 @@
                 closeAllSequenceDropdowns();
             }
         });
+
+        // One-click Enrich & Enroll flow
+        async function enrichAndEnroll(btn) {
+            const login = btn.dataset.login;
+            const name = btn.dataset.name;
+            const company = btn.dataset.company;
+            const card = btn.closest('.contributor-card');
+            const statusEl = document.getElementById(`enrollment-status-${login}`);
+            const origHTML = btn.innerHTML;
+
+            btn.disabled = true;
+
+            // Step 1: Find email
+            btn.className = 'btn-enrich-enroll step-email';
+            btn.innerHTML = '<svg class="spin-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg> Finding email...';
+            if (statusEl) statusEl.innerHTML = '<span class="enrollment-status pending">Step 1/3: Finding email...</span>';
+
+            let email = card ? card.dataset.email : null;
+
+            if (!email) {
+                try {
+                    const lookupResp = await fetch('/api/apollo-lookup', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ name: name, company: company })
+                    });
+                    const lookupData = await lookupResp.json();
+
+                    if (lookupData.status === 'found' && lookupData.email) {
+                        email = lookupData.email;
+                        if (card) card.dataset.email = email;
+                        // Update the Find Email button too
+                        const fetchBtn = card ? card.querySelector('.btn-fetch-email') : null;
+                        if (fetchBtn) {
+                            fetchBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> ${email}`;
+                            fetchBtn.style.background = '#d1fae5';
+                            fetchBtn.style.color = '#065f46';
+                            fetchBtn.style.borderColor = '#a7f3d0';
+                            fetchBtn.classList.add('email-found');
+                        }
+                    } else {
+                        btn.className = 'btn-enrich-enroll step-error';
+                        btn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg> No email found';
+                        if (statusEl) statusEl.innerHTML = '<span class="enrollment-status error">Could not find an email for this contributor.</span>';
+                        setTimeout(() => resetEnrichBtn(btn, origHTML), 4000);
+                        return;
+                    }
+                } catch (e) {
+                    btn.className = 'btn-enrich-enroll step-error';
+                    btn.innerHTML = 'Lookup failed';
+                    if (statusEl) statusEl.innerHTML = '<span class="enrollment-status error">Email lookup failed. Check your network.</span>';
+                    setTimeout(() => resetEnrichBtn(btn, origHTML), 4000);
+                    return;
+                }
+            }
+
+            // Step 2: Load sequences and show picker
+            btn.className = 'btn-enrich-enroll step-enroll';
+            btn.innerHTML = '<svg class="spin-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg> Pick sequence...';
+            if (statusEl) statusEl.innerHTML = `<span class="enrollment-status pending">Step 2/3: Email found (${email}). Choose a sequence...</span>`;
+
+            try {
+                const sequences = await loadApolloSequences();
+                if (!sequences || sequences.length === 0) {
+                    btn.className = 'btn-enrich-enroll step-error';
+                    btn.innerHTML = 'No sequences';
+                    if (statusEl) statusEl.innerHTML = '<span class="enrollment-status error">No Apollo sequences available.</span>';
+                    setTimeout(() => resetEnrichBtn(btn, origHTML), 4000);
+                    return;
+                }
+
+                // Show inline sequence picker as a dropdown from this button
+                let picker = btn.nextElementSibling;
+                if (!picker || !picker.classList.contains('enrich-sequence-picker')) {
+                    picker = document.createElement('div');
+                    picker.className = 'enrich-sequence-picker sequence-selector-dropdown';
+                    btn.after(picker);
+                }
+
+                picker.innerHTML = sequences.map(seq =>
+                    `<div class="sequence-option" onclick="completeEnrichEnroll(this, '${login}', ${JSON.stringify(name)}, ${JSON.stringify(company)}, '${seq.id}', ${JSON.stringify(seq.name)})">
+                        <span class="sequence-option-name">${seq.name}</span>
+                        <span class="sequence-option-meta">${seq.num_steps} steps</span>
+                    </div>`
+                ).join('');
+                picker.style.display = 'block';
+                picker.style.position = 'absolute';
+                picker.style.top = '100%';
+                picker.style.left = '0';
+                picker.style.zIndex = '100';
+
+                btn.disabled = false;
+                btn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg> Pick sequence...';
+
+            } catch (e) {
+                btn.className = 'btn-enrich-enroll step-error';
+                btn.innerHTML = 'Error loading sequences';
+                setTimeout(() => resetEnrichBtn(btn, origHTML), 4000);
+            }
+        }
+
+        async function completeEnrichEnroll(optionEl, login, name, company, sequenceId, sequenceName) {
+            const picker = optionEl.closest('.enrich-sequence-picker');
+            if (picker) picker.style.display = 'none';
+
+            const card = optionEl.closest('.contributor-card');
+            const btn = card ? card.querySelector('.btn-enrich-enroll') : null;
+            const statusEl = document.getElementById(`enrollment-status-${login}`);
+            const email = card ? card.dataset.email : null;
+
+            if (!email) return;
+
+            if (btn) {
+                btn.disabled = true;
+                btn.className = 'btn-enrich-enroll step-enroll';
+                btn.innerHTML = '<svg class="spin-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg> Enrolling...';
+            }
+            if (statusEl) statusEl.innerHTML = `<span class="enrollment-status pending">Step 3/3: Enrolling in "${sequenceName}"...</span>`;
+
+            const nameParts = name.trim().split(' ');
+            const firstName = nameParts[0] || '';
+            const lastName = nameParts.slice(1).join(' ') || '';
+
+            try {
+                const resp = await fetch('/api/apollo/enroll-sequence', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        email: email,
+                        first_name: firstName,
+                        last_name: lastName,
+                        sequence_id: sequenceId,
+                        company_name: company,
+                        github_login: login
+                    })
+                });
+                const data = await resp.json();
+
+                if (data.status === 'success') {
+                    if (btn) {
+                        btn.className = 'btn-enrich-enroll step-done';
+                        btn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Done!';
+                    }
+                    if (statusEl) statusEl.innerHTML = `<span class="enrollment-status enrolled">Enrolled in "${sequenceName}"</span>`;
+                } else {
+                    let friendlyMsg = 'Enrollment failed. Please try again.';
+                    const rawMsg = (data.message || '').toLowerCase();
+                    if (rawMsg.includes('422')) friendlyMsg = 'Find a valid email first.';
+                    else if (rawMsg.includes('already') || rawMsg.includes('duplicate')) friendlyMsg = 'Already enrolled in this sequence.';
+
+                    if (btn) {
+                        btn.className = 'btn-enrich-enroll step-error';
+                        btn.innerHTML = 'Failed';
+                        const origHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg> Enrich & Enroll';
+                        setTimeout(() => resetEnrichBtn(btn, origHTML), 4000);
+                    }
+                    if (statusEl) statusEl.innerHTML = `<span class="enrollment-status error">${friendlyMsg}</span>`;
+                }
+            } catch (e) {
+                if (btn) {
+                    btn.className = 'btn-enrich-enroll step-error';
+                    btn.innerHTML = 'Network error';
+                    const origHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg> Enrich & Enroll';
+                    setTimeout(() => resetEnrichBtn(btn, origHTML), 4000);
+                }
+                if (statusEl) statusEl.innerHTML = '<span class="enrollment-status error">Network error. Try again.</span>';
+            }
+        }
+
+        function resetEnrichBtn(btn, origHTML) {
+            btn.disabled = false;
+            btn.className = 'btn-enrich-enroll';
+            btn.innerHTML = origHTML;
+        }
 
     </script>
 {% endblock %}

@@ -124,6 +124,57 @@
     .btn-fetch-contributors:disabled { opacity: 0.5; cursor: not-allowed; }
     .btn-fetch-contributors svg { width: 15px; height: 15px; }
 
+    /* Fetch progress */
+    .fetch-progress-bar {
+        display: none;
+        padding: 0.75rem 0;
+    }
+    .fetch-progress-inner {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 0.6rem 1rem;
+    }
+    .fetch-progress-track {
+        flex: 1;
+        height: 6px;
+        background: var(--bg-tertiary, #e5e7eb);
+        border-radius: 3px;
+        overflow: hidden;
+        min-width: 120px;
+    }
+    .fetch-progress-fill {
+        height: 100%;
+        width: 0%;
+        background: var(--accent-color);
+        border-radius: 3px;
+        transition: width 0.5s ease;
+    }
+    .fetch-progress-text {
+        font-size: 0.8rem;
+        color: var(--text-secondary);
+        white-space: nowrap;
+    }
+    .fetch-cancel-btn {
+        padding: 0.3rem 0.7rem;
+        font-size: 0.75rem;
+        font-weight: 500;
+        background: transparent;
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        color: var(--text-secondary);
+        cursor: pointer;
+        white-space: nowrap;
+        transition: all 0.2s;
+    }
+    .fetch-cancel-btn:hover {
+        border-color: #ef4444;
+        color: #ef4444;
+    }
+
     /* Table */
     .contrib-table-container {
         background: var(--bg-primary);
@@ -873,30 +924,95 @@
     };
 
     // Fetch contributors from GitHub
+    let fetchAbortController = null;
+
     window.fetchContributors = function() {
         const btn = document.getElementById('btn-fetch');
+        const controlsRow = btn.closest('.contrib-controls');
+
+        // Create progress UI
+        let progressEl = document.getElementById('fetch-progress');
+        if (!progressEl) {
+            progressEl = document.createElement('div');
+            progressEl.id = 'fetch-progress';
+            progressEl.className = 'fetch-progress-bar';
+            controlsRow.after(progressEl);
+        }
+
         btn.disabled = true;
+        fetchAbortController = new AbortController();
+
+        // Show progress UI
+        progressEl.style.display = 'block';
+        progressEl.innerHTML = `
+            <div class="fetch-progress-inner">
+                <div class="fetch-progress-track"><div class="fetch-progress-fill" id="fetch-progress-fill"></div></div>
+                <span class="fetch-progress-text" id="fetch-progress-text">Connecting to GitHub...</span>
+                <button class="fetch-cancel-btn" id="fetch-cancel-btn" type="button">Cancel</button>
+            </div>
+        `;
         btn.innerHTML = '<span class="fetch-spinner"></span> Fetching...';
+
+        document.getElementById('fetch-cancel-btn').onclick = function() {
+            if (fetchAbortController) fetchAbortController.abort();
+            resetFetchUI('Cancelled');
+            showToast('Fetch cancelled', 'info');
+        };
+
+        // Simulate progress while waiting
+        const progressFill = document.getElementById('fetch-progress-fill');
+        const progressText = document.getElementById('fetch-progress-text');
+        let elapsed = 0;
+        const progressMessages = [
+            'Connecting to GitHub...',
+            'Scanning repositories...',
+            'Discovering contributors...',
+            'Processing contributor profiles...',
+            'Saving contributor data...'
+        ];
+        const progressInterval = setInterval(() => {
+            elapsed += 1;
+            const pct = Math.min(90, elapsed * 3);
+            if (progressFill) progressFill.style.width = pct + '%';
+            const msgIdx = Math.min(Math.floor(elapsed / 8), progressMessages.length - 1);
+            if (progressText) progressText.textContent = progressMessages[msgIdx] + ` (${elapsed}s)`;
+        }, 1000);
 
         fetch('/api/contributors/fetch', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ limit: 5 })
+            body: JSON.stringify({ limit: 5 }),
+            signal: fetchAbortController.signal
         })
         .then(r => r.json())
         .then(data => {
+            clearInterval(progressInterval);
             if (data.status === 'success') {
+                if (progressFill) progressFill.style.width = '100%';
+                if (progressText) progressText.textContent = `Done! Found ${data.contributors_saved} contributors from ${data.accounts_processed} accounts.`;
                 showToast(`Fetched ${data.contributors_saved} contributors from ${data.accounts_processed} accounts`, 'success');
                 loadTable();
+                setTimeout(() => resetFetchUI(), 3000);
             } else {
+                resetFetchUI('Failed');
                 showToast('Failed to fetch contributors', 'error');
             }
         })
-        .catch(() => showToast('Network error', 'error'))
-        .finally(() => {
+        .catch(err => {
+            clearInterval(progressInterval);
+            if (err.name === 'AbortError') return;
+            resetFetchUI('Error');
+            showToast('Network error', 'error');
+        });
+
+        function resetFetchUI(label) {
+            clearInterval(progressInterval);
+            const pe = document.getElementById('fetch-progress');
+            if (pe) pe.style.display = 'none';
             btn.disabled = false;
             btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg> <span>Fetch from GitHub</span>';
-        });
+            fetchAbortController = null;
+        }
     };
 
     // Update stats
