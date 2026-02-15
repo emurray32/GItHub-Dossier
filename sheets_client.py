@@ -211,7 +211,7 @@ def read_sheet_accounts(
 
     try:
         # Read all data from the sheet
-        range_name = f'{sheet_name}!A:ZZ'
+        range_name = f'{sheet_name}!A2:ZZ'
         response = service.spreadsheets().values().get(
             spreadsheetId=spreadsheet_id,
             range=range_name
@@ -268,7 +268,7 @@ def read_sheet_accounts(
 
             # Extract mapped fields
             account = {
-                '_row_index': row_idx + 2,  # 1-indexed, +1 for header
+                '_row_index': row_idx + 3,  # 1-indexed, +1 for header, +1 for banner
                 '_raw_row': row,
             }
 
