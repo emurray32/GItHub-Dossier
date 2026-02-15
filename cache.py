@@ -195,8 +195,8 @@ class GitHubCache:
     def __init__(self):
         self._lock = threading.Lock()
         self._stats = CacheStats()
-        self._redis_client: Optional[redis.Redis] = None
-        self._disk_cache: Optional[diskcache.Cache] = None
+        self._redis_client: Optional['redis.Redis'] = None
+        self._disk_cache: Optional['diskcache.Cache'] = None
         self._backend: str = 'none'
 
         self._initialize_backend()

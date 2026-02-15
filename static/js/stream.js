@@ -28,7 +28,7 @@ class StreamHandler {
 
     start() {
         // Clear initial message
-        this.consoleOutput.innerHTML = '';
+        if (this.consoleOutput) this.consoleOutput.innerHTML = '';
         this.updateStatus('Connecting...', 'active');
 
         const eventSource = new EventSource(`/stream_scan/${encodeURIComponent(this.company)}`);
@@ -247,6 +247,7 @@ class StreamHandler {
             line.classList.add(className);
         }
         line.textContent = text;
+        if (!this.consoleOutput) return;
         this.consoleOutput.appendChild(line);
 
         // Auto-scroll to bottom
@@ -256,12 +257,14 @@ class StreamHandler {
     }
 
     updateStatus(text, state) {
-        this.statusText.textContent = text;
-        this.statusIndicator.className = 'status-indicator';
-        if (state === 'complete') {
-            this.statusIndicator.classList.add('complete');
-        } else if (state === 'error') {
-            this.statusIndicator.classList.add('error');
+        if (this.statusText) this.statusText.textContent = text;
+        if (this.statusIndicator) {
+            this.statusIndicator.className = 'status-indicator';
+            if (state === 'complete') {
+                this.statusIndicator.classList.add('complete');
+            } else if (state === 'error') {
+                this.statusIndicator.classList.add('error');
+            }
         }
     }
 

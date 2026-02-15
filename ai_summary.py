@@ -129,7 +129,6 @@ def generate_analysis(scan_data: dict) -> Generator[str, None, dict]:
             analysis = _parse_ai_response(response.choices[0].message.content, scan_data)
             yield _sse_log("AI Sales Intelligence Complete (GPT-5-mini)")
             yield _sse_data('ANALYSIS_COMPLETE', analysis)
-            return analysis
 
         except Exception as e:
             yield _sse_log(f"OpenAI error: {str(e)}")
@@ -150,7 +149,6 @@ def generate_analysis(scan_data: dict) -> Generator[str, None, dict]:
             analysis = _parse_ai_response(response.text, scan_data)
             yield _sse_log("AI Sales Intelligence Complete (Gemini)")
             yield _sse_data('ANALYSIS_COMPLETE', analysis)
-            return analysis
 
         except Exception as e:
             yield _sse_log(f"Gemini error: {str(e)}")
@@ -158,7 +156,6 @@ def generate_analysis(scan_data: dict) -> Generator[str, None, dict]:
     yield _sse_log("Using rule-based analysis...")
     analysis = _generate_fallback_analysis(scan_data)
     yield _sse_data('ANALYSIS_COMPLETE', analysis)
-    return analysis
 
 
 def _build_sales_intelligence_prompt(scan_data: dict) -> str:

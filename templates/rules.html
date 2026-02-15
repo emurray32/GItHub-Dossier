@@ -8,16 +8,16 @@
                     <li class="breadcrumb-item">
                                     <a href="{{ url_for('accounts') }}">
                                                         <svg class="breadcrumb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                                                                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>path>
-                                                                                <polyline points="9 22 9 12 15 12 15 22"></polyline>polyline>
-                                                        </svg>svg>
+                                                                                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                                                                                <polyline points="9 22 9 12 15 12 15 22"></polyline>
+                                                        </svg>
                                                         Accounts
-                                    </a>a>
-                    </li>li>
-                    <li class="breadcrumb-separator"></li>li>
-                    <li class="breadcrumb-item active" aria-current="page">Rule Set</li>li>
-        </ol>ol>
-</nav>nav>
+                                    </a>
+                    </li>
+                    <li class="breadcrumb-separator"></li>
+                    <li class="breadcrumb-item active" aria-current="page">Rule Set</li>
+        </ol>
+</nav>
 {% endblock %}
 
 {% block content %}
@@ -26,35 +26,35 @@
                     <div class="page-header-content">
                                     <div class="page-header-text">
                                                         <h1>Scanning Rule Set</h1>
-                                                    <p class="subtitle">Detection rules and scoring configuration for identifying i18n signals</p>p>
-                                    </div>div>
+                                                    <p class="subtitle">Detection rules and scoring configuration for identifying i18n signals</p>
+                                    </div>
                                 <div class="page-header-actions">
                                                 <a href="/api/rules/download" class="btn-download" title="Download rules for LLM">
                                                                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                                                                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>path>
-                                                                                            <polyline points="7 10 12 15 17 10"></polyline>polyline>
-                                                                                            <line x1="12" y1="15" x2="12" y2="3"></line>line>
-                                                                    </svg>svg>
+                                                                                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                                                                            <polyline points="7 10 12 15 17 10"></polyline>
+                                                                                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                                                                    </svg>
                                                                     <span>Download Rules</span>
-                                                </a>a>
-                                </div>div>
+                                                </a>
+                                </div>
                                 <div class="rules-meta">
                                                 <span id="rules-last-updated" class="rules-timestamp">Loading...</span>
                                                 <button id="rules-refresh-btn" class="rules-refresh-btn" title="Mark rules as reviewed">
                                                                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                                                                            <polyline points="23 4 23 18 17 10"></polyline>polyline>
-                                                                                            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>path>
-                                                                    </svg>svg>
-                                                </button>button>
-                                </div>div>
-                    </div>div>
-        </header>header>
+                                                                                            <polyline points="23 4 23 18 17 10"></polyline>
+                                                                                            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                                                                    </svg>
+                                                </button>
+                                </div>
+                    </div>
+        </header>
     <div class="loading-state" id="loading-state" aria-live="polite">
-            <div class="loading-spinner" aria-hidden="true"></div>div>
+            <div class="loading-spinner" aria-hidden="true"></div>
             <p>Loading rules...</p>
-    </div>div>
-    <div id="rules-content" class="rules-content hidden"></div>div>
-</div>div>
+    </div>
+    <div id="rules-content" class="rules-content hidden"></div>
+</div>
 
 <style>
     .page-header { margin-bottom: 2rem; }
@@ -291,5 +291,3 @@
     });
 </script>
 {% endblock %}
-</script>
-</style></p></span></h1>

@@ -4,7 +4,12 @@ Uses the official AgentMail Python SDK.
 """
 import os
 import requests
-from agentmail import AgentMail
+try:
+    from agentmail import AgentMail
+    AGENTMAIL_AVAILABLE = True
+except ImportError:
+    AgentMail = None
+    AGENTMAIL_AVAILABLE = False
 
 
 _cached_inbox = None

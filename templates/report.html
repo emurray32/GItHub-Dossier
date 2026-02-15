@@ -1184,8 +1184,8 @@
         padding: 0.75rem 1rem;
         background: var(--bg-primary);
         border-radius: 6px;
-        border-left: 3px solid var(--accent-color);
         border: 1px solid var(--border-color);
+        border-left: 3px solid var(--accent-color);
     }
 
     .email-subject-label {
@@ -1911,26 +1911,6 @@
     </style>
 {% endblock %}
 
-{% block breadcrumbs %}
-<nav class="breadcrumb-nav" aria-label="Breadcrumb">
-    <div class="breadcrumb-container">
-        <ol class="breadcrumb-list">
-            <li class="breadcrumb-item">
-                <a href="{{ url_for('accounts') }}">Accounts</a>
-            </li>
-            <li class="breadcrumb-separator">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="9 18 15 12 9 6"></polyline>
-                </svg>
-            </li>
-            <li class="breadcrumb-item active" aria-current="page">
-                {{ report.company_name|title }}
-            </li>
-        </ol>
-    </div>
-</nav>
-{% endblock %}
-
 {% block content %}
 <div class="report-container">
     <header class="report-header">
@@ -2219,18 +2199,18 @@
                     <div class="contact-reason">{{ contact.outreach_reason }}</div>
                     <!-- Email Workflow for Contact -->
                     <div class="prospect-email-section">
-                        <button class="btn-fetch-email" onclick="fetchApolloEmail(this, '{{ contact.name }}', '{{ contact.login }}', '{{ report.company_name }}')" data-login="{{ contact.login }}">
+                        <button class="btn-fetch-email" onclick="fetchApolloEmail(this, {{ contact.name|tojson }}, {{ contact.login|tojson }}, {{ report.company_name|tojson }})" data-login="{{ contact.login }}">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
                             Fetch Email
                         </button>
                         <span class="email-result" id="email-result-{{ contact.login }}" style="display:none;"></span>
-                        <button class="btn-compose-email" id="compose-btn-{{ contact.login }}" style="display:none;" onclick="openComposer('{{ contact.login }}', '{{ contact.name }}')">
+                        <button class="btn-compose-email" id="compose-btn-{{ contact.login }}" style="display:none;" onclick="openComposer({{ contact.login|tojson }}, {{ contact.name|tojson }})">
                             Compose &amp; Send
                         </button>
                         <div class="inline-email-composer" id="composer-{{ contact.login }}">
                             <div class="composer-header">
                                 <h4>Email to {{ contact.name }}</h4>
-                                <button class="btn-cancel-compose" onclick="closeComposer('{{ contact.login }}')">Cancel</button>
+                                <button class="btn-cancel-compose" onclick="closeComposer({{ contact.login|tojson }})">Cancel</button>
                             </div>
                             <div class="composer-field">
                                 <label>To</label>
@@ -2245,10 +2225,10 @@
                                 <textarea id="composer-body-{{ contact.login }}"></textarea>
                             </div>
                             <div class="composer-actions">
-                                <button class="btn-enroll" onclick="sendOutreachEmail('{{ contact.login }}', '{{ report.company_name }}', '{{ report.id }}')" id="send-btn-{{ contact.login }}">
+                                <button class="btn-enroll" onclick="sendOutreachEmail({{ contact.login|tojson }}, {{ report.company_name|tojson }}, {{ report.id|tojson }})" id="send-btn-{{ contact.login }}">
                                     Enroll
                                 </button>
-                                <button class="btn-cancel-compose" onclick="closeComposer('{{ contact.login }}')">Cancel</button>
+                                <button class="btn-cancel-compose" onclick="closeComposer({{ contact.login|tojson }})">Cancel</button>
                                 <span class="send-status" id="send-status-{{ contact.login }}"></span>
                             </div>
                         </div>
@@ -2326,38 +2306,6 @@
             {% for repo in contrib_repos %}
                 {% for signal in report.scan_data.signals %}
                     {% if signal.repo == repo and repo not in i18n_repos %}
-                    <!-- Contributor Actions -->
-                    <div class="contributor-actions" onclick="event.stopPropagation();">
-                        <button class="btn-fetch-email" onclick="fetchContributorEmail(this, '{{ contributor.name or contributor.login }}', '{{ report.company_name|title }}')">
-                            Fetch Email
-                        </button>
-                        <button class="btn-select-contributor" onclick="selectContributor(this.closest('.contributor-card'), '{{ contributor.name or contributor.login }}', '{{ contributor.login }}', '{{ report.company_name|title }}')">
-                            Select & Email
-                        </button>
-                        <div style="position: relative; display: inline-block;">
-                            <button class="btn-enroll-sequence" id="enroll-seq-btn-{{ contributor.login }}" data-login="{{ contributor.login }}" data-name="{{ (contributor.name or contributor.login)|e }}" data-company="{{ report.company_name|title|e }}" onclick="event.stopPropagation(); showSequenceSelector(this.dataset.login, this.dataset.name, this.dataset.company)">
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
-                                Enroll in Sequence
-                            </button>
-                            <div class="sequence-selector-dropdown" id="seq-dropdown-{{ contributor.login }}"></div>
-                        </div>
-                    </div>
-                    <div id="enrollment-status-{{ contributor.login }}"></div>
-                    <div class="contributor-email-display" id="email-display-{{ contributor.login }}" style="display:none;"></div>
-                    <div class="inline-email-composer" id="composer-{{ contributor.login }}">
-                        <div class="composer-actions" style="margin-bottom: 0.75rem;">
-                            <button class="btn-enroll" onclick="sendContributorEmail('{{ contributor.login }}', '{{ report.company_name|title }}')">
-                                Enroll
-                            </button>
-                            <span style="font-size: 0.75rem; color: var(--text-secondary);">Send personalized outreach email</span>
-                        </div>
-                        <label>To:</label>
-                        <input type="text" id="composer-to-{{ contributor.login }}" placeholder="Fetch email first..." readonly>
-                        <label>Subject:</label>
-                        <input type="text" id="composer-subject-{{ contributor.login }}" value="{{ report.ai_analysis.email_draft.subject if report.ai_analysis and report.ai_analysis.email_draft else '' }}">
-                        <label>Body:</label>
-                        <textarea id="composer-body-{{ contributor.login }}">{{ report.ai_analysis.email_draft.body if report.ai_analysis and report.ai_analysis.email_draft else '' }}</textarea>
-                    </div>
                         {% set _ = i18n_repos.append(repo) %}
                     {% endif %}
                 {% endfor %}
@@ -2413,6 +2361,38 @@
                     </div>
                     {% endif %}
                 </div>
+            </div>
+            <!-- Contributor Actions (once per contributor) -->
+            <div class="contributor-actions" onclick="event.stopPropagation();">
+                <button class="btn-fetch-email" onclick="fetchContributorEmail(this, {{ (contributor.name or contributor.login)|tojson }}, {{ report.company_name|tojson }})">
+                    Fetch Email
+                </button>
+                <button class="btn-select-contributor" onclick="selectContributor(this.closest('.contributor-card'), {{ (contributor.name or contributor.login)|tojson }}, {{ contributor.login|tojson }}, {{ report.company_name|tojson }})">
+                    Select & Email
+                </button>
+                <div style="position: relative; display: inline-block;">
+                    <button class="btn-enroll-sequence" id="enroll-seq-btn-{{ contributor.login }}" data-login="{{ contributor.login }}" data-name="{{ (contributor.name or contributor.login)|e }}" data-company="{{ report.company_name|title|e }}" onclick="event.stopPropagation(); showSequenceSelector(this.dataset.login, this.dataset.name, this.dataset.company)">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
+                        Enroll in Sequence
+                    </button>
+                    <div class="sequence-selector-dropdown" id="seq-dropdown-{{ contributor.login }}"></div>
+                </div>
+            </div>
+            <div id="enrollment-status-{{ contributor.login }}"></div>
+            <div class="contributor-email-display" id="email-display-{{ contributor.login }}" style="display:none;"></div>
+            <div class="inline-email-composer" id="composer-{{ contributor.login }}">
+                <div class="composer-actions" style="margin-bottom: 0.75rem;">
+                    <button class="btn-enroll" onclick="sendContributorEmail({{ contributor.login|tojson }}, {{ report.company_name|tojson }})">
+                        Enroll
+                    </button>
+                    <span style="font-size: 0.75rem; color: var(--text-secondary);">Send personalized outreach email</span>
+                </div>
+                <label>To:</label>
+                <input type="text" id="composer-to-{{ contributor.login }}" placeholder="Fetch email first..." readonly>
+                <label>Subject:</label>
+                <input type="text" id="composer-subject-{{ contributor.login }}" value="{{ report.ai_analysis.email_draft.subject if report.ai_analysis and report.ai_analysis.email_draft else '' }}">
+                <label>Body:</label>
+                <textarea id="composer-body-{{ contributor.login }}">{{ report.ai_analysis.email_draft.body if report.ai_analysis and report.ai_analysis.email_draft else '' }}</textarea>
             </div>
             {% endfor %}
         </div>
@@ -2629,7 +2609,7 @@
                     to_email: toEmail,
                     subject: subject,
                     body: body,
-                    company_name: '{{ report.company_name }}',
+                    company_name: {{ report.company_name|tojson }},
                     report_url: window.location.href
                 })
             });
@@ -2698,13 +2678,18 @@
         });
     });
 
-    // Show selected contact banner in email section
+    function openComposer(login, name) {
+        const composer = document.getElementById(`composer-${login}`);
+        if (!composer) return;
+        composer.classList.add('active');
+
+        // Show selected contact banner in email section
         const banner = document.getElementById('selected-contact-banner');
         if (banner) {
             banner.textContent = `Composing email to: ${name}`;
             banner.classList.add('active');
         }
-        
+
         composer.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
     

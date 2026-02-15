@@ -935,7 +935,7 @@
             btnsHtml += `<button class="contrib-page-btn ${p === currentPage ? 'active' : ''}" onclick="goToPage(${p})">${p + 1}</button>`;
         }
 
-        btnsHtml += `<button class="contrib-page-btn" onclick="goToPage(${currentPage + 1})" ${currentPage >= totalPages - 1 ? 'disabled' : ''}'>Next &raquo;</button>`;
+        btnsHtml += `<button class="contrib-page-btn" onclick="goToPage(${currentPage + 1})" ${currentPage >= totalPages - 1 ? 'disabled' : ''}>Next &raquo;</button>`;
 
         container.innerHTML = btnsHtml;
     }

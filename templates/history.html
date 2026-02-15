@@ -1469,7 +1469,9 @@ document.addEventListener('DOMContentLoaded', function() {
         runCompareBtn.addEventListener('click', function() {
             if (selectedForCompare.size >= 2) {
                 const ids = Array.from(selectedForCompare).join(',');
-                window.open(`/compare?ids=${ids}`, '_blank');
+                // TODO: Compare route not yet implemented
+                // window.open(`/compare?ids=${ids}`, '_blank');
+                alert('Compare feature coming soon');
             }
         });
 
@@ -1701,7 +1703,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             <circle cx="12" cy="12" r="3"></circle>
                         </svg>
                     </button>
-                    <a href="/scan?company=${encodeURIComponent(report.company_name)}" class="btn-action btn-rescan" aria-label="Re-scan company">
+                    <a href="/scan/${encodeURIComponent(report.company_name)}" class="btn-action btn-rescan" aria-label="Re-scan company">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M23 4v6h-6M1 20v-6h6"></path>
                             <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"></path>

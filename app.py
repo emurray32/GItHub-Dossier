@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Optional, Sequence
 import requests
 from datetime import datetime
-from flask import Flask, render_template, Response, request, jsonify, redirect, url_for, stream_with_context, send_file
+from flask import Flask, render_template, Response, request, jsonify, redirect, url_for, stream_with_context, send_file, send_from_directory
 from config import Config
 from database import (
     save_report, get_report, get_recent_reports, search_reports,
@@ -311,7 +311,7 @@ def format_slack_message(event_type: str, company_data: dict) -> dict:
             "elements": [
                 {
                     "type": "mrkdwn",
-                    "text": f"🤖 GitHub Dossier • {datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')}"
+                    "text": f"🤖 GitHub Dossier • {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}"
                 }
             ]
         }
@@ -1140,7 +1140,6 @@ def stream_scan(company: str):
             'Cache-Control': 'no-cache',
             'Connection': 'keep-alive',
             'X-Accel-Buffering': 'no',  # Disable nginx buffering
-            'Access-Control-Allow-Origin': '*'
         }
     )
 
@@ -1185,7 +1184,7 @@ def search():
     """Search for a company - redirects to scan page."""
     company = request.args.get('q', '').strip()
     # Sanitize input: remove dangerous characters, keep alphanumeric, dots, dashes, underscores
-    company = "".join(c for c in company if c.isalnum() or c in ".-_").strip()
+    company = "".join(c for c in company if c.isalnum() or c in ".-_ ").strip()
     
     if not company:
         return redirect(url_for('index'))
@@ -2664,103 +2663,6 @@ def api_lead_stream():
         return jsonify({'error': f'Failed to generate lead stream: {str(e)}'}), 500
 
 
-@app.route('/api/import/check-duplicates', methods=['POST'])
-def api_check_duplicates():
-    """
-    Check for potential duplicates before importing companies.
-
-    This endpoint helps prevent importing the same company multiple times by:
-    1. Checking exact company name matches (case-insensitive)
-    2. Checking fuzzy company name matches (removes Inc, LLC, Corp, etc.)
-    3. Checking GitHub org matches (if provided)
-    4. Checking website domain matches (if provided)
-
-    Expects JSON payload: {"companies": ["Shopify", "Stripe", ...]}
-    Or with details: {"companies": [{"name": "Shopify", "github_org": "shopify", "website": "shopify.com"}, ...]}
-
-    Returns:
-        JSON with: {
-            "total_checked": <int>,
-            "duplicates_found": <int>,
-            "results": [
-                {
-                    "company": "Shopify",
-                    "is_duplicate": true,
-                    "matches": [
-                        {
-                            "id": 123,
-                            "company_name": "Shopify",
-                            "match_reason": "exact_name",
-                            "match_confidence": 100
-                        }
-                    ]
-                },
-                ...
-            ]
-        }
-    """
-    from database import find_potential_duplicates_bulk
-
-    data = request.get_json() or {}
-    companies = data.get('companies', [])
-
-    if not isinstance(companies, list) or not companies:
-        return jsonify({'error': 'Invalid payload: expected {"companies": [...]}'}), 400
-
-    # Use bulk duplicate check for performance (single query instead of N queries)
-    duplicate_map = find_potential_duplicates_bulk(companies)
-
-    results = []
-    duplicates_count = 0
-
-    for company_item in companies:
-        # Support both string format and object format
-        if isinstance(company_item, dict):
-            company_name = company_item.get('name', '').strip()
-        else:
-            company_name = str(company_item).strip()
-
-        if not company_name:
-            continue
-
-        # Get duplicates from bulk results
-        duplicates = duplicate_map.get(company_name, [])
-
-        # Format matches for response
-        matches = []
-        for dup in duplicates:
-            matches.append({
-                'id': dup.get('id'),
-                'company_name': dup.get('company_name'),
-                'github_org': dup.get('github_org'),
-                'current_tier': dup.get('current_tier'),
-                'match_reason': dup.get('match_reason'),
-                'match_confidence': dup.get('match_confidence'),
-            })
-
-        # Only flag as confirmed duplicate for 100% confidence matches
-        confirmed_matches = [m for m in matches if m.get('match_confidence', 0) >= 100]
-        potential_matches = [m for m in matches if m.get('match_confidence', 0) < 100]
-        is_duplicate = len(confirmed_matches) > 0
-        is_potential = len(potential_matches) > 0
-        if is_duplicate:
-            duplicates_count += 1
-
-        results.append({
-            'company': company_name,
-            'is_duplicate': is_duplicate,
-            'is_potential_duplicate': is_potential and not is_duplicate,
-            'matches': matches,
-        })
-
-    return jsonify({
-        'total_checked': len(results),
-        'duplicates_found': duplicates_count,
-        'new_companies': len(results) - duplicates_count,
-        'results': results,
-    })
-
-
 @app.route('/api/import', methods=['POST'])
 @app.route('/api/accounts/import', methods=['POST'])
 def api_import():
@@ -3600,6 +3502,23 @@ def api_settings():
                 'status': 'error',
                 'message': 'Webhook URL must start with http:// or https://'
             }), 400
+        # SSRF protection: reject private/loopback IPs
+        if webhook_url:
+            try:
+                from urllib.parse import urlparse
+                import socket
+                import ipaddress
+                parsed = urlparse(webhook_url)
+                hostname = parsed.hostname
+                if hostname:
+                    ip = ipaddress.ip_address(socket.gethostbyname(hostname))
+                    if ip.is_private or ip.is_loopback or ip.is_reserved:
+                        return jsonify({
+                            'status': 'error',
+                            'message': 'Webhook URL cannot point to a private or internal address'
+                        }), 400
+            except (socket.gaierror, ValueError):
+                pass  # Allow unresolvable hostnames (may resolve at webhook time)
         set_setting('webhook_url', webhook_url)
 
     # Update webhook enabled if provided
@@ -3775,7 +3694,7 @@ def serve_docs(filename):
     """
     import os
     docs_dir = os.path.join(os.path.dirname(__file__), 'docs')
-    return send_file(os.path.join(docs_dir, filename))
+    return send_from_directory(docs_dir, filename)
 
 
 @app.route('/api/integrations/zapier/trigger', methods=['POST'])
@@ -3851,7 +3770,7 @@ def api_zapier_trigger():
     scan_data = report.get('scan_data', {}) if report else {}
     ai_analysis = report.get('ai_analysis', {}) if report else {}
     github_org = report.get('github_org') if report else (account.get('github_org') if account else '')
-    tier = account.get('current_tier') or 0 if account else 0
+    tier = account.get('current_tier', 0) if account else 0
     tier_name = TIER_CONFIG.get(tier, TIER_CONFIG[0])['name']
     revenue = account.get('annual_revenue') if account else None
 
@@ -5027,10 +4946,10 @@ def send_outreach_email():
             report_url=report_url
         )
         
-        if result and result.get('status') == 'success':
+        if result and result.get('success'):
             return jsonify({'status': 'success', 'message': f'Email sent to {to_email}'})
         else:
-            return jsonify({'status': 'error', 'message': result.get('message', 'Failed to send email')}), 500
+            return jsonify({'status': 'error', 'message': result.get('error', 'Failed to send email')}), 500
     except Exception as e:
         print(f"[SEND EMAIL ERROR] {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
@@ -5066,7 +4985,7 @@ def api_apollo_sequences():
         
         return jsonify({'status': 'success', 'sequences': sequences})
     except Exception as e:
-        print(f"[APOLLO SEQUEnroll in SequenceENCES ERROR] {e}")
+        print(f"[APOLLO SEQUENCES ERROR] {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
@@ -5203,6 +5122,7 @@ if __name__ == '__main__':
     _auto_scan_pending_accounts()
 
     # Mark as initialized to prevent duplicate auto-scan on first request
+    global _app_initialized
     _app_initialized = True
 
     app.run(debug=Config.DEBUG, host='0.0.0.0', port=5000, threaded=True)

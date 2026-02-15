@@ -417,7 +417,7 @@ RESPOND WITH EXACTLY THIS JSON:
         
     except json.JSONDecodeError as e:
         verification['llm_verification'] = f'JSON parse error: {str(e)}'
-        verification['llm_raw_response'] = result_text[:500] if 'result_text' in dir() else 'N/A'
+        verification['llm_raw_response'] = result_text[:500] if 'result_text' in locals() else 'N/A'
     except Exception as e:
         verification['llm_verification'] = f'Error: {str(e)}'
     

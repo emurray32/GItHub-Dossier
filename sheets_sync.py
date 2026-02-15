@@ -454,8 +454,8 @@ def _cron_worker():
         except Exception as e:
             print(f"[SHEETS-CRON] Error in cron worker: {e}")
 
-        # Sleep for 60 minutes before checking again
-        time.sleep(3600)
+        # Sleep for 60 seconds before checking again
+        time.sleep(60)
 
     print("[SHEETS-CRON] Cron scheduler stopped")
 

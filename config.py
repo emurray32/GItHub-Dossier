@@ -14,7 +14,7 @@ class Config:
     """Application configuration for 3-Signal Intent Scanner."""
 
     # Flask
-    SECRET_KEY = os.getenv('FLASK_SECRET_KEY', 'dev-secret-key-change-in-production')
+    SECRET_KEY = os.getenv('FLASK_SECRET_KEY', os.urandom(24).hex())
     DEBUG = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
 
     # ============================================================
@@ -91,6 +91,11 @@ class Config:
 
     GITHUB_TOKENS = get_github_tokens.__func__()  # Initialize at class load time
 
+    @classmethod
+    def reload_tokens(cls):
+        """Reload tokens from environment (call after env changes)."""
+        cls.GITHUB_TOKENS = cls.get_github_tokens()
+
     @staticmethod
     def get_token_pool_capacity() -> dict:
         """
@@ -143,8 +148,14 @@ class Config:
 
     REDIS_URL = os.getenv('REDIS_URL')  # e.g., redis://localhost:6379/0
     REDIS_HOST = os.getenv('REDIS_HOST', 'localhost')
-    REDIS_PORT = int(os.getenv('REDIS_PORT', 6379))
-    REDIS_DB = int(os.getenv('REDIS_DB', 0))
+    try:
+        REDIS_PORT = int(os.getenv('REDIS_PORT', 6379))
+    except (ValueError, TypeError):
+        REDIS_PORT = 6379
+    try:
+        REDIS_DB = int(os.getenv('REDIS_DB', 0))
+    except (ValueError, TypeError):
+        REDIS_DB = 0
     REDIS_PASSWORD = os.getenv('REDIS_PASSWORD')
 
     # Cache TTLs in seconds
@@ -814,7 +825,6 @@ class Config:
         'i18next': 'JS/React',
         'vue-i18n': 'Vue',
         'lingui': 'React',
-        'next-intl': 'Next.js',
         'django-modeltranslation': 'Django',
         'babel': 'Python',
         'globalize': 'Ruby',

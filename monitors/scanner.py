@@ -879,6 +879,9 @@ def _scan_rfc_discussion(org: str, repo: str, company: str, since_timestamp: dat
     
     cutoff_str = cutoff_date.strftime('%Y-%m-%dT%H:%M:%SZ')
 
+    # Track seen URLs to deduplicate between Issues API and Search API
+    seen_urls = set()
+
     # Scan Issues
     try:
         url = f"{Config.GITHUB_API_BASE}/repos/{org}/{repo}/issues"
@@ -944,6 +947,7 @@ def _scan_rfc_discussion(org: str, repo: str, company: str, since_timestamp: dat
                     }
 
                     priority_label = "HIGH" if is_high_priority else "MEDIUM"
+                    seen_urls.add(issue_url)
                     yield (f"{priority_label}: Issue #{issue_number} - {title[:40]}...", signal)
 
     except requests.RequestException as e:
@@ -976,6 +980,11 @@ def _scan_rfc_discussion(org: str, repo: str, company: str, since_timestamp: dat
                     title = item.get('title', '')
                     issue_url = item.get('html_url')
                     issue_number = item.get('number')
+
+                    # Skip if already seen from Issues API
+                    if issue_url in seen_urls:
+                        continue
+                    seen_urls.add(issue_url)
 
                     # Check if this is a discussion (URL contains /discussions/)
                     is_discussion = '/discussions/' in issue_url
@@ -1247,10 +1256,10 @@ def _scan_dependency_injection(org: str, repo: str, company: str, is_fork: bool 
 
                             found = False
                             if is_strict_file:
-                                if f'"{lib}"' in content_lower or f"'{lib}'" in content_lower:
+                                if f'"{lib.lower()}"' in content_lower or f"'{lib.lower()}'" in content_lower:
                                     found = True
                             else:
-                                if lib in content_lower:
+                                if lib.lower() in content_lower:
                                     found = True
 
                             if found:

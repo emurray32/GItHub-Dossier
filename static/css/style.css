@@ -77,12 +77,6 @@
 /* ============================================================
    BREADCRUMB NAVIGATION
    ============================================================ */
-.breadcrumb-container {
-    background: var(--bg-secondary);
-    border-bottom: 1px solid var(--border-color);
-    padding: 0.75rem 2rem;
-}
-
 .breadcrumb {
     display: flex;
     align-items: center;
@@ -163,12 +157,6 @@
     width: 40px;
     height: 40px;
     border-width: 4px;
-}
-
-@keyframes spin {
-    to {
-        transform: rotate(360deg);
-    }
 }
 
 /* Button loading state */
@@ -482,6 +470,9 @@ a:hover {
 }
 
 .breadcrumb-container {
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-color);
+    padding: 0.75rem 2rem;
     max-width: var(--container-max);
     margin: 0 auto;
 }
@@ -847,10 +838,6 @@ a:hover {
     vertical-align: middle !important;
     min-height: 48px;
     height: 48px;
-}
-
-.accounts-table tr {
-    min-height: 48px;
 }
 
 .accounts-table tbody tr:nth-child(even) {
