@@ -3,34 +3,71 @@
  * Main Stylesheet
  */
 
-/* CSS Variables */
+/* CSS Variables - Phrase Brand Kit (from KeyQuilt) */
 :root {
-    /* Colors */
-    --bg-primary: #ffffff;
-    --bg-secondary: #f8fafc;
-    --bg-tertiary: #f1f5f9;
-    --text-primary: #0f172a;
-    --text-secondary: #475569;
-    --text-muted: #94a3b8;
-    --accent-color: #00b5ad;
-    --accent-hover: #00968f;
-    --accent-secondary: #1e293b;
-    --border-color: #e2e8f0;
+    /* Phrase Brand Colors */
+    --phrase-black: hsl(0, 0%, 0%);
+    --phrase-green: hsl(168, 85%, 35%);
+    --phrase-dark-green: hsl(168, 85%, 25%);
+    --phrase-light-gray: hsl(0, 0%, 96%);
+    --phrase-gray-800: hsl(0, 0%, 20%);
+    --phrase-gray-400: hsl(0, 0%, 60%);
+    --phrase-gray-200: hsl(0, 0%, 88%);
+    --phrase-gray-100: hsl(0, 0%, 96%);
+    --phrase-yellow: hsl(53, 100%, 50%);
+    --phrase-blue: hsl(214, 98%, 53%);
+    --phrase-purple: hsl(309, 73%, 32%);
+    --phrase-red: hsl(6, 79%, 55%);
+
+    /* Mapped Colors */
+    --bg-primary: hsl(0, 0%, 100%);
+    --bg-secondary: var(--phrase-light-gray);
+    --bg-tertiary: hsl(0, 0%, 92%);
+    --text-primary: var(--phrase-black);
+    --text-secondary: var(--phrase-gray-400);
+    --text-muted: hsl(0, 0%, 50%);
+    --accent-color: var(--phrase-green);
+    --accent-hover: var(--phrase-dark-green);
+    --accent-secondary: var(--phrase-black);
+    --border-color: var(--phrase-gray-200);
     --success-color: #16a34a;
-    --error-color: #dc2626;
-    --warning-color: #d97706;
+    --error-color: var(--phrase-red);
+    --warning-color: var(--phrase-yellow);
+
+    /* Chart / Status Colors */
+    --chart-1: var(--phrase-green);
+    --chart-2: var(--phrase-blue);
+    --chart-3: var(--phrase-yellow);
+    --chart-4: var(--phrase-purple);
+    --chart-5: var(--phrase-red);
 
     /* Console Colors */
-    --console-bg: #f8fafc;
-    --console-text: #334155;
+    --console-bg: var(--phrase-light-gray);
+    --console-text: var(--phrase-gray-800);
 
     /* Typography */
     --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
-    --font-mono: 'SFMono-Regular', 'Menlo', 'Monaco', 'Ubuntu Mono', 'Consolas', monospace;
+    --font-mono: 'Geist Mono', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', monospace;
+
+    /* Font Weights */
+    --font-weight-light: 300;
+    --font-weight-normal: 400;
+    --font-weight-medium: 500;
+    --font-weight-semibold: 600;
+    --font-weight-bold: 700;
 
     /* Spacing */
     --container-max: 1200px;
     --container-padding: 2rem;
+    --radius: 0.75rem;
+
+    /* Shadow System */
+    --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+    --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+    --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+    --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+    --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+    --shadow-primary: 0 10px 15px -3px hsla(168, 85%, 35%, 0.2), 0 4px 6px -4px hsla(168, 85%, 35%, 0.1);
 
     /* Transitions */
     --transition-fast: 0.15s ease;
