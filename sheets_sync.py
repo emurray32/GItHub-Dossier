@@ -413,7 +413,7 @@ def _cron_worker():
     """
     Background thread that triggers the daily sync at the configured time.
 
-    Runs every 60 seconds checking if it's time for the daily sync.
+    Runs every 60 minutes checking if it's time for the daily sync.
     Only runs if sheets_sync_enabled is 'true' in settings.
     """
     global _cron_running
@@ -454,8 +454,8 @@ def _cron_worker():
         except Exception as e:
             print(f"[SHEETS-CRON] Error in cron worker: {e}")
 
-        # Sleep for 60 seconds before checking again
-        time.sleep(60)
+        # Sleep for 60 minutes before checking again
+        time.sleep(3600)
 
     print("[SHEETS-CRON] Cron scheduler stopped")
 
