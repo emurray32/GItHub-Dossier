@@ -5153,7 +5153,6 @@ if __name__ == '__main__':
     _auto_scan_pending_accounts()
 
     # Mark as initialized to prevent duplicate auto-scan on first request
-    global _app_initialized
     _app_initialized = True
 
     app.run(debug=Config.DEBUG, host='0.0.0.0', port=5000, threaded=True)
