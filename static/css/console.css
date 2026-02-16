@@ -1,0 +1,262 @@
+/* ============================================================
+   CONSOLE PAGE
+   ============================================================ */
+.console-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: var(--container-padding);
+}
+
+.scan-header {
+    margin-bottom: 1.5rem;
+}
+
+.scan-title {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--color-text);
+    margin-bottom: 6px;
+}
+
+.scan-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--color-text-secondary);
+    font-size: 13px;
+}
+
+.console-container .status-indicator {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--color-primary);
+    animation: pulse 1.5s infinite;
+}
+
+.console-container .status-indicator.complete {
+    background: var(--color-success);
+    animation: none;
+}
+
+.console-container .status-indicator.error {
+    background: var(--color-destructive);
+    animation: none;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+.console-panel {
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    overflow: hidden;
+    margin-bottom: 1rem;
+}
+
+.console-header {
+    background: var(--color-surface);
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--color-border);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.console-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+}
+
+.console-dot.red { background: #ff5f56; }
+.console-dot.yellow { background: #ffbd2e; }
+.console-dot.green { background: #27c93f; }
+
+.console-title {
+    margin-left: 6px;
+    font-size: 12px;
+    color: var(--color-text-secondary);
+}
+
+.console-output {
+    height: 400px;
+    overflow-y: auto;
+    padding: 12px;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-size: 13px;
+    line-height: 1.6;
+    color: #e2e8f0;
+    background: #1e293b;
+    border: 1px solid #334155;
+}
+
+.console-line {
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+.console-line.phase {
+    color: var(--color-primary);
+    font-weight: bold;
+    margin-top: 0.75rem;
+}
+
+.console-line.separator {
+    color: var(--color-text-tertiary);
+}
+
+.console-line.error {
+    color: var(--color-destructive);
+}
+
+.console-line.success {
+    color: var(--color-success);
+}
+
+.progress-bar {
+    height: 3px;
+    background: var(--bg-tertiary);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-bottom: 1.5rem;
+}
+
+.console-container .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--color-primary), var(--color-secondary));
+    width: 0%;
+    transition: width 0.3s ease;
+}
+
+.action-buttons {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 1.5rem;
+}
+
+.report-preview {
+    margin-top: 1.5rem;
+}
+
+/* Scan Layout — Console + Live Findings side-by-side */
+.scan-layout {
+    display: grid;
+    grid-template-columns: 1fr 320px;
+    gap: 1rem;
+}
+
+@media (max-width: 1024px) {
+    .scan-layout {
+        grid-template-columns: 1fr;
+    }
+}
+
+.live-findings {
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    overflow: hidden;
+    height: fit-content;
+    max-height: 480px;
+}
+
+.findings-header {
+    background: var(--color-surface);
+    padding: 8px 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--color-text);
+    font-weight: 600;
+    font-size: 13px;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.findings-header .pulse-dot {
+    width: 6px;
+    height: 6px;
+    background: var(--color-primary);
+    border-radius: 50%;
+    animation: pulse 1.5s infinite;
+}
+
+.findings-list {
+    max-height: 400px;
+    overflow-y: auto;
+    padding: 6px;
+}
+
+.finding-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    margin-bottom: 4px;
+    font-size: 12px;
+    background: var(--color-surface);
+    border-left: 3px solid transparent;
+    animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateX(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+.finding-item.finding-high {
+    border-left-color: #dc2626;
+    background: #fee2e2;
+}
+
+.finding-item.finding-medium {
+    border-left-color: #d97706;
+    background: #fef3c7;
+}
+
+.finding-icon {
+    flex-shrink: 0;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-top: 4px;
+    background: var(--color-primary);
+}
+
+.finding-icon.warning { background: #d97706; }
+.finding-icon.danger { background: #dc2626; }
+.finding-icon.success { background: #16a34a; }
+.finding-icon.info { background: #0ea5e9; }
+
+.finding-text {
+    flex: 1;
+    color: var(--color-text);
+    word-break: break-word;
+}
+
+.finding-repo {
+    font-size: 10px;
+    color: var(--color-text-secondary);
+    background: var(--color-bg);
+    padding: 1px 5px;
+    border-radius: 3px;
+    flex-shrink: 0;
+}
+
+.findings-empty {
+    text-align: center;
+    padding: 2rem 1rem;
+    color: var(--color-text-secondary);
+    font-size: 13px;
+}

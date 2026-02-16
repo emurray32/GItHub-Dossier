@@ -376,15 +376,15 @@ class StreamHandler {
         styles.id = 'preview-styles';
         styles.textContent = `
             .report-preview-content {
-                background: var(--bg-secondary);
-                border: 1px solid var(--border-color);
+                background: var(--color-surface);
+                border: 1px solid var(--color-border);
                 border-radius: 8px;
-                padding: 1.5rem;
-                margin-top: 2rem;
+                padding: 16px;
+                margin-top: 1.5rem;
             }
 
             .preview-section {
-                margin-bottom: 1.5rem;
+                margin-bottom: 16px;
             }
 
             .preview-section:last-child {
@@ -392,38 +392,39 @@ class StreamHandler {
             }
 
             .preview-section h3 {
-                font-size: 1rem;
-                color: var(--accent-color);
-                margin-bottom: 0.5rem;
+                font-size: 14px;
+                font-weight: 600;
+                color: var(--color-primary);
+                margin-bottom: 6px;
             }
 
             .preview-summary {
-                font-size: 1.125rem;
+                font-size: 14px;
                 line-height: 1.6;
-                color: var(--text-primary);
+                color: var(--color-text);
             }
 
             .preview-stats {
                 display: flex;
-                gap: 2rem;
+                gap: 1.5rem;
                 flex-wrap: wrap;
             }
 
             .preview-stats .stat {
-                font-size: 0.875rem;
-                color: var(--text-secondary);
+                font-size: 13px;
+                color: var(--color-text-secondary);
             }
 
             .preview-stats .stat strong {
-                font-size: 1.25rem;
-                color: var(--accent-color);
+                font-size: 20px;
+                color: var(--color-primary);
             }
 
             .maturity-badge {
                 display: inline-block;
-                padding: 0.25rem 0.75rem;
-                border-radius: 20px;
-                font-size: 0.875rem;
+                padding: 2px 10px;
+                border-radius: 999px;
+                font-size: 12px;
                 font-weight: 600;
                 text-transform: uppercase;
             }

@@ -5,7 +5,8 @@
 {% block content %}
 <div class="error-container">
     <div class="error-content">
-        <h1 class="error-title">Oops!</h1>
+        <i data-lucide="alert-circle" style="width:32px;height:32px;color:var(--color-text-tertiary);margin-bottom:12px;"></i>
+        <h1 class="error-title">Something went wrong</h1>
         <p class="error-message">{{ message }}</p>
         <a href="{{ url_for('index') }}" class="btn-primary">Go Home</a>
     </div>
