@@ -683,21 +683,22 @@ select {
 .status-legend-container {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
-    padding: 12px;
+    gap: 6px;
+    padding: 8px;
     background: var(--color-bg);
     border: 1px solid var(--color-border);
     border-radius: 8px;
-    margin-bottom: 1rem;
+    margin-bottom: 0.75rem;
 }
 
 .legend-item {
     display: flex;
     flex-direction: column;
-    padding: 6px 10px;
+    padding: 4px 8px;
     background: var(--color-surface);
     border-radius: 6px;
     flex: 1;
+    min-width: 0;
     min-width: 180px;
 }
 
@@ -1033,7 +1034,7 @@ select {
 }
 
 .accounts-table tbody tr:nth-child(even) {
-    background-color: transparent;
+    background-color: #f3f5f8;
 }
 
 .evidence-cell {

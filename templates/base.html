@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=2">
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
     {% block head %}{% endblock %}
 </head>
@@ -37,17 +37,17 @@
                     <i data-lucide="building-2" class="sidebar-icon"></i>
                     <span class="sidebar-label">Accounts</span>
                 </a>
-                <a href="{{ url_for('history') }}" class="sidebar-item {% if request.endpoint == 'history' %}active{% endif %}">
-                    <i data-lucide="clock" class="sidebar-icon"></i>
-                    <span class="sidebar-label">History</span>
+                <a href="{{ url_for('contributors') }}" class="sidebar-item {% if request.endpoint == 'contributors' %}active{% endif %}">
+                    <i data-lucide="users" class="sidebar-icon"></i>
+                    <span class="sidebar-label">Contributors</span>
                 </a>
                 <a href="{{ url_for('grow') }}" class="sidebar-item {% if request.endpoint == 'grow' %}active{% endif %}">
                     <i data-lucide="trending-up" class="sidebar-icon"></i>
                     <span class="sidebar-label">Grow</span>
                 </a>
-                <a href="{{ url_for('contributors') }}" class="sidebar-item {% if request.endpoint == 'contributors' %}active{% endif %}">
-                    <i data-lucide="users" class="sidebar-icon"></i>
-                    <span class="sidebar-label">Contributors</span>
+                <a href="{{ url_for('history') }}" class="sidebar-item {% if request.endpoint == 'history' %}active{% endif %}">
+                    <i data-lucide="clock" class="sidebar-icon"></i>
+                    <span class="sidebar-label">History</span>
                 </a>
                 <a href="{{ url_for('webscraper_accounts') }}" class="sidebar-item {% if request.endpoint == 'webscraper_accounts' %}active{% endif %}">
                     <i data-lucide="globe" class="sidebar-icon"></i>
