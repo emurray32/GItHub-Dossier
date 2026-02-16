@@ -2904,7 +2904,7 @@
 
                 const data = await response.json();
 
-                if (data.status === 'found' && data.email) {
+                if (data.status === 'success' && data.email) {
                     const isVerified = data.email_status === 'verified';
                     // Store email on the card for later use by enroll
                     if (card) card.dataset.email = data.email;
@@ -3111,7 +3111,7 @@
                     });
                     const lookupData = await lookupResp.json();
 
-                    if (lookupData.status === 'found' && lookupData.email) {
+                    if (lookupData.status === 'success' && lookupData.email) {
                         email = lookupData.email;
                         if (card) card.dataset.email = email;
                         const fetchBtn = card ? card.querySelector('.btn-fetch-email') : null;
@@ -3246,7 +3246,7 @@
                     });
                     const lookupData = await lookupResp.json();
 
-                    if (lookupData.status === 'found' && lookupData.email) {
+                    if (lookupData.status === 'success' && lookupData.email) {
                         email = lookupData.email;
                         if (card) card.dataset.email = email;
                         // Update the Find Email button too
