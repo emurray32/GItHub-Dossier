@@ -4885,16 +4885,16 @@ def apollo_lookup():
     
     try:
         # Try Apollo People Match API
+        apollo_headers = {'X-Api-Key': apollo_key, 'Content-Type': 'application/json'}
         match_url = 'https://api.apollo.io/v1/people/match'
         payload = {
-            'api_key': apollo_key,
             'first_name': first_name,
             'last_name': last_name,
         }
         if domain:
             payload['organization_domain'] = domain
-        
-        resp = req.post(match_url, json=payload, timeout=15)
+
+        resp = req.post(match_url, json=payload, headers=apollo_headers, timeout=15)
         if resp.status_code == 200:
             person = resp.json().get('person', {})
             if person:
@@ -4913,14 +4913,13 @@ def apollo_lookup():
         # Fallback: search by name + domain
         search_url = 'https://api.apollo.io/v1/mixed_people/search'
         search_payload = {
-            'api_key': apollo_key,
             'q_keywords': f'{first_name} {last_name}'.strip(),
             'per_page': 3,
         }
         if domain:
             search_payload['q_organization_domains'] = domain
-        
-        resp = req.post(search_url, json=search_payload, timeout=15)
+
+        resp = req.post(search_url, json=search_payload, headers=apollo_headers, timeout=15)
         if resp.status_code == 200:
             people = resp.json().get('people', [])
             if people:
@@ -4989,10 +4988,14 @@ def api_apollo_sequences():
         return jsonify({'status': 'error', 'code': 'NO_API_KEY', 'message': 'Apollo API key not configured. Add APOLLO_API_KEY in Settings.'}), 400
     
     try:
-        resp = req.post('https://api.apollo.io/api/v1/emailer_campaigns/search', 
-                       json={'api_key': apollo_key},
+        apollo_headers = {'X-Api-Key': apollo_key, 'Content-Type': 'application/json'}
+        resp = req.post('https://api.apollo.io/api/v1/emailer_campaigns/search',
+                       json={},
+                       headers=apollo_headers,
                        timeout=15)
-        
+
+        if resp.status_code == 403:
+            return jsonify({'status': 'error', 'message': 'API key lacks permission. Ensure you are using a Master API key in Apollo.'}), 502
         if resp.status_code != 200:
             return jsonify({'status': 'error', 'message': f'Apollo API returned {resp.status_code}'}), 502
         
@@ -5036,10 +5039,13 @@ def api_apollo_enroll_sequence():
         return jsonify({'status': 'error', 'message': 'Missing required fields: email and sequence_id'}), 400
     
     try:
+        apollo_headers = {'X-Api-Key': apollo_key, 'Content-Type': 'application/json'}
+
         # Step 1: Search for existing contact
         contact_id = None
         search_resp = req.post('https://api.apollo.io/api/v1/contacts/search',
-                              json={'api_key': apollo_key, 'q_keywords': email, 'per_page': 1},
+                              json={'q_keywords': email, 'per_page': 1},
+                              headers=apollo_headers,
                               timeout=15)
         
         if search_resp.status_code == 200:
@@ -5051,7 +5057,6 @@ def api_apollo_enroll_sequence():
         # Step 2: Create contact if not found
         if not contact_id:
             create_payload = {
-                'api_key': apollo_key,
                 'first_name': first_name or email.split('@')[0],
                 'last_name': last_name or '',
                 'email': email,
@@ -5059,6 +5064,7 @@ def api_apollo_enroll_sequence():
             }
             create_resp = req.post('https://api.apollo.io/api/v1/contacts',
                                   json=create_payload,
+                                  headers=apollo_headers,
                                   timeout=15)
             
             if create_resp.status_code in (200, 201):
@@ -5075,7 +5081,8 @@ def api_apollo_enroll_sequence():
         # Step 3: Enroll in sequence
         enroll_resp = req.post(
             f'https://api.apollo.io/api/v1/emailer_campaigns/{sequence_id}/add_contact_ids',
-            json={'api_key': apollo_key, 'contact_ids': [contact_id]},
+            json={'contact_ids': [contact_id]},
+            headers=apollo_headers,
             timeout=15
         )
         
