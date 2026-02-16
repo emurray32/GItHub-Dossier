@@ -225,6 +225,9 @@ class TokenPool:
 # Global token pool instance
 _token_pool = TokenPool()
 
+# Reusable HTTP session for connection pooling (keep-alive)
+_session = requests.Session()
+
 
 def get_token_pool() -> TokenPool:
     """Get the global token pool instance."""
@@ -485,13 +488,22 @@ def make_github_request(url: str, params: Optional[dict] = None, timeout: int = 
     # 3. Get the best available token from the pool
     token = _token_pool.get_best_token()
 
-    # 4. Make the request
-    response = requests.get(
-        url,
-        headers=get_github_headers(token),
-        params=params,
-        timeout=timeout,
-    )
+    # 4. Make the request (using session for connection pooling)
+    try:
+        response = _session.get(
+            url,
+            headers=get_github_headers(token),
+            params=params,
+            timeout=timeout or 30,
+        )
+    except (requests.exceptions.ConnectionError, requests.exceptions.Timeout,
+            requests.exceptions.ChunkedEncodingError) as e:
+        if _retry_count < MAX_RETRIES:
+            backoff = min(2 ** _retry_count, 30) + random.uniform(0, 1)
+            print(f"[GITHUB] Connection error, retrying in {backoff:.1f}s (attempt {_retry_count+1}/{MAX_RETRIES})")
+            time.sleep(backoff)
+            return make_github_request(url, params, timeout, priority, _retry_count + 1, skip_cache)
+        raise
 
     # 5. Extract rate limit info from response headers
     remaining_header = response.headers.get("X-RateLimit-Remaining")
@@ -539,6 +551,13 @@ def make_github_request(url: str, params: Optional[dict] = None, timeout: int = 
                 return make_github_request(url, params, timeout, priority, _retry_count + 1, skip_cache)
 
         return response
+
+    # 7b. Handle 5xx server errors with exponential backoff
+    if response.status_code in (500, 502, 503, 504) and _retry_count < MAX_RETRIES:
+        backoff = min(2 ** _retry_count, 30) + random.uniform(0, 1)
+        print(f"[GITHUB] {response.status_code} error, retrying in {backoff:.1f}s (attempt {_retry_count+1}/{MAX_RETRIES})")
+        time.sleep(backoff)
+        return make_github_request(url, params, timeout, priority, _retry_count + 1, skip_cache)
 
     # 8. Cache successful responses and track API calls
     if response.status_code == 200:

@@ -438,11 +438,11 @@ def _resolve_org_fast_cached(company_name: str) -> Optional[dict]:
     }
 
     try:
-        response = requests.get(
+        response = make_github_request(
             search_url,
-            headers=get_github_headers(),
             params=params,
-            timeout=10
+            timeout=10,
+            priority='high'
         )
         response.raise_for_status()
         data = response.json()

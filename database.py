@@ -17,6 +17,9 @@ def get_db_connection() -> sqlite3.Connection:
     # Use a 30-second timeout to handle concurrent access gracefully
     conn = sqlite3.connect(Config.DATABASE_PATH, timeout=30.0)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA foreign_keys=ON")
+    conn.execute("PRAGMA busy_timeout=5000")
     return conn
 
 
@@ -2696,7 +2699,10 @@ SCAN_STATUS_PROCESSING = 'processing'
 
 def set_scan_status(company_name: str, status: str, progress: str = None, error: str = None) -> bool:
     """
-    Update the scan status for a company.
+    Update the scan status for a company with race condition protection.
+
+    Uses conditional WHERE clauses to prevent TOCTOU races where two workers
+    could claim the same company from the queue.
 
     Args:
         company_name: The company name to update.
@@ -2705,7 +2711,8 @@ def set_scan_status(company_name: str, status: str, progress: str = None, error:
         error: Optional error message to store (clears previous error if None and status is not idle with error).
 
     Returns:
-        True if the update was successful, False otherwise.
+        True if the update was successful, False if another worker already
+        claimed the row or the row was not found.
     """
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -2714,34 +2721,41 @@ def set_scan_status(company_name: str, status: str, progress: str = None, error:
     now = datetime.now().isoformat() if status in (SCAN_STATUS_PROCESSING, SCAN_STATUS_QUEUED) else None
 
     if status == SCAN_STATUS_PROCESSING:
-        # Clear any previous error when starting a new scan
+        # Only claim if currently queued OR already processing (progress update)
         cursor.execute('''
             UPDATE monitored_accounts
             SET scan_status = ?, scan_progress = ?, scan_start_time = ?, last_scan_error = NULL
-            WHERE company_name = ?
-        ''', (status, progress, now, company_name))
+            WHERE company_name = ? AND scan_status IN (?, ?)
+        ''', (status, progress, now, company_name, SCAN_STATUS_QUEUED, SCAN_STATUS_PROCESSING))
+        if cursor.rowcount == 0:
+            conn.close()
+            print(f"[SCAN_STATUS] Could not set {company_name} to processing (already claimed or not queued)")
+            return False
     elif status == SCAN_STATUS_IDLE:
+        # Always allow reset to idle (cleanup path)
         if error:
-            # Store the error when setting to idle with an error
             cursor.execute('''
                 UPDATE monitored_accounts
                 SET scan_status = ?, scan_progress = NULL, scan_start_time = NULL, last_scan_error = ?
                 WHERE company_name = ?
             ''', (status, error, company_name))
         else:
-            # Clear error on successful completion
             cursor.execute('''
                 UPDATE monitored_accounts
                 SET scan_status = ?, scan_progress = NULL, scan_start_time = NULL, last_scan_error = NULL
                 WHERE company_name = ?
             ''', (status, company_name))
     elif status == SCAN_STATUS_QUEUED:
-        # Track queue time for watchdog to recover stale queued accounts
+        # Only queue if currently idle (prevents double-queuing)
         cursor.execute('''
             UPDATE monitored_accounts
             SET scan_status = ?, scan_progress = ?, scan_start_time = ?
-            WHERE company_name = ?
-        ''', (status, progress, now, company_name))
+            WHERE company_name = ? AND scan_status = ?
+        ''', (status, progress, now, company_name, SCAN_STATUS_IDLE))
+        if cursor.rowcount == 0:
+            conn.close()
+            print(f"[SCAN_STATUS] Could not queue {company_name} (already queued or processing)")
+            return False
     else:
         cursor.execute('''
             UPDATE monitored_accounts

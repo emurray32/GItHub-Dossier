@@ -1191,7 +1191,8 @@ def download_pdf(report_id: int):
             mimetype='application/pdf'
         )
     except Exception as e:
-        return render_template('error.html', message=f'PDF Generation Failed: {str(e)}'), 500
+        print(f"[ERROR] PDF generation failed for report {report_id}: {e}")
+        return render_template('error.html', message='PDF generation failed. Please try again later.'), 500
 
 
 @app.route('/report/<int:report_id>')
@@ -1391,7 +1392,7 @@ def api_deep_dive(report_id: int):
         })
     except Exception as e:
         print(f"[API] Deep Dive error for report {report_id}: {str(e)}")
-        return jsonify({'error': f'Failed to generate Deep Dive: {str(e)}'}), 500
+        return jsonify({'error': 'Failed to generate Deep Dive'}), 500
 
 
 @app.route('/history')
@@ -1836,7 +1837,8 @@ def api_webscraper_analyze():
         return jsonify(result), 200
 
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        print(f"[ERROR] Website analysis failed: {e}")
+        return jsonify({'error': 'Analysis failed'}), 500
 
 
 @app.route('/api/webscraper/accounts-with-websites', methods=['GET'])
@@ -1860,7 +1862,8 @@ def api_webscraper_accounts():
         }), 200
 
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        print(f"[ERROR] Failed to fetch accounts with websites: {e}")
+        return jsonify({'error': 'Failed to fetch accounts'}), 500
 
 
 @app.route('/api/webscraper/analyze-batch', methods=['POST'])
@@ -1954,7 +1957,8 @@ def api_webscraper_analyze_batch():
         }), 200
 
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        print(f"[ERROR] Batch analysis failed: {e}")
+        return jsonify({'error': 'Batch analysis failed'}), 500
 
 
 @app.route('/api/webscraper/analyses', methods=['GET'])
@@ -1981,7 +1985,8 @@ def api_webscraper_analyses():
         }), 200
 
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        print(f"[ERROR] Failed to fetch analyses: {e}")
+        return jsonify({'error': 'Failed to fetch analyses'}), 500
 
 
 @app.route('/api/webscraper/analysis/<int:analysis_id>', methods=['GET'])
@@ -2003,7 +2008,8 @@ def api_webscraper_analysis_detail(analysis_id):
         }), 200
 
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        print(f"[ERROR] Failed to fetch analysis {analysis_id}: {e}")
+        return jsonify({'error': 'Failed to fetch analysis'}), 500
 
 
 @app.route('/api/webscraper/analysis/<int:analysis_id>', methods=['DELETE'])
@@ -2025,7 +2031,8 @@ def api_webscraper_analysis_delete(analysis_id):
         }), 200
 
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        print(f"[ERROR] Failed to delete analysis: {e}")
+        return jsonify({'error': 'Failed to delete analysis'}), 500
 
 
 # =============================================================================
@@ -2111,7 +2118,8 @@ def api_webscraper_populate():
             **result
         })
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        print(f"[ERROR] Failed to create webscraper accounts: {e}")
+        return jsonify({'error': 'Failed to create accounts'}), 500
 
 
 @app.route('/api/webscraper/accounts/populate-from-reporadar', methods=['POST'])
@@ -2127,7 +2135,8 @@ def api_webscraper_populate_from_reporadar():
             'skipped': result.get('skipped', 0)
         })
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        print(f"[ERROR] Failed to populate from RepoRadar: {e}")
+        return jsonify({'error': 'Failed to populate accounts'}), 500
 
 
 @app.route('/api/webscraper/ruleset')
@@ -2478,7 +2487,8 @@ def api_webscraper_bulk_action():
             return jsonify({'error': f'Unknown action: {action}'}), 400
 
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        print(f"[ERROR] Bulk action failed: {e}")
+        return jsonify({'error': 'Bulk action failed'}), 500
 
 
 @app.route('/api/webscraper/accounts/<int:account_id>/notes', methods=['PUT'])
@@ -2684,7 +2694,8 @@ def api_lead_stream():
         })
 
     except Exception as e:
-        return jsonify({'error': f'Failed to generate lead stream: {str(e)}'}), 500
+        print(f"[ERROR] Lead stream failed: {e}")
+        return jsonify({'error': 'Failed to generate lead stream'}), 500
 
 
 @app.route('/api/import', methods=['POST'])
@@ -2884,7 +2895,8 @@ def api_check_import_duplicates():
         results = get_import_duplicates_summary(companies)
         return jsonify(results)
     except Exception as e:
-        return jsonify({'error': f'Failed to check duplicates: {str(e)}'}), 500
+        print(f"[ERROR] Failed to check duplicates: {e}")
+        return jsonify({'error': 'Failed to check duplicates'}), 500
 
 
 @app.route('/api/track', methods=['POST'])
@@ -2923,7 +2935,8 @@ def api_track():
 
         return jsonify(result)
     except Exception as e:
-        return jsonify({'error': f'Failed to track organization: {str(e)}'}), 500
+        print(f"[ERROR] Failed to track organization {org_login}: {e}")
+        return jsonify({'error': 'Failed to track organization'}), 500
 
 
 @app.route('/api/update-org', methods=['POST'])
@@ -2968,7 +2981,8 @@ def api_update_org():
         })
 
     except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
+        print(f"[ERROR] Failed to update org for {company_name}: {e}")
+        return jsonify({'status': 'error', 'message': 'Failed to update organization'}), 500
     finally:
         conn.close()
 
@@ -3332,9 +3346,10 @@ def page_not_found(e):
 @app.errorhandler(500)
 def internal_error(e):
     """Handle 500 errors."""
-    # Extract the original exception message if available
-    error_msg = str(e.original_exception) if hasattr(e, 'original_exception') else str(e)
-    return render_template('error.html', message=f'Internal server error: {error_msg}'), 500
+    # Log full error server-side, return generic message to client
+    original = e.original_exception if hasattr(e, 'original_exception') else e
+    print(f"[ERROR] 500 Internal Server Error: {original}")
+    return render_template('error.html', message='Internal server error. Please try again later.'), 500
 
 
 # =============================================================================
@@ -4937,7 +4952,7 @@ def apollo_lookup():
         return jsonify({'status': 'not_found', 'message': 'No matching contact found in Apollo'})
     except Exception as e:
         print(f"[APOLLO LOOKUP ERROR] {e}")
-        return jsonify({'status': 'error', 'message': str(e)}), 500
+        return jsonify({'status': 'error', 'message': 'Apollo lookup failed'}), 500
 
 
 @app.route('/api/send-outreach-email', methods=['POST'])
@@ -4975,7 +4990,7 @@ def send_outreach_email():
             return jsonify({'status': 'error', 'message': result.get('error', 'Failed to send email')}), 500
     except Exception as e:
         print(f"[SEND EMAIL ERROR] {e}")
-        return jsonify({'status': 'error', 'message': str(e)}), 500
+        return jsonify({'status': 'error', 'message': 'Failed to send email'}), 500
 
 
 @app.route('/api/apollo/sequences')
@@ -5013,7 +5028,7 @@ def api_apollo_sequences():
         return jsonify({'status': 'success', 'sequences': sequences})
     except Exception as e:
         print(f"[APOLLO SEQUENCES ERROR] {e}")
-        return jsonify({'status': 'error', 'message': str(e)}), 500
+        return jsonify({'status': 'error', 'message': 'Failed to fetch Apollo sequences'}), 500
 
 
 @app.route('/api/apollo/enroll-sequence', methods=['POST'])
@@ -5099,7 +5114,7 @@ def api_apollo_enroll_sequence():
     
     except Exception as e:
         print(f"[APOLLO ENROLL ERROR] {e}")
-        return jsonify({'status': 'error', 'message': str(e)}), 500
+        return jsonify({'status': 'error', 'message': 'Failed to enroll in Apollo sequence'}), 500
 
 
 if __name__ == '__main__':
