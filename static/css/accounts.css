@@ -2322,3 +2322,76 @@
         max-height: 90vh;
     }
 }
+
+
+/* ===== REDESIGNED COMPACT HEADER ===== */
+.accounts-page .page-header {
+    padding: 0.5rem 0 0.25rem 0 !important;
+    margin-bottom: 0 !important;
+}
+
+.accounts-header {
+    margin-bottom: 0 !important;
+    padding-bottom: 0 !important;
+}
+
+.page-title {
+    font-size: 1.25rem !important;
+    margin: 0 !important;
+}
+
+.accounts-stats {
+    margin-top: 0.25rem !important;
+    margin-bottom: 0.25rem !important;
+    padding: 0 !important;
+    gap: 0.5rem !important;
+}
+
+.status-legend-container {
+    display: none !important;
+}
+
+.tier-filter {
+    gap: 0.25rem !important;
+    margin-bottom: 0 !important;
+}
+
+.tier-filter-btn {
+    padding: 0.2rem 0.6rem !important;
+    font-size: 0.8rem !important;
+}
+
+.filter-bar {
+    padding: 0.35rem 0 !important;
+    margin: 0 !important;
+    gap: 0.5rem !important;
+}
+
+.filter-select {
+    padding: 0.25rem 0.5rem !important;
+    font-size: 0.8rem !important;
+}
+
+.search-container {
+    margin: 0 !important;
+}
+
+.search-input {
+    padding: 0.3rem 0.5rem 0.3rem 2rem !important;
+    font-size: 0.85rem !important;
+}
+
+.accounts-table-container {
+    margin-top: 0.25rem !important;
+}
+
+.accounts-table th,
+.accounts-table td {
+    padding: 0.35rem 0.5rem !important;
+    font-size: 0.82rem !important;
+}
+
+.btn-clear-filters {
+    padding: 0.2rem 0.5rem !important;
+    font-size: 0.8rem !important;
+}

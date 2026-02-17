@@ -2121,3 +2121,343 @@
     height: 24px;
     border-radius: 50%;
 }
+
+
+/* ===== COMPLETE REPORT REDESIGN - BDR WORKFLOW ===== */
+
+/* Kill the PDF-style centered layout */
+.report-container {
+    max-width: 100% !important;
+    padding: 0 1rem !important;
+    margin: 0 !important;
+}
+
+/* Compact header bar */
+.report-header-compact {
+    background: #f8f9fa;
+    border-bottom: 1px solid #e2e8f0;
+    padding: 0.5rem 1rem !important;
+    margin: 0 -1rem 0.5rem -1rem !important;
+    width: calc(100% + 2rem);
+}
+
+.report-header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.report-identity {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.report-title-compact {
+    font-size: 1.15rem !important;
+    font-weight: 700;
+    margin: 0 !important;
+    padding: 0 !important;
+    color: #1a202c;
+}
+
+.report-org-link {
+    color: #4a90d9;
+    font-size: 0.85rem;
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.report-org-link:hover {
+    text-decoration: underline;
+}
+
+.report-website-link {
+    color: #718096;
+    font-size: 0.8rem;
+    text-decoration: none;
+    padding: 0.1rem 0.4rem;
+    background: #edf2f7;
+    border-radius: 3px;
+}
+
+.report-website-link:hover {
+    background: #e2e8f0;
+}
+
+.report-revenue-badge {
+    background: #e6fffa;
+    color: #234e52;
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.1rem 0.5rem;
+    border-radius: 10px;
+    border: 1px solid #b2f5ea;
+}
+
+.report-scan-info {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-shrink: 0;
+}
+
+.scan-date, .scan-duration {
+    font-size: 0.75rem;
+    color: #a0aec0;
+}
+
+/* Old header styles - override */
+.report-header {
+    padding: 0.5rem 0 !important;
+    margin: 0 !important;
+    text-align: left !important;
+    border-bottom: 1px solid #e2e8f0 !important;
+}
+
+.report-title {
+    font-size: 1.15rem !important;
+    text-align: left !important;
+    margin: 0 !important;
+}
+
+.report-org {
+    text-align: left !important;
+    margin: 0 !important;
+}
+
+.report-meta {
+    text-align: left !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    font-size: 0.75rem !important;
+    color: #a0aec0 !important;
+    gap: 0.5rem !important;
+}
+
+/* Goldilocks banner - make it compact inline */
+.goldilocks-banner {
+    padding: 0.5rem 0.75rem !important;
+    margin: 0 0 0.5rem 0 !important;
+    border-radius: 6px !important;
+}
+
+.goldilocks-banner .status-content {
+    display: flex !important;
+    align-items: center !important;
+    gap: 0.75rem !important;
+    flex-wrap: wrap !important;
+}
+
+.goldilocks-banner .status-title {
+    font-size: 0.95rem !important;
+    margin: 0 !important;
+    font-weight: 700;
+}
+
+.goldilocks-banner .status-subtitle {
+    font-size: 0.8rem !important;
+    margin: 0 !important;
+    color: #718096;
+}
+
+.goldilocks-banner .badge {
+    font-size: 0.7rem !important;
+    padding: 0.1rem 0.4rem !important;
+}
+
+.goldilocks-banner .status-points {
+    margin: 0.25rem 0 0 0 !important;
+    padding-left: 1rem !important;
+    font-size: 0.82rem !important;
+}
+
+.goldilocks-banner .status-points li {
+    margin: 0 !important;
+    line-height: 1.3;
+}
+
+/* Stats row (pills) - make compact */
+.stats-row {
+    display: flex !important;
+    gap: 0.5rem !important;
+    margin: 0 0 0.5rem 0 !important;
+    padding: 0 !important;
+    flex-wrap: wrap;
+}
+
+.stat-pill {
+    font-size: 0.75rem !important;
+    padding: 0.15rem 0.5rem !important;
+    background: #f7fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+}
+
+.stat-pill-value {
+    font-weight: 700;
+    font-size: 0.8rem !important;
+}
+
+.stat-pill-label {
+    color: #718096;
+    font-size: 0.7rem !important;
+}
+
+/* Executive summary - compact */
+.executive-summary {
+    padding: 0.5rem 0.75rem !important;
+    margin: 0 0 0.5rem 0 !important;
+    font-size: 0.85rem !important;
+    line-height: 1.4 !important;
+    border-left: 3px solid #4a90d9 !important;
+    background: #f7fafc !important;
+    border-radius: 0 4px 4px 0;
+}
+
+/* BDR highlight box */
+.bdr-highlight {
+    padding: 0.5rem 0.75rem !important;
+    margin: 0 0 0.5rem 0 !important;
+    border-radius: 6px;
+    font-size: 0.85rem !important;
+}
+
+.bdr-label {
+    font-size: 0.8rem !important;
+    font-weight: 700 !important;
+    margin-bottom: 0.15rem !important;
+}
+
+.bdr-text {
+    font-size: 0.82rem !important;
+    line-height: 1.35 !important;
+}
+
+/* Email draft section - THE key action area for BDRs */
+.email-draft-section {
+    margin: 0 0 0.5rem 0 !important;
+    padding: 0.5rem 0.75rem !important;
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 6px !important;
+    background: #fff !important;
+}
+
+.email-draft-header {
+    padding: 0 0 0.35rem 0 !important;
+    margin: 0 0 0.35rem 0 !important;
+    border-bottom: 1px solid #f0f0f0 !important;
+}
+
+.email-draft-header h3 {
+    font-size: 0.9rem !important;
+    margin: 0 !important;
+}
+
+.email-actions {
+    gap: 0.35rem !important;
+}
+
+.email-actions button {
+    padding: 0.25rem 0.5rem !important;
+    font-size: 0.78rem !important;
+}
+
+/* Subject line and email body */
+.subject-line-section,
+.email-body-section {
+    margin: 0 0 0.35rem 0 !important;
+    padding: 0 !important;
+}
+
+.subject-line-section label,
+.email-body-section label {
+    font-size: 0.7rem !important;
+    text-transform: uppercase;
+    color: #a0aec0;
+    letter-spacing: 0.5px;
+    margin-bottom: 0.15rem !important;
+}
+
+.subject-line-section .editable-field,
+.email-body-section .editable-field {
+    padding: 0.35rem 0.5rem !important;
+    font-size: 0.85rem !important;
+    line-height: 1.4 !important;
+}
+
+/* Contact chips */
+.contact-chip {
+    padding: 0.2rem 0.5rem !important;
+    font-size: 0.78rem !important;
+}
+
+.selected-contact-banner {
+    padding: 0.25rem 0.5rem !important;
+    font-size: 0.8rem !important;
+}
+
+/* Contributor section */
+.contributor-section {
+    margin: 0 0 0.5rem 0 !important;
+    padding: 0 !important;
+}
+
+.contributor-card {
+    padding: 0.35rem 0.5rem !important;
+    margin: 0.2rem 0 !important;
+    font-size: 0.82rem !important;
+}
+
+/* Print button positioning */
+.print-btn,
+.fab-print {
+    bottom: 1rem !important;
+    right: 1rem !important;
+    width: 36px !important;
+    height: 36px !important;
+    font-size: 0.8rem !important;
+}
+
+/* Signal/evidence cards */
+.signal-card,
+.evidence-card {
+    padding: 0.35rem 0.5rem !important;
+    margin: 0 0 0.35rem 0 !important;
+    font-size: 0.82rem !important;
+}
+
+/* General spacing resets */
+.report-container > * {
+    margin-bottom: 0.5rem !important;
+}
+
+.report-container h3,
+.report-container h4 {
+    font-size: 0.9rem !important;
+    margin: 0.5rem 0 0.25rem 0 !important;
+}
+
+/* Two-column layout for BDR: left = intel, right = action */
+@media (min-width: 900px) {
+    .report-container {
+        display: flex !important;
+        flex-wrap: wrap !important;
+        gap: 0.75rem !important;
+    }
+    
+    .report-header-compact {
+        width: 100% !important;
+        flex: 0 0 100% !important;
+    }
+    
+    .goldilocks-banner {
+        width: 100% !important;
+        flex: 0 0 100% !important;
+    }
+}
+
+/* V3 COMPACT */
+.scoring-v2-panel{padding:0.5rem 0.75rem!important;margin:0!important}.report-container{max-width:none!important;width:100%!important;padding:0 1rem!important;margin:0!important}.report-header{padding:0.35rem 0!important;margin:0 0 0.35rem 0!important;text-align:left!important}.report-title{font-size:1.15rem!important;text-align:left!important;margin:0!important;padding:0!important}.report-org{margin:0!important;text-align:left!important;font-size:0.85rem!important}.report-meta{display:flex!important;gap:0.5rem!important;font-size:0.75rem!important;color:#a0aec0!important;margin:0!important;padding:0!important;text-align:left!important}.goldilocks-banner{padding:0.4rem 0.75rem!important;margin:0 0 0.5rem 0!important}.goldilocks-banner .status-points li{font-size:0.82rem!important;margin:0!important}.stats-row{display:flex!important;gap:0.5rem!important;margin:0 0 0.5rem 0!important;padding:0!important;flex-wrap:wrap!important}.stat-pill{padding:0.15rem 0.5rem!important;font-size:0.78rem!important;margin:0!important}.executive-summary{padding:0.5rem 0.75rem!important;margin:0 0 0.5rem 0!important;font-size:0.85rem!important}.email-draft-section{padding:0.5rem 0.75rem!important;margin:0 0 0.5rem 0!important}.email-draft-header h3{font-size:0.9rem!important;margin:0!important}.reachout-summary{padding:0.5rem 0.75rem!important;margin:0 0 0.5rem 0!important}.reachout-title{font-size:0.9rem!important;margin:0 0 0.15rem 0!important}.contributors-section{margin:0 0 0.5rem 0!important;padding:0!important}.contributors-grid{gap:0.35rem!important}.contributor-card{padding:0.4rem 0.6rem!important;margin:0!important;font-size:0.82rem!important}.contributor-avatar{width:32px!important;height:32px!important}.contributor-bio{font-size:0.78rem!important;margin:0.15rem 0!important;line-height:1.3!important}.contributor-action-bar button{padding:0.15rem 0.4rem!important;font-size:0.72rem!important}.section{margin:0 0 0.5rem 0!important}.print-button{bottom:0.75rem!important;right:0.75rem!important;width:36px!important;height:36px!important}

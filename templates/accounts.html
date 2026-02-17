@@ -3,7 +3,7 @@
 {% block title %}RepoRadar - Lead Machine{% endblock %}
 
 {% block head %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/accounts.css') }}?v=2">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/accounts.css') }}?v=3">
 {% endblock %}
 
 {% block content %}
@@ -51,25 +51,7 @@
                         Archived ({{ archived_count }})
                     </button>
                 </div>
-                {# tier_counts is now passed from the backend with counts for ALL accounts #}
-
-                <div class="stat-badge">
-                    <span class="badge badge-neutral">API</span>
-                    <span class="count" id="dashboard-api-calls">--</span>
-                    <span id="dashboard-api-label">API Calls</span>
-                </div>
-
-                <div class="stat-badge">
-                    <span class="badge badge-warning">Queue</span>
-                    <span class="count" id="dashboard-queue-size">0</span>
-                    <span>Queued</span>
-                </div>
-
-                <div class="stat-badge">
-                    <span class="badge badge-primary">Live</span>
-                    <span class="count" id="dashboard-processing-count">0</span>
-                    <span>Processing</span>
-                </div>
+                
 
 
             </div>
