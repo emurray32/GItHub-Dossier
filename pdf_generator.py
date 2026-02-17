@@ -282,6 +282,74 @@ def generate_report_pdf(report, output_path):
         pdf.multi_cell(0, 7, draft.get('body', ''))
         pdf.ln(10)
 
+    # Scoring V2: Maturity, Readiness, Risk, Outreach (optional section)
+    scoring_v2 = scan_data.get('scoring_v2')
+    if scoring_v2 and isinstance(scoring_v2, dict):
+        pdf.add_page()
+        pdf.set_font('helvetica', 'B', 16)
+        pdf.set_text_color(26, 35, 126)
+        pdf.cell(0, 12, ' Scoring V2 Intelligence', ln=True)
+        pdf.ln(5)
+
+        # Maturity badge
+        maturity_label = scoring_v2.get('org_maturity_label', 'Unknown')
+        pdf.set_font('helvetica', 'B', 12)
+        pdf.set_text_color(0, 0, 0)
+        pdf.cell(45, 10, 'Maturity:', ln=False)
+        pdf.set_text_color(26, 35, 126)
+        pdf.cell(0, 10, maturity_label, ln=True)
+
+        # Readiness
+        readiness = scoring_v2.get('readiness_index', 0)
+        pdf.set_font('helvetica', 'B', 12)
+        pdf.set_text_color(0, 0, 0)
+        pdf.cell(45, 10, 'Readiness:', ln=False)
+        pdf.set_text_color(26, 35, 126)
+        pdf.cell(0, 10, f"{readiness:.2f} / 1.00", ln=True)
+
+        # Confidence
+        confidence = scoring_v2.get('confidence_percent', 0)
+        pdf.set_font('helvetica', 'B', 12)
+        pdf.set_text_color(0, 0, 0)
+        pdf.cell(45, 10, 'Confidence:', ln=False)
+        pdf.cell(0, 10, f"{confidence:.0f}%", ln=True)
+
+        # Risk Level
+        risk_label = scoring_v2.get('risk_level_label', 'Unknown')
+        pdf.set_font('helvetica', 'B', 12)
+        pdf.cell(45, 10, 'Risk Level:', ln=False)
+        if risk_label == 'HIGH':
+            pdf.set_text_color(220, 38, 38)
+        elif risk_label == 'MEDIUM':
+            pdf.set_text_color(234, 88, 12)
+        else:
+            pdf.set_text_color(22, 163, 74)
+        pdf.cell(0, 10, risk_label, ln=True)
+
+        # Outreach Recommendation
+        outreach_label = scoring_v2.get('outreach_angle_label', '')
+        outreach_desc = scoring_v2.get('outreach_angle_description', '')
+        if outreach_label:
+            pdf.ln(3)
+            pdf.set_font('helvetica', 'B', 12)
+            pdf.set_text_color(0, 0, 0)
+            pdf.cell(0, 10, f'Recommended Outreach: {outreach_label}', ln=True)
+            pdf.set_font('helvetica', 'I', 10)
+            pdf.set_text_color(100, 100, 100)
+            pdf.multi_cell(0, 6, outreach_desc)
+
+        # Sales Motion
+        sales_motion = scoring_v2.get('recommended_sales_motion', '')
+        if sales_motion:
+            pdf.ln(3)
+            pdf.set_font('helvetica', 'B', 12)
+            pdf.set_text_color(0, 0, 0)
+            pdf.cell(0, 10, 'Sales Motion:', ln=True)
+            pdf.set_font('helvetica', '', 11)
+            pdf.multi_cell(0, 6, sales_motion)
+
+        pdf.ln(8)
+
     # 8. Signals (Top 10)
     signals = scan_data.get('signals', [])
     if signals:

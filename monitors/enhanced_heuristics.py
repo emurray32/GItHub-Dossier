@@ -81,6 +81,7 @@ def scan_job_posting_intent(org: str, repos: List[Dict]) -> Generator[Tuple[str,
                                     signal = {
                                         'Company': org,
                                         'Signal': 'Job Posting Intent',
+                                        'detected_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
                                         'Evidence': f"Found '{keyword}' in {job_file} ({repo_name})",
                                         'Link': content_data.get('html_url', ''),
                                         'priority': 'HIGH',
@@ -888,67 +889,76 @@ def run_enhanced_heuristics(org: str, org_data: Dict, repos: List[Dict]) -> Gene
     yield ("ENHANCED HEURISTICS: Global Expansion Intent Analysis", None)
     yield ("=" * 60, None)
 
+    # Helper: inject detected_at timestamp into all yielded signals
+    _now_ts = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+
+    def _with_timestamp(gen):
+        for msg, signal in gen:
+            if signal is not None and isinstance(signal, dict) and 'detected_at' not in signal:
+                signal['detected_at'] = _now_ts
+            yield (msg, signal)
+
     # 1. Job Posting Intent
     yield ("", None)
     yield ("[1/10] Job Posting Intent Analysis", None)
     yield ("-" * 40, None)
-    for msg, signal in scan_job_posting_intent(org, repos):
+    for msg, signal in _with_timestamp(scan_job_posting_intent(org, repos)):
         yield (msg, signal)
 
     # 2. Regional Domain Detection
     yield ("", None)
     yield ("[2/10] Regional Domain Detection", None)
     yield ("-" * 40, None)
-    for msg, signal in scan_regional_domains(org, org_data, repos):
+    for msg, signal in _with_timestamp(scan_regional_domains(org, org_data, repos)):
         yield (msg, signal)
 
     # 3. Headless CMS i18n
     yield ("", None)
     yield ("[3/10] Headless CMS Localization Readiness", None)
     yield ("-" * 40, None)
-    for msg, signal in scan_headless_cms_i18n(org, repos):
+    for msg, signal in _with_timestamp(scan_headless_cms_i18n(org, repos)):
         yield (msg, signal)
 
     # 4. Payment Infrastructure
     yield ("", None)
     yield ("[4/10] Multi-Currency Payment Infrastructure", None)
     yield ("-" * 40, None)
-    for msg, signal in scan_payment_infrastructure(org, repos):
+    for msg, signal in _with_timestamp(scan_payment_infrastructure(org, repos)):
         yield (msg, signal)
 
     # 5. Timezone Libraries
     yield ("", None)
     yield ("[5/10] Timezone & Date Formatting Libraries", None)
     yield ("-" * 40, None)
-    for msg, signal in scan_timezone_libraries(org, repos):
+    for msg, signal in _with_timestamp(scan_timezone_libraries(org, repos)):
         yield (msg, signal)
 
     # 6. CI/CD Pipeline
     yield ("", None)
     yield ("[6/10] CI/CD Localization Pipeline", None)
     yield ("-" * 40, None)
-    for msg, signal in scan_ci_localization_pipeline(org, repos):
+    for msg, signal in _with_timestamp(scan_ci_localization_pipeline(org, repos)):
         yield (msg, signal)
 
     # 7. Compliance Documentation
     yield ("", None)
     yield ("[7/10] Legal/Compliance Documentation", None)
     yield ("-" * 40, None)
-    for msg, signal in scan_compliance_documentation(org, repos):
+    for msg, signal in _with_timestamp(scan_compliance_documentation(org, repos)):
         yield (msg, signal)
 
     # 8. Locale Velocity (Content Freshness)
     yield ("", None)
     yield ("[8/10] Locale Update Velocity", None)
     yield ("-" * 40, None)
-    for msg, signal in scan_locale_velocity(org, repos):
+    for msg, signal in _with_timestamp(scan_locale_velocity(org, repos)):
         yield (msg, signal)
 
     # 9. API International Endpoints
     yield ("", None)
     yield ("[9/10] API International Endpoints", None)
     yield ("-" * 40, None)
-    for msg, signal in scan_api_international_endpoints(org, repos):
+    for msg, signal in _with_timestamp(scan_api_international_endpoints(org, repos)):
         yield (msg, signal)
 
     # 10. Social Multi-Region is handled in web_analyzer.py

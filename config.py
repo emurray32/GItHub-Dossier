@@ -1384,3 +1384,83 @@ class Config:
         'locale_velocity_medium': 15,      # Medium - some work
         'api_international': 25,           # Medium-high - backend preparation
     }
+
+    # ============================================================
+    # SCORING V2: TMS FILE PATTERNS
+    # ============================================================
+    # Config files for Translation Management Systems (TMS)
+
+    TMS_FILE_PATTERNS = [
+        '.phraseapp.yml', '.phrase.yml', 'phrase.yml',
+        'crowdin.yml', '.crowdin.yml', 'crowdin.yaml',
+        'lokalise.yml', '.lokalise.yml', 'lokalise.yaml',
+        '.transifexrc', '.tx/config', 'transifex.yml',
+        '.weblate', 'weblate.yml',
+        'l10nbot.yml', '.l10nbot.yml',
+        'pontoon.toml',
+    ]
+
+    # TMS CLI tool refs in package.json scripts
+    TMS_CLI_KEYWORDS = [
+        'phraseapp', 'phrase pull', 'phrase push',
+        'crowdin', 'crowdin download', 'crowdin upload',
+        'lokalise', 'lokalise2',
+        'transifex', 'tx pull', 'tx push',
+    ]
+
+    # ============================================================
+    # SCORING V2: CI/CD WORKFLOW PATTERNS
+    # ============================================================
+    # Keywords in .github/workflows/*.yml indicating i18n CI steps
+
+    CI_CD_I18N_KEYWORDS = [
+        'i18n', 'l10n', 'localization', 'translation',
+        'crowdin', 'lokalise', 'phrase', 'transifex',
+        'extract-messages', 'compile-messages',
+        'formatjs extract', 'lingui extract',
+        'react-intl', 'i18next',
+        'pseudo-localization', 'pseudo-locale',
+    ]
+
+    CI_CD_I18N_ACTIONS = [
+        'crowdin/github-action',
+        'nicovince/lokalise-push-action',
+        'igorkowalczyk/is-locale-changed',
+        'phrase/phrase-action',
+    ]
+
+    # ============================================================
+    # SCORING V2: FIGMA SIGNAL PATTERNS
+    # ============================================================
+
+    FIGMA_I18N_KEYWORDS = [
+        'figma i18n', 'figma localization', 'figma translation',
+        'figma-i18n', 'figma-tokens', 'design tokens i18n',
+        'figma plugin localization', 'figma locale',
+    ]
+
+    # ============================================================
+    # SCORING V2: INFRASTRUCTURE SIGNAL PATTERNS
+    # ============================================================
+
+    INFRA_MONOREPO_I18N_PATTERNS = [
+        'packages/i18n', 'packages/localization', 'packages/l10n',
+        'packages/translations', 'libs/i18n', 'libs/localization',
+        'modules/i18n', 'shared/i18n',
+    ]
+
+    INFRA_FEATURE_FLAG_LOCALE_PATTERNS = [
+        r'feature[_-]?flag.*locale',
+        r'locale.*feature[_-]?flag',
+        r'i18n.*feature[_-]?flag',
+        r'feature[_-]?flag.*i18n',
+        r'launchdarkly.*locale',
+        r'split.*locale',
+        r'unleash.*locale',
+    ]
+
+    INTL_API_PATTERNS = [
+        'Intl.NumberFormat', 'Intl.DateTimeFormat', 'Intl.RelativeTimeFormat',
+        'Intl.PluralRules', 'Intl.ListFormat', 'Intl.DisplayNames',
+        'Intl.Segmenter', 'Intl.Collator',
+    ]

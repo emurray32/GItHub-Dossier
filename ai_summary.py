@@ -217,6 +217,45 @@ def _build_sales_intelligence_prompt(scan_data: dict) -> str:
                 'description': signal.get('Evidence', signal.get('title', ''))[:100]
             })
 
+    # Scoring V2 context (if available)
+    scoring_v2 = scan_data.get('scoring_v2', {})
+    v2_context = ""
+    if scoring_v2:
+        v2_maturity = scoring_v2.get('org_maturity_label', 'Unknown')
+        v2_readiness = scoring_v2.get('readiness_index', 0)
+        v2_confidence = scoring_v2.get('confidence_percent', 0)
+        v2_outreach = scoring_v2.get('outreach_angle_label', 'Unknown')
+        v2_outreach_desc = scoring_v2.get('outreach_angle_description', '')
+        v2_risk = scoring_v2.get('risk_level_label', 'Unknown')
+        v2_clusters = scoring_v2.get('signal_clusters_detected', [])
+        v2_sales_motion = scoring_v2.get('recommended_sales_motion', '')
+        v2_primary_repo = scoring_v2.get('primary_repo_of_concern', '')
+
+        # Build enriched signal age context
+        v2_signals = scoring_v2.get('enriched_signals', [])
+        signal_ages = []
+        for sig in v2_signals[:10]:
+            age = sig.get('age_in_days')
+            if age is not None:
+                signal_ages.append(f"  - {sig.get('signal_type', 'unknown')}: {age} days old (strength: {sig.get('decayed_strength', 0):.2f})")
+
+        v2_context = f"""
+
+## SCORING V2 INTELLIGENCE (use this data to enrich your analysis):
+- Maturity Level: {v2_maturity}
+- Readiness Index: {v2_readiness:.2f}/1.00
+- Confidence: {v2_confidence:.0f}%
+- Risk Level: {v2_risk}
+- Recommended Outreach: {v2_outreach} — {v2_outreach_desc}
+- Recommended Sales Motion: {v2_sales_motion}
+- Primary Repo of Concern: {v2_primary_repo}
+- Signal Clusters: {', '.join(v2_clusters) if v2_clusters else 'None'}
+- Signal Ages:
+{chr(10).join(signal_ages) if signal_ages else '  No age data available'}
+
+IMPORTANT: Reference specific signals and their ages in your analysis. Mention the maturity level and readiness index. Use the recommended outreach angle to shape the cold email tone.
+"""
+
     prompt = f"""
 You are a SALES STRATEGIST for a Localization Platform. Your job is to help Business Development Reps (BDRs) understand technical findings and turn them into sales opportunities.
 
@@ -227,6 +266,7 @@ Our ideal customer is a company that has JUST STARTED setting up i18n infrastruc
 ## Intent Score: {intent_score}/100
 ## Lead Status: {lead_status}
 ## Goldilocks Status: {goldilocks_status.upper()}
+{v2_context}
 
 ## Technical Findings (You must translate these to BDR-friendly language):
 
@@ -255,13 +295,13 @@ Our ideal customer is a company that has JUST STARTED setting up i18n infrastruc
 
 ---
 
-Generate a JSON response with these fields. USE BOLD, PUNCHY, NON-TECHNICAL LANGUAGE:
+Generate a JSON response with these fields. USE CLEAR, CONCISE, NON-TECHNICAL LANGUAGE (sentence case, no ALL CAPS):
 
 1. "executive_summary": (2-3 sentences for BDRs)
-   - Start with the Goldilocks status in CAPS
-   - If status is "preparing": "GOLDILOCKS ZONE DETECTED! [Company] has installed i18n infrastructure but has ZERO translations. The shelving is built, books are missing. PERFECT time to call."
-   - If status is "launched": "TOO LATE - [Company] already has translation files. Low priority."
-   - If status is "thinking": "EARLY STAGE - [Company] is discussing i18n but hasn't started. Worth nurturing."
+   - Start with the Goldilocks status label
+   - If status is "preparing": "Goldilocks zone — [Company] has installed i18n infrastructure but has zero translations. The infrastructure is ready but no content exists yet. This is the ideal time to reach out."
+   - If status is "launched": "Too late — [Company] already has translation files. Low priority."
+   - If status is "thinking": "Early stage — [Company] is discussing i18n but hasn't started. Worth nurturing."
 
 2. "phase_assessment":
    - "phase": (Preparing/Thinking/Launched/None)
@@ -276,7 +316,7 @@ Generate a JSON response with these fields. USE BOLD, PUNCHY, NON-TECHNICAL LANG
    - "finding": Technical finding translated to BDR language
    - "significance": (critical/high/medium/low)
    - "sales_angle": How to use this in a conversation
-   Example: {{"finding": "Found react-i18next - Infrastructure is READY but no translations exist yet", "significance": "critical", "sales_angle": "They built the car but have no gas. Offer to fill the tank."}}
+   Example: {{"finding": "Found react-i18next — infrastructure is ready but no translations exist yet", "significance": "critical", "sales_angle": "The infrastructure is built but translations are missing. Ideal time to reach out."}}
 
 5. "cold_email_draft":
    Generate a hyper-personalized cold email following these STRICT rules:
@@ -413,7 +453,7 @@ def _generate_fallback_analysis(scan_data: dict) -> dict:
         goldilocks_status = 'launched'
     elif dep_count > 0 and goldilocks_status == 'preparing':
         dominant_phase = 'Preparing'
-        phase_evidence = 'GOLDILOCKS ZONE: i18n libraries installed but NO locale folders'
+        phase_evidence = 'Goldilocks zone: i18n libraries installed but no locale folders'
     elif ghost_count > 0:
         dominant_phase = 'Active'
         phase_evidence = 'WIP branches with i18n work'
@@ -437,16 +477,16 @@ def _generate_fallback_analysis(scan_data: dict) -> dict:
     # Determine timing based on Goldilocks Zone
     if goldilocks_status == 'preparing':
         timing = 'CALL NOW'
-        timing_reason = 'GOLDILOCKS ZONE! They built the shelves but have NO books. PERFECT timing - call immediately!'
+        timing_reason = 'Goldilocks zone — they built the infrastructure but have no translations. Call immediately.'
     elif goldilocks_status == 'launched':
         timing = 'Too Late'
-        timing_reason = 'They already have locale folders with translations. Low priority - they have a working system.'
+        timing_reason = 'They already have locale folders with translations. Low priority — they have a working system.'
     elif ghost_count > 0:
         timing = 'CALL NOW'
-        timing_reason = 'Active WIP work means they are building RIGHT NOW - influence their decisions!'
+        timing_reason = 'Active WIP work means they are building right now — influence their decisions.'
     elif rfc_high > 0:
         timing = 'Warm Lead'
-        timing_reason = 'HIGH priority RFC indicates executive attention. Decision is being made.'
+        timing_reason = 'High-priority RFC indicates executive attention. A decision is being made.'
     elif rfc_count > 0:
         timing = 'Warm Lead'
         timing_reason = 'Discussions happening but no concrete action yet.'
@@ -457,14 +497,14 @@ def _generate_fallback_analysis(scan_data: dict) -> dict:
     # Build executive summary - BOLD, PUNCHY language for BDRs
     if goldilocks_status == 'preparing':
         libs = ', '.join(dep_hits[0].get('libraries_found', ['i18n library'])) if dep_hits else 'i18n library'
-        executive_summary = f"GOLDILOCKS ZONE DETECTED! {company} has installed {libs} but has ZERO translations. The infrastructure is READY but no content exists yet. This is the PERFECT time to call - they need our help to fill the gap!"
+        executive_summary = f"Goldilocks zone — {company} has installed {libs} but has zero translations. The infrastructure is ready but no content exists yet. This is the ideal time to reach out."
     elif goldilocks_status == 'launched':
         folders = ', '.join(already_launched[0].get('locale_folders_found', ['locales'])) if already_launched else 'locales'
-        executive_summary = f"TOO LATE - {company} already has translation files in /{folders}/. They have a working i18n system. LOW PRIORITY - focus on other leads."
+        executive_summary = f"Too late — {company} already has translation files in /{folders}/. They have a working i18n system. Low priority."
     elif goldilocks_status == 'thinking':
-        executive_summary = f"EARLY STAGE - {company} is discussing internationalization but hasn't started building. Worth nurturing - they're researching solutions."
+        executive_summary = f"Early stage — {company} is discussing internationalization but hasn't started building. Worth nurturing."
     else:
-        executive_summary = f"COLD LEAD - No significant i18n signals detected for {company}. Consider for future outreach or skip."
+        executive_summary = f"Cold lead — No significant i18n signals detected for {company}. Consider for future outreach."
 
     # Build email draft based on Goldilocks status (following Cold Outreach Skill rules)
     # Uses Apollo.io dynamic variables: {{first_name}}, {{company}}, {{sender_first_name}}
@@ -525,9 +565,9 @@ def _generate_fallback_analysis(scan_data: dict) -> dict:
         libs = ', '.join(dep_hits[0].get('libraries_found', [])) if dep_hits else 'i18n libraries'
         bdr_explanation = dep_hits[0].get('bdr_summary', '') if dep_hits else ''
         key_findings.append({
-            'finding': f"Found {libs} - Infrastructure is READY but no translations exist yet",
+            'finding': f"Found {libs} — infrastructure is ready but no translations exist yet",
             'significance': 'critical',
-            'sales_angle': 'The shelves are built but the books are missing. PERFECT time to call.',
+            'sales_angle': 'The infrastructure is built but translations are missing. Ideal time to reach out.',
             'bdr_explanation': bdr_explanation or Config.BDR_TRANSLATIONS.get('locale_folder_missing', '')
         })
 
@@ -536,7 +576,7 @@ def _generate_fallback_analysis(scan_data: dict) -> dict:
         key_findings.append({
             'finding': f"Found existing locale folders: /{', '.join(folders)}/",
             'significance': 'low',
-            'sales_angle': 'They already have translations. We are too late for the greenfield opportunity.',
+            'sales_angle': 'They already have translations. Too late for the greenfield opportunity.',
             'bdr_explanation': Config.BDR_TRANSLATIONS.get('locale_folder_exists', '')
         })
 
@@ -551,7 +591,7 @@ def _generate_fallback_analysis(scan_data: dict) -> dict:
         key_findings.append({
             'finding': f'{ghost_count} WIP i18n branches/PRs detected',
             'significance': 'high',
-            'sales_angle': 'Developers are actively working on this RIGHT NOW'
+            'sales_angle': 'Developers are actively working on this right now'
         })
 
     # Build outreach suggestions
@@ -560,8 +600,8 @@ def _generate_fallback_analysis(scan_data: dict) -> dict:
     if goldilocks_status == 'preparing':
         libs = dep_hits[0].get('libraries_found', ['unknown']) if dep_hits else ['unknown']
         outreach_suggestions.append({
-            'why_account': f"GOLDILOCKS ZONE: Found {', '.join(libs)} but NO translations",
-            'why_now': "Infrastructure is ready, translations are missing - PERFECT timing",
+            'why_account': f"Goldilocks zone: Found {', '.join(libs)} but no translations",
+            'why_now': "Infrastructure is ready, translations are missing — ideal timing",
             'who_to_reach': 'Frontend/Platform engineering lead',
             'message_hook': f"Noticed you added {libs[0]} but no locales folder - want to share best practices for getting started?"
         })
@@ -711,10 +751,10 @@ def _get_recommended_approach(phase: str) -> str:
 def _get_recommended_approach_goldilocks(status: str) -> str:
     """Get strategic recommendation based on Goldilocks Zone status - BDR-friendly language."""
     approaches = {
-        'preparing': "GOLDILOCKS ZONE - CALL IMMEDIATELY! They have the infrastructure but ZERO translations. Position as the partner who helps them launch globally. Offer a free architecture review - this is our IDEAL customer.",
-        'thinking': "WARM NURTURE: They're researching but haven't started building. Share educational content, case studies. Stay top of mind for when they're ready to build.",
-        'launched': "LOW PRIORITY: They already have translations. Only worth pursuing if they're unhappy with current solution. Ask about pain points but don't push hard.",
-        'none': "COLD OUTREACH: No signals detected. Generic outreach only if you have bandwidth. Better to focus on hotter leads.",
+        'preparing': "Goldilocks zone — call immediately. They have the infrastructure but zero translations. Position as the partner who helps them launch globally. Offer a free architecture review.",
+        'thinking': "Warm nurture — they're researching but haven't started building. Share educational content and case studies. Stay top of mind for when they're ready.",
+        'launched': "Low priority — they already have translations. Only worth pursuing if they're unhappy with their current solution. Ask about pain points.",
+        'none': "Cold outreach — no signals detected. Generic outreach only if you have bandwidth. Focus on hotter leads.",
     }
     return approaches.get(status, approaches['none'])
 
@@ -751,10 +791,10 @@ def _get_next_steps_goldilocks(status: str) -> list:
     """Get actionable next steps based on Goldilocks Zone status - BDR-friendly."""
     if status == 'preparing':
         return [
-            'PRIORITY 1: Send personalized email TODAY referencing the specific library you found',
-            'PRIORITY 2: Find the engineering lead on LinkedIn and connect',
-            'PRIORITY 3: Prepare a quick demo showing how we help teams go from "library installed" to "live in production"',
-            'BONUS: Check if they have any open roles for localization - indicates urgency'
+            'Send personalized email today referencing the specific library found',
+            'Find the engineering lead on LinkedIn and connect',
+            'Prepare a quick demo showing how we help teams go from "library installed" to "live in production"',
+            'Check if they have any open roles for localization — indicates urgency'
         ]
     elif status == 'thinking':
         return [
@@ -765,7 +805,7 @@ def _get_next_steps_goldilocks(status: str) -> list:
         ]
     elif status == 'launched':
         return [
-            'LOW PRIORITY - only pursue if you have extra bandwidth',
+            'Low priority — only pursue if you have extra bandwidth',
             'Look for signs of dissatisfaction (complaints in issues/discussions)',
             'Consider for reference/case study if they are a known brand',
             'Move on to higher-priority leads'
@@ -1026,7 +1066,7 @@ def _generate_deep_dive_fallback(scan_data: dict, ai_analysis: dict) -> dict:
 
     if goldilocks_status == 'preparing':
         libs = ', '.join(libraries_found[:3]) if libraries_found else 'i18n libraries'
-        code_insights.append(f"GOLDILOCKS ZONE: {company} has installed {libs} but has zero translation files - they're ready to start but need a workflow solution.")
+        code_insights.append(f"Goldilocks zone: {company} has installed {libs} but has zero translation files — they're ready to start but need a workflow solution.")
 
     if len(rfc_hits) > 0:
         code_insights.append(f"Found {len(rfc_hits)} i18n-related discussion(s) - the team is actively researching internationalization strategies.")

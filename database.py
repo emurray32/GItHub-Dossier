@@ -272,6 +272,19 @@ def init_db() -> None:
         ON scan_signals(timestamp DESC)
     ''')
 
+    # Scoring V2: Add enrichment columns to scan_signals (idempotent)
+    for col_def in [
+        'raw_strength REAL',
+        'age_in_days INTEGER',
+        'source_context TEXT',
+        'woe_value REAL',
+    ]:
+        col_name = col_def.split()[0]
+        try:
+            cursor.execute(f'ALTER TABLE scan_signals ADD COLUMN {col_def}')
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+
     # Website Analyses table - stores website quality and localization assessments
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS website_analyses (
@@ -683,11 +696,19 @@ def save_signals(report_id: int, company_name: str, signals: list) -> int:
             # Use 'Link' or 'file' as file_path
             file_path = signal.get('Link', signal.get('file', signal.get('repo', '')))
 
+            # Scoring V2 enrichment fields (optional)
+            raw_strength = signal.get('raw_strength')
+            age_in_days = signal.get('age_in_days')
+            source_context = signal.get('source_context')
+            woe_value = signal.get('woe_value')
+
             cursor.execute('''
                 INSERT INTO scan_signals (
-                    report_id, company_name, signal_type, description, file_path
-                ) VALUES (?, ?, ?, ?, ?)
-            ''', (report_id, company_name, signal_type, description, file_path))
+                    report_id, company_name, signal_type, description, file_path,
+                    raw_strength, age_in_days, source_context, woe_value
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (report_id, company_name, signal_type, description, file_path,
+                  raw_strength, age_in_days, source_context, woe_value))
 
             saved_count += 1
         except Exception as e:
@@ -865,6 +886,33 @@ def calculate_tier_from_scan(scan_data: dict) -> tuple[int, str]:
     Returns:
         Tuple of (tier_number, evidence_summary)
     """
+    # ============================================================
+    # SCORING V2: Use new maturity level if available
+    # ============================================================
+    scoring_v2 = scan_data.get('scoring_v2')
+    if scoring_v2 and isinstance(scoring_v2, dict):
+        maturity = scoring_v2.get('org_maturity_level', '')
+        maturity_label = scoring_v2.get('org_maturity_label', '')
+        confidence = scoring_v2.get('confidence_percent', 0)
+        readiness = scoring_v2.get('readiness_index', 0)
+
+        _MATURITY_TO_TIER = {
+            'pre_i18n': 0,
+            'preparing': 2,
+            'active_implementation': 2,
+            'recently_launched': 3,
+            'mature_midmarket': 3,
+            'enterprise_scale': 2,
+        }
+
+        tier = _MATURITY_TO_TIER.get(maturity, 0)
+        outreach = scoring_v2.get('outreach_angle_label', '')
+        evidence = (
+            f"V2: {maturity_label} (confidence: {confidence:.0f}%, "
+            f"readiness: {readiness:.2f}, outreach: {outreach})"
+        )
+        return tier, evidence
+
     # ============================================================
     # SIGNAL VERIFICATION: Filter false positives before tiering
     # ============================================================
@@ -4440,7 +4488,11 @@ def save_contributors_batch(contributors: list) -> int:
 
 def get_contributors_datatable(draw=1, start=0, length=50, search_value='',
                                 order_column=0, order_dir='asc',
-                                apollo_filter=None) -> dict:
+                                apollo_filter=None,
+                                has_email_filter=None,
+                                warm_hot_filter=None,
+                                i18n_filter=None,
+                                not_contacted_filter=None) -> dict:
     """
     Server-side datatable processing for contributors.
     Returns paginated, sorted, and filtered contributor data.
@@ -4473,6 +4525,24 @@ def get_contributors_datatable(draw=1, start=0, length=50, search_value='',
     if apollo_filter:
         conditions.append('apollo_status = ?')
         params.append(apollo_filter)
+
+    if has_email_filter == '1':
+        conditions.append("email IS NOT NULL AND email != ''")
+
+    if warm_hot_filter == '1':
+        # Filter to contributors whose company is in tier 1 or 2
+        conditions.append("""LOWER(company) IN (
+            SELECT LOWER(company_name) FROM monitored_accounts WHERE current_tier IN (1, 2)
+        )""")
+
+    if i18n_filter == '1':
+        conditions.append("""(LOWER(insight) LIKE '%i18n%'
+            OR LOWER(insight) LIKE '%internationalization%'
+            OR LOWER(insight) LIKE '%locale%'
+            OR LOWER(insight) LIKE '%translation%')""")
+
+    if not_contacted_filter == '1':
+        conditions.append("apollo_status = 'not_sent'")
 
     where_clause = ''
     if conditions:

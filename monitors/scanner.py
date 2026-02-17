@@ -804,7 +804,20 @@ def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[obje
     yield _sse_log("PHASE 6: Intent Score Calculation")
     yield _sse_log("-" * 40)
 
-    scan_results['intent_score'] = _calculate_intent_score(scan_results)
+    # Scoring V2: Multi-stage Bayesian pipeline with legacy fallback
+    try:
+        from scoring import score_scan_results
+        scoring_result = score_scan_results(scan_results)
+        # Set legacy fields on scan_results (goldilocks_status, intent_score, lead_status)
+        scoring_result.apply_to_scan_results(scan_results)
+        # Add scoring_v2 namespace with all new fields
+        scan_results['scoring_v2'] = scoring_result.to_structured_output()
+        yield _sse_log(f"Scoring V2: maturity={scoring_result.org_maturity_level.display_label}, "
+                       f"readiness={scoring_result.readiness_index:.2f}, "
+                       f"confidence={scoring_result.confidence_percent:.0f}%")
+    except Exception as e:
+        yield _sse_log(f"Scoring V2 error ({e}), using legacy scoring")
+        scan_results['intent_score'] = _calculate_intent_score(scan_results)
 
     # Summary
     yield _sse_log("")

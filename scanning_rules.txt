@@ -1,0 +1,311 @@
+================================================================================
+SCANNING RULES — GitHub-Dossier Scoring V2
+Multi-Stage Bayesian Scoring Engine
+================================================================================
+
+ARCHITECTURE OVERVIEW
+---------------------
+The scoring engine uses a 3-stage Bayesian pipeline to classify organizations:
+
+  Stage 1: Fast Filter (rule-based reject)
+  Stage 2: Bayesian Scorer (log-odds updating with WoE)
+  Stage 3: Enterprise Adjuster (org-level corrections)
+
+Input:  Raw signals from the 3-signal scanner + enhanced heuristics
+Output: ScoringResult with maturity, readiness, confidence, outreach angle
+
+
+================================================================================
+STAGE 1: FAST FILTER (Rule-Based Reject)
+================================================================================
+
+REJECT if ANY of these conditions are met:
+  - Zero signals detected
+  - All signals are from fork repos
+  - All signals are from archived repos
+  - All signals are filtered (structural/domain/contextual filters applied)
+
+PASS: All other cases proceed to Stage 2.
+
+
+================================================================================
+SIGNAL ENRICHMENT
+================================================================================
+
+Each raw signal dict is enriched with:
+  - raw_strength: Base signal strength (from RAW_STRENGTH_TABLE)
+  - age_in_days: Days since signal was detected/created
+  - signal_category: One of 10 categories (branch_commit, library_install, etc.)
+  - woe_value: Weight of Evidence for Bayesian updating
+  - source_context: Human-readable origin string
+
+NEW SIGNAL TYPES DETECTED:
+  - TMS config files (.phraseapp.yml, crowdin.yml, lokalise.yml, etc.)
+  - CI/CD i18n workflows (GitHub Actions with i18n steps)
+  - Figma i18n plugin references
+  - Infrastructure signals (monorepo i18n packages, feature flags, Intl API)
+
+
+================================================================================
+FILTERS
+================================================================================
+
+STRUCTURAL FILTERS (binary reject):
+  - Fork repos → all signals filtered (weight = 0)
+  - Archived repos → all signals filtered
+  - <5 commits → filtered
+  - Zero stars + watchers on personal accounts → filtered
+  - >365 days since last push → filtered
+
+DOMAIN FILTERS (80% reduction):
+  - Open protocol / decentralized projects → 0.20x
+  - Tutorial / educational repos → 0.20x
+  - Library / SDK repos → 0.20x
+
+CONTEXTUAL FILTERS (50% reduction):
+  - Docs-only i18n mentions → 0.50x
+  - Test/CI-only references → 0.50x
+
+
+================================================================================
+EXPONENTIAL DECAY
+================================================================================
+
+Formula: decayed_strength = raw_strength × 0.5^(age_in_days / half_life)
+
+HALF-LIFE TABLE:
+  Signal Category      | Half-Life (days)
+  ---------------------|------------------
+  Branch/Commit        | 21
+  Library Install      | 45
+  PR/Issue             | 30
+  Config Change        | 60
+  Doc Mention          | 90
+  TMS File             | 60
+  CI/CD                | 45
+  Infrastructure       | 90
+  Enhanced Heuristic   | 60
+  Fork                 | 45
+
+
+================================================================================
+WEIGHT OF EVIDENCE (WoE) TABLE
+================================================================================
+
+STRONG SIGNALS (WoE > 1.5):
+  smoking_gun_fork            : +2.5
+  dependency_injection_preparing: +2.2  (lib + no locale folders)
+  tms_config_file             : +2.0
+  ghost_branch_active         : +2.0
+  dependency_injection        : +1.8
+  rfc_discussion_high         : +1.8
+  ci_cd_i18n_workflow         : +1.6
+  ghost_branch                : +1.5
+  monorepo_i18n_package       : +1.5
+
+MEDIUM SIGNALS (WoE 0.5–1.5):
+  figma_i18n_plugin           : +1.4
+  job_posting_intent          : +1.4
+  locale_update_velocity      : +1.3
+  documentation_intent_high   : +1.3
+  rfc_discussion              : +1.2
+  headless_cms_i18n           : +1.2
+  feature_flag_locale         : +1.0
+  payment_multi_currency      : +1.0
+  api_international           : +0.8
+  documentation_intent        : +0.8
+  regional_domain             : +0.7
+  intl_number_format          : +0.6
+  legal_compliance            : +0.6
+  timezone_library            : +0.5
+  social_multi_region         : +0.5
+
+NEGATIVE SIGNALS (disqualifiers):
+  fork_repo                   : -2.0
+  archived_repo               : -2.0
+  already_launched            : -1.5
+  tutorial_repo               : -1.5
+  sdk_library_repo            : -1.2
+  mega_corp_launched          : -1.0
+  mega_corp_weak_signals      : -0.8
+
+
+================================================================================
+INTERACTION BONUSES (Signal Pair Synergies)
+================================================================================
+
+When BOTH signals in a pair are present, add bonus to log-odds:
+
+  dependency_injection + ghost_branch   : +0.8
+  smoking_gun_fork + ghost_branch       : +1.0
+  dependency_injection + rfc_discussion : +0.6
+  rfc_discussion + ghost_branch         : +0.5
+  tms_config_file + ci_cd_i18n_workflow : +0.7
+  dependency_injection + tms_config_file: +0.6
+  job_posting_intent + dependency       : +0.5
+  headless_cms_i18n + dependency        : +0.4
+
+
+================================================================================
+STAGE 2: BAYESIAN SCORER
+================================================================================
+
+1. Start with segment-specific prior P(intent):
+     PRE_I18N              : 0.05
+     PREPARING             : 0.60
+     ACTIVE_IMPLEMENTATION : 0.75
+     RECENTLY_LAUNCHED     : 0.30
+     MATURE_MIDMARKET      : 0.20
+     ENTERPRISE_SCALE      : 0.40
+
+2. Convert prior to log-odds: log_odds = ln(p / (1-p))
+
+3. Update with each signal's decayed WoE:
+     log_odds += woe_value × (decayed_strength / raw_strength)
+
+4. Add interaction bonuses for signal pairs
+
+5. Convert back: P(intent) = sigmoid(log_odds)
+
+
+================================================================================
+6 MATURITY SEGMENTS
+================================================================================
+
+1. PRE_I18N
+   - No i18n signals detected
+   - Default for empty scans
+
+2. PREPARING
+   - Primary: dependency_injection OR smoking_gun_fork present
+   - Disqualifier: locale folders / already_launched
+   - This is the GOLDILOCKS ZONE
+
+3. ACTIVE_IMPLEMENTATION
+   - Primary: dependency_injection AND ghost_branch (both present)
+   - Disqualifier: locale folders exist
+
+4. RECENTLY_LAUNCHED
+   - Primary: already_launched signal present
+   - Disqualifier: TMS config (→ MATURE instead)
+
+5. MATURE_MIDMARKET
+   - Primary: already_launched + TMS config OR CI pipeline
+   - Indicates established localization workflow
+
+6. ENTERPRISE_SCALE
+   - Primary: >20k stars OR >400 repos
+   - Secondary: signals from multiple repos, multiple signal types
+   - Special handling for mega-corp weak signals
+
+
+================================================================================
+ORG-LEVEL SCORING
+================================================================================
+
+OrgScore = Peak×0.30 + MeanTop3×0.25 + Breadth×0.20
+           + HighValueConcentration×0.15 + Momentum×0.10
+
+Components:
+  Peak:    Highest single repo score (normalized 0-1)
+  MeanTop3: Average of top 3 repo scores
+  Breadth:  Fraction of repos with any signal
+  HighValue: Fraction of total score in top repo
+  Momentum: Fraction of signals from last 30 days
+
+REPO TIERS:
+  Tier 1 (weight 1.0): Product repos (main app, frontend)
+  Tier 2 (weight 0.6): Support repos (docs, configs)
+  Tier 3 (weight 0.2): Internal repos (CI, scripts)
+  Tier 0 (weight 0.0): Excluded (forks, archived)
+
+
+================================================================================
+STAGE 3: ENTERPRISE ADJUSTER
+================================================================================
+
+Final P(intent) = 0.70 × Bayesian_P + 0.30 × OrgScore_composite
+
+CLUSTER BONUS:
+  When >= 3 repos have signals: 1.0 + 0.2 × min(repos_with_signal, 10)
+
+PROVEN-BUYER MULTIPLIER:
+  When mature repo + preparing repos coexist: 1.3x
+
+
+================================================================================
+READINESS INDEX (0.0 – 1.0)
+================================================================================
+
+Readiness = Preparation×0.40 + Velocity×0.30 + LaunchGap×0.20 + PainIntensity×0.10
+
+  Preparation:   Fraction of infrastructure signal types present
+  Velocity:      Signal recency (7d=0.50, 30d=0.30, 90d=0.20 weights)
+  LaunchGap:     1.0 = infra ready, no translations (ideal)
+                 0.3 = has both infra and translations
+                 0.0 = no infrastructure
+  PainIntensity: RFC discussions, job postings, frustration signals
+
+
+================================================================================
+ACTION THRESHOLDS
+================================================================================
+
+  P(intent) >= 0.75 : HOT LEAD → Immediate BDR outreach
+  P(intent) >= 0.50 : WARM LEAD → Nurture sequence
+  P(intent) >= 0.30 : MONITOR → Watch list + quarterly check-in
+  P(intent) >= 0.15 : COLD → Low priority
+  P(intent) <  0.15 : DISQUALIFIED → No action
+
+
+================================================================================
+OUTREACH ANGLES (7 types)
+================================================================================
+
+  1. GREENFIELD_EDUCATOR:     No i18n yet → educate on best practices
+  2. IMPLEMENTATION_PARTNER:  Actively building → help do it right
+  3. SCALE_OPTIMIZER:         Growing pains → optimize for scale
+  4. EXPANSION_ACCELERATOR:   Ready for new markets → accelerate rollout
+  5. MIGRATION_CANDIDATE:     Using competitor TMS → migration path
+  6. ENTERPRISE_STRATEGIC:    Large org → strategic partnership
+  7. PAIN_DRIVEN:             Specific pain points → solve immediate problem
+
+
+================================================================================
+BACKWARD COMPATIBILITY MAPPING
+================================================================================
+
+  ScoringResult.org_intent_score (0-1)  →  intent_score (0-100)
+    PREPARING/ACTIVE_IMPL: 90 + p×10
+    ENTERPRISE (high):     90 + p×10
+    ENTERPRISE (low):      40 + p×50
+    RECENTLY/MATURE:       10
+    PRE_I18N:              0
+
+  ScoringResult.org_maturity_level  →  goldilocks_status
+    PRE_I18N:              'none'
+    PREPARING:             'preparing'
+    ACTIVE_IMPLEMENTATION: 'preparing'
+    RECENTLY_LAUNCHED:     'launched'
+    MATURE_MIDMARKET:      'launched'
+    ENTERPRISE_SCALE:      'preparing' (if high intent) / 'launched' (if low)
+
+  ScoringResult.org_maturity_level  →  database tier
+    PRE_I18N: 0, PREPARING/ACTIVE: 2, RECENTLY/MATURE: 3, ENTERPRISE: 2
+
+
+================================================================================
+CONTRIBUTOR HEURISTICS
+================================================================================
+
+  Corporate ratio boost: 1.2x if >50% contributors have company field
+  Business hours boost:  1.2x if commits concentrated 9AM-6PM weekdays
+
+
+================================================================================
+RISK CLASSIFICATION
+================================================================================
+
+  LOW:    confidence >= 0.7 AND >= 3 signal types AND >= 2 recent signals
+  MEDIUM: confidence >= 0.4 AND >= 2 signal types
+  HIGH:   all other cases
