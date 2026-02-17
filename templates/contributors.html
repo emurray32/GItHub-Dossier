@@ -361,26 +361,66 @@
     };
 
     // Toggle sequence enrollment
-    window.toggleSequence = function(id, isCurrentlyEnrolled) {
-        const newStatus = isCurrentlyEnrolled ? 'not_sent' : 'sent';
-        const sequenceName = isCurrentlyEnrolled ? '' : 'Apollo Default Sequence';
+    window.toggleSequence = async function(id, isCurrentlyEnrolled) {
+    const seqBtn = document.getElementById('seq-btn-' + id);
+    if (seqBtn) { seqBtn.disabled = true; seqBtn.innerHTML = '<span class="fetch-spinner"></span> Working...'; }
 
-        fetch('/api/contributors/' + id + '/apollo', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ status: newStatus, sequence_name: sequenceName })
-        })
-        .then(r => r.json())
-        .then(data => {
-            if (data.status === 'success') {
-                showToast(isCurrentlyEnrolled ? 'Removed from sequence' : 'Added to Apollo sequence', 'success');
-                loadTable();
-            } else {
-                showToast(data.error || 'Failed to update', 'error');
-            }
-        })
-        .catch(() => showToast('Network error', 'error'));
-    };
+    if (isCurrentlyEnrolled) {
+      const r = await fetch('/api/contributors/' + id + '/apollo', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({status:'not_sent', sequence_name:''})
+      });
+      const d = await r.json();
+      if (d.status === 'success') { showToast('Removed from sequence', 'success'); loadTable(); }
+      else { showToast(d.error || 'Failed to update', 'error'); if (seqBtn) seqBtn.disabled = false; }
+      return;
+    }
+
+    // Get contributor data
+    const tResp = await fetch('/api/contributors/datatable?search[value]=&start=0&length=10000');
+    const tData = await tResp.json();
+    const contributor = tData.data.find(x => x.id == id);
+    if (!contributor || !contributor.email) {
+      showToast('No email available for this contact — cannot enroll in Apollo', 'error');
+      if (seqBtn) { seqBtn.disabled = false; seqBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg> Add to Sequence'; }
+      return;
+    }
+
+    // Fetch sequences
+    const sResp = await fetch('/api/apollo/sequences');
+    const sData = await sResp.json();
+    if (sData.status !== 'success' || !sData.sequences || !sData.sequences.length) {
+      showToast('No Apollo sequences found — check your API key', 'error');
+      if (seqBtn) seqBtn.disabled = false;
+      return;
+    }
+    const sequence = sData.sequences.find(s => s.active) || sData.sequences[0];
+
+    // Enroll via real Apollo API
+    const eResp = await fetch('/api/apollo/enroll-sequence', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        email: contributor.email,
+        first_name: (contributor.name || '').split(' ')[0] || contributor.github_login,
+        last_name: (contributor.name || '').split(' ').slice(1).join(' '),
+        sequence_id: sequence.id,
+        company_name: contributor.company || ''
+      })
+    });
+    const eData = await eResp.json();
+
+    if (eData.status === 'success') {
+      await fetch('/api/contributors/' + id + '/apollo', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({status:'sent', sequence_name: sequence.name})
+      });
+      showToast('✓ Enrolled in: ' + sequence.name, 'success');
+      loadTable();
+    } else {
+      showToast(eData.message || 'Failed to enroll in Apollo', 'error');
+      if (seqBtn) seqBtn.disabled = false;
+    }
+  };
 
     // Fetch contributors from GitHub
     let fetchAbortController = null;

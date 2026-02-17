@@ -1,0 +1,2463 @@
+/**
+ * Report Page Styles
+ * Extracted from templates/report.html inline <style> block.
+ * Uses design tokens from style.css (--color-primary, --color-text, etc.)
+ */
+
+/* ============================================================
+   REPORT LAYOUT
+   ============================================================ */
+.report-container {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 1.5rem;
+}
+
+.report-header {
+    text-align: center;
+    margin-bottom: 2rem;
+    padding-bottom: 1.5rem;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.report-title {
+    font-size: 20px;
+    color: var(--color-text);
+    margin-bottom: 0.35rem;
+}
+
+.report-org {
+    font-size: 14px;
+    color: var(--color-primary);
+    margin-bottom: 0.75rem;
+}
+
+.report-meta {
+    display: flex;
+    justify-content: center;
+    gap: 1.5rem;
+    color: var(--color-text-secondary);
+    font-size: 12px;
+}
+
+/* ============================================================
+   STATS GRID
+   ============================================================ */
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+}
+
+.stat-card {
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    padding: 16px;
+    text-align: center;
+    box-shadow: var(--shadow-sm);
+}
+
+.stat-value {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--color-text);
+}
+
+.stat-card:first-child .stat-value {
+    color: var(--color-primary);
+}
+
+.stat-label {
+    font-size: 12px;
+    color: var(--color-text-secondary);
+    margin-top: 0.2rem;
+}
+
+/* ============================================================
+   SECTIONS
+   ============================================================ */
+.section {
+    margin-bottom: 2rem;
+}
+
+.section-title {
+    font-size: 16px;
+    color: var(--color-text);
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.35rem;
+}
+
+/* ============================================================
+   EXECUTIVE SUMMARY
+   ============================================================ */
+.executive-summary {
+    background: var(--color-bg);
+    color: var(--color-text);
+    padding: 1.25rem;
+    border-radius: 8px;
+    font-size: 14px;
+    line-height: 1.6;
+    margin-bottom: 1.5rem;
+    border: 1px solid var(--color-border);
+    border-left: 2px solid var(--color-primary);
+    box-shadow: var(--shadow-sm);
+}
+
+/* ============================================================
+   REACHOUT SUMMARY
+   ============================================================ */
+.reachout-summary {
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    padding: 1.25rem;
+    margin-bottom: 1.5rem;
+    box-shadow: var(--shadow-sm);
+}
+
+.reachout-title {
+    font-size: 16px;
+    margin: 0 0 0.5rem 0;
+    color: var(--color-text);
+}
+
+.reachout-subtitle {
+    font-size: 12px;
+    color: var(--color-text-secondary);
+    margin-bottom: 0.75rem;
+}
+
+.reachout-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.reachout-item {
+    display: flex;
+    gap: 0.75rem;
+    padding: 0.6rem 0;
+    border-top: 1px solid var(--color-border);
+}
+
+.reachout-item:first-child {
+    border-top: none;
+    padding-top: 0;
+}
+
+.reachout-label {
+    font-weight: 600;
+    color: var(--color-primary);
+    min-width: 130px;
+    font-size: 12px;
+}
+
+.reachout-text {
+    color: var(--color-text);
+    font-size: 14px;
+}
+
+/* ============================================================
+   MATURITY BADGES
+   ============================================================ */
+.maturity-badge {
+    display: inline-block;
+    padding: 0.2rem 0.6rem;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.maturity-emerging {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.maturity-developing {
+    background: #dbeafe;
+    color: #1e40af;
+}
+
+.maturity-mature {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.maturity-advanced {
+    background: #ede9fe;
+    color: #5b21b6;
+}
+
+/* ============================================================
+   OPPORTUNITY SCORE
+   ============================================================ */
+.opportunity-score {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin: 0.75rem 0;
+}
+
+.score-bar {
+    flex: 1;
+    height: 10px;
+    background: var(--color-surface);
+    border-radius: 5px;
+    overflow: hidden;
+}
+
+.score-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #ef4444, #f59e0b, #22c55e);
+    border-radius: 5px;
+}
+
+.score-value {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--color-primary);
+}
+
+/* ============================================================
+   FINDINGS
+   ============================================================ */
+.findings-list {
+    list-style: none;
+    padding: 0;
+}
+
+.finding-item {
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 0.5rem;
+    box-shadow: var(--shadow-sm);
+}
+
+.finding-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 0.35rem;
+}
+
+.finding-text {
+    font-weight: 500;
+    color: var(--color-text);
+    font-size: 14px;
+}
+
+.finding-significance {
+    font-size: 11px;
+    padding: 0.1rem 0.4rem;
+    border-radius: 4px;
+}
+
+.significance-high {
+    background: #fee2e2;
+    color: #dc2626;
+}
+
+.significance-medium {
+    background: #fef3c7;
+    color: #d97706;
+}
+
+.significance-low {
+    background: #e0e7ff;
+    color: #4f46e5;
+}
+
+.severity-badge {
+    padding: 0.2rem 0.6rem;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.severity-critical {
+    background: #dc2626;
+    color: white;
+}
+
+.severity-major {
+    background: #ea580c;
+    color: white;
+}
+
+.severity-minor {
+    background: #d97706;
+    color: white;
+}
+
+/* ============================================================
+   RISK BADGES
+   ============================================================ */
+.risk-badge {
+    display: inline-block;
+    padding: 0.2rem 0.4rem;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 700;
+    margin-left: 0.4rem;
+}
+
+.risk-high {
+    background: #fee2e2;
+    color: var(--color-destructive);
+    border: 1px solid #fca5a5;
+}
+
+.risk-low {
+    background: #f0fdf4;
+    color: #166534;
+    border: 1px solid #bbf7d0;
+}
+
+/* ============================================================
+   FORENSIC / COMPLIANCE
+   ============================================================ */
+.forensic-card {
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-left: 4px solid var(--color-secondary);
+    border-radius: 0 8px 8px 0;
+    padding: 1.25rem;
+    margin-top: 0.75rem;
+}
+
+.compliance-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 0.75rem;
+    margin-top: 0.75rem;
+}
+
+.compliance-card {
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    padding: 12px;
+    border-radius: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+/* ============================================================
+   PROSPECT CARDS
+   ============================================================ */
+.prospect-card {
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 0.75rem;
+    display: grid;
+    grid-template-columns: 48px 1fr;
+    gap: 1rem;
+    box-shadow: var(--shadow-sm);
+}
+
+.prospect-avatar {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    border: 2px solid var(--color-primary);
+}
+
+.prospect-info h3 {
+    margin: 0 0 0.2rem 0;
+    color: var(--color-text);
+    font-size: 14px;
+}
+
+.prospect-role {
+    font-size: 12px;
+    color: var(--color-primary);
+    font-weight: 600;
+    margin-bottom: 0.35rem;
+}
+
+.prospect-bio {
+    font-size: 12px;
+    color: var(--color-text-secondary);
+    margin-bottom: 0.75rem;
+    font-style: italic;
+}
+
+.strategy-box {
+    background: var(--color-surface);
+    border-left: 3px solid var(--color-primary);
+    padding: 0.6rem 0.75rem;
+    border-radius: 0 4px 4px 0;
+    font-size: 12px;
+}
+
+.finding-evidence {
+    font-size: 12px;
+    color: var(--color-text-secondary);
+}
+
+/* ============================================================
+   NARRATIVE BOX
+   ============================================================ */
+.narrative-box {
+    background: var(--color-bg);
+    border-left: 4px solid var(--color-primary);
+    padding: 1.25rem;
+    border-radius: 0 8px 8px 0;
+    line-height: 1.7;
+    white-space: pre-line;
+    border: 1px solid var(--color-border);
+    box-shadow: var(--shadow-sm);
+    font-size: 14px;
+}
+
+/* ============================================================
+   TIMELINE
+   ============================================================ */
+.timeline-list {
+    list-style: none;
+    padding: 0;
+}
+
+.timeline-item {
+    display: flex;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+    padding-left: 0.75rem;
+    border-left: 2px solid var(--color-primary);
+}
+
+.timeline-period {
+    font-weight: 600;
+    color: var(--color-primary);
+    min-width: 110px;
+    font-size: 12px;
+}
+
+.timeline-content {
+    flex: 1;
+}
+
+.timeline-activity {
+    color: var(--color-text);
+    margin-bottom: 0.2rem;
+    font-size: 14px;
+}
+
+.timeline-implication {
+    font-size: 12px;
+    color: var(--color-text-secondary);
+    font-style: italic;
+}
+
+/* ============================================================
+   CONTACTS GRID
+   ============================================================ */
+.contacts-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+    gap: 0.75rem;
+}
+
+.contact-card {
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    padding: 12px;
+    text-align: center;
+}
+
+.contact-role {
+    font-weight: 500;
+    color: var(--color-text);
+    font-size: 14px;
+}
+
+/* ============================================================
+   CONVERSATION LIST
+   ============================================================ */
+.conversation-list {
+    list-style: decimal;
+    padding-left: 1.25rem;
+}
+
+.conversation-item {
+    background: var(--color-bg);
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 0.5rem;
+    line-height: 1.6;
+    border: 1px solid var(--color-border);
+    font-size: 14px;
+}
+
+/* ============================================================
+   SUGGESTIONS GRID
+   ============================================================ */
+.suggestions-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 0.75rem;
+}
+
+.suggestion-card {
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    box-shadow: var(--shadow-sm);
+}
+
+.suggestion-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.suggestion-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-text-tertiary);
+    font-weight: 600;
+}
+
+.suggestion-text {
+    color: var(--color-text);
+    line-height: 1.5;
+    font-size: 14px;
+}
+
+/* ============================================================
+   RISK & NEXT-STEPS LISTS
+   ============================================================ */
+.risk-list,
+.next-steps-list {
+    list-style: none;
+    padding: 0;
+}
+
+.risk-item,
+.next-step-item {
+    padding: 0.6rem 0.75rem;
+    margin-bottom: 0.4rem;
+    border-radius: 6px;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6rem;
+    font-size: 14px;
+}
+
+.risk-item::before,
+.next-step-item::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    margin-top: 0.4rem;
+    background: currentColor;
+    flex-shrink: 0;
+}
+
+.risk-item {
+    background: #fef2f2;
+    color: #991b1b;
+}
+
+.next-step-item {
+    background: #f0fdf4;
+    color: #166534;
+}
+
+/* ============================================================
+   SIGNALS
+   ============================================================ */
+.signals-section {
+    margin-top: 1.5rem;
+}
+
+.signal-card {
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 0.5rem;
+}
+
+.signal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.35rem;
+}
+
+.signal-type {
+    font-size: 11px;
+    padding: 0.1rem 0.4rem;
+    border-radius: 4px;
+    background: var(--color-primary);
+    color: var(--color-text-on-primary);
+}
+
+.signal-repo {
+    font-size: 12px;
+    color: var(--color-text-secondary);
+}
+
+.signal-content {
+    font-size: 12px;
+    color: var(--color-text);
+}
+
+.signal-link {
+    font-size: 11px;
+    color: var(--color-primary);
+    text-decoration: none;
+}
+
+.signal-link:hover {
+    text-decoration: underline;
+}
+
+/* ============================================================
+   PRINT BUTTON
+   ============================================================ */
+.print-button {
+    position: fixed;
+    bottom: 1.5rem;
+    right: 1.5rem;
+    background: var(--color-primary);
+    color: var(--color-text-on-primary);
+    border: none;
+    padding: 0.75rem;
+    border-radius: 8px;
+    cursor: pointer;
+    box-shadow: var(--shadow-md);
+}
+
+.print-button svg {
+    width: 18px;
+    height: 18px;
+}
+
+/* ============================================================
+   CONFIDENCE SCORE
+   ============================================================ */
+.confidence-score-section {
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    padding: 1.25rem;
+    margin-bottom: 1.5rem;
+    box-shadow: var(--shadow-sm);
+}
+
+.confidence-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+}
+
+.confidence-value {
+    font-size: 20px;
+    font-weight: 700;
+}
+
+.confidence-high {
+    color: var(--color-success);
+}
+
+.confidence-medium {
+    color: var(--color-warning);
+}
+
+.confidence-low {
+    color: var(--color-destructive);
+}
+
+.confidence-bar {
+    height: 6px;
+    background: var(--color-surface);
+    border-radius: 3px;
+    overflow: hidden;
+    margin-bottom: 0.35rem;
+}
+
+.confidence-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.5s ease;
+}
+
+.confidence-fill.high {
+    background: linear-gradient(90deg, #22c55e, #10b981);
+}
+
+.confidence-fill.medium {
+    background: linear-gradient(90deg, #f59e0b, #eab308);
+}
+
+.confidence-fill.low {
+    background: linear-gradient(90deg, #ef4444, #f97316);
+}
+
+.confidence-label {
+    font-size: 12px;
+    color: var(--color-text-secondary);
+}
+
+/* ============================================================
+   GOLDILOCKS ZONE BANNER
+   ============================================================ */
+.goldilocks-banner {
+    padding: 1.25rem 1.5rem;
+    border-radius: 8px;
+    margin-bottom: 1.5rem;
+    text-align: left;
+    font-weight: 700;
+    display: flex;
+    align-items: flex-start;
+    gap: 1.25rem;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-left: 6px solid var(--color-border);
+    box-shadow: var(--shadow-sm);
+}
+
+.goldilocks-preparing {
+    border-left-color: #16a34a;
+}
+
+.goldilocks-thinking {
+    border-left-color: #d97706;
+}
+
+.goldilocks-launched {
+    border-left-color: #6b7280;
+}
+
+.goldilocks-none {
+    border-left-color: #cbd5e1;
+}
+
+.status-content {
+    flex: 1;
+}
+
+.status-title {
+    font-size: 16px;
+    color: var(--color-text);
+    margin: 0.35rem 0 0.2rem;
+    letter-spacing: 0.04em;
+}
+
+.status-subtitle {
+    font-size: 12px;
+    color: var(--color-text-secondary);
+    font-weight: 600;
+}
+
+.status-points {
+    margin: 0.35rem 0 0 1.25rem;
+    padding: 0;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--color-text-secondary);
+}
+
+/* ============================================================
+   BDR HIGHLIGHT BOXES
+   ============================================================ */
+.bdr-highlight {
+    background: #fef3c7;
+    border-left: 4px solid var(--color-warning);
+    padding: 0.75rem 1rem;
+    margin: 0.75rem 0;
+    border-radius: 0 8px 8px 0;
+}
+
+.bdr-highlight-critical {
+    background: #dcfce7;
+    border-left: 4px solid var(--color-success);
+}
+
+.bdr-highlight-warning {
+    background: #fee2e2;
+    border-left: 4px solid var(--color-destructive);
+}
+
+.bdr-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #92400e;
+    font-weight: 700;
+    margin-bottom: 0.2rem;
+}
+
+.bdr-highlight-critical .bdr-label {
+    color: #166534;
+}
+
+.bdr-highlight-warning .bdr-label {
+    color: #991b1b;
+}
+
+.bdr-text {
+    font-size: 14px;
+    color: #1f2937;
+    font-weight: 600;
+}
+
+/* ============================================================
+   FINDING CARD ENHANCEMENTS
+   ============================================================ */
+.finding-item.critical-finding {
+    border-left: 4px solid var(--color-success);
+    background: linear-gradient(90deg, #f0fdf4 0%, var(--color-surface) 100%);
+}
+
+.finding-item.low-priority-finding {
+    border-left: 4px solid #6b7280;
+    opacity: 0.7;
+}
+
+.significance-critical {
+    background: var(--color-success);
+    color: white;
+}
+
+/* ============================================================
+   EMAIL DRAFT SECTION
+   ============================================================ */
+.email-draft-section {
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    overflow: hidden;
+    margin-bottom: 1.5rem;
+    box-shadow: var(--shadow-sm);
+}
+
+.email-draft-section.email-draft-deprioritized {
+    opacity: 0.6;
+    border-style: dashed;
+    box-shadow: none;
+}
+
+.email-draft-section.email-draft-deprioritized:hover {
+    opacity: 1;
+}
+
+.email-draft-header {
+    background: var(--color-surface);
+    color: var(--color-text);
+    padding: 0.75rem 1.25rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.email-draft-header h3 {
+    margin: 0;
+    font-size: 14px;
+}
+
+.copy-email-btn {
+    background: var(--color-bg);
+    color: var(--color-text);
+    border: 1px solid var(--color-border);
+    padding: 0.4rem 0.75rem;
+    border-radius: 6px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    transition: all 0.2s;
+    font-size: 12px;
+}
+
+.copy-email-btn:hover {
+    transform: scale(1.05);
+}
+
+.copy-email-btn.copied {
+    background: #dcfce7;
+    color: #166534;
+    border-color: #bbf7d0;
+}
+
+.copy-icon {
+    display: inline-flex;
+    align-items: center;
+}
+
+.copy-icon svg {
+    width: 14px;
+    height: 14px;
+}
+
+.copy-icon--success {
+    display: none;
+}
+
+.copy-email-btn.copied .copy-icon--default {
+    display: none;
+}
+
+.copy-email-btn.copied .copy-icon--success {
+    display: inline-flex;
+}
+
+.email-actions {
+    display: flex;
+    gap: 0.4rem;
+}
+
+.send-bdr-btn {
+    background: var(--color-primary);
+    color: var(--color-text-on-primary);
+    border: none;
+    padding: 0.4rem 0.75rem;
+    border-radius: 6px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    transition: all 0.2s;
+    font-size: 12px;
+}
+
+.send-bdr-btn:hover {
+    background: var(--color-primary-hover);
+    transform: scale(1.02);
+}
+
+.send-bdr-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.send-bdr-btn svg {
+    width: 14px;
+    height: 14px;
+}
+
+/* ============================================================
+   APOLLO BUTTONS
+   ============================================================ */
+.btn-apollo {
+    background: #1a1a1a;
+    color: white;
+    border: none;
+    padding: 0.4rem 0.75rem;
+    border-radius: 6px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    transition: all 0.2s;
+    font-size: 12px;
+}
+
+.btn-apollo:hover {
+    background: #333;
+    transform: scale(1.02);
+}
+
+.btn-apollo:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.btn-apollo.loading {
+    background: #444;
+}
+
+.btn-apollo.success {
+    background: #166534;
+}
+
+.btn-apollo svg {
+    width: 14px;
+    height: 14px;
+}
+
+/* ============================================================
+   APOLLO SEQUENCE ENROLLMENT
+   ============================================================ */
+.btn-enroll-sequence {
+    background: #1a1a1a;
+    color: white;
+    border: none;
+    padding: 0.3rem 0.6rem;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    transition: all 0.2s ease;
+    position: relative;
+}
+
+.btn-enroll-sequence:hover {
+    background: #333;
+}
+
+.btn-enroll-sequence:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.btn-enroll-sequence.loading {
+    background: #444;
+    pointer-events: none;
+}
+
+.btn-enroll-sequence.success {
+    background: #166534;
+}
+
+.btn-enroll-sequence.error {
+    background: #991b1b;
+}
+
+.sequence-selector-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    z-index: 100;
+    background: white;
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    box-shadow: var(--shadow-md);
+    min-width: 260px;
+    max-height: 220px;
+    overflow-y: auto;
+    display: none;
+    margin-top: 4px;
+}
+
+.sequence-selector-dropdown.open {
+    display: block;
+}
+
+.sequence-selector-header {
+    padding: 0.5rem 0.6rem;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--color-text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.sequence-option {
+    padding: 0.5rem 0.6rem;
+    cursor: pointer;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+    transition: background 0.15s;
+}
+
+.sequence-option:hover {
+    background: #f8fafc;
+}
+
+.sequence-option:last-child {
+    border-bottom: none;
+}
+
+.sequence-option-name {
+    font-weight: 500;
+    color: var(--color-text);
+}
+
+.sequence-option-meta {
+    font-size: 11px;
+    color: var(--color-text-secondary);
+}
+
+.sequence-option-active {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    margin-right: 6px;
+}
+
+.sequence-option-active.active {
+    background: #10b981;
+}
+
+.sequence-option-active.inactive {
+    background: #94a3b8;
+}
+
+.sequence-loading,
+.sequence-error,
+.sequence-empty {
+    padding: 0.75rem;
+    text-align: center;
+    font-size: 12px;
+    color: var(--color-text-secondary);
+}
+
+.sequence-error {
+    color: var(--color-destructive);
+}
+
+.enrollment-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 11px;
+    font-weight: 500;
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+    margin-top: 0.2rem;
+}
+
+.enrollment-status.enrolled {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.enrollment-status.pending {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.enrollment-status.error {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+/* ============================================================
+   BDR MODAL
+   ============================================================ */
+.bdr-modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+}
+
+.bdr-modal.active {
+    display: flex;
+}
+
+.bdr-modal-content {
+    background: var(--color-bg);
+    border-radius: 8px;
+    padding: 1.5rem;
+    max-width: 420px;
+    width: 90%;
+    box-shadow: var(--shadow-md);
+}
+
+.bdr-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.25rem;
+}
+
+.bdr-modal-header h3 {
+    margin: 0;
+    font-size: 16px;
+}
+
+.bdr-modal-close {
+    background: none;
+    border: none;
+    font-size: 1.25rem;
+    cursor: pointer;
+    color: var(--color-text-secondary);
+    padding: 0.2rem;
+}
+
+.bdr-modal-close:hover {
+    color: var(--color-text);
+}
+
+.bdr-form-group {
+    margin-bottom: 0.75rem;
+}
+
+.bdr-form-group label {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 0.35rem;
+    font-size: 12px;
+}
+
+.bdr-form-group input {
+    width: 100%;
+    padding: 0.6rem;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    font-size: 14px;
+}
+
+.bdr-form-group input:focus {
+    outline: none;
+    border-color: var(--color-primary);
+}
+
+.bdr-modal-actions {
+    display: flex;
+    gap: 0.6rem;
+    margin-top: 1.25rem;
+}
+
+.bdr-modal-actions button {
+    flex: 1;
+    padding: 0.6rem;
+    border-radius: 6px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-size: 14px;
+}
+
+.bdr-cancel-btn {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    color: var(--color-text);
+}
+
+.bdr-send-btn {
+    background: var(--color-primary);
+    border: none;
+    color: var(--color-text-on-primary);
+}
+
+.bdr-send-btn:hover {
+    background: var(--color-primary-hover);
+}
+
+.bdr-send-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* ============================================================
+   EMAIL DRAFT CONTENT
+   ============================================================ */
+.email-draft-content {
+    padding: 1.25rem;
+}
+
+.email-edit-hint {
+    font-size: 12px;
+    color: var(--color-text-tertiary);
+    margin-bottom: 0.6rem;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.email-edit-hint::before {
+    content: "\270F\FE0F";
+    font-size: 12px;
+}
+
+.email-subject {
+    font-weight: 600;
+    margin-bottom: 0.75rem;
+    padding: 0.6rem 0.75rem;
+    background: var(--color-bg);
+    border-radius: 6px;
+    border: 1px solid var(--color-border);
+    border-left: 3px solid var(--color-primary);
+}
+
+.email-subject-label {
+    font-size: 11px;
+    color: var(--color-text-secondary);
+    text-transform: uppercase;
+    display: block;
+    margin-bottom: 0.2rem;
+}
+
+.email-edit-field {
+    width: 100%;
+    border: 1px solid var(--color-border);
+    background: var(--color-bg);
+    color: var(--color-text);
+    font: inherit;
+    outline: none;
+    padding: 0.5rem 0.6rem;
+    border-radius: 6px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    font-size: 14px;
+}
+
+.email-edit-field:hover {
+    border-color: color-mix(in srgb, var(--color-primary) 40%, var(--color-border));
+}
+
+.email-edit-field:focus {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 15%, transparent);
+}
+
+.email-subject-input {
+    font-weight: 600;
+    font-size: 14px;
+}
+
+.email-body {
+    line-height: 1.7;
+    background: var(--color-bg);
+    border-radius: 6px;
+    white-space: pre-line;
+    font-size: 14px;
+}
+
+.email-body-textarea {
+    min-height: 160px;
+    resize: vertical;
+    line-height: 1.7;
+    font-family: var(--font-sans, system-ui, sans-serif);
+}
+
+.email-body-label {
+    font-size: 11px;
+    color: var(--color-text-secondary);
+    text-transform: uppercase;
+    display: block;
+    margin-bottom: 0.35rem;
+}
+
+/* ============================================================
+   KEY ENGINEERING CONTACTS
+   ============================================================ */
+.engineering-contacts-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.engineering-contact-card {
+    display: flex;
+    gap: 0.75rem;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    padding: 12px;
+    box-shadow: var(--shadow-sm);
+}
+
+.contact-avatar {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.contact-info {
+    flex: 1;
+}
+
+.contact-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 0.35rem;
+}
+
+.contact-header h3 {
+    margin: 0;
+    font-size: 14px;
+    color: var(--color-text);
+}
+
+.contact-login {
+    color: var(--color-text-secondary);
+    font-weight: normal;
+    font-size: 12px;
+}
+
+.contact-role-badge {
+    display: inline-block;
+    background: #e0e7ff;
+    color: #4f46e5;
+    padding: 0.2rem 0.6rem;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    margin-bottom: 0.35rem;
+}
+
+.contact-bio {
+    font-style: italic;
+    color: var(--color-text-secondary);
+    font-size: 12px;
+    margin-bottom: 0.35rem;
+}
+
+.contact-reason {
+    font-size: 12px;
+    color: var(--color-text);
+}
+
+/* ============================================================
+   ENGINEERING VELOCITY TIMELINE
+   ============================================================ */
+.velocity-timeline {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    border-left: 3px solid var(--color-primary);
+    padding-left: 1.25rem;
+}
+
+.velocity-item {
+    position: relative;
+    padding: 0.6rem 0;
+    font-size: 14px;
+    color: var(--color-text);
+    line-height: 1.5;
+}
+
+.velocity-item::before {
+    content: '';
+    position: absolute;
+    left: -1.55rem;
+    top: 0.85rem;
+    width: 8px;
+    height: 8px;
+    background: var(--color-primary);
+    border-radius: 50%;
+    border: 2px solid var(--color-bg);
+}
+
+.velocity-item:first-child {
+    padding-top: 0;
+}
+
+.velocity-item:first-child::before {
+    top: 0.2rem;
+}
+
+/* ============================================================
+   CONTRIBUTORS SECTION
+   ============================================================ */
+.contributors-section {
+    margin-bottom: 2rem;
+}
+
+.contributors-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.contributor-card {
+    display: flex;
+    gap: 1rem;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    padding: 1rem;
+    box-shadow: var(--shadow-sm);
+    position: relative;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.contributor-card:hover {
+    border-color: var(--color-primary);
+    box-shadow: 0 2px 8px rgba(99, 102, 241, 0.15);
+}
+
+.contributor-card.selected {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.3);
+    background: rgba(99, 102, 241, 0.05);
+}
+
+.contributor-card.i18n-involved {
+    border-left: 4px solid var(--color-success);
+    background: linear-gradient(90deg, #f0fdf4 0%, var(--color-bg) 50%);
+}
+
+.contributor-rank {
+    position: absolute;
+    top: -6px;
+    left: -6px;
+    width: 24px;
+    height: 24px;
+    background: var(--color-primary);
+    color: var(--color-text-on-primary);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 11px;
+    box-shadow: var(--shadow-sm);
+}
+
+.contributor-rank.rank-1 {
+    background: linear-gradient(135deg, #fbbf24, #f59e0b);
+}
+
+.contributor-rank.rank-2 {
+    background: linear-gradient(135deg, #9ca3af, #6b7280);
+}
+
+.contributor-rank.rank-3 {
+    background: linear-gradient(135deg, #d97706, #b45309);
+}
+
+.contributor-avatar {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    border: 2px solid var(--color-border);
+}
+
+.contributor-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.contributor-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 0.35rem;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+
+.contributor-name {
+    margin: 0;
+    font-size: 14px;
+    color: var(--color-text);
+}
+
+.contributor-login {
+    color: var(--color-text-secondary);
+    font-weight: normal;
+    font-size: 12px;
+}
+
+.contributor-meta {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.35rem;
+}
+
+.contributor-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    padding: 0.2rem 0.4rem;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.badge-contributions {
+    background: #dbeafe;
+    color: #1e40af;
+}
+
+.badge-repos {
+    background: #f3e8ff;
+    color: #7c3aed;
+}
+
+.badge-i18n {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.badge-no-i18n {
+    background: #f1f5f9;
+    color: #64748b;
+}
+
+.contributor-bio {
+    font-style: italic;
+    color: var(--color-text-secondary);
+    font-size: 12px;
+    margin-bottom: 0.35rem;
+    line-height: 1.4;
+}
+
+.contributor-company {
+    font-size: 12px;
+    color: var(--color-text-secondary);
+    margin-bottom: 0.35rem;
+}
+
+.contributor-repos {
+    font-size: 12px;
+    color: var(--color-text-tertiary);
+}
+
+.contributor-repos strong {
+    color: var(--color-text-secondary);
+}
+
+.i18n-involvement-note {
+    margin-top: 0.5rem;
+    padding: 0.4rem 0.6rem;
+    background: #f0fdf4;
+    border-left: 3px solid var(--color-success);
+    border-radius: 0 4px 4px 0;
+    font-size: 12px;
+    color: #166534;
+}
+
+.contributors-summary {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    margin-bottom: 0.75rem;
+    display: flex;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+}
+
+.summary-stat {
+    display: flex;
+    flex-direction: column;
+}
+
+.summary-stat-value {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--color-primary);
+}
+
+.summary-stat-label {
+    font-size: 11px;
+    color: var(--color-text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+/* ============================================================
+   PRINT MEDIA QUERY
+   ============================================================ */
+@media print {
+    .navbar,
+    .footer,
+    .print-button {
+        display: none;
+    }
+
+    .report-container {
+        padding: 0;
+    }
+}
+
+/* ============================================================
+   DEEP DIVE / AI BADGE
+   ============================================================ */
+.ai-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    background: rgba(255, 255, 255, 0.2);
+    padding: 0.2rem 0.4rem;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 500;
+}
+
+/* ============================================================
+   CONTRIBUTOR EMAIL WORKFLOW
+   ============================================================ */
+.prospect-email-section {
+    margin-top: 0.6rem;
+    padding-top: 0.6rem;
+    border-top: 1px solid var(--color-border);
+}
+
+.btn-fetch-email {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.3rem 0.6rem;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--color-text);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-fetch-email:hover {
+    background: var(--color-primary);
+    color: var(--color-text-on-primary);
+    border-color: var(--color-primary);
+}
+
+.btn-fetch-email:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.btn-fetch-email.email-found {
+    cursor: default;
+    font-size: 11px;
+}
+
+.email-result {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-top: 0.3rem;
+    font-size: 12px;
+}
+
+.email-address {
+    font-weight: 600;
+    color: var(--color-text);
+}
+
+.email-badge {
+    display: inline-block;
+    padding: 0.1rem 0.4rem;
+    font-size: 11px;
+    font-weight: 600;
+    border-radius: 4px;
+    text-transform: uppercase;
+}
+
+.email-badge.verified {
+    background: #d4edda;
+    color: #155724;
+}
+
+.email-badge.unverified {
+    background: #fff3cd;
+    color: #856404;
+}
+
+.email-badge.unknown {
+    background: #e2e3e5;
+    color: #383d41;
+}
+
+.btn-compose-email {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.3rem 0.6rem;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--color-text-on-primary);
+    background: var(--color-primary);
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-left: 0.4rem;
+}
+
+.btn-compose-email:hover {
+    opacity: 0.85;
+}
+
+.inline-email-composer {
+    display: none;
+    margin-top: 0.6rem;
+    padding: 0.75rem;
+    background: var(--color-surface);
+    border-radius: 8px;
+    border: 1px solid var(--color-border);
+}
+
+.inline-email-composer.active {
+    display: block;
+}
+
+.composer-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.6rem;
+}
+
+.composer-header h4 {
+    margin: 0;
+    font-size: 14px;
+    color: var(--color-text);
+}
+
+.composer-field {
+    margin-bottom: 0.4rem;
+}
+
+.composer-field label {
+    display: block;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--color-text-secondary);
+    margin-bottom: 0.2rem;
+    text-transform: uppercase;
+}
+
+.composer-field input,
+.composer-field textarea {
+    width: 100%;
+    padding: 0.4rem;
+    font-size: 12px;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    background: white;
+    font-family: inherit;
+    box-sizing: border-box;
+}
+
+.composer-field textarea {
+    min-height: 130px;
+    resize: vertical;
+}
+
+.composer-actions {
+    display: flex;
+    gap: 0.4rem;
+    margin-top: 0.6rem;
+    align-items: center;
+}
+
+.btn-enroll {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.4rem 1rem;
+    font-size: 12px;
+    font-weight: 600;
+    color: white;
+    background: #10b981;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-enroll:hover {
+    background: #059669;
+}
+
+.btn-enroll:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.btn-cancel-compose {
+    padding: 0.4rem 0.75rem;
+    font-size: 12px;
+    color: var(--color-text-secondary);
+    background: transparent;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.send-status {
+    font-size: 12px;
+    margin-left: 0.4rem;
+}
+
+.prospect-card.selected {
+    border: 2px solid var(--color-primary);
+    box-shadow: 0 0 0 3px rgba(0, 166, 153, 0.15);
+}
+
+.selected-contact-banner {
+    display: none;
+    padding: 0.6rem 0.75rem;
+    background: linear-gradient(135deg, var(--color-primary), #0d9488);
+    color: white;
+    border-radius: 8px;
+    margin-bottom: 0.75rem;
+    font-size: 12px;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.selected-contact-banner.active {
+    display: flex;
+}
+
+/* ============================================================
+   CONTRIBUTOR ACTION BAR
+   ============================================================ */
+.contributor-action-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-top: 0.6rem;
+    padding-top: 0.6rem;
+    border-top: 1px solid var(--color-border);
+    flex-wrap: wrap;
+}
+
+.enrollment-status-inline {
+    font-size: 11px;
+    margin-left: auto;
+}
+
+.email-verify-badge {
+    display: inline-block;
+    padding: 0.1rem 0.4rem;
+    font-size: 10px;
+    font-weight: 600;
+    border-radius: 10px;
+    text-transform: uppercase;
+    vertical-align: middle;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.spin-icon {
+    animation: spin 1s linear infinite;
+}
+
+.action-bar-divider {
+    width: 1px;
+    height: 18px;
+    background: var(--color-border);
+    margin: 0 0.2rem;
+}
+
+.btn-enrich-enroll {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.3rem 0.6rem;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1px solid var(--color-primary);
+    background: var(--color-primary);
+    color: white;
+    transition: all 0.2s ease;
+}
+
+.btn-enrich-enroll:hover {
+    opacity: 0.9;
+    transform: translateY(-1px);
+}
+
+.btn-enrich-enroll:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.btn-enrich-enroll.step-email {
+    background: var(--color-info);
+    border-color: var(--color-info);
+}
+
+.btn-enrich-enroll.step-enroll {
+    background: #8b5cf6;
+    border-color: #8b5cf6;
+}
+
+.btn-enrich-enroll.step-done {
+    background: var(--color-success);
+    border-color: var(--color-success);
+}
+
+.btn-enrich-enroll.step-error {
+    background: var(--color-destructive);
+    border-color: var(--color-destructive);
+}
+
+.btn-fetch-email,
+.btn-send-email,
+.btn-select-contributor {
+    padding: 0.3rem 0.6rem;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1px solid;
+    transition: all 0.2s ease;
+}
+
+.btn-select-contributor {
+    background: var(--color-primary);
+    border-color: var(--color-primary);
+    color: white;
+}
+
+.btn-select-contributor:hover {
+    opacity: 0.9;
+}
+
+.btn-send-email {
+    background: #10b981;
+    border-color: #10b981;
+    color: white;
+}
+
+.btn-send-email:hover {
+    background: #059669;
+    border-color: #059669;
+}
+
+.contributor-email-display {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-top: 0.35rem;
+    font-size: 12px;
+}
+
+.email-badge-verified {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.email-badge-unverified {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.email-badge-not-found {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+/* Inline email composer (contributor card variant) */
+.inline-email-composer label {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--color-text-secondary);
+    display: block;
+    margin-bottom: 0.2rem;
+}
+
+.inline-email-composer input,
+.inline-email-composer textarea {
+    width: 100%;
+    padding: 0.4rem;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    font-size: 12px;
+    background: var(--color-bg);
+    color: var(--color-text);
+    margin-bottom: 0.6rem;
+    box-sizing: border-box;
+}
+
+.inline-email-composer textarea {
+    min-height: 130px;
+    resize: vertical;
+    font-family: inherit;
+}
+
+/* ============================================================
+   SELECTED CONTACT INDICATOR
+   ============================================================ */
+.selected-contact-indicator {
+    display: none;
+    padding: 0.6rem 0.75rem;
+    background: rgba(99, 102, 241, 0.1);
+    border: 1px solid rgba(99, 102, 241, 0.3);
+    border-radius: 8px;
+    margin-bottom: 0.75rem;
+    font-size: 12px;
+    color: var(--color-text);
+}
+
+.selected-contact-indicator.visible {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.selected-contact-indicator .contact-avatar-sm {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+}
+
+
+/* ===== COMPLETE REPORT REDESIGN - BDR WORKFLOW ===== */
+
+/* Kill the PDF-style centered layout */
+.report-container {
+    max-width: 100% !important;
+    padding: 0 1rem !important;
+    margin: 0 !important;
+}
+
+/* Compact header bar */
+.report-header-compact {
+    background: #f8f9fa;
+    border-bottom: 1px solid #e2e8f0;
+    padding: 0.5rem 1rem !important;
+    margin: 0 -1rem 0.5rem -1rem !important;
+    width: calc(100% + 2rem);
+}
+
+.report-header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.report-identity {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.report-title-compact {
+    font-size: 1.15rem !important;
+    font-weight: 700;
+    margin: 0 !important;
+    padding: 0 !important;
+    color: #1a202c;
+}
+
+.report-org-link {
+    color: #4a90d9;
+    font-size: 0.85rem;
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.report-org-link:hover {
+    text-decoration: underline;
+}
+
+.report-website-link {
+    color: #718096;
+    font-size: 0.8rem;
+    text-decoration: none;
+    padding: 0.1rem 0.4rem;
+    background: #edf2f7;
+    border-radius: 3px;
+}
+
+.report-website-link:hover {
+    background: #e2e8f0;
+}
+
+.report-revenue-badge {
+    background: #e6fffa;
+    color: #234e52;
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.1rem 0.5rem;
+    border-radius: 10px;
+    border: 1px solid #b2f5ea;
+}
+
+.report-scan-info {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-shrink: 0;
+}
+
+.scan-date, .scan-duration {
+    font-size: 0.75rem;
+    color: #a0aec0;
+}
+
+/* Old header styles - override */
+.report-header {
+    padding: 0.5rem 0 !important;
+    margin: 0 !important;
+    text-align: left !important;
+    border-bottom: 1px solid #e2e8f0 !important;
+}
+
+.report-title {
+    font-size: 1.15rem !important;
+    text-align: left !important;
+    margin: 0 !important;
+}
+
+.report-org {
+    text-align: left !important;
+    margin: 0 !important;
+}
+
+.report-meta {
+    text-align: left !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    font-size: 0.75rem !important;
+    color: #a0aec0 !important;
+    gap: 0.5rem !important;
+}
+
+/* Goldilocks banner - make it compact inline */
+.goldilocks-banner {
+    padding: 0.5rem 0.75rem !important;
+    margin: 0 0 0.5rem 0 !important;
+    border-radius: 6px !important;
+}
+
+.goldilocks-banner .status-content {
+    display: flex !important;
+    align-items: center !important;
+    gap: 0.75rem !important;
+    flex-wrap: wrap !important;
+}
+
+.goldilocks-banner .status-title {
+    font-size: 0.95rem !important;
+    margin: 0 !important;
+    font-weight: 700;
+}
+
+.goldilocks-banner .status-subtitle {
+    font-size: 0.8rem !important;
+    margin: 0 !important;
+    color: #718096;
+}
+
+.goldilocks-banner .badge {
+    font-size: 0.7rem !important;
+    padding: 0.1rem 0.4rem !important;
+}
+
+.goldilocks-banner .status-points {
+    margin: 0.25rem 0 0 0 !important;
+    padding-left: 1rem !important;
+    font-size: 0.82rem !important;
+}
+
+.goldilocks-banner .status-points li {
+    margin: 0 !important;
+    line-height: 1.3;
+}
+
+/* Stats row (pills) - make compact */
+.stats-row {
+    display: flex !important;
+    gap: 0.5rem !important;
+    margin: 0 0 0.5rem 0 !important;
+    padding: 0 !important;
+    flex-wrap: wrap;
+}
+
+.stat-pill {
+    font-size: 0.75rem !important;
+    padding: 0.15rem 0.5rem !important;
+    background: #f7fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+}
+
+.stat-pill-value {
+    font-weight: 700;
+    font-size: 0.8rem !important;
+}
+
+.stat-pill-label {
+    color: #718096;
+    font-size: 0.7rem !important;
+}
+
+/* Executive summary - compact */
+.executive-summary {
+    padding: 0.5rem 0.75rem !important;
+    margin: 0 0 0.5rem 0 !important;
+    font-size: 0.85rem !important;
+    line-height: 1.4 !important;
+    border-left: 3px solid #4a90d9 !important;
+    background: #f7fafc !important;
+    border-radius: 0 4px 4px 0;
+}
+
+/* BDR highlight box */
+.bdr-highlight {
+    padding: 0.5rem 0.75rem !important;
+    margin: 0 0 0.5rem 0 !important;
+    border-radius: 6px;
+    font-size: 0.85rem !important;
+}
+
+.bdr-label {
+    font-size: 0.8rem !important;
+    font-weight: 700 !important;
+    margin-bottom: 0.15rem !important;
+}
+
+.bdr-text {
+    font-size: 0.82rem !important;
+    line-height: 1.35 !important;
+}
+
+/* Email draft section - THE key action area for BDRs */
+.email-draft-section {
+    margin: 0 0 0.5rem 0 !important;
+    padding: 0.5rem 0.75rem !important;
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 6px !important;
+    background: #fff !important;
+}
+
+.email-draft-header {
+    padding: 0 0 0.35rem 0 !important;
+    margin: 0 0 0.35rem 0 !important;
+    border-bottom: 1px solid #f0f0f0 !important;
+}
+
+.email-draft-header h3 {
+    font-size: 0.9rem !important;
+    margin: 0 !important;
+}
+
+.email-actions {
+    gap: 0.35rem !important;
+}
+
+.email-actions button {
+    padding: 0.25rem 0.5rem !important;
+    font-size: 0.78rem !important;
+}
+
+/* Subject line and email body */
+.subject-line-section,
+.email-body-section {
+    margin: 0 0 0.35rem 0 !important;
+    padding: 0 !important;
+}
+
+.subject-line-section label,
+.email-body-section label {
+    font-size: 0.7rem !important;
+    text-transform: uppercase;
+    color: #a0aec0;
+    letter-spacing: 0.5px;
+    margin-bottom: 0.15rem !important;
+}
+
+.subject-line-section .editable-field,
+.email-body-section .editable-field {
+    padding: 0.35rem 0.5rem !important;
+    font-size: 0.85rem !important;
+    line-height: 1.4 !important;
+}
+
+/* Contact chips */
+.contact-chip {
+    padding: 0.2rem 0.5rem !important;
+    font-size: 0.78rem !important;
+}
+
+.selected-contact-banner {
+    padding: 0.25rem 0.5rem !important;
+    font-size: 0.8rem !important;
+}
+
+/* Contributor section */
+.contributor-section {
+    margin: 0 0 0.5rem 0 !important;
+    padding: 0 !important;
+}
+
+.contributor-card {
+    padding: 0.35rem 0.5rem !important;
+    margin: 0.2rem 0 !important;
+    font-size: 0.82rem !important;
+}
+
+/* Print button positioning */
+.print-btn,
+.fab-print {
+    bottom: 1rem !important;
+    right: 1rem !important;
+    width: 36px !important;
+    height: 36px !important;
+    font-size: 0.8rem !important;
+}
+
+/* Signal/evidence cards */
+.signal-card,
+.evidence-card {
+    padding: 0.35rem 0.5rem !important;
+    margin: 0 0 0.35rem 0 !important;
+    font-size: 0.82rem !important;
+}
+
+/* General spacing resets */
+.report-container > * {
+    margin-bottom: 0.5rem !important;
+}
+
+.report-container h3,
+.report-container h4 {
+    font-size: 0.9rem !important;
+    margin: 0.5rem 0 0.25rem 0 !important;
+}
+
+/* Two-column layout for BDR: left = intel, right = action */
+@media (min-width: 900px) {
+    .report-container {
+        display: flex !important;
+        flex-wrap: wrap !important;
+        gap: 0.75rem !important;
+    }
+    
+    .report-header-compact {
+        width: 100% !important;
+        flex: 0 0 100% !important;
+    }
+    
+    .goldilocks-banner {
+        width: 100% !important;
+        flex: 0 0 100% !important;
+    }
+}
+
+/* V3 COMPACT */
+.scoring-v2-panel{padding:0.5rem 0.75rem!important;margin:0!important}.report-container{max-width:none!important;width:100%!important;padding:0 1rem!important;margin:0!important}.report-header{padding:0.35rem 0!important;margin:0 0 0.35rem 0!important;text-align:left!important}.report-title{font-size:1.15rem!important;text-align:left!important;margin:0!important;padding:0!important}.report-org{margin:0!important;text-align:left!important;font-size:0.85rem!important}.report-meta{display:flex!important;gap:0.5rem!important;font-size:0.75rem!important;color:#a0aec0!important;margin:0!important;padding:0!important;text-align:left!important}.goldilocks-banner{padding:0.4rem 0.75rem!important;margin:0 0 0.5rem 0!important}.goldilocks-banner .status-points li{font-size:0.82rem!important;margin:0!important}.stats-row{display:flex!important;gap:0.5rem!important;margin:0 0 0.5rem 0!important;padding:0!important;flex-wrap:wrap!important}.stat-pill{padding:0.15rem 0.5rem!important;font-size:0.78rem!important;margin:0!important}.executive-summary{padding:0.5rem 0.75rem!important;margin:0 0 0.5rem 0!important;font-size:0.85rem!important}.email-draft-section{padding:0.5rem 0.75rem!important;margin:0 0 0.5rem 0!important}.email-draft-header h3{font-size:0.9rem!important;margin:0!important}.reachout-summary{padding:0.5rem 0.75rem!important;margin:0 0 0.5rem 0!important}.reachout-title{font-size:0.9rem!important;margin:0 0 0.15rem 0!important}.contributors-section{margin:0 0 0.5rem 0!important;padding:0!important}.contributors-grid{gap:0.35rem!important}.contributor-card{padding:0.4rem 0.6rem!important;margin:0!important;font-size:0.82rem!important}.contributor-avatar{width:32px!important;height:32px!important}.contributor-bio{font-size:0.78rem!important;margin:0.15rem 0!important;line-height:1.3!important}.contributor-action-bar button{padding:0.15rem 0.4rem!important;font-size:0.72rem!important}.section{margin:0 0 0.5rem 0!important}.print-button{bottom:0.75rem!important;right:0.75rem!important;width:36px!important;height:36px!important}

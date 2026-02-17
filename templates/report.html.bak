@@ -1,11 +1,23 @@
 {% extends "base.html" %}
 
+{% block title %}{{ report.company_name }} Report - Lead Machine{% endblock %}
+
 {% block breadcrumb %}
-<nav>
-    <ol>
-        <li><a href="{{ url_for('accounts') }}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg> Accounts</a></li>
+<nav class="breadcrumb-container" aria-label="Breadcrumb">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item">
+            <a href="{{ url_for('accounts') }}">
+                <svg class="breadcrumb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                    <polyline points="9 22 9 12 15 12 15 22"></polyline>
+                </svg>
+                Accounts
+            </a>
+        </li>
         <li class="breadcrumb-separator">/</li>
-        <li class="breadcrumb-item"><a href="{{ url_for('history') }}">Reports</a></li>
+        <li class="breadcrumb-item">
+            <a href="{{ url_for('history') }}">Reports</a>
+        </li>
         <li class="breadcrumb-separator">/</li>
         <li class="breadcrumb-item active" aria-current="page">{{ report.company_name }}</li>
     </ol>
@@ -13,341 +25,559 @@
 {% endblock %}
 
 {% block head %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/report.css') }}?v=3">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/report.css') }}?v=2">
 {% endblock %}
 
 {% block content %}
-{% set goldilocks_status = report.scan_data.goldilocks_status or report.ai_analysis.goldilocks_status or 'none' %}
-{% set lead_status = report.scan_data.lead_status or report.ai_analysis.lead_status or '' %}
+<div class="report-container">
+    <header class="report-header">
+        <h2 class="report-title">{{ report.company_name|title }}</h2>
+        <div class="report-org">
+            <a href="{{ report.scan_data.org_url }}" target="_blank">@{{ report.github_org }}</a>
+        </div>
+        <div class="report-meta">
+            <span>{{ report.created_at }}</span>
+            <span>{{ "%.1f"|format(report.scan_duration_seconds) }}s</span>
+            {% if report.website %}
+            <span><a href="{{ report.website|normalize_url }}" target="_blank">{{ report.website }}</a></span>
+            {% endif %}
+            {% if report.annual_revenue %}
+            <span class="revenue-display">{{ report.annual_revenue|format_revenue }}</span>
+            {% endif %}
+        </div>
+    </header>
 
-<div class="report-page">
+    <!-- Goldilocks Zone Status Banner -->
+    {% set goldilocks_status = report.scan_data.goldilocks_status or report.ai_analysis.goldilocks_status or 'none' %}
+    {% set lead_status = report.scan_data.lead_status or report.ai_analysis.lead_status or '' %}
 
-  <!-- ===== HERO HEADER ===== -->
-  <div class="hero">
-    <div class="hero-left">
-      <h1 class="hero-company">{{ report.company_name|title }}</h1>
-      <div class="hero-meta">
-        <a href="{{ report.scan_data.org_url }}" target="_blank" class="meta-link">@{{ report.github_org }}</a>
-        {% if report.website %}
-        <a href="{{ report.website|normalize_url }}" target="_blank" class="meta-link">{{ report.website }}</a>
-        {% endif %}
-        {% if report.annual_revenue %}
-        <span class="meta-tag revenue-display" data-raw="{{ report.annual_revenue }}">{{ report.annual_revenue|format_revenue }}</span>
-        {% endif %}
-        <span class="meta-date">{{ report.created_at }}</span>
-      </div>
+    {% if goldilocks_status == 'preparing' %}
+    <div class="goldilocks-banner goldilocks-preparing">
+        <div class="status-content">
+            <span class="badge badge-success">Preparing</span>
+            <div class="status-title">Call Now</div>
+            <div class="status-subtitle">Goldilocks signal detected</div>
+            <ul class="status-points">
+                <li>Infrastructure is ready, but no translation files exist yet.</li>
+            </ul>
+        </div>
     </div>
-    <div class="hero-right">
-      {% if goldilocks_status == 'preparing' %}
-      <div class="verdict-badge verdict-hot">
-        <div class="verdict-label">Call Now</div>
-        <div class="verdict-detail">Goldilocks signal detected</div>
-      </div>
-      {% elif goldilocks_status == 'thinking' %}
-      <div class="verdict-badge verdict-warm">
-        <div class="verdict-label">Warm Lead</div>
-        <div class="verdict-detail">Early momentum</div>
-      </div>
-      {% elif goldilocks_status == 'launched' %}
-      <div class="verdict-badge verdict-late">
-        <div class="verdict-label">Too Late</div>
-        <div class="verdict-detail">Already localized</div>
-      </div>
-      {% else %}
-      <div class="verdict-badge verdict-cold">
-        <div class="verdict-label">Cold Lead</div>
-        <div class="verdict-detail">Keep monitoring</div>
-      </div>
-      {% endif %}
+    {% elif goldilocks_status == 'thinking' %}
+    <div class="goldilocks-banner goldilocks-thinking">
+        <div class="status-content">
+            <span class="badge badge-warning">Thinking</span>
+            <div class="status-title">Warm Lead</div>
+            <div class="status-subtitle">Early momentum</div>
+            <ul class="status-points">
+                <li>They are discussing i18n but have not started building.</li>
+            </ul>
+        </div>
     </div>
-  </div>
-
-  <!-- ===== INTEL STRIP ===== -->
-  <div class="intel-strip">
-    {% if report.scan_data.scoring_v2 %}
-    {% set v2 = report.scan_data.scoring_v2 %}
-    <div class="intel-item">
-      <span class="intel-label">Maturity</span>
-      <span class="intel-value badge-maturity-{{ v2.org_maturity_level|default('unknown') }}">{{ v2.org_maturity_label|default('Unknown') }}</span>
+    {% elif goldilocks_status == 'launched' %}
+    <div class="goldilocks-banner goldilocks-launched">
+        <div class="status-content">
+            <span class="badge badge-neutral">Launched</span>
+            <div class="status-title">Too Late</div>
+            <div class="status-subtitle">Localization is already live</div>
+            <ul class="status-points">
+                <li>Translation files already exist, so localization is live.</li>
+            </ul>
+        </div>
     </div>
-    <div class="intel-item">
-      <span class="intel-label">Readiness</span>
-      <div class="readiness-bar-mini">
-        <div class="readiness-fill" style="width: {{ (v2.readiness_index|default(0) * 100)|int }}%"></div>
-      </div>
-      <span class="intel-value">{{ (v2.readiness_index|default(0) * 100)|int }}%</span>
-    </div>
-    <div class="intel-item">
-      <span class="intel-label">Confidence</span>
-      <span class="intel-value">{{ "%.0f"|format(v2.confidence_percent|default(0)) }}%</span>
-    </div>
-    <div class="intel-item">
-      <span class="intel-label">Risk</span>
-      <span class="intel-value risk-{{ v2.risk_label|default('unknown')|lower }}">{{ v2.risk_label|default('N/A') }}</span>
-    </div>
-    <div class="intel-item">
-      <span class="intel-label">Outreach</span>
-      <span class="intel-value">{{ v2.outreach_strategy|default('N/A') }}</span>
+    {% else %}
+    <div class="goldilocks-banner goldilocks-none">
+        <div class="status-content">
+            <span class="badge badge-neutral">No Signals</span>
+            <div class="status-title">Cold Lead</div>
+            <div class="status-subtitle">Keep monitoring</div>
+            <ul class="status-points">
+                <li>No significant i18n signals detected.</li>
+            </ul>
+        </div>
     </div>
     {% endif %}
-    <div class="intel-item">
-      <span class="intel-label">Signals</span>
-      <span class="intel-value">{{ report.signals_found }}</span>
-    </div>
-    <div class="intel-item">
-      <span class="intel-label">Repos</span>
-      <span class="intel-value">{{ report.repos_scanned }}</span>
-    </div>
-    <div class="intel-item">
-      <span class="intel-label">Intent</span>
-      <span class="intel-value">{{ report.scan_data.intent_score or 0 }}</span>
-    </div>
-    <div class="intel-item">
-      <span class="intel-label">Opportunity</span>
-      <span class="intel-value">{{ report.ai_analysis.opportunity_score or 5 }}/10</span>
-    </div>
-  </div>
 
-  <!-- ===== EXECUTIVE SUMMARY ===== -->
-  {% if report.ai_analysis.executive_summary %}
-  <div class="summary-bar">
-    {{ report.ai_analysis.executive_summary }}
-  </div>
-  {% endif %}
-
-  <!-- ===== BDR ACTION ALERT ===== -->
-  {% if goldilocks_status == 'preparing' %}
-  <div class="action-alert action-alert-hot">
-    <strong>Action Required:</strong> This company has installed i18n libraries but has zero translation files. The infrastructure is ready, waiting for content. Reach out today.
-  </div>
-  {% elif goldilocks_status == 'launched' %}
-  <div class="action-alert action-alert-low">
-    <strong>Low Priority:</strong> This company already has translation files in place. Focus on higher-priority leads. The email draft below is available if needed.
-  </div>
-  {% endif %}
-
-  <!-- ===== TWO-COLUMN LAYOUT: EMAIL + CONTACTS ===== -->
-  <div class="main-grid">
-
-    <!-- LEFT: Email Draft -->
-    <div class="panel">
-      {% if report.ai_analysis.email_draft %}
-      <div class="panel-header">
-        <h2>Cold Email Draft</h2>
-        <div class="panel-actions">
-          <span class="skill-tag">{{ report.ai_analysis.email_draft.skill_applied|default('Cold Outreach') }}</span>
-          <button class="btn btn-outline" onclick="copyEmailDraft(this)" id="copyEmailBtn">
-            <span class="btn-text">Copy Email</span>
-          </button>
-          <button class="btn btn-primary" onclick="triggerApolloEnroll(this)" data-report-id="{{ report.id }}">
-            <span class="btn-text">Enroll in Apollo</span>
-          </button>
+    <!-- Scoring V2 Intelligence Panel -->
+    {% if report.scan_data.scoring_v2 %}
+    {% set v2 = report.scan_data.scoring_v2 %}
+    <div class="scoring-v2-panel" style="background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%); border: 1px solid #e2e8f0; border-radius: 12px; padding: 1.25rem 1.5rem; margin-bottom: 1.25rem;">
+        <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem;">
+            <span style="font-weight: 700; font-size: 0.875rem; color: #334155;">Scoring V2</span>
+            <span style="font-size: 0.75rem; color: #94a3b8; background: #f1f5f9; padding: 0.125rem 0.5rem; border-radius: 4px;">Bayesian Engine</span>
         </div>
-      </div>
-      <div id="selected-contact-banner" class="selected-contact-indicator"></div>
-      <div class="email-form">
-        <label class="field-label">Subject</label>
-        <input type="text" id="emailSubject" class="email-input" value="{{ report.ai_analysis.email_draft.subject|default('') }}">
-        <label class="field-label">Body</label>
-        <textarea id="emailBody" class="email-textarea" oninput="autoResizeEmailBody(this)">{{ report.ai_analysis.email_draft.body|default('') }}</textarea>
-      </div>
-      <p class="email-hint">Click any field to personalize. Merge tags auto-resolve when a contributor is selected.</p>
-      {% else %}
-      <div class="panel-header"><h2>Email Draft</h2></div>
-      <p class="empty-state">No email draft generated for this account.</p>
-      {% endif %}
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1rem;">
+            <!-- Maturity Badge -->
+            <div style="text-align: center;">
+                <div style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; margin-bottom: 0.25rem;">Maturity</div>
+                <span style="display: inline-block; padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.8rem; font-weight: 600; color: white; background-color: {{ v2.org_maturity_color or '#6b7280' }};">{{ v2.org_maturity_label or 'Unknown' }}</span>
+            </div>
+            <!-- Readiness Index -->
+            <div style="text-align: center;">
+                <div style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; margin-bottom: 0.25rem;">Readiness</div>
+                <div style="position: relative; height: 8px; background: #e2e8f0; border-radius: 4px; overflow: hidden; margin: 0.375rem 0;">
+                    <div style="position: absolute; left: 0; top: 0; height: 100%; width: {{ (v2.readiness_index or 0) * 100 }}%; background: linear-gradient(90deg, #3b82f6, #10b981); border-radius: 4px;"></div>
+                </div>
+                <div style="font-size: 0.85rem; font-weight: 600; color: #1e293b;">{{ "%.0f"|format((v2.readiness_index or 0) * 100) }}%</div>
+            </div>
+            <!-- Confidence -->
+            <div style="text-align: center;">
+                <div style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; margin-bottom: 0.25rem;">Confidence</div>
+                <div style="font-size: 1.25rem; font-weight: 700; color: #1e293b;">{{ "%.0f"|format(v2.confidence_percent or 0) }}%</div>
+            </div>
+            <!-- Risk Level -->
+            <div style="text-align: center;">
+                <div style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; margin-bottom: 0.25rem;">Risk</div>
+                {% if v2.risk_level == 'low' %}
+                <span style="color: #16a34a; font-weight: 600; font-size: 0.85rem;">LOW</span>
+                {% elif v2.risk_level == 'medium' %}
+                <span style="color: #ea580c; font-weight: 600; font-size: 0.85rem;">MEDIUM</span>
+                {% else %}
+                <span style="color: #dc2626; font-weight: 600; font-size: 0.85rem;">HIGH</span>
+                {% endif %}
+            </div>
+            <!-- Outreach Angle -->
+            <div style="text-align: center;">
+                <div style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; margin-bottom: 0.25rem;">Outreach</div>
+                <div style="font-size: 0.8rem; font-weight: 600; color: #1e40af;">{{ v2.outreach_angle_label or 'Unknown' }}</div>
+            </div>
+        </div>
+        {% if v2.signal_clusters_detected %}
+        <div style="margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid #e2e8f0;">
+            <span style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b;">Signal clusters:</span>
+            {% for cluster in v2.signal_clusters_detected %}
+            <span style="display: inline-block; padding: 0.125rem 0.5rem; margin: 0.125rem; border-radius: 4px; font-size: 0.75rem; background: #eff6ff; color: #1e40af; border: 1px solid #bfdbfe;">{{ cluster.replace('_', ' ').title() }}</span>
+            {% endfor %}
+        </div>
+        {% endif %}
+        {% if v2.recommended_sales_motion %}
+        <div style="margin-top: 0.5rem; font-size: 0.8rem; color: #475569; font-style: italic;">{{ v2.recommended_sales_motion }}</div>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- Stats Row (pills) -->
+    <div class="stats-row">
+        <span class="stat-pill"><span class="stat-pill-value">{{ report.signals_found }}</span> <span class="stat-pill-label">signals</span></span>
+        <span class="stat-pill"><span class="stat-pill-value">{{ report.repos_scanned }}</span> <span class="stat-pill-label">repos</span></span>
+        <span class="stat-pill"><span class="stat-pill-value">{{ report.scan_data.intent_score or 0 }}</span> <span class="stat-pill-label">intent</span></span>
+        <span class="stat-pill"><span class="stat-pill-value">{{ report.ai_analysis.opportunity_score or 5 }}/10</span> <span class="stat-pill-label">opportunity</span></span>
     </div>
 
-    <!-- RIGHT: Key Contacts -->
-    <div class="panel">
-      <div class="panel-header">
-        <h2>Key Contacts</h2>
-        <span class="contact-count">{{ report.ai_analysis.key_engineering_contacts|length if report.ai_analysis.key_engineering_contacts else 0 }} people</span>
-      </div>
+    <!-- Executive Summary -->
+    {% if report.ai_analysis.executive_summary %}
+    <div class="executive-summary">
+        {{ report.ai_analysis.executive_summary }}
+    </div>
+    {% endif %}
 
-      {% if report.ai_analysis.key_engineering_contacts %}
-      <div class="contacts-list">
-        {% for contact in report.ai_analysis.key_engineering_contacts %}
-        {% set details = report.scan_data.contributors.get(contact.login, {}) if report.scan_data.contributors else {} %}
-        <div class="contact-card contributor-card" data-contributor-login="{{ contact.login }}"
-             onclick="selectContributor(this, {{ contact.name|tojson }}, {{ contact.login|tojson }}, {{ report.company_name|tojson }})">
-          <img src="{{ details.avatar_url or 'https://github.com/identicons/' ~ contact.login ~ '.png' }}"
-               class="contact-avatar" alt="{{ contact.name }}">
-          <div class="contact-body">
-            <div class="contact-name">{{ contact.name }} <span class="contact-handle">@{{ contact.login }}</span></div>
-            <div class="contact-role">{{ contact.role_inference }}</div>
-            {% if details.bio %}
-            <div class="contact-bio">"{{ details.bio }}"</div>
-            {% endif %}
-            <div class="contact-reason">{{ contact.outreach_reason }}</div>
-          </div>
-          <div class="contact-actions">
-            <button class="btn-sm btn-fetch-email" onclick="event.stopPropagation(); fetchApolloEmail(this, {{ contact.name|tojson }}, {{ report.company_name|tojson }})" data-login="{{ contact.login }}">
-              Find Email
-            </button>
-            <div class="seq-enroll-wrapper" style="position:relative;">
-              <button class="btn-sm btn-add-sequence" id="enroll-seq-btn-{{ contact.login }}" data-name="{{ contact.name }}" data-company="{{ report.company_name }}" onclick="event.stopPropagation(); showSequenceSelector({{ contact.login|tojson }}, {{ contact.name|tojson }}, {{ report.company_name|tojson }})">
-                Add to Sequence
-              </button>
-              <div class="sequence-selector-dropdown" id="seq-dropdown-{{ contact.login }}"></div>
+
+    <!-- BDR Quick Action Box (moved above email for action hierarchy) -->
+    {% if goldilocks_status == 'preparing' %}
+    <div class="bdr-highlight bdr-highlight-critical">
+        <div class="bdr-label">BDR Action Required</div>
+        <div class="bdr-text">This company has installed i18n libraries but has zero translation files. The
+            infrastructure is ready, waiting for content. Reach out today — they need help filling the gap.</div>
+    </div>
+    {% elif goldilocks_status == 'launched' %}
+    <div class="bdr-highlight bdr-highlight-warning">
+        <div class="bdr-label">Low Priority Lead</div>
+        <div class="bdr-text">This company already has translation files in place. They have a working i18n system.
+            Focus on higher-priority leads. The email draft below is available if needed, but consider other accounts first.</div>
+    </div>
+    {% endif %}
+
+    <!-- Email Draft (One-Click Cold Email Generator) -->
+    {% if report.ai_analysis.email_draft %}
+    <div class="email-draft-section{% if goldilocks_status == 'launched' %} email-draft-deprioritized{% endif %}">
+        <div class="email-draft-header">
+            <div style="display: flex; align-items: center; gap: 0.75rem;">
+                <h3 style="margin: 0;">Ready-to-Send Cold Email</h3>
+                <div id="selected-contact-banner" class="selected-contact-banner"></div>
+                <span class="badge badge-primary">Skill Applied: Cold Outreach</span>
             </div>
-            <span class="enrollment-status-text" id="enrollment-status-{{ contact.login }}"></span>
-          </div>
-          <!-- Inline email composer -->
-          <div class="prospect-email-section">
-            <span class="email-result" id="email-result-{{ contact.login }}" style="display:none;"></span>
-            <button class="btn-compose-email" id="compose-btn-{{ contact.login }}" style="display:none;"
-                    onclick="openComposer({{ contact.login|tojson }}, {{ contact.name|tojson }})">
-              Compose &amp; Send
-            </button>
-            <div class="inline-email-composer" id="composer-{{ contact.login }}">
-              <div class="composer-header">
-                <h4>Email to {{ contact.name }}</h4>
-                <button class="btn-cancel-compose" onclick="closeComposer({{ contact.login|tojson }})">Cancel</button>
-              </div>
-              <div class="composer-field">
-                <label>To</label>
-                <input type="email" id="composer-to-{{ contact.login }}" readonly>
-              </div>
-              <div class="composer-field">
-                <label>Subject</label>
-                <input type="text" id="composer-subject-{{ contact.login }}">
-              </div>
-              <div class="composer-field">
-                <label>Body</label>
-                <textarea id="composer-body-{{ contact.login }}"></textarea>
-              </div>
-              <div class="composer-actions">
-                <button class="btn-enroll" onclick="sendOutreachEmail({{ contact.login|tojson }}, {{ report.company_name|tojson }}, {{ report.id|tojson }})" id="send-btn-{{ contact.login }}">
-                  Enroll
+            <div class="email-actions">
+                <button class="copy-email-btn" onclick="copyEmailDraft(this)" id="copyEmailBtn">
+                    <span class="copy-icon copy-icon--default" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                            stroke-linejoin="round">
+                            <rect x="9" y="9" width="13" height="13" rx="2"></rect>
+                            <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"></path>
+                        </svg>
+                    </span>
+                    <span class="copy-icon copy-icon--success" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                            stroke-linejoin="round">
+                            <path d="M20 6L9 17l-5-5"></path>
+                        </svg>
+                    </span>
+                    <span class="btn-text">Copy Email</span>
                 </button>
-                <button class="btn-cancel-compose" onclick="closeComposer({{ contact.login|tojson }})">Cancel</button>
-                <span class="send-status" id="send-status-{{ contact.login }}"></span>
-              </div>
+                <button class="btn-apollo" onclick="triggerApolloEnroll(this)" id="enrollApolloBtn" data-report-id="{{ report.id }}">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <path d="M12 8v8"></path>
+                        <path d="M8 12h8"></path>
+                    </svg>
+                    <span class="btn-text">Enroll in Apollo</span>
+                </button>
             </div>
-          </div>
         </div>
-        {% endfor %}
-      </div>
-      {% else %}
-      <p class="empty-state">No key contacts identified yet.</p>
-      {% endif %}
+        <div class="email-draft-content" style="padding: 1.25rem 1.5rem;">
+            <div class="email-edit-hint">Click any field to personalize before sending. Merge tags auto-resolve when a contributor is selected.</div>
+            <div class="email-subject" style="margin-bottom: 1rem;">
+                <span class="email-subject-label">Subject Line</span>
+                <input id="emailSubject" class="email-edit-field email-subject-input" type="text"
+                    value="{{ report.ai_analysis.email_draft.subject }}" placeholder="Enter subject line...">
+            </div>
+            <div>
+                <span class="email-body-label">Email Body</span>
+                <textarea id="emailBody" class="email-edit-field email-body-textarea"
+                    style="min-height: 200px;" placeholder="Write your email body...">{{ report.ai_analysis.email_draft.body }}</textarea>
+            </div>
+        </div>
     </div>
-  </div>
+    {% endif %}
 
-  <!-- ===== SUPPORTING INTEL SECTIONS ===== -->
-  <div class="intel-sections">
+    <!-- BDR Quick Action Box moved above email draft for visibility -->
 
     <!-- Why Reach Out -->
-    {% if report.ai_analysis.reachout_reasons %}
-    <div class="section">
-      <h2 class="section-title">Why Reach Out</h2>
-      <div class="reasons-grid">
-        {% for reason in report.ai_analysis.reachout_reasons %}
-        <div class="reason-card">{{ reason }}</div>
-        {% endfor %}
-      </div>
+    {% set scan_data = report.scan_data or {} %}
+    <div class="reachout-summary">
+        <h2 class="reachout-title">Why Reach Out</h2>
+        <div class="reachout-subtitle">Clear, plain-language reasons to start a conversation.</div>
+        <ul class="reachout-list">
+            {% if report.ai_analysis.pain_point_analysis and report.ai_analysis.pain_point_analysis and report.ai_analysis.pain_point_analysis.strip() not in ['Phase analysis complete.', 'Phase analysis is complete.', 'Analysis complete', 'Analysis complete.', 'Processing done', 'Processing done.', 'Timing analysis complete.', 'Timing analysis complete', 'Scan complete.', 'N/A for pre-launch detection', 'No pain signals detected.', 'Report generated.', 'Data collection complete.', ''] %}
+            <li class="reachout-item">
+                <span class="reachout-label">Pain signals</span>
+                <span class="reachout-text">{{ report.ai_analysis.pain_point_analysis }}</span>
+            </li>
+            {% endif %}
+            {% if scan_data.frustration_signals %}
+            <li class="reachout-item">
+                <span class="reachout-label">Frustration</span>
+                <span class="reachout-text">{{ scan_data.frustration_signals|length }} frustration signals found in
+                    recent commits.</span>
+            </li>
+            {% endif %}
+            {% if scan_data.competitor_detection and scan_data.competitor_detection.is_using_competitor %}
+            <li class="reachout-item">
+                <span class="reachout-label">Competitive swap</span>
+                <span class="reachout-text">Signals show they use another localization platform today (possible switch
+                    opportunity).</span>
+            </li>
+            {% endif %}
+            {% if scan_data.locale_inventory and scan_data.locale_inventory.language_count %}
+            <li class="reachout-item">
+                <span class="reachout-label">Active expansion</span>
+                <span class="reachout-text">Localization files detected across {{
+                    scan_data.locale_inventory.language_count }} language(s).</span>
+            </li>
+            {% endif %}
+            {% if scan_data.is_greenfield %}
+            <li class="reachout-item">
+                <span class="reachout-label">Greenfield gap</span>
+                <span class="reachout-text">Mature repo footprint with no localization tooling in place.</span>
+            </li>
+            {% endif %}
+        </ul>
     </div>
+
+    <!-- Maturity & Opportunity - Goldilocks Zone Focused -->
+
+
+
+    <!-- Risk Intelligence: Compliance -->
+    {% if report.scan_data and report.scan_data.get('compliance_assets') %}
+    {% set compliance_assets = report.scan_data.get('compliance_assets', {}) %}
+    {% if compliance_assets.get('detected_files') %}
+    {% endif %}
     {% endif %}
 
     <!-- Outreach Suggestions -->
     {% if report.ai_analysis.outreach_suggestions %}
     <div class="section">
-      <h2 class="section-title">Outreach Suggestions</h2>
-      <div class="suggestions-list">
-        {% for suggestion in report.ai_analysis.outreach_suggestions %}
-        <div class="suggestion-item">{{ suggestion }}</div>
-        {% endfor %}
-      </div>
+        <h2 class="section-title">Outreach Suggestions</h2>
+        <p class="text-secondary">{{ report.ai_analysis.outreach_suggestions|length }} tactical angle{{ 's' if report.ai_analysis.outreach_suggestions|length != 1 else '' }} for who to reach, why now, and what to say.</p>
+        <div class="suggestions-grid">
+            {% for suggestion in report.ai_analysis.outreach_suggestions %}
+            <div class="suggestion-card">
+                <div class="suggestion-row">
+                    <span class="suggestion-label">Why this account</span>
+                    <span class="suggestion-text">{{ suggestion.why_account }}</span>
+                </div>
+                <div class="suggestion-row">
+                    <span class="suggestion-label">Why now</span>
+                    <span class="suggestion-text">{{ suggestion.why_now }}</span>
+                </div>
+                <div class="suggestion-row">
+                    <span class="suggestion-label">Who to reach</span>
+                    <span class="suggestion-text">{{ suggestion.who_to_reach }}</span>
+                </div>
+                <div class="suggestion-row">
+                    <span class="suggestion-label">Message hook</span>
+                    <span class="suggestion-text">{{ suggestion.message_hook }}</span>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
     </div>
     {% endif %}
 
-    <!-- Key Contacts to Find -->
+    <!-- Key Contacts -->
+    {% if report.ai_analysis.top_prospects %}
+    <!-- Key Contacts Needed -->
     {% if report.ai_analysis.key_contacts_to_find %}
     <div class="section">
-      <h2 class="section-title">Key Contacts to Find</h2>
-      <div class="suggestions-list">
-        {% for contact_info in report.ai_analysis.key_contacts_to_find %}
-        <div class="suggestion-item">{{ contact_info }}</div>
-        {% endfor %}
-      </div>
-    </div>
-    {% endif %}
-
-    <!-- Engineering Velocity -->
-    {% if report.scan_data.engineering_velocity %}
-    <div class="section">
-      <h2 class="section-title">Recent Engineering Velocity</h2>
-      <div class="velocity-content">{{ report.scan_data.engineering_velocity }}</div>
-    </div>
-    {% endif %}
-
-    <!-- All Contributors -->
-    {% if report.scan_data.contributors %}
-    <div class="section contributors-section">
-      <h2 class="section-title">Contributors
-        <span class="contributor-stats">{{ report.scan_data.contributors|length }} Total &middot; {{ report.scan_data.i18n_contributors|default(0) }} i18n Involved</span>
-      </h2>
-      <div class="contributors-grid">
-        {% for login, contrib in report.scan_data.contributors.items() %}
-        <div class="contributor-card mini" data-contributor-login="{{ login }}">
-          <img src="{{ contrib.avatar_url or 'https://github.com/identicons/' ~ login ~ '.png' }}" class="contrib-avatar" alt="{{ contrib.name|default(login) }}">
-          <div class="contrib-info">
-            <div class="contrib-name">{{ contrib.name|default(login) }} <span class="contact-handle">@{{ login }}</span></div>
-            <div class="contrib-stats-row">
-              <span>{{ contrib.commits|default(0) }} commits</span>
-              <span>{{ contrib.repos|default(0) }} repos</span>
-              {% if contrib.i18n_signals %}
-              <span class="i18n-badge">i18n</span>
-              {% endif %}
+        <h2 class="section-title">Key Contacts to Find</h2>
+        <div class="contacts-grid">
+            {% for contact in report.ai_analysis.key_contacts_to_find %}
+            <div class="contact-card">
+                <div class="contact-role">{{ contact }}</div>
             </div>
-            {% if contrib.bio %}
-            <div class="contrib-bio">"{{ contrib.bio }}"</div>
-            {% endif %}
-          </div>
-          <div class="contact-actions compact">
-            <button class="btn-sm btn-fetch-email" onclick="event.stopPropagation(); fetchApolloEmail(this, {{ (contrib.name|default(login))|tojson }}, {{ report.company_name|tojson }})" data-login="{{ login }}">
-              Find Email
-            </button>
-            <div class="seq-enroll-wrapper" style="position:relative;">
-              <button class="btn-sm btn-add-sequence" id="enroll-seq-btn-{{ login }}" data-name="{{ contrib.name|default(login) }}" data-company="{{ report.company_name }}" onclick="event.stopPropagation(); showSequenceSelector({{ login|tojson }}, {{ (contrib.name|default(login))|tojson }}, {{ report.company_name|tojson }})">
-                Add to Sequence
-              </button>
-              <div class="sequence-selector-dropdown" id="seq-dropdown-{{ login }}"></div>
-            </div>
-            <span class="enrollment-status-text" id="enrollment-status-{{ login }}"></span>
-          </div>
+            {% endfor %}
         </div>
-        {% endfor %}
-      </div>
     </div>
     {% endif %}
 
-  </div>
+    <!-- Key Engineering Contacts -->
+    {% if report.ai_analysis.key_engineering_contacts %}
+    <div class="section">
+        <h2 class="section-title">Key Engineering Contacts</h2>
+        <p class="text-secondary">Top contributors who may be decision-makers for i18n initiatives.</p>
+        <div class="engineering-contacts-grid">
+            {% for contact in report.ai_analysis.key_engineering_contacts %}
+            <div class="engineering-contact-card">
+                {% set details = report.scan_data.contributors.get(contact.login, {}) if report.scan_data.contributors else {} %}
+                <img src="{{ details.avatar_url or 'https://github.com/identicons/' ~ contact.login ~ '.png' }}"
+                    class="contact-avatar">
+                <div class="contact-info">
+                    <div class="contact-header">
+                        <h3>{{ contact.name }} <span class="contact-login">@{{ contact.login }}</span></h3>
+                        <a href="https://github.com/{{ contact.login }}" target="_blank" class="signal-link">GitHub Profile</a>
+                    </div>
+                    <div class="contact-role-badge">{{ contact.role_inference }}</div>
+                    {% if details.bio %}
+                    <div class="contact-bio">"{{ details.bio }}"</div>
+                    {% endif %}
+                    <div class="contact-reason">{{ contact.outreach_reason }}</div>
+                    <!-- Email Workflow for Contact -->
+                    <div class="prospect-email-section">
+                        <button class="btn-fetch-email" onclick="fetchApolloEmail(this, {{ contact.name|tojson }}, {{ contact.login|tojson }}, {{ report.company_name|tojson }})" data-login="{{ contact.login }}">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                            Fetch Email
+                        </button>
+                        <span class="email-result" id="email-result-{{ contact.login }}" style="display:none;"></span>
+                        <button class="btn-compose-email" id="compose-btn-{{ contact.login }}" style="display:none;" onclick="openComposer({{ contact.login|tojson }}, {{ contact.name|tojson }})">
+                            Compose &amp; Send
+                        </button>
+                        <div class="inline-email-composer" id="composer-{{ contact.login }}">
+                            <div class="composer-header">
+                                <h4>Email to {{ contact.name }}</h4>
+                                <button class="btn-cancel-compose" onclick="closeComposer({{ contact.login|tojson }})">Cancel</button>
+                            </div>
+                            <div class="composer-field">
+                                <label>To</label>
+                                <input type="email" id="composer-to-{{ contact.login }}" readonly>
+                            </div>
+                            <div class="composer-field">
+                                <label>Subject</label>
+                                <input type="text" id="composer-subject-{{ contact.login }}">
+                            </div>
+                            <div class="composer-field">
+                                <label>Body</label>
+                                <textarea id="composer-body-{{ contact.login }}"></textarea>
+                            </div>
+                            <div class="composer-actions">
+                                <button class="btn-enroll" onclick="sendOutreachEmail({{ contact.login|tojson }}, {{ report.company_name|tojson }}, {{ report.id|tojson }})" id="send-btn-{{ contact.login }}">
+                                    Enroll
+                                </button>
+                                <button class="btn-cancel-compose" onclick="closeComposer({{ contact.login|tojson }})">Cancel</button>
+                                <span class="send-status" id="send-status-{{ contact.login }}"></span>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Recent Engineering Velocity -->
+    {% if report.ai_analysis.engineering_velocity %}
+    <div class="section">
+        <h2 class="section-title">Recent Engineering Velocity</h2>
+        <p class="text-secondary">Timeline of i18n-related activity detected in the codebase.</p>
+        <ul class="velocity-timeline">
+            {% for item in report.ai_analysis.engineering_velocity %}
+            <li class="velocity-item">{{ item }}</li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+{% endif %}
+    <!-- Contributors Section -->
+    {% if report.scan_data.contributors %}
+    {% set signal_repos = [] %}
+    {% for signal in report.scan_data.signals %}
+        {% if signal.repo and signal.repo not in signal_repos %}
+            {% set _ = signal_repos.append(signal.repo) %}
+        {% endif %}
+    {% endfor %}
+    <div class="section contributors-section">
+        <h2 class="section-title">Contributors</h2>
+        <p class="text-secondary">Top contributors ranked by commit activity, with i18n involvement indicators.</p>
+
+        <!-- Contributors Summary -->
+        {% set contributors_list = report.scan_data.contributors.values()|list|sort(attribute='contributions', reverse=true) %}
+        {% set i18n_contributors_count = namespace(value=0) %}
+        {% for contributor in contributors_list %}
+            {% set contrib_repos = contributor.repos if contributor.repos else [] %}
+            {% set is_i18n = namespace(value=false) %}
+            {% for repo in contrib_repos %}
+                {% for signal in report.scan_data.signals %}
+                    {% if signal.repo == repo %}
+                        {% set is_i18n.value = true %}
+                    {% endif %}
+                {% endfor %}
+            {% endfor %}
+            {% if is_i18n.value %}
+                {% set i18n_contributors_count.value = i18n_contributors_count.value + 1 %}
+            {% endif %}
+        {% endfor %}
+        <div class="contributors-summary">
+            <div class="summary-stat">
+                <span class="summary-stat-value">{{ contributors_list|length }}</span>
+                <span class="summary-stat-label">Total Contributors</span>
+            </div>
+            <div class="summary-stat">
+                <span class="summary-stat-value">{{ i18n_contributors_count.value }}</span>
+                <span class="summary-stat-label">i18n Involved</span>
+            </div>
+            <div class="summary-stat">
+                <span class="summary-stat-value">{{ contributors_list|sum(attribute='contributions') }}</span>
+                <span class="summary-stat-label">Total Commits</span>
+            </div>
+        </div>
+
+        <div class="contributors-grid">
+            {% for contributor in contributors_list %}
+            {% set contrib_repos = contributor.repos if contributor.repos else [] %}
+            {% set i18n_repos = [] %}
+            {% for repo in contrib_repos %}
+                {% for signal in report.scan_data.signals %}
+                    {% if signal.repo == repo and repo not in i18n_repos %}
+                        {% set _ = i18n_repos.append(repo) %}
+                    {% endif %}
+                {% endfor %}
+            {% endfor %}
+            {% set is_i18n_involved = i18n_repos|length > 0 %}
+            <div class="contributor-card{% if is_i18n_involved %} i18n-involved{% endif %}" onclick="selectContributor(this, '{{ contributor.name or contributor.login }}', '{{ contributor.login }}', '{{ report.company_name|title }}')" data-contributor-name="{{ contributor.name or contributor.login }}" data-contributor-login="{{ contributor.login }}">
+                <span class="contributor-rank{% if loop.index == 1 %} rank-1{% elif loop.index == 2 %} rank-2{% elif loop.index == 3 %} rank-3{% endif %}">#{{ loop.index }}</span>
+                <img src="{{ contributor.avatar_url or 'https://github.com/identicons/' ~ contributor.login ~ '.png' }}"
+                    class="contributor-avatar" alt="{{ contributor.name }} avatar">
+                <div class="contributor-info">
+                    <div class="contributor-header">
+                        <h3 class="contributor-name">
+                            {{ contributor.name or contributor.login }}
+                            <span class="contributor-login">@{{ contributor.login }}</span>
+                        </h3>
+                        <a href="{{ contributor.github_url or 'https://github.com/' ~ contributor.login }}" target="_blank" class="signal-link">GitHub Profile</a>
+                    </div>
+                    <div class="contributor-meta">
+                        <span class="contributor-badge badge-contributions">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+                            {{ contributor.contributions }} commits
+                        </span>
+                        <span class="contributor-badge badge-repos">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                            {{ contrib_repos|length }} repos
+                        </span>
+                        {% if is_i18n_involved %}
+                        <span class="contributor-badge badge-i18n">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
+                            i18n Involved
+                        </span>
+                        {% else %}
+                        <span class="contributor-badge badge-no-i18n">No i18n Signals</span>
+                        {% endif %}
+                    </div>
+                    {% if contributor.bio %}
+                    <div class="contributor-bio">"{{ contributor.bio }}"</div>
+                    {% endif %}
+                    {% if contributor.company %}
+                    <div class="contributor-company">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: inline; vertical-align: middle; margin-right: 4px;"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
+                        {{ contributor.company }}
+                    </div>
+                    {% endif %}
+                    {% if contrib_repos %}
+                    <div class="contributor-repos">
+                        <strong>Active in:</strong> {{ contrib_repos|join(', ') }}
+                    </div>
+                    {% endif %}
+                    {% if is_i18n_involved %}
+                    <div class="i18n-involvement-note">
+                        <strong>i18n Context:</strong> Contributed to repos with i18n signals: {{ i18n_repos|join(', ') }}
+                    </div>
+                    {% endif %}
+
+                    <!-- Action Bar: Find Email + Add to Sequence -->
+                    <div class="contributor-action-bar" onclick="event.stopPropagation();">
+                        <button class="btn-fetch-email" onclick='fetchContributorEmail(this, {{ (contributor.name or contributor.login)|tojson }}, {{ report.company_name|tojson }})'>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                            Find Email
+                        </button>
+                        <div style="position: relative; display: inline-block;">
+                            <button class="btn-add-sequence" id="enroll-seq-btn-{{ contributor.login }}" data-login="{{ contributor.login }}" data-name="{{ (contributor.name or contributor.login)|e }}" data-company="{{ report.company_name|title|e }}" onclick="event.stopPropagation(); showSequenceSelector(this.dataset.login, this.dataset.name, this.dataset.company)" disabled>
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
+                                Add to Sequence
+                            </button>
+                            <div class="sequence-selector-dropdown" id="seq-dropdown-{{ contributor.login }}"></div>
+                        </div>
+                        <div id="enrollment-status-{{ contributor.login }}" class="enrollment-status-inline"></div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
 </div>
+
+<button class="print-button" onclick="window.print()" title="Print Report" aria-label="Print Report">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+        stroke-linejoin="round" aria-hidden="true">
+        <path d="M6 9V2h12v7"></path>
+        <path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"></path>
+        <path d="M6 14h12v8H6z"></path>
+    </svg>
+</button>
 
 <!-- Send to BDR Modal -->
 <div class="bdr-modal" id="bdrModal" role="dialog" aria-modal="true" aria-labelledby="bdrModalTitle">
-  <div class="bdr-modal-content">
-    <div class="bdr-modal-header">
-      <h3 id="bdrModalTitle">Send to BDR</h3>
-      <button class="bdr-modal-close" onclick="closeBDRModal()" aria-label="Close modal" type="button">&times;</button>
+    <div class="bdr-modal-content">
+        <div class="bdr-modal-header">
+            <h3 id="bdrModalTitle">Send to BDR</h3>
+            <button class="bdr-modal-close" onclick="closeBDRModal()" aria-label="Close modal" type="button">&times;</button>
+        </div>
+        <p style="color: var(--text-secondary); margin-bottom: 1rem; font-size: 0.875rem;">
+            Send the cold email draft to your BDR's inbox for follow-up.
+        </p>
+        <div class="bdr-form-group">
+            <label for="bdrEmail">BDR Email Address</label>
+            <input type="email" id="bdrEmail" placeholder="bdr@company.com" autocomplete="email">
+        </div>
+        <div class="bdr-modal-actions">
+            <button class="bdr-cancel-btn" onclick="closeBDRModal()">Cancel</button>
+            <button class="bdr-send-btn" id="bdrSendBtn" onclick="sendToBDR()">Send Email</button>
+        </div>
     </div>
-    <p class="bdr-modal-desc">Send the cold email draft to your BDR's inbox for follow-up.</p>
-    <div class="bdr-form-group">
-      <label for="bdrEmail">BDR Email Address</label>
-      <input type="email" id="bdrEmail" placeholder="bdr@company.com" autocomplete="email">
-    </div>
-    <div class="bdr-modal-actions">
-      <button class="bdr-cancel-btn" onclick="closeBDRModal()">Cancel</button>
-      <button class="bdr-send-btn" id="bdrSendBtn" onclick="sendToBDR()">Send Email</button>
-    </div>
-  </div>
 </div>
 
-{% endblock %}
-
-{% block scripts %}
 <script>
     function copyEmailDraft(button) {
         const subject = document.getElementById('emailSubject').value;

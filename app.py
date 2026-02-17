@@ -5171,3 +5171,263 @@ if __name__ == '__main__':
     _app_initialized = True
 
     app.run(debug=Config.DEBUG, host='0.0.0.0', port=5000, threaded=True)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# LinkedIn Prospector Routes
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.route('/linkedin-prospector')
+def linkedin_prospector():
+    return render_template('linkedin_prospector.html')
+
+
+@app.route('/api/linkedin/extract', methods=['POST'])
+def api_linkedin_extract():
+    """Extract contact info from a LinkedIn screenshot using Gemini Vision."""
+    import base64
+    from google import genai
+    from google.genai import types as genai_types
+
+    if 'image' not in request.files:
+        return jsonify({'status': 'error', 'message': 'No image file provided'}), 400
+
+    image_file = request.files['image']
+    if not image_file.filename:
+        return jsonify({'status': 'error', 'message': 'Empty filename'}), 400
+
+    if not Config.GEMINI_API_KEY:
+        return jsonify({'status': 'error', 'message': 'Gemini API key not configured. Add GEMINI_API_KEY in Settings.'}), 400
+
+    try:
+        image_bytes = image_file.read()
+        mime_type = image_file.content_type or 'image/png'
+
+        # Encode image as base64
+        image_b64 = base64.b64encode(image_bytes).decode('utf-8')
+
+        prompt = """Extract the following from this LinkedIn profile screenshot and return ONLY valid JSON with no markdown or code blocks:
+{
+  "name": "Full name of the person",
+  "title": "Current job title",
+  "company": "Current company name",
+  "location": "City, State/Country",
+  "headline": "LinkedIn headline text",
+  "summary": "Brief summary or about section if visible"
+}
+
+If a field is not visible or cannot be determined, use an empty string "".
+Return ONLY the JSON object, nothing else."""
+
+        client = genai.Client(api_key=Config.GEMINI_API_KEY)
+        response = client.models.generate_content(
+            model=Config.GEMINI_MODEL,
+            contents=[
+                genai_types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
+                prompt
+            ]
+        )
+
+        response_text = response.text.strip()
+        # Remove markdown code blocks if present
+        if response_text.startswith('```'):
+            lines = response_text.split('\n')
+            lines = [l for l in lines if not l.startswith('```')]
+            response_text = '\n'.join(lines)
+
+        import json
+        extracted = json.loads(response_text)
+        return jsonify({'status': 'success', 'data': extracted})
+
+    except json.JSONDecodeError as e:
+        return jsonify({'status': 'error', 'message': f'Failed to parse AI response: {str(e)}', 'raw': response_text[:500]}), 500
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@app.route('/api/linkedin/find-contact', methods=['POST'])
+def api_linkedin_find_contact():
+    """Find or enrich a contact in Apollo by name + company."""
+    import requests as req_lib
+
+    data = request.get_json()
+    if not data:
+        return jsonify({'status': 'error', 'message': 'No data provided'}), 400
+
+    first_name = data.get('first_name', '').strip()
+    last_name = data.get('last_name', '').strip()
+    company = data.get('company', '').strip()
+    name = data.get('name', '').strip()
+
+    # Parse name if first/last not provided
+    if name and not first_name:
+        parts = name.split(' ')
+        first_name = parts[0]
+        last_name = ' '.join(parts[1:]) if len(parts) > 1 else ''
+
+    apollo_key = os.environ.get('APOLLO_API_KEY', '')
+    if not apollo_key:
+        return jsonify({'status': 'error', 'message': 'Apollo API key not configured. Add APOLLO_API_KEY in Settings.'}), 400
+
+    headers = {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-cache',
+        'X-Api-Key': apollo_key
+    }
+
+    # Try people/match first for enrichment
+    match_payload = {
+        'first_name': first_name,
+        'last_name': last_name,
+        'organization_name': company,
+        'reveal_personal_emails': True
+    }
+
+    try:
+        match_resp = req_lib.post(
+            'https://api.apollo.io/api/v1/people/match',
+            headers=headers,
+            json=match_payload,
+            timeout=15
+        )
+
+        if match_resp.status_code == 200:
+            match_data = match_resp.json()
+            person = match_data.get('person')
+            if person and (person.get('email') or person.get('id')):
+                return jsonify({
+                    'status': 'success',
+                    'source': 'people/match',
+                    'contact': {
+                        'id': person.get('id', ''),
+                        'name': f"{person.get('first_name', '')} {person.get('last_name', '')}".strip(),
+                        'first_name': person.get('first_name', ''),
+                        'last_name': person.get('last_name', ''),
+                        'email': person.get('email', ''),
+                        'title': person.get('title', ''),
+                        'company': person.get('organization_name', '') or (person.get('organization') or {}).get('name', ''),
+                        'linkedin_url': person.get('linkedin_url', ''),
+                        'phone': person.get('sanitized_phone', '') or (person.get('phone_numbers') or [{}])[0].get('raw_number', '') if person.get('phone_numbers') else '',
+                        'city': person.get('city', ''),
+                        'state': person.get('state', ''),
+                        'country': person.get('country', '')
+                    }
+                })
+
+    except Exception as e:
+        pass  # Fall through to search
+
+    # Fallback: contacts/search
+    search_query = f"{first_name} {last_name}".strip()
+    if company:
+        search_query += f" {company}"
+
+    try:
+        search_payload = {
+            'q_keywords': search_query,
+            'page': 1,
+            'per_page': 5
+        }
+        search_resp = req_lib.post(
+            'https://api.apollo.io/api/v1/contacts/search',
+            headers=headers,
+            json=search_payload,
+            timeout=15
+        )
+
+        if search_resp.status_code == 200:
+            search_data = search_resp.json()
+            contacts = search_data.get('contacts', [])
+            if contacts:
+                person = contacts[0]
+                return jsonify({
+                    'status': 'success',
+                    'source': 'contacts/search',
+                    'contact': {
+                        'id': person.get('id', ''),
+                        'name': f"{person.get('first_name', '')} {person.get('last_name', '')}".strip(),
+                        'first_name': person.get('first_name', ''),
+                        'last_name': person.get('last_name', ''),
+                        'email': person.get('email', ''),
+                        'title': person.get('title', ''),
+                        'company': person.get('organization_name', '') or (person.get('account') or {}).get('name', ''),
+                        'linkedin_url': person.get('linkedin_url', ''),
+                        'phone': person.get('sanitized_phone', ''),
+                        'city': person.get('city', ''),
+                        'state': person.get('state', ''),
+                        'country': person.get('country', '')
+                    }
+                })
+
+        return jsonify({'status': 'not_found', 'message': f'No contact found for {search_query}. They may not be in Apollo yet.'})
+
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@app.route('/api/linkedin/generate-email', methods=['POST'])
+def api_linkedin_generate_email():
+    """Generate a personalized outreach email for a LinkedIn contact using Gemini."""
+    from google import genai
+
+    data = request.get_json()
+    if not data:
+        return jsonify({'status': 'error', 'message': 'No data provided'}), 400
+
+    contact = data.get('contact', {})
+    linkedin_data = data.get('linkedin_data', {})
+
+    if not Config.GEMINI_API_KEY:
+        return jsonify({'status': 'error', 'message': 'Gemini API key not configured'}), 400
+
+    name = contact.get('name') or linkedin_data.get('name', 'there')
+    first_name = contact.get('first_name') or (name.split(' ')[0] if name else 'there')
+    title = contact.get('title') or linkedin_data.get('title', '')
+    company = contact.get('company') or linkedin_data.get('company', '')
+    headline = linkedin_data.get('headline', '')
+    summary = linkedin_data.get('summary', '')
+
+    prompt = f"""You are a BDR (Business Development Rep) writing a personalized cold outreach email to a software engineering leader.
+
+Contact info:
+- Name: {name}
+- First name: {first_name}
+- Title: {title}
+- Company: {company}
+- LinkedIn headline: {headline}
+- LinkedIn summary: {summary}
+
+Write a SHORT, personalized cold outreach email. The goal is to start a conversation about their internationalization/localization (i18n) workflow and how our tool (Lead Machine) can help their engineering team ship to global markets faster.
+
+Rules:
+- Subject line: short, specific, references their role or company
+- Body: 3-4 sentences MAX. Reference something specific about them.
+- End with a simple CTA: "Worth a quick chat?"
+- No fluff, no generic templates, no "I hope this email finds you well"
+- Sound like a human, not a robot
+
+Return ONLY valid JSON with no markdown:
+{{
+  "subject": "the subject line",
+  "body": "the full email body (use \\n for line breaks)"
+}}"""
+
+    try:
+        client = genai.Client(api_key=Config.GEMINI_API_KEY)
+        response = client.models.generate_content(
+            model=Config.GEMINI_MODEL,
+            contents=prompt
+        )
+
+        response_text = response.text.strip()
+        if response_text.startswith('```'):
+            lines = response_text.split('\n')
+            lines = [l for l in lines if not l.startswith('```')]
+            response_text = '\n'.join(lines)
+
+        import json
+        email_data = json.loads(response_text)
+        return jsonify({'status': 'success', 'email': email_data})
+
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500

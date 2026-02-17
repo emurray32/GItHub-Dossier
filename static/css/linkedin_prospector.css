@@ -1,0 +1,153 @@
+/* LinkedIn Prospector Page */
+.lp-container { max-width: 1100px; margin: 0 auto; padding: 2rem 1.5rem; display: flex; flex-direction: column; gap: 2rem; }
+.lp-header h1 { font-size: 1.5rem; font-weight: 600; color: var(--text-primary, #e8e8f0); margin: 0 0 0.35rem; }
+.lp-header p { color: var(--text-muted, #888); font-size: 0.9rem; margin: 0; }
+
+/* Upload Zone */
+.lp-upload-zone {
+  border: 2px dashed var(--border-primary, #333);
+  border-radius: 12px;
+  background: var(--bg-secondary, #1a1a2e);
+  padding: 3rem 2rem;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+}
+.lp-upload-zone:hover, .lp-upload-zone.drag-over {
+  border-color: var(--accent-primary, #6c5ce7);
+  background: rgba(108, 92, 231, 0.06);
+}
+.lp-upload-zone input[type=file] { display: none; }
+.lp-upload-icon { width: 48px; height: 48px; margin: 0 auto 1rem; opacity: 0.5; }
+.lp-upload-zone h3 { color: var(--text-primary, #e8e8f0); font-size: 1.1rem; margin: 0 0 0.5rem; }
+.lp-upload-zone p { color: var(--text-muted, #888); font-size: 0.85rem; margin: 0 0 1.2rem; }
+.lp-upload-btn {
+  display: inline-flex; align-items: center; gap: 0.5rem;
+  background: var(--accent-primary, #6c5ce7); color: #fff;
+  border: none; border-radius: 8px; padding: 0.55rem 1.2rem;
+  font-size: 0.875rem; font-weight: 500; cursor: pointer; transition: opacity 0.2s;
+}
+.lp-upload-btn:hover { opacity: 0.88; }
+
+/* Preview image */
+.lp-preview-img {
+  max-width: 100%; max-height: 320px; border-radius: 8px;
+  border: 1px solid var(--border-primary, #333);
+  margin: 1rem auto 0; display: block;
+}
+
+/* Two-column layout */
+.lp-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+@media (max-width: 768px) { .lp-columns { grid-template-columns: 1fr; } }
+
+/* Cards */
+.lp-card {
+  background: var(--bg-secondary, #1a1a2e);
+  border: 1px solid var(--border-primary, #2a2a3e);
+  border-radius: 12px; padding: 1.5rem;
+}
+.lp-card-title {
+  font-size: 0.8rem; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--text-muted, #888);
+  margin: 0 0 1rem; display: flex; align-items: center; gap: 0.5rem;
+}
+.lp-card-title svg { width: 14px; height: 14px; }
+
+/* Contact info fields */
+.lp-field { margin-bottom: 0.85rem; }
+.lp-field label { display: block; font-size: 0.75rem; color: var(--text-muted, #888); margin-bottom: 0.3rem; }
+.lp-field .lp-value {
+  font-size: 0.9rem; color: var(--text-primary, #e8e8f0);
+  background: var(--bg-tertiary, #12121f);
+  border: 1px solid var(--border-primary, #2a2a3e);
+  border-radius: 6px; padding: 0.45rem 0.75rem; width: 100%; box-sizing: border-box;
+}
+.lp-field input.lp-value {
+  font-size: 0.9rem; color: var(--text-primary, #e8e8f0);
+  background: var(--bg-tertiary, #12121f);
+  border: 1px solid var(--border-primary, #2a2a3e);
+  border-radius: 6px; padding: 0.45rem 0.75rem; width: 100%; box-sizing: border-box;
+  outline: none;
+}
+.lp-field input.lp-value:focus { border-color: var(--accent-primary, #6c5ce7); }
+
+/* Status badges */
+.lp-badge {
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  font-size: 0.75rem; font-weight: 500; padding: 0.25rem 0.6rem;
+  border-radius: 20px;
+}
+.lp-badge.found { background: rgba(0,200,130,0.15); color: #00c882; }
+.lp-badge.not-found { background: rgba(255,100,80,0.12); color: #ff6450; }
+.lp-badge.searching { background: rgba(108,92,231,0.15); color: #a29bfe; }
+.lp-badge svg { width: 10px; height: 10px; }
+
+/* Sequence selector */
+.lp-select {
+  width: 100%; padding: 0.5rem 0.75rem;
+  background: var(--bg-tertiary, #12121f);
+  color: var(--text-primary, #e8e8f0);
+  border: 1px solid var(--border-primary, #2a2a3e);
+  border-radius: 6px; font-size: 0.875rem; outline: none; cursor: pointer;
+}
+.lp-select:focus { border-color: var(--accent-primary, #6c5ce7); }
+
+/* Email preview */
+.lp-email-preview {
+  background: var(--bg-tertiary, #12121f);
+  border: 1px solid var(--border-primary, #2a2a3e);
+  border-radius: 8px; padding: 1rem;
+  font-size: 0.85rem; color: var(--text-primary, #e8e8f0);
+  line-height: 1.6; min-height: 100px;
+  white-space: pre-wrap; word-break: break-word;
+}
+.lp-email-preview.placeholder { color: var(--text-muted, #888); font-style: italic; }
+
+/* Action buttons */
+.lp-actions { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-top: 1.25rem; }
+.lp-btn {
+  display: inline-flex; align-items: center; gap: 0.5rem;
+  border: none; border-radius: 8px; padding: 0.6rem 1.2rem;
+  font-size: 0.875rem; font-weight: 500; cursor: pointer; transition: all 0.2s;
+}
+.lp-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.lp-btn-primary { background: var(--accent-primary, #6c5ce7); color: #fff; }
+.lp-btn-primary:hover:not(:disabled) { background: #7d6ff0; }
+.lp-btn-secondary { background: var(--bg-tertiary, #252545); color: var(--text-primary, #e8e8f0); border: 1px solid var(--border-primary, #333); }
+.lp-btn-secondary:hover:not(:disabled) { border-color: var(--accent-primary, #6c5ce7); }
+.lp-btn-success { background: rgba(0,200,130,0.15); color: #00c882; border: 1px solid rgba(0,200,130,0.25); cursor: default; }
+.lp-btn svg { width: 15px; height: 15px; }
+
+/* Spinner */
+.lp-spinner {
+  width: 14px; height: 14px; border: 2px solid rgba(255,255,255,0.2);
+  border-top-color: #fff; border-radius: 50%;
+  animation: lp-spin 0.7s linear infinite; display: inline-block;
+}
+@keyframes lp-spin { to { transform: rotate(360deg); } }
+
+/* Steps indicator */
+.lp-steps { display: flex; gap: 0; margin-bottom: 0.5rem; }
+.lp-step {
+  flex: 1; padding: 0.4rem 0.5rem; text-align: center;
+  font-size: 0.75rem; color: var(--text-muted, #888);
+  border-bottom: 2px solid var(--border-primary, #2a2a3e);
+  transition: all 0.2s;
+}
+.lp-step.active { color: var(--accent-primary, #6c5ce7); border-color: var(--accent-primary, #6c5ce7); font-weight: 600; }
+.lp-step.done { color: #00c882; border-color: #00c882; }
+
+/* Toast */
+.lp-toast {
+  position: fixed; bottom: 1.5rem; right: 1.5rem; z-index: 9999;
+  background: var(--bg-secondary, #1a1a2e); color: var(--text-primary, #e8e8f0);
+  border: 1px solid var(--border-primary, #2a2a3e);
+  border-radius: 8px; padding: 0.75rem 1rem; font-size: 0.875rem;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+  transform: translateY(100px); opacity: 0;
+  transition: all 0.25s ease; pointer-events: none;
+}
+.lp-toast.visible { transform: translateY(0); opacity: 1; }
+.lp-toast.success { border-left: 3px solid #00c882; }
+.lp-toast.error { border-left: 3px solid #ff6450; }

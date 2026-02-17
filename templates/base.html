@@ -61,6 +61,10 @@
                     <i data-lucide="shield-check" class="sidebar-icon"></i>
                     <span class="sidebar-label">Rules</span>
                 </a>
+        <a href="{{ url_for('linkedin_prospector') }}" class="sidebar-item {% if request.endpoint == 'linkedin_prospector' %}active{% endif %}">
+          <i data-lucide="scan-search" class="sidebar-icon"></i>
+          <span class="sidebar-label">LinkedIn Prospector</span>
+        </a>
             </nav>
         </aside>
 
