@@ -66,7 +66,102 @@
           <span class="sidebar-label">LinkedIn Prospector</span>
         </a>
             </nav>
+
+            <!-- Outbound Portal -->
+            <div class="sidebar-section">
+                <div class="sidebar-section-header">
+                    <span class="sidebar-section-label">Outbound Portal</span>
+                </div>
+                <button class="sidebar-item sidebar-item-btn" id="mapSequenceBtn" aria-haspopup="dialog" aria-label="Map New Sequence">
+                    <i data-lucide="send" class="sidebar-icon"></i>
+                    <span class="sidebar-label">Map Sequence</span>
+                </button>
+            </div>
         </aside>
+
+        <!-- Map New Sequence Modal -->
+        <div class="modal-overlay" id="seqModalOverlay" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="seqModalTitle">
+            <div class="modal-content" style="width:520px;max-width:92vw;">
+                <div class="seq-modal-header">
+                    <span class="seq-modal-title" id="seqModalTitle">Map New Sequence</span>
+                    <button class="seq-modal-close" id="seqModalClose" aria-label="Close">
+                        <i data-lucide="x" style="width:16px;height:16px;"></i>
+                    </button>
+                </div>
+
+                <div class="seq-modal-body">
+                    <!-- Apollo Template ID -->
+                    <div class="seq-field-group">
+                        <label class="seq-field-label" for="seqTemplateId">
+                            Apollo Template ID
+                            <span class="seq-info-wrap" tabindex="0">
+                                <span class="seq-info-icon" aria-label="Help">i</span>
+                                <span class="seq-tooltip" role="tooltip">Find your Template ID in Apollo under Sequences → Settings → Sequence ID</span>
+                            </span>
+                        </label>
+                        <div class="seq-input-row">
+                            <input type="text" id="seqTemplateId" class="seq-input" placeholder="e.g. 64a3f1b2c8d9e0f12345abcd" autocomplete="off" spellcheck="false">
+                            <div class="seq-detect-spinner" id="seqDetectSpinner"></div>
+                        </div>
+                        <div class="seq-detect-status" id="seqDetectStatus"></div>
+                    </div>
+
+                    <!-- Sequence Configuration Cards -->
+                    <div class="seq-field-group">
+                        <span class="seq-config-label">Sequence Configuration</span>
+                        <div class="seq-cards" id="seqCards" role="radiogroup" aria-label="Sequence Configuration">
+
+                            <div class="seq-card" data-value="one_off" tabindex="0" role="radio" aria-checked="false">
+                                <div class="seq-card-radio"></div>
+                                <div class="seq-card-body">
+                                    <div class="seq-card-title">
+                                        One-Off Email
+                                        <span class="seq-autodetect-badge" id="badge_one_off" style="display:none;">&#10003; Auto-detected</span>
+                                    </div>
+                                    <div class="seq-card-subtitle">Single email, no threading</div>
+                                </div>
+                            </div>
+
+                            <div class="seq-card" data-value="threaded_4" tabindex="0" role="radio" aria-checked="false">
+                                <div class="seq-card-radio"></div>
+                                <div class="seq-card-body">
+                                    <div class="seq-card-title">
+                                        Threaded Sequence (4 Emails)
+                                        <span class="seq-autodetect-badge" id="badge_threaded_4" style="display:none;">&#10003; Auto-detected</span>
+                                    </div>
+                                    <div class="seq-card-subtitle">4 emails threaded under one subject line</div>
+                                </div>
+                            </div>
+
+                            <div class="seq-card" data-value="split_2x2" tabindex="0" role="radio" aria-checked="false">
+                                <div class="seq-card-radio"></div>
+                                <div class="seq-card-body">
+                                    <div class="seq-card-title">
+                                        Split Thread (2x2)
+                                        <span class="seq-autodetect-badge" id="badge_split_2x2" style="display:none;">&#10003; Auto-detected</span>
+                                    </div>
+                                    <div class="seq-card-subtitle">Two pairs of threaded emails, each pair with its own subject line</div>
+                                </div>
+                            </div>
+
+                        </div>
+                    </div>
+
+                    <!-- Saved Sequences List -->
+                    <div class="seq-saved-section">
+                        <div class="seq-saved-title">Mapped Sequences</div>
+                        <div class="seq-saved-list" id="seqSavedList">
+                            <div class="seq-saved-empty">No sequences mapped yet.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="seq-modal-footer">
+                    <button class="btn-secondary" id="seqCancelBtn">Cancel</button>
+                    <button class="btn-primary" id="seqSaveBtn">Save Sequence</button>
+                </div>
+            </div>
+        </div>
 
         <!-- Main Area -->
         <div class="main-area">
@@ -149,6 +244,287 @@
                 searchInput.focus();
             }
         });
+    </script>
+
+    <!-- Outbound Portal: Map New Sequence -->
+    <script>
+    (function () {
+        'use strict';
+
+        var STORAGE_KEY = 'outbound_sequences_v1';
+        var CONFIG_LABELS = {
+            'one_off':      'One-Off Email',
+            'threaded_4':   'Threaded Sequence (4 Emails)',
+            'split_2x2':    'Split Thread (2x2)'
+        };
+
+        // ── Storage helpers ──────────────────────────────────────
+        function loadSequences() {
+            try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); }
+            catch (e) { return []; }
+        }
+        function saveSequences(list) {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+        }
+        function escHtml(s) {
+            return String(s)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        // ── Render saved list ────────────────────────────────────
+        function renderSaved() {
+            var list = loadSequences();
+            var container = document.getElementById('seqSavedList');
+            if (!container) return;
+
+            if (!list.length) {
+                container.innerHTML = '<div class="seq-saved-empty">No sequences mapped yet.</div>';
+                return;
+            }
+
+            container.innerHTML = list.map(function (seq, idx) {
+                return '<div class="seq-saved-item">' +
+                    '<div class="seq-saved-info">' +
+                    '<span class="seq-saved-id">' + escHtml(seq.id) + '</span>' +
+                    '<span class="seq-saved-type">' + escHtml(CONFIG_LABELS[seq.config] || seq.config) + '</span>' +
+                    '</div>' +
+                    '<button class="seq-saved-delete" data-idx="' + idx + '" aria-label="Delete sequence">' +
+                    '<i data-lucide="x" style="width:13px;height:13px;pointer-events:none;"></i>' +
+                    '</button>' +
+                    '</div>';
+            }).join('');
+
+            if (typeof lucide !== 'undefined') lucide.createIcons();
+
+            container.querySelectorAll('.seq-saved-delete').forEach(function (btn) {
+                btn.addEventListener('click', function () {
+                    var idx = parseInt(this.dataset.idx, 10);
+                    var seqs = loadSequences();
+                    seqs.splice(idx, 1);
+                    saveSequences(seqs);
+                    renderSaved();
+                });
+            });
+        }
+
+        // ── Card selection ───────────────────────────────────────
+        var selectedConfig = null;
+
+        function selectCard(value) {
+            document.querySelectorAll('.seq-card').forEach(function (c) {
+                var isMatch = c.dataset.value === value;
+                c.classList.toggle('selected', isMatch);
+                c.setAttribute('aria-checked', isMatch ? 'true' : 'false');
+            });
+            selectedConfig = value;
+        }
+
+        function clearAutodetectBadges() {
+            document.querySelectorAll('.seq-autodetect-badge').forEach(function (b) {
+                b.style.display = 'none';
+            });
+        }
+
+        function showAutodetectBadge(value) {
+            clearAutodetectBadges();
+            var badge = document.getElementById('badge_' + value);
+            if (badge) badge.style.display = 'inline-flex';
+        }
+
+        // ── Apollo auto-detect (debounced) ───────────────────────
+        var detectTimer = null;
+        var lastDetectedId = '';
+
+        function setDetectStatus(msg, cls) {
+            var el = document.getElementById('seqDetectStatus');
+            if (!el) return;
+            el.textContent = msg;
+            el.className = 'seq-detect-status' + (cls ? ' ' + cls : '');
+        }
+
+        function setDetectSpinner(show) {
+            var el = document.getElementById('seqDetectSpinner');
+            if (el) el.style.display = show ? 'block' : 'none';
+        }
+
+        function tryAutoDetect(seqId) {
+            if (!seqId || seqId === lastDetectedId) return;
+            lastDetectedId = seqId;
+            clearAutodetectBadges();
+            setDetectStatus('');
+            setDetectSpinner(true);
+
+            fetch('/api/apollo/sequence-detect', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sequence_id: seqId })
+            })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                setDetectSpinner(false);
+                if (data.status === 'success' && data.detected_config) {
+                    selectCard(data.detected_config);
+                    showAutodetectBadge(data.detected_config);
+                    var name = data.sequence_name ? ' — ' + data.sequence_name : '';
+                    setDetectStatus('Auto-detected: ' + (CONFIG_LABELS[data.detected_config] || data.detected_config) + name, 'status-ok');
+                } else if (data.status === 'not_found') {
+                    setDetectStatus('Sequence not found — select config manually.', 'status-warn');
+                } else if (data.status === 'no_key') {
+                    setDetectStatus('Apollo API key not set — select config manually.');
+                } else {
+                    setDetectStatus('Could not auto-detect — select config manually.');
+                }
+            })
+            .catch(function () {
+                setDetectSpinner(false);
+                setDetectStatus('');
+            });
+        }
+
+        // ── Modal open / close ───────────────────────────────────
+        function openModal() {
+            var overlay = document.getElementById('seqModalOverlay');
+            if (!overlay) return;
+            // Reset form state
+            var input = document.getElementById('seqTemplateId');
+            if (input) input.value = '';
+            document.querySelectorAll('.seq-card').forEach(function (c) {
+                c.classList.remove('selected');
+                c.setAttribute('aria-checked', 'false');
+            });
+            clearAutodetectBadges();
+            setDetectStatus('');
+            setDetectSpinner(false);
+            selectedConfig = null;
+            lastDetectedId = '';
+            renderSaved();
+            overlay.style.display = 'flex';
+            if (input) setTimeout(function () { input.focus(); }, 50);
+        }
+
+        function closeModal() {
+            var overlay = document.getElementById('seqModalOverlay');
+            if (overlay) overlay.style.display = 'none';
+        }
+
+        // ── Init ─────────────────────────────────────────────────
+        document.addEventListener('DOMContentLoaded', function () {
+
+            // Open / close
+            var openBtn = document.getElementById('mapSequenceBtn');
+            if (openBtn) openBtn.addEventListener('click', openModal);
+
+            var closeBtn = document.getElementById('seqModalClose');
+            if (closeBtn) closeBtn.addEventListener('click', closeModal);
+
+            var cancelBtn = document.getElementById('seqCancelBtn');
+            if (cancelBtn) cancelBtn.addEventListener('click', closeModal);
+
+            var overlay = document.getElementById('seqModalOverlay');
+            if (overlay) {
+                overlay.addEventListener('click', function (e) {
+                    if (e.target === overlay) closeModal();
+                });
+            }
+
+            document.addEventListener('keydown', function (e) {
+                if (e.key === 'Escape') {
+                    var ov = document.getElementById('seqModalOverlay');
+                    if (ov && ov.style.display !== 'none') closeModal();
+                }
+            });
+
+            // Card click/keyboard
+            document.querySelectorAll('.seq-card').forEach(function (card) {
+                card.addEventListener('click', function () {
+                    clearAutodetectBadges();
+                    selectCard(card.dataset.value);
+                });
+                card.addEventListener('keydown', function (e) {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        clearAutodetectBadges();
+                        selectCard(card.dataset.value);
+                    }
+                });
+            });
+
+            // ID input with debounced auto-detect
+            var idInput = document.getElementById('seqTemplateId');
+            if (idInput) {
+                idInput.addEventListener('input', function () {
+                    idInput.classList.remove('input-error');
+                    var val = idInput.value.trim();
+                    clearTimeout(detectTimer);
+                    if (val.length >= 16) {
+                        detectTimer = setTimeout(function () { tryAutoDetect(val); }, 600);
+                    } else {
+                        clearAutodetectBadges();
+                        setDetectStatus('');
+                        setDetectSpinner(false);
+                        lastDetectedId = '';
+                    }
+                });
+            }
+
+            // Save sequence
+            var saveBtn = document.getElementById('seqSaveBtn');
+            if (saveBtn) {
+                saveBtn.addEventListener('click', function () {
+                    var input = document.getElementById('seqTemplateId');
+                    var id = input ? input.value.trim() : '';
+
+                    if (!id) {
+                        if (input) {
+                            input.classList.add('input-error');
+                            input.focus();
+                            setTimeout(function () { input.classList.remove('input-error'); }, 1500);
+                        }
+                        return;
+                    }
+
+                    if (!selectedConfig) {
+                        var cards = document.getElementById('seqCards');
+                        if (cards) {
+                            cards.style.outline = '2px solid var(--color-destructive)';
+                            cards.style.borderRadius = '8px';
+                            setTimeout(function () {
+                                cards.style.outline = '';
+                                cards.style.borderRadius = '';
+                            }, 1500);
+                        }
+                        return;
+                    }
+
+                    var seqs = loadSequences();
+                    var existing = seqs.findIndex(function (s) { return s.id === id; });
+                    if (existing !== -1) {
+                        seqs[existing].config = selectedConfig;
+                    } else {
+                        seqs.push({ id: id, config: selectedConfig });
+                    }
+                    saveSequences(seqs);
+                    renderSaved();
+
+                    // Reset form for next entry
+                    if (input) input.value = '';
+                    document.querySelectorAll('.seq-card').forEach(function (c) {
+                        c.classList.remove('selected');
+                        c.setAttribute('aria-checked', 'false');
+                    });
+                    clearAutodetectBadges();
+                    setDetectStatus('');
+                    selectedConfig = null;
+                    lastDetectedId = '';
+                    if (input) input.focus();
+                });
+            }
+
+        }); // end DOMContentLoaded
+    }());
     </script>
 
     {% block scripts %}{% endblock %}
