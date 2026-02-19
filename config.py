@@ -117,7 +117,7 @@ class Config:
 
     # Gemini AI (accepts either GOOGLE_API_KEY or GEMINI_API_KEY)
     GEMINI_API_KEY = os.getenv('GOOGLE_API_KEY') or os.getenv('GEMINI_API_KEY')
-    GEMINI_MODEL = 'gemini-2.5-flash'
+    GEMINI_MODEL = 'gemini-3.1-pro-preview'
 
     # Database
     DATABASE_PATH = os.path.join(os.path.dirname(__file__), 'data', 'lead_machine.db')

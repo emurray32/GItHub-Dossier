@@ -98,23 +98,42 @@ AI_INTEGRATIONS_OPENAI_BASE_URL = os.environ.get("AI_INTEGRATIONS_OPENAI_BASE_UR
 def generate_analysis(scan_data: dict) -> Generator[str, None, dict]:
     """
     Generate AI-powered sales intelligence from 3-Signal scan data.
-    Uses OpenAI GPT-5-mini via Replit AI Integrations (primary),
-    falls back to Gemini, then rule-based analysis.
+    Uses Gemini 3.1 Pro (primary), falls back to OpenAI GPT-5-mini,
+    then rule-based analysis.
     """
     yield _sse_log("Initializing AI Sales Intelligence Engine...")
+    ai_succeeded = False
 
-    if OPENAI_AVAILABLE and AI_INTEGRATIONS_OPENAI_API_KEY and AI_INTEGRATIONS_OPENAI_BASE_URL:
-        yield _sse_log("Preparing 3-Signal data for OpenAI GPT-5-mini...")
+    if not ai_succeeded and GENAI_AVAILABLE and Config.GEMINI_API_KEY:
+        yield _sse_log("Preparing 3-Signal data for Gemini 3.1 Pro...")
         prompt = _build_sales_intelligence_prompt(scan_data)
-        yield _sse_log("Sending to GPT-5-mini...")
+        yield _sse_log("Sending to Gemini 3.1 Pro...")
+
+        try:
+            client = genai.Client(api_key=Config.GEMINI_API_KEY)
+            response = client.models.generate_content(
+                model=Config.GEMINI_MODEL,
+                contents=prompt
+            )
+            yield _sse_log("Processing AI response...")
+            analysis = _parse_ai_response(response.text, scan_data)
+            yield _sse_log("AI Sales Intelligence Complete (Gemini 3.1 Pro)")
+            yield _sse_data('ANALYSIS_COMPLETE', analysis)
+            ai_succeeded = True
+
+        except Exception as e:
+            yield _sse_log(f"Gemini error: {str(e)}")
+            yield _sse_log("Falling back to OpenAI...")
+
+    if not ai_succeeded and OPENAI_AVAILABLE and AI_INTEGRATIONS_OPENAI_API_KEY and AI_INTEGRATIONS_OPENAI_BASE_URL:
+        yield _sse_log("Trying OpenAI GPT-5-mini fallback...")
+        prompt = _build_sales_intelligence_prompt(scan_data)
 
         try:
             client = OpenAI(
                 api_key=AI_INTEGRATIONS_OPENAI_API_KEY,
                 base_url=AI_INTEGRATIONS_OPENAI_BASE_URL
             )
-            # the newest OpenAI model is "gpt-5" which was released August 7, 2025.
-            # do not change this unless explicitly requested by the user
             response = client.chat.completions.create(
                 model="gpt-5-mini",
                 messages=[
@@ -127,35 +146,17 @@ def generate_analysis(scan_data: dict) -> Generator[str, None, dict]:
 
             yield _sse_log("Processing AI response...")
             analysis = _parse_ai_response(response.choices[0].message.content, scan_data)
-            yield _sse_log("AI Sales Intelligence Complete (GPT-5-mini)")
+            yield _sse_log("AI Sales Intelligence Complete (GPT-5-mini fallback)")
             yield _sse_data('ANALYSIS_COMPLETE', analysis)
+            ai_succeeded = True
 
         except Exception as e:
-            yield _sse_log(f"OpenAI error: {str(e)}")
-            yield _sse_log("Falling back to Gemini...")
+            yield _sse_log(f"OpenAI fallback error: {str(e)}")
 
-    if GENAI_AVAILABLE and Config.GEMINI_API_KEY:
-        yield _sse_log("Preparing 3-Signal data for Gemini...")
-        prompt = _build_sales_intelligence_prompt(scan_data)
-        yield _sse_log("Sending to Gemini 2.5 Flash...")
-
-        try:
-            client = genai.Client(api_key=Config.GEMINI_API_KEY)
-            response = client.models.generate_content(
-                model=Config.GEMINI_MODEL,
-                contents=prompt
-            )
-            yield _sse_log("Processing AI response...")
-            analysis = _parse_ai_response(response.text, scan_data)
-            yield _sse_log("AI Sales Intelligence Complete (Gemini)")
-            yield _sse_data('ANALYSIS_COMPLETE', analysis)
-
-        except Exception as e:
-            yield _sse_log(f"Gemini error: {str(e)}")
-
-    yield _sse_log("Using rule-based analysis...")
-    analysis = _generate_fallback_analysis(scan_data)
-    yield _sse_data('ANALYSIS_COMPLETE', analysis)
+    if not ai_succeeded:
+        yield _sse_log("Using rule-based analysis...")
+        analysis = _generate_fallback_analysis(scan_data)
+        yield _sse_data('ANALYSIS_COMPLETE', analysis)
 
 
 def _build_sales_intelligence_prompt(scan_data: dict) -> str:

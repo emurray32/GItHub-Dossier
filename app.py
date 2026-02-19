@@ -5117,61 +5117,6 @@ def api_apollo_enroll_sequence():
         return jsonify({'status': 'error', 'message': 'Failed to enroll in Apollo sequence'}), 500
 
 
-if __name__ == '__main__':
-    # Initialize when running directly
-    print("[APP] Starting application...")
-    print(f"[APP] ThreadPoolExecutor configured with {MAX_SCAN_WORKERS} workers")
-
-    # Cleanup any duplicate accounts
-    cleanup_result = cleanup_duplicate_accounts()
-    removed_count = cleanup_result.get('deleted', 0)
-    if removed_count > 0:
-        print(f"[APP] Removed {removed_count} duplicate accounts")
-
-    # Initialize the executor BEFORE recovery functions need it
-    get_executor()
-
-    # Start the background watchdog thread
-    start_watchdog()
-
-    # Start Google Sheets cron scheduler
-    sheets_start_cron()
-    print("[APP] Google Sheets cron scheduler started")
-
-    # Start the rules scheduler for 7am EST daily updates
-    start_rules_scheduler()
-
-    # Start the archived accounts rescan scheduler (re-scans every 4 weeks)
-    start_archived_rescan_scheduler()
-
-    # Start the deduplication scheduler (runs daily to clean up duplicates)
-    start_deduplication_scheduler()
-
-    # IMPORTANT: Recover stuck queued accounts BEFORE reset_all_scan_statuses
-    # This captures accounts stuck in 'queued' state and re-queues them
-    _recover_stuck_queued_accounts()
-
-    # Reset any remaining stale scan statuses (processing accounts)
-    reset_count = reset_all_scan_statuses()
-    if reset_count > 0:
-        print(f"[APP] Reset {reset_count} stale processing statuses from previous run")
-
-    # Clear any misclassified errors (tier evidence stored as errors)
-    cleared_errors = clear_misclassified_errors()
-    if cleared_errors > 0:
-        print(f"[APP] Cleared {cleared_errors} misclassified error messages")
-
-    # Resume any interrupted import batches
-    _resume_interrupted_import_batches()
-
-    # Auto-scan any accounts that were never scanned
-    _auto_scan_pending_accounts()
-
-    # Mark as initialized to prevent duplicate auto-scan on first request
-    _app_initialized = True
-
-    app.run(debug=Config.DEBUG, host='0.0.0.0', port=5000, threaded=True)
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # LinkedIn Prospector Routes
@@ -5431,3 +5376,58 @@ Return ONLY valid JSON with no markdown:
 
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
+
+if __name__ == '__main__':
+    # Initialize when running directly
+    print("[APP] Starting application...")
+    print(f"[APP] ThreadPoolExecutor configured with {MAX_SCAN_WORKERS} workers")
+
+    # Cleanup any duplicate accounts
+    cleanup_result = cleanup_duplicate_accounts()
+    removed_count = cleanup_result.get('deleted', 0)
+    if removed_count > 0:
+        print(f"[APP] Removed {removed_count} duplicate accounts")
+
+    # Initialize the executor BEFORE recovery functions need it
+    get_executor()
+
+    # Start the background watchdog thread
+    start_watchdog()
+
+    # Start Google Sheets cron scheduler
+    sheets_start_cron()
+    print("[APP] Google Sheets cron scheduler started")
+
+    # Start the rules scheduler for 7am EST daily updates
+    start_rules_scheduler()
+
+    # Start the archived accounts rescan scheduler (re-scans every 4 weeks)
+    start_archived_rescan_scheduler()
+
+    # Start the deduplication scheduler (runs daily to clean up duplicates)
+    start_deduplication_scheduler()
+
+    # IMPORTANT: Recover stuck queued accounts BEFORE reset_all_scan_statuses
+    # This captures accounts stuck in 'queued' state and re-queues them
+    _recover_stuck_queued_accounts()
+
+    # Reset any remaining stale scan statuses (processing accounts)
+    reset_count = reset_all_scan_statuses()
+    if reset_count > 0:
+        print(f"[APP] Reset {reset_count} stale processing statuses from previous run")
+
+    # Clear any misclassified errors (tier evidence stored as errors)
+    cleared_errors = clear_misclassified_errors()
+    if cleared_errors > 0:
+        print(f"[APP] Cleared {cleared_errors} misclassified error messages")
+
+    # Resume any interrupted import batches
+    _resume_interrupted_import_batches()
+
+    # Auto-scan any accounts that were never scanned
+    _auto_scan_pending_accounts()
+
+    # Mark as initialized to prevent duplicate auto-scan on first request
+    _app_initialized = True
+
+    app.run(debug=Config.DEBUG, host='0.0.0.0', port=5000, threaded=True)
