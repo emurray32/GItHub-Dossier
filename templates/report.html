@@ -349,6 +349,10 @@
 
 {% block scripts %}
 <script>
+    // Default Apollo sequence — all enrollment flows use this unless overridden
+    const DEFAULT_SEQUENCE_ID = '696ea11188bc73001f2afa87';
+    const DEFAULT_SEQUENCE_NAME = 'Test Zapier Workflow';
+
     function copyEmailDraft(button) {
         const subject = document.getElementById('emailSubject').value;
         const body = document.getElementById('emailBody').value;
@@ -370,89 +374,60 @@
     }
 
     async function triggerApolloEnroll(button) {
-        const reportId = button.dataset.reportId;
         const btnText = button.querySelector('.btn-text');
         const originalText = btnText.textContent;
 
-        // Disable button and show loading state
+        if (!selectedContributor) {
+            alert('Please select a contributor card first so we know who to enroll.');
+            return;
+        }
+
+        const subject = document.getElementById('emailSubject').value.trim();
+        const body = document.getElementById('emailBody').value.trim();
+
         button.disabled = true;
         button.classList.add('loading');
         btnText.textContent = 'Enrolling...';
 
         try {
-            const response = await fetch('/api/integrations/zapier/trigger', {
+            // Resolve email — prefer card's cached email, otherwise look up via Apollo
+            const card = document.querySelector(`.contributor-card[data-login="${selectedContributor.login}"]`);
+            let email = card ? card.dataset.email : null;
+
+            if (!email) {
+                btnText.textContent = 'Finding email...';
+                const lookupResp = await fetch('/api/apollo-lookup', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: selectedContributor.name, company: selectedContributor.company })
+                });
+                const lookupData = await lookupResp.json();
+                if (lookupData.email) {
+                    email = lookupData.email;
+                    if (card) card.dataset.email = email;
+                } else {
+                    throw new Error('Could not find an email for this contributor. Use "Find Email" on their card first.');
+                }
+            }
+
+            btnText.textContent = 'Enrolling...';
+            const nameParts = (selectedContributor.name || '').trim().split(' ');
+            const resp = await fetch('/api/apollo/enroll-sequence', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    report_id: parseInt(reportId)
+                    email: email,
+                    first_name: nameParts[0] || selectedContributor.login,
+                    last_name: nameParts.slice(1).join(' '),
+                    sequence_id: DEFAULT_SEQUENCE_ID,
+                    company_name: selectedContributor.company || '',
+                    personalized_subject: subject,
+                    personalized_email_body: body
                 })
             });
+            const data = await resp.json();
 
-            const data = await response.json();
-
-            if (data.code === 'MISSING_URL') {
-                // Prompt user for Zapier URL
-                const zapierUrl = prompt(
-                    'Zapier webhook URL not configured.\n\n' +
-                    'Please enter your Zapier webhook URL:\n' +
-                    '(e.g., https://hooks.zapier.com/hooks/catch/...)'
-                );
-
-                if (zapierUrl && zapierUrl.trim()) {
-                    // Save the URL
-                    const saveResponse = await fetch('/api/settings/zapier', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            zapier_url: zapierUrl.trim()
-                        })
-                    });
-
-                    const saveData = await saveResponse.json();
-
-                    if (saveData.status === 'success') {
-                        // Retry the trigger
-                        btnText.textContent = 'Retrying...';
-                        const retryResponse = await fetch('/api/integrations/zapier/trigger', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json'
-                            },
-                            body: JSON.stringify({
-                                report_id: parseInt(reportId)
-                            })
-                        });
-
-                        const retryData = await retryResponse.json();
-
-                        if (retryData.status === 'success') {
-                            button.classList.remove('loading');
-                            button.classList.add('success');
-                            btnText.textContent = 'Enrolled!';
-                            setTimeout(() => {
-                                button.classList.remove('success');
-                                button.disabled = false;
-                                btnText.textContent = originalText;
-                            }, 3000);
-                        } else {
-                            throw new Error(retryData.message || 'Failed to enroll after saving URL');
-                        }
-                    } else {
-                        throw new Error(saveData.message || 'Failed to save Zapier URL');
-                    }
-                } else {
-                    // User cancelled or empty input
-                    button.classList.remove('loading');
-                    button.disabled = false;
-                    btnText.textContent = originalText;
-                    return;
-                }
-            } else if (data.status === 'success') {
-                // Success!
+            if (data.status === 'success') {
                 button.classList.remove('loading');
                 button.classList.add('success');
                 btnText.textContent = 'Enrolled!';
@@ -462,7 +437,7 @@
                     btnText.textContent = originalText;
                 }, 3000);
             } else {
-                throw new Error(data.message || 'Failed to enroll lead');
+                throw new Error(data.message || 'Enrollment failed');
             }
 
         } catch (error) {
@@ -895,15 +870,24 @@
                 return;
             }
 
+            // Sort so default sequence always appears first
+            const sortedSeqs = [...sequences].sort((a, b) => {
+                if (a.id === DEFAULT_SEQUENCE_ID) return -1;
+                if (b.id === DEFAULT_SEQUENCE_ID) return 1;
+                return 0;
+            });
+
             let html = '<div class="sequence-selector-header">Select a Sequence</div>';
-            sequences.forEach(seq => {
+            sortedSeqs.forEach(seq => {
                 const dotClass = seq.active ? 'active' : 'inactive';
                 const safeName = seq.name.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+                const isDefault = seq.id === DEFAULT_SEQUENCE_ID;
                 html += `
-                    <div class="sequence-option" data-seq-id="${seq.id}" data-seq-name="${safeName}" data-login="${login}" onclick="event.stopPropagation(); enrollInSequence(this.dataset.login, this.closest('.sequence-selector-dropdown').previousElementSibling.dataset.name, this.closest('.sequence-selector-dropdown').previousElementSibling.dataset.company, this.dataset.seqId, this.dataset.seqName)">
+                    <div class="sequence-option${isDefault ? ' sequence-option-default' : ''}" data-seq-id="${seq.id}" data-seq-name="${safeName}" data-login="${login}" onclick="event.stopPropagation(); enrollInSequence(this.dataset.login, this.closest('.sequence-selector-dropdown').previousElementSibling.dataset.name, this.closest('.sequence-selector-dropdown').previousElementSibling.dataset.company, this.dataset.seqId, this.dataset.seqName)">
                         <div>
                             <span class="sequence-option-active ${dotClass}"></span>
                             <span class="sequence-option-name">${safeName}</span>
+                            ${isDefault ? '<span class="sequence-default-badge">Default</span>' : ''}
                         </div>
                         <span class="sequence-option-meta">${seq.num_steps} steps</span>
                     </div>
@@ -982,6 +966,8 @@
             const lastName = nameParts.slice(1).join(' ') || '';
 
             try {
+                const draftSubject = (document.getElementById('emailSubject') || {}).value || '';
+                const draftBody = (document.getElementById('emailBody') || {}).value || '';
                 const resp = await fetch('/api/apollo/enroll-sequence', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -991,7 +977,9 @@
                         last_name: lastName,
                         sequence_id: sequenceId,
                         company_name: company,
-                        github_login: login
+                        github_login: login,
+                        personalized_subject: draftSubject,
+                        personalized_email_body: draftBody
                     })
                 });
                 const data = await resp.json();
@@ -1171,6 +1159,8 @@
             const lastName = nameParts.slice(1).join(' ') || '';
 
             try {
+                const draftSubject = (document.getElementById('emailSubject') || {}).value || '';
+                const draftBody = (document.getElementById('emailBody') || {}).value || '';
                 const resp = await fetch('/api/apollo/enroll-sequence', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -1180,7 +1170,9 @@
                         last_name: lastName,
                         sequence_id: sequenceId,
                         company_name: company,
-                        github_login: login
+                        github_login: login,
+                        personalized_subject: draftSubject,
+                        personalized_email_body: draftBody
                     })
                 });
                 const data = await resp.json();

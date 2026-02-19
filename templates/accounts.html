@@ -188,7 +188,7 @@
                 </span>
             </td>
             <td>
-                <span class="tier-badge tier-badge-{current_tier}">Tier {current_tier}</span>
+                <span class="tier-badge tier-badge-{current_tier}">{tier_name}</span>
             </td>
             <td class="last-check-cell">
                 <div class="status-container">
@@ -250,7 +250,7 @@
                         </button>
                         {% if account.website %}
                         <a href="{{ account.website|normalize_url }}" target="_blank" rel="noopener" class="btn-website-link" title="Visit website">
-                            🔗
+                            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
                         </a>
                         {% endif %}
                     </span>
@@ -288,7 +288,7 @@
                 </td>
                 <td>
                     <span class="tier-badge tier-badge-{{ account.current_tier }}">
-                        Tier {{ account.current_tier }}
+                        {{ tier_config[account.current_tier]['name'] if account.current_tier in tier_config else 'Tier ' ~ account.current_tier }}
                     </span>
                 </td>
                 <td class="last-check-cell">
@@ -559,6 +559,10 @@
 </div>
 
 <script>
+    // Tier name map
+    const TIER_NAMES = {0: 'Tracking', 1: 'Thinking', 2: 'Preparing', 3: 'Launched', 4: 'Not Found'};
+    function tierLabel(tierNum) { return TIER_NAMES[tierNum] || 'Tier ' + tierNum; }
+
     // =============================================================================
     // Toast Notification System for User Feedback
     // =============================================================================
@@ -1428,7 +1432,7 @@
                 : `<span class="company-name-text">${escapeHtml(account.company_name)}</span>`;
 
             const websiteLink = account.website
-                ? `<a href="${normalizeUrl(account.website)}" target="_blank" rel="noopener" class="btn-website-link" title="Visit website">🔗</a>`
+                ? `<a href="${normalizeUrl(account.website)}" target="_blank" rel="noopener" class="btn-website-link" title="Visit website"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></a>`
                 : '';
 
             const githubOrgLink = account.github_org
@@ -1481,7 +1485,7 @@
                         </span>
                     </td>
                     <td>
-                        <span class="tier-badge tier-badge-${account.current_tier}">Tier ${account.current_tier}</span>
+                        <span class="tier-badge tier-badge-${account.current_tier}">${tierLabel(account.current_tier)}</span>
                     </td>
                     <td class="last-check-cell">
                         <div class="status-container">
@@ -1733,7 +1737,7 @@
             : `<span class="company-name-text">${escapeHtml(account.company_name)}</span>`;
 
         const websiteLink = account.website
-            ? `<a href="${normalizeUrl(account.website)}" target="_blank" rel="noopener" class="btn-website-link" title="Visit website">🔗</a>`
+            ? `<a href="${normalizeUrl(account.website)}" target="_blank" rel="noopener" class="btn-website-link" title="Visit website"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></a>`
             : '';
 
         const githubOrgLink = account.github_org
@@ -1786,7 +1790,7 @@
                     </span>
                 </td>
                 <td>
-                    <span class="tier-badge tier-badge-${account.current_tier}">Tier ${account.current_tier}</span>
+                    <span class="tier-badge tier-badge-${account.current_tier}">${tierLabel(account.current_tier)}</span>
                 </td>
                 <td class="last-check-cell">
                     <div class="status-container">
@@ -2390,7 +2394,7 @@
             if (tierBadge && data.new_tier !== undefined) {
                 const newTierClass = `tier-badge-${data.new_tier}`;
                 tierBadge.className = `tier-badge ${newTierClass}`;
-                tierBadge.textContent = `Tier ${data.new_tier}`;
+                tierBadge.textContent = tierLabel(data.new_tier);
             }
 
             // Update evidence text

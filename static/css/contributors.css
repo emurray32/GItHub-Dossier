@@ -560,3 +560,274 @@
     font-size: 12px;
     color: var(--color-text-secondary);
 }
+
+.insight-text.expandable {
+    cursor: pointer;
+}
+
+.insight-text.expandable:hover {
+    color: var(--color-text);
+}
+
+.insight-text.expanded {
+    -webkit-line-clamp: unset;
+    display: block;
+}
+
+/* ---------------------------------------------------------------------------
+   Stats Row (pills)
+   --------------------------------------------------------------------------- */
+.contrib-stats-row {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.contrib-stat-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.25rem 0.75rem;
+    border: 1px solid var(--color-border);
+    border-radius: 999px;
+    font-size: 12px;
+    background: var(--color-bg);
+}
+
+.stat-pill-value {
+    font-weight: 700;
+    color: var(--color-text);
+}
+
+.stat-pill-label {
+    color: var(--color-text-tertiary);
+    font-weight: 500;
+}
+
+.contrib-stat-pill.stat-enrolled .stat-pill-value { color: var(--color-primary); }
+.contrib-stat-pill.stat-emails .stat-pill-value { color: var(--color-success); }
+
+/* ---------------------------------------------------------------------------
+   Filter Chips
+   --------------------------------------------------------------------------- */
+.contrib-filter-chips {
+    display: flex;
+    gap: 0.35rem;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.filter-chip {
+    padding: 0.2rem 0.6rem;
+    height: 26px;
+    border: 1px solid var(--color-border);
+    border-radius: 999px;
+    background: var(--color-bg);
+    color: var(--color-text-secondary);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    display: inline-flex;
+    align-items: center;
+    user-select: none;
+}
+
+.filter-chip:hover {
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+}
+
+.filter-chip.active {
+    background: hsla(168, 76%, 32%, 0.1);
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+    font-weight: 600;
+}
+
+/* ---------------------------------------------------------------------------
+   Priority Column
+   --------------------------------------------------------------------------- */
+.col-priority {
+    width: 56px;
+    text-align: center;
+}
+
+.priority-score {
+    display: inline-block;
+    min-width: 28px;
+    padding: 0.1rem 0.35rem;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 700;
+    text-align: center;
+    background: var(--color-surface);
+    color: var(--color-text-secondary);
+}
+
+/* ---------------------------------------------------------------------------
+   Tier Dot (next to company name)
+   --------------------------------------------------------------------------- */
+.tier-dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    margin-right: 0.3rem;
+    vertical-align: middle;
+    flex-shrink: 0;
+}
+
+/* ---------------------------------------------------------------------------
+   Find Email Button
+   --------------------------------------------------------------------------- */
+.btn-find-email {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0 0.75rem;
+    height: 28px;
+    background: var(--color-primary);
+    color: var(--color-text-on-primary);
+    border: none;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background var(--transition-fast);
+}
+
+.btn-find-email:hover { background: var(--color-primary-hover); }
+.btn-find-email:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-find-email svg { width: 13px; height: 13px; }
+
+/* Add to Sequence disabled state */
+.btn-add-sequence:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.btn-add-sequence:disabled:hover {
+    border-color: var(--color-border);
+    color: var(--color-text-secondary);
+}
+
+/* AI Outreach inputs in detail row */
+.detail-outreach-section {
+    margin: 0.75rem 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.outreach-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.outreach-label {
+    font-size: 11px;
+    color: var(--color-text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    font-weight: 600;
+}
+
+.outreach-hint {
+    font-size: 10px;
+    color: var(--color-text-tertiary);
+    text-transform: none;
+    letter-spacing: 0;
+    font-weight: 400;
+    font-family: monospace;
+}
+
+.outreach-input,
+.outreach-textarea {
+    width: 100%;
+    padding: 0.4rem 0.6rem;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    font-size: 13px;
+    color: var(--color-text);
+    font-family: inherit;
+    resize: vertical;
+    box-sizing: border-box;
+    transition: border-color var(--transition-fast);
+}
+
+.outreach-input:focus,
+.outreach-textarea:focus {
+    outline: none;
+    border-color: var(--color-primary);
+}
+
+/* Sequence picker inline panel */
+.seq-picker-panel {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    margin-top: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.seq-picker-label {
+    font-size: 12px;
+    color: var(--color-text-secondary);
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.seq-picker-select {
+    flex: 1;
+    min-width: 180px;
+    padding: 0.25rem 0.5rem;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 5px;
+    font-size: 13px;
+    color: var(--color-text);
+    cursor: pointer;
+}
+
+.seq-picker-actions {
+    display: flex;
+    gap: 0.4rem;
+}
+
+.btn-confirm-enroll {
+    padding: 0.25rem 0.75rem;
+    background: var(--color-primary);
+    color: var(--color-text-on-primary);
+    border: none;
+    border-radius: 5px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background var(--transition-fast);
+}
+
+.btn-confirm-enroll:hover { background: var(--color-primary-hover); }
+
+.btn-cancel-enroll {
+    padding: 0.25rem 0.75rem;
+    background: transparent;
+    color: var(--color-text-secondary);
+    border: 1px solid var(--color-border);
+    border-radius: 5px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.btn-cancel-enroll:hover {
+    border-color: var(--color-text-secondary);
+    color: var(--color-text);
+}

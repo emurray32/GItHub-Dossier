@@ -27,20 +27,11 @@
 {% block content %}
 <div class="contributors-container">
 
-    <!-- Stats Bar -->
-    <div class="contrib-stats-bar">
-        <div class="contrib-stat-card">
-            <span class="stat-value" id="stat-total">{{ stats.total_contributors }}</span>
-            <span class="stat-label">Contributors</span>
-        </div>
-        <div class="contrib-stat-card stat-enrolled">
-            <span class="stat-value" id="stat-enrolled">{{ stats.total_enrolled }}</span>
-            <span class="stat-label">Enrolled in Sequence</span>
-        </div>
-        <div class="contrib-stat-card stat-emails">
-            <span class="stat-value" id="stat-emails">{{ stats.total_emails_sent }}</span>
-            <span class="stat-label">Emails Sent</span>
-        </div>
+    <!-- Stats Row (pills) -->
+    <div class="contrib-stats-row">
+        <span class="contrib-stat-pill"><span class="stat-pill-value" id="stat-total">{{ stats.total_contributors }}</span> <span class="stat-pill-label">contributors</span></span>
+        <span class="contrib-stat-pill stat-enrolled"><span class="stat-pill-value" id="stat-enrolled">{{ stats.total_enrolled }}</span> <span class="stat-pill-label">enrolled</span></span>
+        <span class="contrib-stat-pill stat-emails"><span class="stat-pill-value" id="stat-emails">{{ stats.total_emails_sent }}</span> <span class="stat-pill-label">emails sent</span></span>
     </div>
 
     <!-- Controls -->
@@ -51,14 +42,22 @@
             <option value="not_sent">Not sent to Apollo</option>
             <option value="sent">Sent to Apollo</option>
         </select>
-        <button type="button" class="btn-fetch-contributors" id="btn-fetch" onclick="fetchContributors()">
+        <button type="button" class="btn-fetch-contributors" id="btn-fetch" onclick="fetchContributors()" data-tooltip="Pull contributor data from monitored GitHub repos">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                <polyline points="7 10 12 15 17 10"></polyline>
-                <line x1="12" y1="15" x2="12" y2="3"></line>
+                <path d="M23 4v6h-6"></path>
+                <path d="M1 20v-6h6"></path>
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
             </svg>
-            <span>Fetch from GitHub</span>
+            <span>Sync Contributors</span>
         </button>
+    </div>
+
+    <!-- Filter Chips -->
+    <div class="contrib-filter-chips">
+        <button class="filter-chip" id="filter-has-email" onclick="toggleFilter('has_email')">Has email</button>
+        <button class="filter-chip" id="filter-warm-hot" onclick="toggleFilter('warm_hot')">Warm/Hot leads</button>
+        <button class="filter-chip" id="filter-i18n" onclick="toggleFilter('i18n_involved')">i18n involved</button>
+        <button class="filter-chip" id="filter-not-contacted" onclick="toggleFilter('not_contacted')">Not contacted</button>
     </div>
 
     <!-- Table -->
@@ -67,7 +66,7 @@
             <thead>
                 <tr>
                     <th class="col-expand"></th>
-                    <th class="col-num">#</th>
+                    <th class="col-priority">Priority</th>
                     <th class="col-name sortable" data-col="1" data-dir="">Name <span class="sort-indicator"><span class="asc">&#9650;</span><span class="desc">&#9660;</span></span></th>
                     <th class="col-github sortable" data-col="4" data-dir="">GitHub <span class="sort-indicator"><span class="asc">&#9650;</span><span class="desc">&#9660;</span></span></th>
                     <th class="col-company sortable" data-col="2" data-dir="">Company <span class="sort-indicator"><span class="asc">&#9650;</span><span class="desc">&#9660;</span></span></th>
@@ -108,10 +107,28 @@
     let currentSort = { col: 6, dir: 'desc' };
     let searchTimeout = null;
     let expandedRows = new Set();
+    let activeFilters = {};
 
     const tbody = document.getElementById('contrib-tbody');
     const searchInput = document.getElementById('contrib-search');
     const apolloFilter = document.getElementById('apollo-filter');
+
+    // Toggle filter chips
+    window.toggleFilter = function(filterName) {
+        if (activeFilters[filterName]) {
+            delete activeFilters[filterName];
+        } else {
+            activeFilters[filterName] = '1';
+        }
+        // Update chip visuals
+        const chipMap = { has_email: 'filter-has-email', warm_hot: 'filter-warm-hot', i18n_involved: 'filter-i18n', not_contacted: 'filter-not-contacted' };
+        Object.entries(chipMap).forEach(([key, id]) => {
+            const el = document.getElementById(id);
+            if (el) el.classList.toggle('active', !!activeFilters[key]);
+        });
+        currentPage = 0;
+        loadTable();
+    };
 
     // Load data
     function loadTable() {
@@ -126,6 +143,11 @@
 
         const apolloVal = apolloFilter.value;
         if (apolloVal) params.set('apollo_filter', apolloVal);
+
+        // Add active filters
+        Object.entries(activeFilters).forEach(([key, val]) => {
+            params.set(key, val);
+        });
 
         fetch('/api/contributors/datatable?' + params.toString())
             .then(r => r.json())
@@ -154,7 +176,7 @@
                             <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
                         </svg>
                         <h3>No contributors yet</h3>
-                        <p>Click "Fetch from GitHub" to pull top contributors from your monitored accounts' repositories.</p>
+                        <p>Click "Sync Contributors" to pull top contributors from your monitored accounts' repositories.</p>
                     </div>
                 </td></tr>`;
             return;
@@ -163,8 +185,10 @@
         let html = '';
         const startIdx = currentPage * pageLength;
 
+        // Tier color classes
+        const tierColors = { 0: '#94a3b8', 1: '#d97706', 2: '#16a34a', 3: '#dc2626', 4: '#64748b' };
+
         rows.forEach((c, i) => {
-            const rowNum = startIdx + i + 1;
             const isExpanded = expandedRows.has(c.id);
             const apolloClass = c.apollo_status === 'sent' ? 'sent' : 'not-sent';
             const apolloLabel = c.apollo_status === 'sent' ? 'Sent' : 'Not Sent';
@@ -175,6 +199,12 @@
             const ghUrl = c.github_url || ('https://github.com/' + c.github_login);
             const displayName = c.name || c.github_login;
             const escapedInsight = escapeHtml(c.insight || '');
+            const priorityScore = c.priority_score || 0;
+            const tierName = c.company_tier_name || '';
+            const tierNum = c.company_tier;
+            const tierDot = tierNum !== null && tierNum !== undefined
+                ? `<span class="tier-dot" style="background:${tierColors[tierNum] || '#94a3b8'}" title="${tierName}"></span>`
+                : '';
 
             html += `
             <tr data-id="${c.id}" class="${isExpanded ? 'expanded' : ''}">
@@ -185,7 +215,7 @@
                         </svg>
                     </button>
                 </td>
-                <td class="col-num">${rowNum}</td>
+                <td class="col-priority"><span class="priority-score">${priorityScore}</span></td>
                 <td class="col-name" title="${escapeHtml(displayName)}">${escapeHtml(displayName)}</td>
                 <td class="col-github">
                     <a href="${escapeHtml(ghUrl)}" target="_blank" rel="noopener" class="github-link" title="${escapeHtml(c.github_login)}">
@@ -193,7 +223,7 @@
                         ${escapeHtml(c.github_login)}
                     </a>
                 </td>
-                <td class="col-company" title="${escapeHtml(c.company || '')}">${escapeHtml(c.company || '-')}</td>
+                <td class="col-company" title="${escapeHtml(c.company || '')}">${tierDot}${escapeHtml(c.company || '-')}</td>
                 <td class="col-size">${escapeHtml(c.company_size || '-')}</td>
                 <td class="col-revenue">${escapeHtml(c.annual_revenue || '-')}</td>
                 <td class="col-repo" title="${escapeHtml(c.repo_source || '')}">${escapeHtml(c.repo_source || '-')}</td>
@@ -201,7 +231,7 @@
                     <span class="apollo-badge ${apolloClass}">${apolloIcon} ${apolloLabel}</span>
                 </td>
                 <td class="col-emails" style="text-align:center;">${c.emails_sent || 0}</td>
-                <td class="col-insight"><span class="insight-text" title="${escapedInsight}">${escapedInsight || '-'}</span></td>
+                <td class="col-insight"><span class="insight-text ${escapedInsight.length > 60 ? 'expandable' : ''}" onclick="this.classList.toggle('expanded')" title="${escapedInsight}">${escapedInsight || '-'}</span></td>
             </tr>`;
 
             if (isExpanded) {
@@ -217,6 +247,17 @@
         const blogUrl = c.blog ? (c.blog.startsWith('http') ? c.blog : 'https://' + c.blog) : '';
         const email = c.email || '';
         const isEnrolled = c.apollo_status === 'sent' || c.enrolled_in_sequence === 1;
+        const hasEmail = !!email;
+
+        // Parse AI-generated outreach copy from stored analysis
+        let aiSubject = '';
+        let aiBody = '';
+        try {
+            const ai = c.ai_analysis
+                ? (typeof c.ai_analysis === 'string' ? JSON.parse(c.ai_analysis) : c.ai_analysis)
+                : null;
+            if (ai) { aiSubject = ai.subject || ''; aiBody = ai.body || ''; }
+        } catch (e) {}
 
         return `
         <tr class="contrib-detail-row" data-detail-id="${c.id}">
@@ -228,8 +269,8 @@
                             <span class="value">${escapeHtml(c.name || c.github_login)}</span>
                         </div>
                         <div class="detail-info-item">
-                            <span class="label">Email</span>
-                            <span class="value">${email ? '<a href="mailto:' + escapeHtml(email) + '">' + escapeHtml(email) + '</a>' : '<em style="color:var(--text-muted)">Not available</em>'}</span>
+                            <span class="label">Work Email</span>
+                            <span class="value" id="detail-email-${c.id}">${email ? '<a href="mailto:' + escapeHtml(email) + '">' + escapeHtml(email) + '</a>' : '<em style="color:var(--color-text-tertiary)">Use Find Email to look up</em>'}</span>
                         </div>
                         <div class="detail-info-item">
                             <span class="label">GitHub</span>
@@ -253,28 +294,33 @@
                         </div>
                         <div class="detail-info-item">
                             <span class="label">Sequence</span>
-                            <span class="value">${c.sequence_name ? escapeHtml(c.sequence_name) : '<em style="color:var(--text-muted)">Not enrolled</em>'}</span>
+                            <span class="value">${c.sequence_name ? escapeHtml(c.sequence_name) : '<em style="color:var(--color-text-tertiary)">Not enrolled</em>'}</span>
                         </div>
                     </div>
 
-                    <div>
-                        <div class="detail-section-title">Send Outreach Email</div>
-                        <div class="detail-email-form" id="email-form-${c.id}">
-                            <input type="email" placeholder="Recipient email" value="${escapeHtml(email)}" id="email-to-${c.id}">
-                            <input type="text" placeholder="Subject line" value="Quick question about ${escapeHtml(c.company || 'your work')}" id="email-subject-${c.id}">
-                            <textarea placeholder="Write your email body here..." id="email-body-${c.id}"></textarea>
+                    <div class="detail-outreach-section">
+                        <div class="outreach-field">
+                            <label class="outreach-label">Subject Line <span class="outreach-hint">(→ {{contact.personalized_subject}})</span></label>
+                            <input type="text" id="email-subject-${c.id}" class="outreach-input"
+                                   value="${escapeHtml(aiSubject)}"
+                                   placeholder="AI-generated subject line...">
+                        </div>
+                        <div class="outreach-field">
+                            <label class="outreach-label">Email Body <span class="outreach-hint">(→ {{contact.personalized_email_1}})</span></label>
+                            <textarea id="email-body-${c.id}" class="outreach-textarea" rows="4"
+                                      placeholder="AI-generated email body...">${escapeHtml(aiBody)}</textarea>
                         </div>
                     </div>
 
                     <div class="detail-actions">
-                        <button class="btn-send-email" onclick="sendEmail(${c.id})" ${!email ? 'disabled title="No email available"' : ''}>
+                        <button class="btn-find-email" onclick="findEmail(${c.id}, '${escapeHtml(c.github_login)}', '${escapeHtml(c.name || '')}', '${escapeHtml(c.company || '')}')" id="find-email-btn-${c.id}" ${hasEmail ? 'disabled' : ''}>
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <line x1="22" y1="2" x2="11" y2="13"></line>
-                                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                                <circle cx="11" cy="11" r="8"></circle>
+                                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
                             </svg>
-                            Send Email
+                            ${hasEmail ? 'Email found' : 'Find Email'}
                         </button>
-                        <button class="btn-add-sequence ${isEnrolled ? 'enrolled' : ''}" onclick="toggleSequence(${c.id}, ${isEnrolled ? 'true' : 'false'})" id="seq-btn-${c.id}">
+                        <button class="btn-add-sequence ${isEnrolled ? 'enrolled' : ''}" onclick="toggleSequence(${c.id}, ${isEnrolled ? 'true' : 'false'})" id="seq-btn-${c.id}" ${!hasEmail && !isEnrolled ? 'disabled' : ''}>
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                 ${isEnrolled
                                     ? '<polyline points="20 6 9 17 4 12"></polyline>'
@@ -320,107 +366,177 @@
         }
     };
 
-    // Send email
-    window.sendEmail = function(id) {
-        const toInput = document.getElementById('email-to-' + id);
-        const subjectInput = document.getElementById('email-subject-' + id);
-        const bodyInput = document.getElementById('email-body-' + id);
-
-        if (!toInput || !toInput.value.trim()) {
-            showToast('Please enter a recipient email', 'error');
-            return;
-        }
-
-        const btn = toInput.closest('.contrib-detail-content').querySelector('.btn-send-email');
+    // Find email via Apollo lookup
+    window.findEmail = function(id, githubLogin, name, company) {
+        const btn = document.getElementById('find-email-btn-' + id);
+        if (!btn) return;
         btn.disabled = true;
-        btn.innerHTML = '<span class="fetch-spinner"></span> Sending...';
+        btn.innerHTML = '<span class="fetch-spinner"></span> Looking up...';
 
-        fetch('/api/contributors/' + id + '/send-email', {
+        fetch('/api/apollo-lookup', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                to_email: toInput.value.trim(),
-                subject: subjectInput.value.trim(),
-                body: bodyInput.value.trim()
+                contributor_id: id,
+                github_login: githubLogin,
+                name: name,
+                company: company
             })
         })
         .then(r => r.json())
         .then(data => {
-            if (data.success) {
-                showToast('Email sent successfully', 'success');
-                loadTable();
+            if (data.email) {
+                // Update the email display in detail row
+                const emailEl = document.getElementById('detail-email-' + id);
+                if (emailEl) {
+                    emailEl.innerHTML = '<a href="mailto:' + escapeHtml(data.email) + '">' + escapeHtml(data.email) + '</a>';
+                }
+                btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg> Email found';
+                btn.disabled = true;
+
+                // Enable "Add to Sequence" button
+                const seqBtn = document.getElementById('seq-btn-' + id);
+                if (seqBtn) seqBtn.disabled = false;
+
+                showToast('Found email: ' + data.email, 'success');
             } else {
-                showToast(data.error || 'Failed to send email', 'error');
+                btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg> Not found';
+                btn.disabled = false;
+                showToast(data.error || 'No email found via Apollo', 'error');
             }
         })
-        .catch(() => showToast('Network error', 'error'))
-        .finally(() => {
+        .catch(() => {
+            btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg> Find Email';
             btn.disabled = false;
-            btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg> Send Email';
+            showToast('Network error during lookup', 'error');
         });
     };
 
     // Toggle sequence enrollment
-    window.toggleSequence = async function(id, isCurrentlyEnrolled) {
-    const seqBtn = document.getElementById('seq-btn-' + id);
-    if (seqBtn) { seqBtn.disabled = true; seqBtn.innerHTML = '<span class="fetch-spinner"></span> Working...'; }
+    window.toggleSequence = function(id, isCurrentlyEnrolled) {
+        if (isCurrentlyEnrolled) {
+            // Disenroll: just update DB status
+            fetch('/api/contributors/' + id + '/apollo', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: 'not_sent', sequence_name: '' })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    showToast('Removed from sequence', 'success');
+                    loadTable();
+                } else {
+                    showToast(data.error || 'Failed to update', 'error');
+                }
+            })
+            .catch(() => showToast('Network error', 'error'));
+            return;
+        }
 
-    if (isCurrentlyEnrolled) {
-      const r = await fetch('/api/contributors/' + id + '/apollo', {
-        method: 'POST', headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({status:'not_sent', sequence_name:''})
-      });
-      const d = await r.json();
-      if (d.status === 'success') { showToast('Removed from sequence', 'success'); loadTable(); }
-      else { showToast(d.error || 'Failed to update', 'error'); if (seqBtn) seqBtn.disabled = false; }
-      return;
-    }
+        // Enroll: fetch sequences then show inline picker
+        const seqBtn = document.getElementById('seq-btn-' + id);
+        const existingPicker = document.getElementById('seq-picker-' + id);
+        if (existingPicker) { existingPicker.remove(); return; }
 
-    // Get contributor data
-    const tResp = await fetch('/api/contributors/datatable?search[value]=&start=0&length=10000');
-    const tData = await tResp.json();
-    const contributor = tData.data.find(x => x.id == id);
-    if (!contributor || !contributor.email) {
-      showToast('No email available for this contact — cannot enroll in Apollo', 'error');
-      if (seqBtn) { seqBtn.disabled = false; seqBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg> Add to Sequence'; }
-      return;
-    }
+        if (seqBtn) {
+            seqBtn.disabled = true;
+            seqBtn.innerHTML = '<span class="fetch-spinner"></span> Loading...';
+        }
 
-    // Fetch sequences
-    const sResp = await fetch('/api/apollo/sequences');
-    const sData = await sResp.json();
-    if (sData.status !== 'success' || !sData.sequences || !sData.sequences.length) {
-      showToast('No Apollo sequences found — check your API key', 'error');
-      if (seqBtn) seqBtn.disabled = false;
-      return;
-    }
-    const sequence = sData.sequences.find(s => s.active) || sData.sequences[0];
+        fetch('/api/apollo/sequences')
+            .then(r => r.json())
+            .then(data => {
+                if (seqBtn) {
+                    seqBtn.disabled = false;
+                    seqBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg> Add to Sequence';
+                }
+                const sequences = data.sequences || [];
+                if (!sequences.length) {
+                    showToast('No sequences found in Apollo', 'error');
+                    return;
+                }
 
-    // Enroll via real Apollo API
-    const eResp = await fetch('/api/apollo/enroll-sequence', {
-      method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({
-        email: contributor.email,
-        first_name: (contributor.name || '').split(' ')[0] || contributor.github_login,
-        last_name: (contributor.name || '').split(' ').slice(1).join(' '),
-        sequence_id: sequence.id,
-        company_name: contributor.company || ''
-      })
-    });
-    const eData = await eResp.json();
+                const picker = document.createElement('div');
+                picker.id = 'seq-picker-' + id;
+                picker.className = 'seq-picker-panel';
+                picker.innerHTML = `
+                    <div class="seq-picker-label">Choose Sequence</div>
+                    <select class="seq-picker-select" id="seq-select-${id}">
+                        ${sequences.map(s => `<option value="${escapeHtml(s.id)}">${escapeHtml(s.name)}</option>`).join('')}
+                    </select>
+                    <div class="seq-picker-actions">
+                        <button class="btn-confirm-enroll" onclick="confirmEnroll(${id})">Enroll</button>
+                        <button class="btn-cancel-enroll" onclick="document.getElementById('seq-picker-${id}').remove()">Cancel</button>
+                    </div>
+                `;
+                if (seqBtn) seqBtn.after(picker);
+            })
+            .catch(() => {
+                if (seqBtn) {
+                    seqBtn.disabled = false;
+                    seqBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg> Add to Sequence';
+                }
+                showToast('Failed to load sequences', 'error');
+            });
+    };
 
-    if (eData.status === 'success') {
-      await fetch('/api/contributors/' + id + '/apollo', {
-        method: 'POST', headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({status:'sent', sequence_name: sequence.name})
-      });
-      showToast('✓ Enrolled in: ' + sequence.name, 'success');
-      loadTable();
-    } else {
-      showToast(eData.message || 'Failed to enroll in Apollo', 'error');
-      if (seqBtn) seqBtn.disabled = false;
-    }
-  };
+    window.confirmEnroll = async function(id) {
+        const seqSelect = document.getElementById('seq-select-' + id);
+        if (!seqSelect) return;
+        const sequenceId = seqSelect.value;
+        const sequenceName = seqSelect.options[seqSelect.selectedIndex].text;
+
+        const subjectEl = document.getElementById('email-subject-' + id);
+        const bodyEl = document.getElementById('email-body-' + id);
+        const subject = subjectEl ? subjectEl.value.trim() : '';
+        const body = bodyEl ? bodyEl.value.trim() : '';
+
+        const picker = document.getElementById('seq-picker-' + id);
+        if (picker) picker.innerHTML = '<span class="fetch-spinner"></span> Enrolling...';
+
+        try {
+            // Fetch contributor data for email/name
+            const dtResp = await fetch('/api/contributors/datatable?start=0&length=10000');
+            const dtData = await dtResp.json();
+            const contributor = dtData.data.find(x => x.id == id);
+            if (!contributor) { if (picker) picker.remove(); showToast('Contributor not found', 'error'); return; }
+
+            // Step 1: Create/update Apollo contact + inject custom fields
+            const enrollResp = await fetch('/api/apollo/enroll-sequence', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    email: contributor.email,
+                    first_name: (contributor.name || '').split(' ')[0] || contributor.github_login,
+                    last_name: (contributor.name || '').split(' ').slice(1).join(' '),
+                    sequence_id: sequenceId,
+                    company_name: contributor.company || '',
+                    personalized_subject: subject,
+                    personalized_email_body: body
+                })
+            });
+            const enrollData = await enrollResp.json();
+
+            if (enrollData.status === 'success') {
+                // Step 2: Record enrollment in local DB
+                await fetch('/api/contributors/' + id + '/apollo', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status: 'sent', sequence_name: sequenceName })
+                });
+                if (picker) picker.remove();
+                showToast('Enrolled in ' + sequenceName, 'success');
+                loadTable();
+            } else {
+                if (picker) picker.remove();
+                showToast(enrollData.message || 'Failed to enroll', 'error');
+            }
+        } catch (e) {
+            if (picker) picker.remove();
+            showToast('Network error during enrollment', 'error');
+        }
+    };
 
     // Fetch contributors from GitHub
     let fetchAbortController = null;
@@ -509,7 +625,7 @@
             const pe = document.getElementById('fetch-progress');
             if (pe) pe.style.display = 'none';
             btn.disabled = false;
-            btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg> <span>Fetch from GitHub</span>';
+            btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"></path><path d="M1 20v-6h6"></path><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg> <span>Sync Contributors</span>';
             fetchAbortController = null;
         }
     };
