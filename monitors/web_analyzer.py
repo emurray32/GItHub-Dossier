@@ -17,6 +17,14 @@ from urllib.parse import urlparse, urljoin
 from config import Config
 from .enhanced_heuristics import analyze_social_multi_region
 
+import os
+
+try:
+    from openai import OpenAI
+    OPENAI_AVAILABLE = True
+except ImportError:
+    OPENAI_AVAILABLE = False
+
 try:
     from google import genai
     GENAI_AVAILABLE = True
@@ -559,6 +567,7 @@ class WebAnalyzer:
     def analyze_with_ai(self, website_data: Dict[str, Any], prompt: str) -> Dict[str, Any]:
         """
         Analyze website content using AI based on a natural language prompt.
+        Uses GPT-5 mini (primary) with Gemini 3.1 Pro fallback.
 
         Args:
             website_data: Dictionary containing website content and metadata
@@ -570,41 +579,63 @@ class WebAnalyzer:
         Raises:
             Exception: If AI analysis fails
         """
-        if not GENAI_AVAILABLE:
-            raise Exception("Google Generative AI is not available. Please install google-generativeai.")
-
-        if not Config.GEMINI_API_KEY:
-            raise Exception("GEMINI_API_KEY not configured. Please set the GOOGLE_API_KEY or GEMINI_API_KEY environment variable.")
-
-        # Build the analysis prompt
         analysis_prompt = self._build_analysis_prompt(website_data, prompt)
 
-        try:
-            client = genai.Client(api_key=Config.GEMINI_API_KEY)
+        api_key = os.environ.get('AI_INTEGRATIONS_OPENAI_API_KEY', '')
+        base_url = os.environ.get('AI_INTEGRATIONS_OPENAI_BASE_URL', '')
+        if OPENAI_AVAILABLE and api_key and base_url:
+            try:
+                client = OpenAI(api_key=api_key, base_url=base_url)
+                response = client.chat.completions.create(
+                    model="gpt-5-mini",
+                    messages=[
+                        {"role": "system", "content": "You are a website analysis expert. Provide detailed analysis based on the website data provided."},
+                        {"role": "user", "content": analysis_prompt}
+                    ],
+                    max_completion_tokens=4096
+                )
+                analysis_text = response.choices[0].message.content
 
-            response = client.models.generate_content(
-                model=Config.GEMINI_MODEL,
-                contents=analysis_prompt
-            )
-
-            # Extract the response text
-            analysis_text = response.text
-
-            return {
-                'success': True,
-                'analysis': analysis_text,
-                'metadata': {
-                    'url': website_data.get('url'),
-                    'title': website_data.get('title'),
-                    'content_length': website_data.get('content_length'),
-                    'link_count': website_data.get('link_count'),
-                    'image_count': website_data.get('image_count'),
-                    'model': Config.GEMINI_MODEL,
+                return {
+                    'success': True,
+                    'analysis': analysis_text,
+                    'metadata': {
+                        'url': website_data.get('url'),
+                        'title': website_data.get('title'),
+                        'content_length': website_data.get('content_length'),
+                        'link_count': website_data.get('link_count'),
+                        'image_count': website_data.get('image_count'),
+                        'model': 'gpt-5-mini',
+                    }
                 }
-            }
+            except Exception as e:
+                print(f"[WEB_ANALYZER] GPT-5 mini error: {e}, falling back to Gemini...")
 
-        except Exception as e:
-            raise Exception(f"AI analysis failed: {str(e)}")
+        if GENAI_AVAILABLE and Config.GEMINI_API_KEY:
+            try:
+                client = genai.Client(api_key=Config.GEMINI_API_KEY)
+                response = client.models.generate_content(
+                    model=Config.GEMINI_MODEL,
+                    contents=analysis_prompt
+                )
+                analysis_text = response.text
+
+                return {
+                    'success': True,
+                    'analysis': analysis_text,
+                    'metadata': {
+                        'url': website_data.get('url'),
+                        'title': website_data.get('title'),
+                        'content_length': website_data.get('content_length'),
+                        'link_count': website_data.get('link_count'),
+                        'image_count': website_data.get('image_count'),
+                        'model': Config.GEMINI_MODEL,
+                    }
+                }
+            except Exception as e:
+                raise Exception(f"AI analysis failed: {str(e)}")
+
+        raise Exception("No AI provider available. Please configure OpenAI or Gemini API keys.")
 
     def _build_analysis_prompt(self, website_data: Dict[str, Any], user_prompt: str) -> str:
         """

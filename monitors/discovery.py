@@ -13,6 +13,12 @@ from config import Config
 from utils import get_github_headers, make_github_request
 
 try:
+    from openai import OpenAI
+    OPENAI_AVAILABLE = True
+except ImportError:
+    OPENAI_AVAILABLE = False
+
+try:
     from google import genai
     GENAI_AVAILABLE = True
 except ImportError:
@@ -523,12 +529,6 @@ def discover_companies_via_ai(keyword: str, limit: int = 15) -> List[Dict]:
         - github_validated: Boolean indicating if GitHub org was found
         - github_data: GitHub org data if validated
     """
-    if not GENAI_AVAILABLE:
-        return []
-
-    if not Config.GEMINI_API_KEY:
-        return []
-
     # Build the industry-agnostic B2B sales researcher prompt
     system_prompt = f'''You are a B2B Sales Researcher. Generate a list of {limit} companies in the "{keyword}" sector.
 
@@ -552,17 +552,42 @@ IMPORTANT:
 
 Return ONLY valid JSON array, no markdown formatting or explanation.'''
 
+    response_text = None
+
+    api_key = os.environ.get('AI_INTEGRATIONS_OPENAI_API_KEY', '')
+    base_url = os.environ.get('AI_INTEGRATIONS_OPENAI_BASE_URL', '')
+    if OPENAI_AVAILABLE and api_key and base_url:
+        try:
+            client = OpenAI(api_key=api_key, base_url=base_url)
+            response = client.chat.completions.create(
+                model="gpt-5-mini",
+                messages=[
+                    {"role": "system", "content": "You are a B2B Sales Researcher. Return ONLY valid JSON array, no markdown."},
+                    {"role": "user", "content": system_prompt}
+                ],
+                response_format={"type": "json_object"},
+                max_completion_tokens=4096
+            )
+            response_text = response.choices[0].message.content.strip()
+        except Exception as e:
+            print(f"[DISCOVERY] GPT-5 mini error: {e}, falling back to Gemini...")
+
+    if response_text is None and GENAI_AVAILABLE and Config.GEMINI_API_KEY:
+        try:
+            client = genai.Client(api_key=Config.GEMINI_API_KEY)
+            response = client.models.generate_content(
+                model=Config.GEMINI_MODEL,
+                contents=system_prompt
+            )
+            response_text = response.text.strip()
+        except Exception as e:
+            print(f"[DISCOVERY] Gemini fallback error: {e}")
+            return []
+
+    if response_text is None:
+        return []
+
     try:
-        client = genai.Client(api_key=Config.GEMINI_API_KEY)
-
-        response = client.models.generate_content(
-            model=Config.GEMINI_MODEL,
-            contents=system_prompt
-        )
-
-        # Parse the AI response
-        response_text = response.text.strip()
-
         # Clean up JSON response
         if response_text.startswith('```json'):
             response_text = response_text[7:]

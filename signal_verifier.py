@@ -372,13 +372,13 @@ RESPOND WITH EXACTLY THIS JSON:
     try:
         client = OpenAI(api_key=api_key, base_url=base_url)
         response = client.chat.completions.create(
-            model="gpt-4o-mini",  # Cost-effective model
+            model="gpt-5-mini",
             messages=[
                 {"role": "system", "content": "You are a precise signal quality analyst. Return ONLY valid JSON."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.1,  # Low temperature for consistency
-            max_tokens=300,
+            temperature=0.1,
+            max_completion_tokens=300,
         )
         
         result_text = response.choices[0].message.content.strip()
@@ -393,7 +393,7 @@ RESPOND WITH EXACTLY THIS JSON:
         llm_result = json.loads(result_text)
         
         verification['llm_verification'] = llm_result
-        verification['llm_model'] = 'gpt-4o-mini'
+        verification['llm_model'] = 'gpt-5-mini'
         
         # Apply LLM verdict
         if llm_result.get('verdict') == 'FALSE_POSITIVE' and llm_result.get('confidence', 0) >= 0.7:

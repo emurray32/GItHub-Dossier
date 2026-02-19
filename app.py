@@ -4480,8 +4480,9 @@ def api_rules_explain():
     Returns:
         JSON with explanations for each rule.
     """
-    if not Config.GEMINI_API_KEY:
-        return jsonify({'error': 'Gemini API key not configured'}), 500
+    openai_key = os.environ.get('AI_INTEGRATIONS_OPENAI_API_KEY', '')
+    if not openai_key and not Config.GEMINI_API_KEY:
+        return jsonify({'error': 'No AI API key configured (OpenAI or Gemini)'}), 500
 
     data = request.get_json() or {}
     rule_names = data.get('rules', [])
@@ -4519,13 +4520,10 @@ def api_rules_explain():
 
 def _generate_rule_explanations(rule_names: list) -> dict:
     """
-    Generate AI explanations for a batch of rules using Gemini.
+    Generate AI explanations for a batch of rules using GPT-5 mini (primary) with Gemini fallback.
 
     Returns a dict mapping rule names to their explanations.
     """
-    from google import genai
-
-    # Build context about what each rule does
     rule_context = _get_rule_context_for_ai(rule_names)
 
     prompt = f"""You are explaining technical software scanning rules to a non-technical business person.
@@ -4543,25 +4541,41 @@ Example: {{"rule_name": "Simple explanation here"}}
 
 IMPORTANT: Return ONLY valid JSON, no markdown formatting or code blocks."""
 
-    client = genai.Client(api_key=Config.GEMINI_API_KEY)
-
-    response = client.models.generate_content(
-        model=Config.GEMINI_MODEL,
-        contents=prompt
-    )
-
-    response_text = response.text.strip()
-
-    # Clean up response - remove markdown code blocks if present
-    if response_text.startswith('```'):
-        lines = response_text.split('\n')
-        lines = [l for l in lines if not l.startswith('```')]
-        response_text = '\n'.join(lines)
+    api_key = os.environ.get('AI_INTEGRATIONS_OPENAI_API_KEY', '')
+    base_url = os.environ.get('AI_INTEGRATIONS_OPENAI_BASE_URL', '')
+    if api_key and base_url:
+        try:
+            from openai import OpenAI
+            client = OpenAI(api_key=api_key, base_url=base_url)
+            response = client.chat.completions.create(
+                model="gpt-5-mini",
+                messages=[
+                    {"role": "system", "content": "You are explaining technical rules to non-technical people. Return ONLY valid JSON."},
+                    {"role": "user", "content": prompt}
+                ],
+                response_format={"type": "json_object"},
+                max_completion_tokens=4096
+            )
+            response_text = response.choices[0].message.content.strip()
+            return json.loads(response_text)
+        except Exception as e:
+            print(f"[RULES] GPT-5 mini error: {e}, falling back to Gemini...")
 
     try:
+        from google import genai
+        client = genai.Client(api_key=Config.GEMINI_API_KEY)
+        response = client.models.generate_content(
+            model=Config.GEMINI_MODEL,
+            contents=prompt
+        )
+        response_text = response.text.strip()
+        if response_text.startswith('```'):
+            lines = response_text.split('\n')
+            lines = [l for l in lines if not l.startswith('```')]
+            response_text = '\n'.join(lines)
         return json.loads(response_text)
-    except json.JSONDecodeError:
-        print(f"[RULES] Failed to parse AI response: {response_text[:200]}")
+    except Exception as e:
+        print(f"[RULES] Gemini fallback error: {e}")
         return {}
 
 
@@ -4608,8 +4622,9 @@ def api_rules_explain_all():
     This is useful for pre-populating the cache so users don't wait.
     Returns all explanations.
     """
-    if not Config.GEMINI_API_KEY:
-        return jsonify({'error': 'Gemini API key not configured'}), 500
+    openai_key = os.environ.get('AI_INTEGRATIONS_OPENAI_API_KEY', '')
+    if not openai_key and not Config.GEMINI_API_KEY:
+        return jsonify({'error': 'No AI API key configured (OpenAI or Gemini)'}), 500
 
     all_rule_names = [
         'rfc_keywords', 'smoking_gun_libs', 'smoking_gun_fork_repos',
@@ -5129,10 +5144,8 @@ def linkedin_prospector():
 
 @app.route('/api/linkedin/extract', methods=['POST'])
 def api_linkedin_extract():
-    """Extract contact info from a LinkedIn screenshot using Gemini Vision."""
+    """Extract contact info from a LinkedIn screenshot using GPT-5 mini (primary) with Gemini fallback."""
     import base64
-    from google import genai
-    from google.genai import types as genai_types
 
     if 'image' not in request.files:
         return jsonify({'status': 'error', 'message': 'No image file provided'}), 400
@@ -5141,14 +5154,9 @@ def api_linkedin_extract():
     if not image_file.filename:
         return jsonify({'status': 'error', 'message': 'Empty filename'}), 400
 
-    if not Config.GEMINI_API_KEY:
-        return jsonify({'status': 'error', 'message': 'Gemini API key not configured. Add GEMINI_API_KEY in Settings.'}), 400
-
     try:
         image_bytes = image_file.read()
         mime_type = image_file.content_type or 'image/png'
-
-        # Encode image as base64
         image_b64 = base64.b64encode(image_bytes).decode('utf-8')
 
         prompt = """Extract the following from this LinkedIn profile screenshot and return ONLY valid JSON with no markdown or code blocks:
@@ -5164,28 +5172,56 @@ def api_linkedin_extract():
 If a field is not visible or cannot be determined, use an empty string "".
 Return ONLY the JSON object, nothing else."""
 
-        client = genai.Client(api_key=Config.GEMINI_API_KEY)
-        response = client.models.generate_content(
-            model=Config.GEMINI_MODEL,
-            contents=[
-                genai_types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
-                prompt
-            ]
-        )
+        response_text = None
 
-        response_text = response.text.strip()
-        # Remove markdown code blocks if present
+        api_key = os.environ.get('AI_INTEGRATIONS_OPENAI_API_KEY', '')
+        base_url = os.environ.get('AI_INTEGRATIONS_OPENAI_BASE_URL', '')
+        if api_key and base_url:
+            try:
+                from openai import OpenAI
+                client = OpenAI(api_key=api_key, base_url=base_url)
+                response = client.chat.completions.create(
+                    model="gpt-5-mini",
+                    messages=[
+                        {"role": "system", "content": "You are a data extraction expert. Return ONLY valid JSON."},
+                        {"role": "user", "content": [
+                            {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{image_b64}"}},
+                            {"type": "text", "text": prompt}
+                        ]}
+                    ],
+                    response_format={"type": "json_object"},
+                    max_completion_tokens=1024
+                )
+                response_text = response.choices[0].message.content.strip()
+            except Exception as e:
+                print(f"[LINKEDIN] GPT-5 mini error: {e}, falling back to Gemini...")
+
+        if response_text is None:
+            if not Config.GEMINI_API_KEY:
+                return jsonify({'status': 'error', 'message': 'No AI API key configured (OpenAI or Gemini).'}), 400
+
+            from google import genai
+            from google.genai import types as genai_types
+            client = genai.Client(api_key=Config.GEMINI_API_KEY)
+            response = client.models.generate_content(
+                model=Config.GEMINI_MODEL,
+                contents=[
+                    genai_types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
+                    prompt
+                ]
+            )
+            response_text = response.text.strip()
+
         if response_text.startswith('```'):
             lines = response_text.split('\n')
             lines = [l for l in lines if not l.startswith('```')]
             response_text = '\n'.join(lines)
 
-        import json
         extracted = json.loads(response_text)
         return jsonify({'status': 'success', 'data': extracted})
 
     except json.JSONDecodeError as e:
-        return jsonify({'status': 'error', 'message': f'Failed to parse AI response: {str(e)}', 'raw': response_text[:500]}), 500
+        return jsonify({'status': 'error', 'message': f'Failed to parse AI response: {str(e)}', 'raw': response_text[:500] if response_text else ''}), 500
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 

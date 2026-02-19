@@ -98,36 +98,16 @@ AI_INTEGRATIONS_OPENAI_BASE_URL = os.environ.get("AI_INTEGRATIONS_OPENAI_BASE_UR
 def generate_analysis(scan_data: dict) -> Generator[str, None, dict]:
     """
     Generate AI-powered sales intelligence from 3-Signal scan data.
-    Uses Gemini 3.1 Pro (primary), falls back to OpenAI GPT-5-mini,
-    then rule-based analysis.
+    Uses GPT-5 mini (primary), falls back to Gemini 3.1 Pro,
+    then rule-based analysis. Cold email is generated separately via Gemini.
     """
     yield _sse_log("Initializing AI Sales Intelligence Engine...")
     ai_succeeded = False
 
-    if not ai_succeeded and GENAI_AVAILABLE and Config.GEMINI_API_KEY:
-        yield _sse_log("Preparing 3-Signal data for Gemini 3.1 Pro...")
-        prompt = _build_sales_intelligence_prompt(scan_data)
-        yield _sse_log("Sending to Gemini 3.1 Pro...")
-
-        try:
-            client = genai.Client(api_key=Config.GEMINI_API_KEY)
-            response = client.models.generate_content(
-                model=Config.GEMINI_MODEL,
-                contents=prompt
-            )
-            yield _sse_log("Processing AI response...")
-            analysis = _parse_ai_response(response.text, scan_data)
-            yield _sse_log("AI Sales Intelligence Complete (Gemini 3.1 Pro)")
-            yield _sse_data('ANALYSIS_COMPLETE', analysis)
-            ai_succeeded = True
-
-        except Exception as e:
-            yield _sse_log(f"Gemini error: {str(e)}")
-            yield _sse_log("Falling back to OpenAI...")
-
     if not ai_succeeded and OPENAI_AVAILABLE and AI_INTEGRATIONS_OPENAI_API_KEY and AI_INTEGRATIONS_OPENAI_BASE_URL:
-        yield _sse_log("Trying OpenAI GPT-5-mini fallback...")
+        yield _sse_log("Preparing 3-Signal data for GPT-5 mini...")
         prompt = _build_sales_intelligence_prompt(scan_data)
+        yield _sse_log("Sending to GPT-5 mini...")
 
         try:
             client = OpenAI(
@@ -146,17 +126,105 @@ def generate_analysis(scan_data: dict) -> Generator[str, None, dict]:
 
             yield _sse_log("Processing AI response...")
             analysis = _parse_ai_response(response.choices[0].message.content, scan_data)
-            yield _sse_log("AI Sales Intelligence Complete (GPT-5-mini fallback)")
-            yield _sse_data('ANALYSIS_COMPLETE', analysis)
+            yield _sse_log("AI Sales Intelligence Complete (GPT-5 mini)")
             ai_succeeded = True
 
         except Exception as e:
-            yield _sse_log(f"OpenAI fallback error: {str(e)}")
+            yield _sse_log(f"GPT-5 mini error: {str(e)}")
+            yield _sse_log("Falling back to Gemini...")
+
+    if not ai_succeeded and GENAI_AVAILABLE and Config.GEMINI_API_KEY:
+        yield _sse_log("Trying Gemini 3.1 Pro fallback...")
+        prompt = _build_sales_intelligence_prompt(scan_data)
+
+        try:
+            client = genai.Client(api_key=Config.GEMINI_API_KEY)
+            response = client.models.generate_content(
+                model=Config.GEMINI_MODEL,
+                contents=prompt
+            )
+            yield _sse_log("Processing AI response...")
+            analysis = _parse_ai_response(response.text, scan_data)
+            yield _sse_log("AI Sales Intelligence Complete (Gemini 3.1 Pro fallback)")
+            ai_succeeded = True
+
+        except Exception as e:
+            yield _sse_log(f"Gemini fallback error: {str(e)}")
 
     if not ai_succeeded:
         yield _sse_log("Using rule-based analysis...")
         analysis = _generate_fallback_analysis(scan_data)
-        yield _sse_data('ANALYSIS_COMPLETE', analysis)
+
+    if ai_succeeded:
+        yield _sse_log("Generating cold email with Gemini 3.1 Pro...")
+        cold_email = _generate_cold_email_with_gemini(scan_data, analysis)
+        if cold_email:
+            analysis['cold_email_draft'] = cold_email
+            analysis['email_draft'] = cold_email
+            yield _sse_log("Cold email generated successfully")
+        else:
+            yield _sse_log("Cold email generation skipped (Gemini unavailable)")
+
+    yield _sse_data('ANALYSIS_COMPLETE', analysis)
+
+
+def _generate_cold_email_with_gemini(scan_data: dict, analysis: dict) -> dict:
+    """Generate cold email draft using Gemini 3.1 Pro (writing/creative task)."""
+    if not GENAI_AVAILABLE or not Config.GEMINI_API_KEY:
+        return None
+
+    raw_company = scan_data.get('company_name', 'Unknown')
+    company = raw_company.title() if raw_company else 'Unknown'
+    org_name = scan_data.get('org_name', scan_data.get('org_login', ''))
+    goldilocks_status = scan_data.get('goldilocks_status', 'unknown')
+    signals = scan_data.get('signals', [])
+
+    libraries_found = []
+    for signal in signals:
+        if signal.get('type') == 'dependency_injection':
+            libraries_found.extend(signal.get('libraries_found', []))
+
+    executive_summary = analysis.get('executive_summary', '')
+    key_findings = analysis.get('key_findings', [])
+    findings_text = '\n'.join(
+        f"- {f.get('finding', '')}" for f in key_findings[:5]
+    ) if key_findings else 'No key findings available'
+
+    prompt = f"""You are a COLD EMAIL SPECIALIST for a Localization Platform.
+
+Generate a hyper-personalized cold email for {company} ({org_name}).
+
+CONTEXT:
+- Goldilocks Status: {goldilocks_status}
+- Executive Summary: {executive_summary}
+- Key Findings:
+{findings_text}
+- Libraries Found: {', '.join(libraries_found) if libraries_found else 'None'}
+
+{_get_cold_email_instructions()}
+
+Return ONLY valid JSON with this format:
+{{"subject": "...", "body": "..."}}
+"""
+
+    try:
+        client = genai.Client(api_key=Config.GEMINI_API_KEY)
+        response = client.models.generate_content(
+            model=Config.GEMINI_MODEL,
+            contents=prompt
+        )
+        text = response.text.strip()
+        if text.startswith('```json'):
+            text = text[7:]
+        if text.startswith('```'):
+            text = text[3:]
+        if text.endswith('```'):
+            text = text[:-3]
+        text = text.strip()
+        return json.loads(text)
+    except Exception as e:
+        print(f"[AI] Cold email generation error: {e}")
+        return None
 
 
 def _build_sales_intelligence_prompt(scan_data: dict) -> str:
@@ -319,25 +387,18 @@ Generate a JSON response with these fields. USE CLEAR, CONCISE, NON-TECHNICAL LA
    - "sales_angle": How to use this in a conversation
    Example: {{"finding": "Found react-i18next — infrastructure is ready but no translations exist yet", "significance": "critical", "sales_angle": "The infrastructure is built but translations are missing. Ideal time to reach out."}}
 
-5. "cold_email_draft":
-   Generate a hyper-personalized cold email following these STRICT rules:
-   
-{_get_cold_email_instructions()}
-
-   Return as: {{"subject": "...", "body": "..."}}
-
-6. "conversation_starters": (list of 3 questions BDRs can ask)
+5. "conversation_starters": (list of 3 questions BDRs can ask)
    - Non-technical, open-ended questions
 
-7. "risk_factors": (list of concerns)
+6. "risk_factors": (list of concerns)
    - What could go wrong with this lead
 
-8. "opportunity_score": (1-10)
+7. "opportunity_score": (1-10)
    - 9-10 if GOLDILOCKS ZONE (preparing)
    - 4-6 if THINKING
    - 1-2 if LAUNCHED (too late)
 
-9. "key_engineering_contacts": (list of 3-5 recommended contacts from the contributors)
+8. "key_engineering_contacts": (list of 3-5 recommended contacts from the contributors)
    - Select contacts most likely to be decision-makers or influencers for i18n
    - Prioritize: Engineering Managers, Frontend/Platform leads, high-volume committers
    - Each contact should have:
@@ -347,7 +408,7 @@ Generate a JSON response with these fields. USE CLEAR, CONCISE, NON-TECHNICAL LA
      - "outreach_reason": Why this person is worth contacting
    - If no contributors data available, return empty list
 
-10. "engineering_velocity": (list of 3-5 bullet points showing progression)
+9. "engineering_velocity": (list of 3-5 bullet points showing progression)
    - Generate a chronological narrative from the signal timeline data
    - Show the progression of i18n work over time
    - Format: "Mon YYYY: Brief description of activity"
