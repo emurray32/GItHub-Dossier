@@ -5598,8 +5598,6 @@ def api_linkedin_find_contact():
     not_found_name = search_query or 'this LinkedIn profile'
     return jsonify({'status': 'not_found', 'message': f'No contact found for {not_found_name}. They may not be in Apollo yet.'})
 
-    except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
 @app.route('/api/linkedin/generate-email', methods=['POST'])
