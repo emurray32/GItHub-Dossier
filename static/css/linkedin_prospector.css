@@ -375,9 +375,262 @@
 .lp-toast.success { border-left: 3px solid var(--color-success); }
 .lp-toast.error { border-left: 3px solid var(--color-destructive); }
 
+/* ── Upload zone collapsed state ─────────────────────────── */
+.lp-upload-zone.collapsed {
+  padding: 0.65rem 1rem;
+  border-style: solid;
+  border-width: 1px;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  cursor: pointer;
+}
+.lp-upload-zone.collapsed .lp-upload-icon,
+.lp-upload-zone.collapsed .lp-upload-btn,
+.lp-upload-zone.collapsed p,
+.lp-upload-zone.collapsed .lp-preview-img {
+  display: none !important;
+}
+.lp-upload-zone.collapsed h3 {
+  font-size: 0.8rem;
+  font-weight: var(--font-weight-medium, 500);
+  color: var(--color-text-secondary);
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lp-upload-zone.collapsed .lp-collapsed-icon {
+  display: flex;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: var(--color-text-tertiary);
+}
+.lp-collapsed-icon { display: none; }
+
+/* ── LinkedIn URL input ─────────────────────────────────── */
+.lp-url-divider {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  color: var(--color-text-tertiary);
+  font-size: 0.8rem;
+  margin: 0.25rem 0;
+}
+.lp-url-divider::before,
+.lp-url-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--color-border);
+}
+
+.lp-url-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: stretch;
+}
+.lp-url-input {
+  flex: 1;
+  padding: 0.55rem 0.75rem;
+  border: 1.5px solid var(--color-border);
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-family: var(--font-sans);
+  color: var(--color-text);
+  background: var(--color-surface);
+  outline: none;
+  transition: border-color var(--transition-fast);
+}
+.lp-url-input:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(60, 193, 126, 0.15);
+}
+.lp-url-input::placeholder {
+  color: var(--color-text-tertiary);
+}
+.lp-url-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: var(--color-surface);
+  color: var(--color-text);
+  border: 1.5px solid var(--color-border);
+  border-radius: 8px;
+  padding: 0.55rem 1rem;
+  font-size: 0.875rem;
+  font-weight: var(--font-weight-semibold, 600);
+  font-family: var(--font-sans);
+  cursor: pointer;
+  transition: all 150ms ease-out;
+  white-space: nowrap;
+}
+.lp-url-btn:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+.lp-url-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* Collapsed: hides URL divider + row, keeps upload zone visible */
+.lp-input-zone.collapsed .lp-url-divider,
+.lp-input-zone.collapsed .lp-url-row {
+  display: none;
+}
+/* Fully hidden (URL lookup flow) */
+.lp-input-zone.hidden {
+  display: none;
+}
+
+/* ── Profile card ───────────────────────────────────────── */
+.lp-profile-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius, 0.75rem);
+  overflow: hidden;
+}
+
+.lp-profile-header {
+  padding: 1.75rem 1.5rem 1.25rem;
+  text-align: center;
+  position: relative;
+}
+
+.lp-profile-avatar {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  margin: 0 auto 0.85rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 2px solid var(--color-border);
+}
+.lp-profile-avatar.initials {
+  background: #3CC17E;
+  border-color: #3CC17E;
+  color: #fff;
+  font-size: 1.25rem;
+  font-weight: var(--font-weight-semibold, 600);
+  letter-spacing: 0.03em;
+}
+.lp-profile-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.lp-profile-name {
+  font-size: 1.2rem;
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--color-text);
+  margin: 0 0 0.2rem;
+}
+.lp-profile-title {
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+  margin: 0 0 0.1rem;
+}
+.lp-profile-company {
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+  font-weight: var(--font-weight-medium, 500);
+  margin: 0 0 0.25rem;
+}
+.lp-profile-location {
+  font-size: 0.8rem;
+  color: var(--color-text-tertiary);
+  margin: 0;
+}
+
+.lp-profile-badge {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+}
+
+/* Contact info row */
+.lp-profile-contact {
+  border-top: 1px solid var(--color-border);
+  padding: 0.85rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+.lp-profile-contact-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-size: 0.875rem;
+  color: var(--color-text);
+  min-height: 1.5rem;
+}
+.lp-profile-contact-row svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: var(--color-text-tertiary);
+}
+.lp-profile-contact-row .lp-no-data {
+  color: var(--color-text-tertiary);
+  font-style: italic;
+  font-size: 0.8rem;
+}
+
+/* Edit toggle */
+.lp-profile-edit-toggle {
+  border-top: 1px solid var(--color-border);
+  padding: 0;
+}
+.lp-profile-edit-btn {
+  width: 100%;
+  padding: 0.65rem 1.5rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-family: var(--font-sans);
+  color: var(--color-text-tertiary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+.lp-profile-edit-btn:hover {
+  color: var(--color-primary);
+  background: var(--color-primary-subtle);
+}
+.lp-profile-edit-btn svg {
+  width: 12px;
+  height: 12px;
+  transition: transform 200ms ease;
+}
+.lp-profile-edit-btn.open svg {
+  transform: rotate(180deg);
+}
+
+/* Collapsible edit fields */
+.lp-profile-edit-fields {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 300ms ease-out;
+}
+.lp-profile-edit-fields.open {
+  max-height: 600px;
+}
+.lp-profile-edit-fields-inner {
+  padding: 1rem 1.5rem 1.25rem;
+  border-top: 1px solid var(--color-border);
+}
+
 /* ── Responsive ──────────────────────────────────────────── */
 @media (max-width: 480px) {
   .lp-container { padding: 1rem 1rem 3rem; }
   .lp-upload-zone { padding: 2rem 1rem; }
   .lp-fields-row { grid-template-columns: 1fr; }
+  .lp-profile-header { padding: 1.25rem 1rem 1rem; }
+  .lp-profile-contact { padding: 0.75rem 1rem; }
+  .lp-profile-edit-fields-inner { padding: 0.85rem 1rem 1rem; }
 }

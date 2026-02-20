@@ -5395,7 +5395,8 @@ def api_linkedin_extract():
   "company": "Current company name",
   "location": "City, State/Country",
   "headline": "LinkedIn headline text",
-  "summary": "Brief summary or about section if visible"
+  "summary": "Brief summary or about section if visible",
+  "linkedin_url": "LinkedIn profile URL if visible in the browser address bar (e.g. https://www.linkedin.com/in/username)"
 }
 
 If a field is not visible or cannot be determined, use an empty string "".
@@ -5468,6 +5469,7 @@ def api_linkedin_find_contact():
     last_name = data.get('last_name', '').strip()
     company = data.get('company', '').strip()
     name = data.get('name', '').strip()
+    linkedin_url = data.get('linkedin_url', '').strip()
 
     # Parse name if first/last not provided
     if name and not first_name:
@@ -5487,11 +5489,20 @@ def api_linkedin_find_contact():
 
     # Try people/match first for enrichment
     match_payload = {
-        'first_name': first_name,
-        'last_name': last_name,
-        'organization_name': company,
         'reveal_personal_emails': True
     }
+
+    # Add linkedin_url if available — dramatically improves email match rate
+    if linkedin_url:
+        match_payload['linkedin_url'] = linkedin_url
+
+    # Add name/company when available
+    if first_name:
+        match_payload['first_name'] = first_name
+    if last_name:
+        match_payload['last_name'] = last_name
+    if company:
+        match_payload['organization_name'] = company
 
     try:
         match_resp = req_lib.post(
@@ -5517,6 +5528,7 @@ def api_linkedin_find_contact():
                         'title': person.get('title', ''),
                         'company': person.get('organization_name', '') or (person.get('organization') or {}).get('name', ''),
                         'linkedin_url': person.get('linkedin_url', ''),
+                        'photo_url': person.get('photo_url', ''),
                         'phone': person.get('sanitized_phone', '') or (person.get('phone_numbers') or [{}])[0].get('raw_number', '') if person.get('phone_numbers') else '',
                         'city': person.get('city', ''),
                         'state': person.get('state', ''),
@@ -5527,10 +5539,13 @@ def api_linkedin_find_contact():
     except Exception as e:
         pass  # Fall through to search
 
-    # Fallback: contacts/search
+    # Fallback: contacts/search (skip if URL-only lookup with no name)
     search_query = f"{first_name} {last_name}".strip()
     if company:
         search_query += f" {company}"
+
+    if not search_query:
+        return jsonify({'status': 'not_found', 'message': 'No contact found. Try uploading a screenshot for more details.'})
 
     try:
         search_payload = {
@@ -5562,6 +5577,7 @@ def api_linkedin_find_contact():
                         'title': person.get('title', ''),
                         'company': person.get('organization_name', '') or (person.get('account') or {}).get('name', ''),
                         'linkedin_url': person.get('linkedin_url', ''),
+                        'photo_url': person.get('photo_url', ''),
                         'phone': person.get('sanitized_phone', ''),
                         'city': person.get('city', ''),
                         'state': person.get('state', ''),

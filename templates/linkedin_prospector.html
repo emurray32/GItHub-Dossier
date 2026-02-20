@@ -18,23 +18,36 @@
 
   <div class="lp-header">
     <h1>LinkedIn Prospector</h1>
-    <p>Drop in a LinkedIn profile screenshot — we extract the contact, find their email in Apollo, and generate a personalized sequence email ready to send.</p>
+    <p>Drop in a LinkedIn profile screenshot or paste a profile URL — we find their email in Apollo and generate a personalized sequence email ready to send.</p>
   </div>
 
   <!-- 1. Upload zone -->
-  <div class="lp-upload-zone" id="upload-zone">
-    <input type="file" id="file-input" accept="image/*">
-    <svg class="lp-upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-      <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
-      <polyline points="21 15 16 10 5 21"/>
-    </svg>
-    <h3 id="upload-title">Drop a LinkedIn screenshot here</h3>
-    <p id="upload-sub">PNG or JPG — the full profile page works best</p>
-    <button class="lp-upload-btn" id="upload-btn" onclick="document.getElementById('file-input').click()">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-      Choose file
-    </button>
-    <img id="preview-img" class="lp-preview-img" style="display:none" alt="LinkedIn screenshot preview">
+  <div class="lp-input-zone" id="input-zone">
+    <div class="lp-upload-zone" id="upload-zone">
+      <input type="file" id="file-input" accept="image/*">
+      <svg class="lp-collapsed-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+      <svg class="lp-upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
+        <polyline points="21 15 16 10 5 21"/>
+      </svg>
+      <h3 id="upload-title">Drop a LinkedIn screenshot here</h3>
+      <p id="upload-sub">PNG or JPG — the full profile page works best</p>
+      <button class="lp-upload-btn" id="upload-btn" onclick="document.getElementById('file-input').click()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        Choose file
+      </button>
+      <img id="preview-img" class="lp-preview-img" style="display:none" alt="LinkedIn screenshot preview">
+    </div>
+
+    <div class="lp-url-divider">or</div>
+
+    <div class="lp-url-row">
+      <input type="text" class="lp-url-input" id="url-input" placeholder="Paste a LinkedIn profile URL..." autocomplete="off" spellcheck="false">
+      <button class="lp-url-btn" id="url-btn" onclick="handleUrlLookup()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        Look up
+      </button>
+    </div>
   </div>
 
   <!-- 2. Processing indicator -->
@@ -42,7 +55,7 @@
     <ul class="lp-status-list">
       <li class="lp-status-item" id="status-extract">
         <span class="lp-status-icon" id="status-extract-icon"><span class="lp-spinner"></span></span>
-        <span>Extracting contact from screenshot...</span>
+        <span id="status-extract-text">Extracting contact from screenshot...</span>
       </li>
       <li class="lp-status-item" id="status-apollo">
         <span class="lp-status-icon" id="status-apollo-icon"></span>
@@ -51,25 +64,60 @@
     </ul>
   </div>
 
-  <!-- 3. Contact card (merged extracted + Apollo) -->
+  <!-- 3. Profile card (replaces old flat contact card) -->
   <div class="lp-section lp-section--hidden" id="section-contact">
-    <div class="lp-card">
-      <div class="lp-card-title">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-        Contact
-        <span class="lp-badge" id="apollo-badge" style="display:none"></span>
+    <div class="lp-profile-card">
+      <!-- Profile header -->
+      <div class="lp-profile-header">
+        <div class="lp-profile-avatar initials" id="profile-avatar">
+          <span id="avatar-initials"></span>
+          <img id="avatar-img" style="display:none" alt="">
+        </div>
+        <h2 class="lp-profile-name" id="profile-name">—</h2>
+        <p class="lp-profile-title" id="profile-title-display">—</p>
+        <p class="lp-profile-company" id="profile-company-display">—</p>
+        <p class="lp-profile-location" id="profile-location-display"></p>
+        <div class="lp-profile-badge">
+          <span class="lp-badge" id="apollo-badge" style="display:none"></span>
+        </div>
       </div>
-      <div class="lp-fields-row">
-        <div class="lp-field"><label>Full Name</label><input class="lp-value" id="f-name" type="text" placeholder="—"></div>
-        <div class="lp-field"><label>Company</label><input class="lp-value" id="f-company" type="text" placeholder="—"></div>
+
+      <!-- Contact info row -->
+      <div class="lp-profile-contact">
+        <div class="lp-profile-contact-row" id="contact-email-row">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+          <span id="contact-email-text" class="lp-no-data">No email found</span>
+        </div>
+        <div class="lp-profile-contact-row" id="contact-phone-row">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+          <span id="contact-phone-text" class="lp-no-data">No phone</span>
+        </div>
       </div>
-      <div class="lp-field"><label>Job Title</label><input class="lp-value" id="f-title" type="text" placeholder="—"></div>
-      <div class="lp-fields-row">
-        <div class="lp-field"><label>Location</label><input class="lp-value" id="f-location" type="text" placeholder="—"></div>
-        <div class="lp-field"><label>Phone</label><input class="lp-value" id="f-phone" type="text" placeholder="—"></div>
+
+      <!-- Edit toggle -->
+      <div class="lp-profile-edit-toggle">
+        <button class="lp-profile-edit-btn" id="edit-toggle-btn" onclick="toggleEditFields()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+          Edit details
+        </button>
       </div>
-      <div class="lp-field"><label>Headline</label><input class="lp-value" id="f-headline" type="text" placeholder="—"></div>
-      <div class="lp-field"><label>Email</label><input class="lp-value" id="f-email" type="email" placeholder="Enter email if not found in Apollo"></div>
+
+      <!-- Collapsible edit fields -->
+      <div class="lp-profile-edit-fields" id="edit-fields">
+        <div class="lp-profile-edit-fields-inner">
+          <div class="lp-fields-row">
+            <div class="lp-field"><label>Full Name</label><input class="lp-value" id="f-name" type="text" placeholder="—"></div>
+            <div class="lp-field"><label>Company</label><input class="lp-value" id="f-company" type="text" placeholder="—"></div>
+          </div>
+          <div class="lp-field"><label>Job Title</label><input class="lp-value" id="f-title" type="text" placeholder="—"></div>
+          <div class="lp-fields-row">
+            <div class="lp-field"><label>Location</label><input class="lp-value" id="f-location" type="text" placeholder="—"></div>
+            <div class="lp-field"><label>Phone</label><input class="lp-value" id="f-phone" type="text" placeholder="—"></div>
+          </div>
+          <div class="lp-field"><label>Headline</label><input class="lp-value" id="f-headline" type="text" placeholder="—"></div>
+          <div class="lp-field"><label>Email</label><input class="lp-value" id="f-email" type="email" placeholder="Enter email if not found in Apollo"></div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -138,7 +186,7 @@
   <!-- 6. Start over -->
   <div class="lp-section lp-section--hidden" id="section-reset">
     <div class="lp-start-over">
-      <a href="#" onclick="resetAll(); return false;">Start over with a new screenshot</a>
+      <a href="#" onclick="resetAll(); return false;">Start over with a new prospect</a>
     </div>
   </div>
 
@@ -150,24 +198,25 @@
 {% block scripts %}
 <script>
 (function() {
-  // ── State ──────────────────────────────────────────────────────────────
+  // -- State --
   let extractedContact = null;
   let apolloContact = null;
   let uploadedFile = null;
   let sequences = [];
+  let currentLinkedinUrl = '';
 
-  // ── Helpers ────────────────────────────────────────────────────────────
+  // -- Helpers --
   function $(id) { return document.getElementById(id); }
 
   function showSection(id) {
-    const el = $(id);
+    var el = $(id);
     el.classList.remove('lp-section--hidden');
     el.classList.add('lp-section--visible');
-    setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 80);
+    setTimeout(function() { el.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }, 80);
   }
 
   function hideSection(id) {
-    const el = $(id);
+    var el = $(id);
     el.classList.remove('lp-section--visible');
     el.classList.add('lp-section--hidden');
   }
@@ -201,7 +250,119 @@
     else icon.innerHTML = '';
   }
 
-  // ── Upload & drag/drop ─────────────────────────────────────────────────
+  function getInitials(name) {
+    if (!name) return '?';
+    var parts = name.trim().split(/\s+/);
+    if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    return parts[0][0].toUpperCase();
+  }
+
+  function collapseInputZone() {
+    // Hides URL divider + row but keeps collapsed upload bar visible
+    $('input-zone').classList.add('collapsed');
+  }
+
+  function hideInputZone() {
+    // Completely hides input zone (for URL lookup flow)
+    $('input-zone').classList.add('hidden');
+  }
+
+  function expandInputZone() {
+    $('input-zone').classList.remove('collapsed');
+    $('input-zone').classList.remove('hidden');
+  }
+
+  function collapseUploadZone(filename) {
+    var zone = $('upload-zone');
+    zone.classList.add('collapsed');
+    $('upload-title').textContent = filename || 'Screenshot uploaded';
+  }
+
+  // -- Update profile card display --
+  function updateProfileCard(contact) {
+    var name = contact.name || '';
+    var title = contact.title || '';
+    var company = contact.company || '';
+    var location = contact.location || '';
+    var email = contact.email || '';
+    var phone = contact.phone || '';
+    var photoUrl = contact.photo_url || '';
+
+    // Avatar
+    var avatarEl = $('profile-avatar');
+    var avatarImg = $('avatar-img');
+    var avatarInitials = $('avatar-initials');
+    if (photoUrl) {
+      avatarImg.src = photoUrl;
+      avatarImg.style.display = '';
+      avatarInitials.style.display = 'none';
+      avatarEl.classList.remove('initials');
+    } else {
+      avatarImg.style.display = 'none';
+      avatarInitials.style.display = '';
+      avatarInitials.textContent = getInitials(name);
+      avatarEl.classList.add('initials');
+    }
+
+    // Text fields
+    $('profile-name').textContent = name || '—';
+    $('profile-title-display').textContent = title || '—';
+    $('profile-company-display').textContent = company || '—';
+    $('profile-location-display').textContent = location || '';
+
+    // Contact row
+    var emailText = $('contact-email-text');
+    if (email) {
+      emailText.textContent = email;
+      emailText.className = '';
+    } else {
+      emailText.textContent = 'No email found — expand Edit to enter';
+      emailText.className = 'lp-no-data';
+    }
+
+    var phoneText = $('contact-phone-text');
+    if (phone) {
+      phoneText.textContent = phone;
+      phoneText.className = '';
+    } else {
+      phoneText.textContent = 'No phone';
+      phoneText.className = 'lp-no-data';
+    }
+  }
+
+  // -- Edit fields toggle --
+  window.toggleEditFields = function() {
+    var fields = $('edit-fields');
+    var btn = $('edit-toggle-btn');
+    fields.classList.toggle('open');
+    btn.classList.toggle('open');
+    btn.querySelector('span') || null; // no-op
+    if (fields.classList.contains('open')) {
+      btn.childNodes[btn.childNodes.length - 1].textContent = ' Hide details';
+    } else {
+      btn.childNodes[btn.childNodes.length - 1].textContent = ' Edit details';
+    }
+  };
+
+  // Sync edit fields back to profile card when user changes them
+  ['f-name', 'f-title', 'f-company', 'f-location', 'f-email', 'f-phone'].forEach(function(id) {
+    var el = $(id);
+    if (el) {
+      el.addEventListener('input', function() {
+        updateProfileCard({
+          name: $('f-name').value,
+          title: $('f-title').value,
+          company: $('f-company').value,
+          location: $('f-location').value,
+          email: $('f-email').value,
+          phone: $('f-phone').value,
+          photo_url: ($('avatar-img').style.display !== 'none') ? $('avatar-img').src : ''
+        });
+      });
+    }
+  });
+
+  // -- Upload & drag/drop --
   var zone = $('upload-zone');
   var fileInput = $('file-input');
 
@@ -216,18 +377,20 @@
   fileInput.addEventListener('change', function() {
     if (fileInput.files[0]) handleFile(fileInput.files[0]);
   });
+  // Re-open file picker if collapsed upload zone is clicked
+  zone.addEventListener('click', function(e) {
+    if (zone.classList.contains('collapsed') && e.target !== fileInput) {
+      fileInput.click();
+    }
+  });
 
   function handleFile(file) {
     uploadedFile = file;
-    var reader = new FileReader();
-    reader.onload = function(e) {
-      var img = $('preview-img');
-      img.src = e.target.result;
-      img.style.display = 'block';
-      $('upload-title').textContent = file.name;
-      $('upload-sub').textContent = 'Click to change screenshot';
-    };
-    reader.readAsDataURL(file);
+    currentLinkedinUrl = '';
+
+    // Collapse upload zone to single-line bar, hide URL input
+    collapseUploadZone(file.name);
+    collapseInputZone();
 
     // Reset downstream sections
     hideSection('section-contact');
@@ -239,13 +402,61 @@
     $('enroll-success').style.display = 'none';
 
     // Show status & start auto-chain
+    $('status-extract-text').textContent = 'Extracting contact from screenshot...';
+    $('status-extract').style.display = '';
     setStatus('status-extract', 'active');
     setStatus('status-apollo', '');
     showSection('section-status');
     extractContact();
   }
 
-  // ── Extract via AI ─────────────────────────────────────────────────────
+  // -- LinkedIn URL lookup --
+  window.handleUrlLookup = async function() {
+    var urlInput = $('url-input');
+    var rawUrl = (urlInput.value || '').trim();
+
+    // Validate LinkedIn URL pattern
+    var match = rawUrl.match(/linkedin\.com\/in\/([a-zA-Z0-9_-]+)/);
+    if (!match) {
+      showToast('Enter a valid LinkedIn URL (linkedin.com/in/...)', 'error');
+      return;
+    }
+
+    // Normalize to full URL
+    currentLinkedinUrl = rawUrl.startsWith('http') ? rawUrl : 'https://' + rawUrl;
+    uploadedFile = null;
+
+    // Fully hide the input zone
+    hideInputZone();
+
+    // Reset downstream
+    hideSection('section-contact');
+    hideSection('section-email');
+    hideSection('section-enroll');
+    hideSection('section-reset');
+    $('email-preview-wrap').style.display = 'none';
+    $('enroll-action').style.display = '';
+    $('enroll-success').style.display = 'none';
+
+    // Show status — skip extraction step, go straight to Apollo
+    $('status-extract-text').textContent = 'Looking up LinkedIn profile...';
+    $('status-extract').style.display = 'none';
+    setStatus('status-apollo', 'active');
+    showSection('section-status');
+
+    // Go directly to Apollo with linkedin_url
+    await findInApollo(currentLinkedinUrl);
+  };
+
+  // Allow Enter key in URL input
+  $('url-input').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      window.handleUrlLookup();
+    }
+  });
+
+  // -- Extract via AI --
   async function extractContact() {
     var formData = new FormData();
     formData.append('image', uploadedFile);
@@ -253,12 +464,16 @@
     try {
       var resp = await fetch('/api/linkedin/extract', { method: 'POST', body: formData });
       var data = await resp.json();
-      // BUG FIX: backend returns { data: {...} } not { contact: {...} }
       if (data.status === 'success' && data.data) {
         extractedContact = data.data;
         setStatus('status-extract', 'done');
 
-        // Populate fields
+        // Store linkedin_url from extraction if found
+        if (data.data.linkedin_url) {
+          currentLinkedinUrl = data.data.linkedin_url;
+        }
+
+        // Populate edit fields
         $('f-name').value     = data.data.name || '';
         $('f-title').value    = data.data.title || '';
         $('f-company').value  = data.data.company || '';
@@ -266,7 +481,7 @@
         $('f-headline').value = data.data.headline || '';
 
         // Auto-trigger Apollo search
-        findInApollo();
+        findInApollo(currentLinkedinUrl);
       } else {
         setStatus('status-extract', 'error');
         showToast(data.message || 'Could not extract contact info', 'error');
@@ -277,15 +492,20 @@
     }
   }
 
-  // ── Find in Apollo (auto-triggered) ────────────────────────────────────
-  window.findInApollo = async function() {
+  // -- Find in Apollo (auto-triggered) --
+  window.findInApollo = async function(linkedinUrl) {
     setStatus('status-apollo', 'active');
 
     var payload = {
-      name: $('f-name').value,
-      company: $('f-company').value,
-      title: $('f-title').value
+      name: $('f-name').value || '',
+      company: $('f-company').value || '',
+      title: $('f-title').value || ''
     };
+
+    // Add linkedin_url if available
+    if (linkedinUrl) {
+      payload.linkedin_url = linkedinUrl;
+    }
 
     try {
       var resp = await fetch('/api/linkedin/find-contact', {
@@ -305,20 +525,47 @@
         badge.className = 'lp-badge found';
         badge.innerHTML = SVG_CHECK + ' Found';
 
-        // Fill email + phone from Apollo
-        var email = data.contact.email || '';
-        $('f-email').value = email;
-        $('f-phone').value = data.contact.phone_number || data.contact.sanitized_phone || '';
+        // Fill edit fields from Apollo data (enrich what extraction gave us)
+        var c = data.contact;
+        if (c.name) $('f-name').value = c.name;
+        if (c.title) $('f-title').value = c.title;
+        if (c.company) $('f-company').value = c.company;
+        var loc = [c.city, c.state, c.country].filter(Boolean).join(', ');
+        if (loc) $('f-location').value = loc;
+        $('f-email').value = c.email || '';
+        $('f-phone').value = c.phone || c.phone_number || c.sanitized_phone || '';
 
-        if (!email) {
-          showToast('Found in Apollo but no email — enter one manually', 'error');
+        // Update profile card display
+        updateProfileCard({
+          name: $('f-name').value,
+          title: $('f-title').value,
+          company: $('f-company').value,
+          location: $('f-location').value,
+          email: $('f-email').value,
+          phone: $('f-phone').value,
+          photo_url: c.photo_url || ''
+        });
+
+        if (!c.email) {
+          showToast('Found in Apollo but no email — expand Edit to enter one', 'error');
         }
       } else {
         setStatus('status-apollo', 'done');
         badge.style.display = '';
         badge.className = 'lp-badge not-found';
         badge.textContent = 'Not found';
-        showToast('Not found in Apollo — enter email manually to continue', 'error');
+        showToast('Not found in Apollo — expand Edit to enter email manually', 'error');
+
+        // Still update profile card from whatever we have
+        updateProfileCard({
+          name: $('f-name').value,
+          title: $('f-title').value,
+          company: $('f-company').value,
+          location: $('f-location').value,
+          email: $('f-email').value,
+          phone: $('f-phone').value,
+          photo_url: ''
+        });
       }
 
       // Reveal contact card + email section regardless
@@ -328,6 +575,18 @@
     } catch(e) {
       setStatus('status-apollo', 'error');
       showToast('Apollo search failed', 'error');
+
+      // Still update profile card from extraction data
+      updateProfileCard({
+        name: $('f-name').value,
+        title: $('f-title').value,
+        company: $('f-company').value,
+        location: $('f-location').value,
+        email: '',
+        phone: '',
+        photo_url: ''
+      });
+
       // Still show contact card so user can enter email manually
       showSection('section-contact');
       setTimeout(function() { showSection('section-email'); }, 200);
@@ -335,7 +594,7 @@
     }
   };
 
-  // ── Generate email via AI ──────────────────────────────────────────────
+  // -- Generate email via AI --
   window.generateEmail = async function() {
     var btn = $('btn-gen-email');
     btn.disabled = true;
@@ -358,7 +617,6 @@
       });
       var data = await resp.json();
 
-      // BUG FIX: backend returns { email: { subject, body } } not { subject, body }
       if (data.status === 'success' && data.email) {
         $('email-subject').value = data.email.subject || '';
         $('email-body-preview').className = 'lp-email-preview';
@@ -378,7 +636,7 @@
     }
   };
 
-  // ── Enroll in Apollo sequence ──────────────────────────────────────────
+  // -- Enroll in Apollo sequence --
   window.enrollContact = async function() {
     var email = ($('f-email').value || '').trim();
     if (!email) { showToast('No email address — cannot enroll', 'error'); return; }
@@ -399,7 +657,6 @@
       sequence_id: seqId,
       company_name: $('f-company').value || '',
       personalized_subject: $('email-subject').value || '',
-      // BUG FIX: backend reads 'personalized_email_body', not 'personalized_email_1'
       personalized_email_body: $('email-body-preview').textContent || ''
     };
 
@@ -429,7 +686,7 @@
     }
   };
 
-  // ── Copy email ─────────────────────────────────────────────────────────
+  // -- Copy email --
   window.copyEmail = function() {
     var subj = $('email-subject').value;
     var body = $('email-body-preview').textContent;
@@ -438,12 +695,13 @@
       .catch(function() { showToast('Copy failed', 'error'); });
   };
 
-  // ── Reset everything ──────────────────────────────────────────────────
+  // -- Reset everything --
   window.resetAll = function() {
     // Clear state
     extractedContact = null;
     apolloContact = null;
     uploadedFile = null;
+    currentLinkedinUrl = '';
 
     // Reset upload zone
     $('file-input').value = '';
@@ -452,6 +710,11 @@
     $('upload-title').textContent = 'Drop a LinkedIn screenshot here';
     $('upload-sub').textContent = 'PNG or JPG — the full profile page works best';
     $('upload-btn').disabled = false;
+    $('upload-zone').classList.remove('collapsed');
+
+    // Reset URL input
+    $('url-input').value = '';
+    expandInputZone();
 
     // Reset fields
     $('f-name').value = '';
@@ -464,6 +727,25 @@
     $('email-subject').value = '';
     $('email-body-preview').textContent = '';
     $('email-preview-wrap').style.display = 'none';
+
+    // Reset profile card
+    $('profile-name').textContent = '—';
+    $('profile-title-display').textContent = '—';
+    $('profile-company-display').textContent = '—';
+    $('profile-location-display').textContent = '';
+    $('contact-email-text').textContent = 'No email found';
+    $('contact-email-text').className = 'lp-no-data';
+    $('contact-phone-text').textContent = 'No phone';
+    $('contact-phone-text').className = 'lp-no-data';
+    $('avatar-img').style.display = 'none';
+    $('avatar-initials').textContent = '';
+    $('profile-avatar').classList.add('initials');
+
+    // Close edit fields if open
+    $('edit-fields').classList.remove('open');
+    $('edit-toggle-btn').classList.remove('open');
+    var btnNodes = $('edit-toggle-btn').childNodes;
+    btnNodes[btnNodes.length - 1].textContent = ' Edit details';
 
     // Reset enroll
     $('enroll-action').style.display = '';
@@ -486,7 +768,7 @@
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // ── Load sequences on page init ────────────────────────────────────────
+  // -- Load sequences on page init (filtered) --
   async function loadSequences() {
     var sel = $('sequence-select');
     try {
@@ -494,7 +776,10 @@
       var data = await resp.json();
       if (data.status === 'success' && data.sequences && data.sequences.length) {
         sequences = data.sequences;
-        sel.innerHTML = data.sequences.map(function(s) {
+        // Filter to preferred sequence; fall back to all if not found
+        var preferred = sequences.filter(function(s) { return s.name === 'Test Zapier Workflow'; });
+        var displaySequences = preferred.length > 0 ? preferred : sequences;
+        sel.innerHTML = displaySequences.map(function(s) {
           return '<option value="' + escH(s.id) + '">' + escH(s.name) + (s.active ? '' : ' (inactive)') + '</option>';
         }).join('');
       } else {
