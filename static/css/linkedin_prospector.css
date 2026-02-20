@@ -108,6 +108,19 @@
   object-fit: contain;
 }
 
+/* ── Back link ───────────────────────────────────────────── */
+.lp-back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  color: var(--color-text-tertiary);
+  text-decoration: none;
+  cursor: pointer;
+  transition: color var(--transition-fast);
+}
+.lp-back-link:hover { color: var(--color-primary); }
+
 /* ── Processing status list ──────────────────────────────── */
 .lp-status-list {
   list-style: none;

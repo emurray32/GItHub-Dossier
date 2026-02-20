@@ -50,6 +50,14 @@
     </div>
   </div>
 
+  <!-- Back button (visible when input zone is collapsed) -->
+  <div id="back-bar" style="display:none">
+    <a href="#" class="lp-back-link" onclick="resetAll(); return false;">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="15 18 9 12 15 6"/></svg>
+      New lookup
+    </a>
+  </div>
+
   <!-- 2. Processing indicator -->
   <div class="lp-section lp-section--hidden" id="section-status">
     <ul class="lp-status-list">
@@ -260,16 +268,19 @@
   function collapseInputZone() {
     // Hides URL divider + row but keeps collapsed upload bar visible
     $('input-zone').classList.add('collapsed');
+    $('back-bar').style.display = '';
   }
 
   function hideInputZone() {
     // Completely hides input zone (for URL lookup flow)
     $('input-zone').classList.add('hidden');
+    $('back-bar').style.display = '';
   }
 
   function expandInputZone() {
     $('input-zone').classList.remove('collapsed');
     $('input-zone').classList.remove('hidden');
+    $('back-bar').style.display = 'none';
   }
 
   function collapseUploadZone(filename) {
@@ -777,7 +788,10 @@
       if (data.status === 'success' && data.sequences && data.sequences.length) {
         sequences = data.sequences;
         // Filter to preferred sequence; fall back to all if not found
-        var preferred = sequences.filter(function(s) { return s.name === 'Test Zapier Workflow'; });
+        var preferred = sequences.filter(function(s) {
+          var name = (s.name || '').toLowerCase();
+          return name === 'test zapier workflow' || name.indexOf('zapier') !== -1;
+        });
         var displaySequences = preferred.length > 0 ? preferred : sequences;
         sel.innerHTML = displaySequences.map(function(s) {
           return '<option value="' + escH(s.id) + '">' + escH(s.name) + (s.active ? '' : ' (inactive)') + '</option>';

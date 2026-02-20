@@ -5504,6 +5504,8 @@ def api_linkedin_find_contact():
     if company:
         match_payload['organization_name'] = company
 
+    # Step 1: Try people/match for enrichment
+    match_person = None
     try:
         match_resp = req_lib.post(
             'https://api.apollo.io/api/v1/people/match',
@@ -5515,60 +5517,56 @@ def api_linkedin_find_contact():
         if match_resp.status_code == 200:
             match_data = match_resp.json()
             person = match_data.get('person')
-            if person and (person.get('email') or person.get('id')):
-                return jsonify({
-                    'status': 'success',
-                    'source': 'people/match',
-                    'contact': {
-                        'id': person.get('id', ''),
-                        'name': f"{person.get('first_name', '')} {person.get('last_name', '')}".strip(),
-                        'first_name': person.get('first_name', ''),
-                        'last_name': person.get('last_name', ''),
-                        'email': person.get('email', ''),
-                        'title': person.get('title', ''),
-                        'company': person.get('organization_name', '') or (person.get('organization') or {}).get('name', ''),
-                        'linkedin_url': person.get('linkedin_url', ''),
-                        'photo_url': person.get('photo_url', ''),
-                        'phone': person.get('sanitized_phone', '') or (person.get('phone_numbers') or [{}])[0].get('raw_number', '') if person.get('phone_numbers') else '',
-                        'city': person.get('city', ''),
-                        'state': person.get('state', ''),
-                        'country': person.get('country', '')
-                    }
-                })
+            if person:
+                print(f"[LINKEDIN] people/match found person: email={person.get('email')}, id={person.get('id')}, has_photo={bool(person.get('photo_url'))}")
+                match_person = {
+                    'id': person.get('id', ''),
+                    'name': f"{person.get('first_name', '')} {person.get('last_name', '')}".strip(),
+                    'first_name': person.get('first_name', ''),
+                    'last_name': person.get('last_name', ''),
+                    'email': person.get('email', ''),
+                    'title': person.get('title', ''),
+                    'company': person.get('organization_name', '') or (person.get('organization') or {}).get('name', ''),
+                    'linkedin_url': person.get('linkedin_url', ''),
+                    'photo_url': person.get('photo_url', ''),
+                    'phone': person.get('sanitized_phone', '') or (person.get('phone_numbers') or [{}])[0].get('raw_number', '') if person.get('phone_numbers') else '',
+                    'city': person.get('city', ''),
+                    'state': person.get('state', ''),
+                    'country': person.get('country', '')
+                }
+                # If we already have email, return immediately
+                if match_person['email']:
+                    return jsonify({'status': 'success', 'source': 'people/match', 'contact': match_person})
 
     except Exception as e:
-        pass  # Fall through to search
+        print(f"[LINKEDIN] people/match error: {e}")
 
-    # Fallback: contacts/search (skip if URL-only lookup with no name)
+    # Step 2: Try contacts/search in CRM (catches emails added via Chrome extension)
     search_query = f"{first_name} {last_name}".strip()
     if company:
         search_query += f" {company}"
 
-    if not search_query:
-        return jsonify({'status': 'not_found', 'message': 'No contact found. Try uploading a screenshot for more details.'})
+    if search_query:
+        try:
+            search_payload = {
+                'q_keywords': search_query,
+                'page': 1,
+                'per_page': 5
+            }
+            search_resp = req_lib.post(
+                'https://api.apollo.io/api/v1/contacts/search',
+                headers=headers,
+                json=search_payload,
+                timeout=15
+            )
 
-    try:
-        search_payload = {
-            'q_keywords': search_query,
-            'page': 1,
-            'per_page': 5
-        }
-        search_resp = req_lib.post(
-            'https://api.apollo.io/api/v1/contacts/search',
-            headers=headers,
-            json=search_payload,
-            timeout=15
-        )
-
-        if search_resp.status_code == 200:
-            search_data = search_resp.json()
-            contacts = search_data.get('contacts', [])
-            if contacts:
-                person = contacts[0]
-                return jsonify({
-                    'status': 'success',
-                    'source': 'contacts/search',
-                    'contact': {
+            if search_resp.status_code == 200:
+                search_data = search_resp.json()
+                contacts = search_data.get('contacts', [])
+                if contacts:
+                    person = contacts[0]
+                    print(f"[LINKEDIN] contacts/search found: email={person.get('email')}")
+                    search_contact = {
                         'id': person.get('id', ''),
                         'name': f"{person.get('first_name', '')} {person.get('last_name', '')}".strip(),
                         'first_name': person.get('first_name', ''),
@@ -5583,9 +5581,22 @@ def api_linkedin_find_contact():
                         'state': person.get('state', ''),
                         'country': person.get('country', '')
                     }
-                })
+                    # If CRM search has email, return it (merge with match data for photo)
+                    if search_contact['email']:
+                        # Prefer match_person's photo_url if search doesn't have one
+                        if match_person and not search_contact['photo_url'] and match_person.get('photo_url'):
+                            search_contact['photo_url'] = match_person['photo_url']
+                        return jsonify({'status': 'success', 'source': 'contacts/search', 'contact': search_contact})
 
-        return jsonify({'status': 'not_found', 'message': f'No contact found for {search_query}. They may not be in Apollo yet.'})
+        except Exception as e:
+            print(f"[LINKEDIN] contacts/search error: {e}")
+
+    # Step 3: Return match_person without email if we found them, else not_found
+    if match_person:
+        return jsonify({'status': 'success', 'source': 'people/match', 'contact': match_person})
+
+    not_found_name = search_query or 'this LinkedIn profile'
+    return jsonify({'status': 'not_found', 'message': f'No contact found for {not_found_name}. They may not be in Apollo yet.'})
 
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
