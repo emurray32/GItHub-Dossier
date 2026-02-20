@@ -300,13 +300,13 @@
 
                     <div class="detail-outreach-section">
                         <div class="outreach-field">
-                            <label class="outreach-label">Subject Line <span class="outreach-hint">(→ {{contact.personalized_subject}})</span></label>
+                            <label class="outreach-label">Subject Line <span class="outreach-hint">(→ personalized_subject)</span></label>
                             <input type="text" id="email-subject-${c.id}" class="outreach-input"
                                    value="${escapeHtml(aiSubject)}"
                                    placeholder="AI-generated subject line...">
                         </div>
                         <div class="outreach-field">
-                            <label class="outreach-label">Email Body <span class="outreach-hint">(→ {{contact.personalized_email_1}})</span></label>
+                            <label class="outreach-label">Email Body <span class="outreach-hint">(→ personalized_email_1)</span></label>
                             <textarea id="email-body-${c.id}" class="outreach-textarea" rows="4"
                                       placeholder="AI-generated email body...">${escapeHtml(aiBody)}</textarea>
                         </div>
