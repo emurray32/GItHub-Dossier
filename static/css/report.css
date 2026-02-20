@@ -1153,12 +1153,12 @@
 }
 
 .sequence-option-default {
-    background: hsla(168, 76%, 32%, 0.05);
+    background: rgba(60, 193, 126, 0.05);
     border-left: 2px solid var(--color-primary, #10b981);
 }
 
 .sequence-option-default:hover {
-    background: hsla(168, 76%, 32%, 0.1);
+    background: rgba(60, 193, 126, 0.1);
 }
 
 .sequence-default-badge {
@@ -1167,7 +1167,7 @@
     padding: 1px 5px;
     font-size: 10px;
     font-weight: 600;
-    background: hsla(168, 76%, 32%, 0.15);
+    background: rgba(60, 193, 126, 0.15);
     color: #065f46;
     border-radius: 3px;
     vertical-align: middle;

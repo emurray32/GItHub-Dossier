@@ -21,16 +21,7 @@
     <p>Drop in a LinkedIn profile screenshot — we extract the contact, find their email in Apollo, and generate a personalized sequence email ready to send.</p>
   </div>
 
-  <!-- Step indicator -->
-  <div class="lp-steps">
-    <div class="lp-step active" id="step-1">1 · Upload Screenshot</div>
-    <div class="lp-step" id="step-2">2 · Extract Contact</div>
-    <div class="lp-step" id="step-3">3 · Find in Apollo</div>
-    <div class="lp-step" id="step-4">4 · Generate Email</div>
-    <div class="lp-step" id="step-5">5 · Enroll</div>
-  </div>
-
-  <!-- Upload zone -->
+  <!-- 1. Upload zone -->
   <div class="lp-upload-zone" id="upload-zone">
     <input type="file" id="file-input" accept="image/*">
     <svg class="lp-upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -38,7 +29,7 @@
       <polyline points="21 15 16 10 5 21"/>
     </svg>
     <h3 id="upload-title">Drop a LinkedIn screenshot here</h3>
-    <p id="upload-sub">PNG or JPG · The full profile page works best</p>
+    <p id="upload-sub">PNG or JPG — the full profile page works best</p>
     <button class="lp-upload-btn" id="upload-btn" onclick="document.getElementById('file-input').click()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
       Choose file
@@ -46,96 +37,108 @@
     <img id="preview-img" class="lp-preview-img" style="display:none" alt="LinkedIn screenshot preview">
   </div>
 
-  <!-- Results (hidden until extraction) -->
-  <div id="results-section" style="display:none">
-    <div class="lp-columns">
+  <!-- 2. Processing indicator -->
+  <div class="lp-section lp-section--hidden" id="section-status">
+    <ul class="lp-status-list">
+      <li class="lp-status-item" id="status-extract">
+        <span class="lp-status-icon" id="status-extract-icon"><span class="lp-spinner"></span></span>
+        <span>Extracting contact from screenshot...</span>
+      </li>
+      <li class="lp-status-item" id="status-apollo">
+        <span class="lp-status-icon" id="status-apollo-icon"></span>
+        <span>Searching Apollo for email...</span>
+      </li>
+    </ul>
+  </div>
 
-      <!-- Left: Extracted info + Apollo match -->
-      <div style="display:flex;flex-direction:column;gap:1.25rem;">
+  <!-- 3. Contact card (merged extracted + Apollo) -->
+  <div class="lp-section lp-section--hidden" id="section-contact">
+    <div class="lp-card">
+      <div class="lp-card-title">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        Contact
+        <span class="lp-badge" id="apollo-badge" style="display:none"></span>
+      </div>
+      <div class="lp-fields-row">
+        <div class="lp-field"><label>Full Name</label><input class="lp-value" id="f-name" type="text" placeholder="—"></div>
+        <div class="lp-field"><label>Company</label><input class="lp-value" id="f-company" type="text" placeholder="—"></div>
+      </div>
+      <div class="lp-field"><label>Job Title</label><input class="lp-value" id="f-title" type="text" placeholder="—"></div>
+      <div class="lp-fields-row">
+        <div class="lp-field"><label>Location</label><input class="lp-value" id="f-location" type="text" placeholder="—"></div>
+        <div class="lp-field"><label>Phone</label><input class="lp-value" id="f-phone" type="text" placeholder="—"></div>
+      </div>
+      <div class="lp-field"><label>Headline</label><input class="lp-value" id="f-headline" type="text" placeholder="—"></div>
+      <div class="lp-field"><label>Email</label><input class="lp-value" id="f-email" type="email" placeholder="Enter email if not found in Apollo"></div>
+    </div>
+  </div>
 
-        <!-- Extracted contact info -->
-        <div class="lp-card">
-          <div class="lp-card-title">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-            Extracted from Screenshot
-          </div>
-          <div class="lp-field"><label>Full Name</label><input class="lp-value" id="f-name" type="text" placeholder="—"></div>
-          <div class="lp-field"><label>Job Title</label><input class="lp-value" id="f-title" type="text" placeholder="—"></div>
-          <div class="lp-field"><label>Company</label><input class="lp-value" id="f-company" type="text" placeholder="—"></div>
-          <div class="lp-field"><label>Location</label><input class="lp-value" id="f-location" type="text" placeholder="—"></div>
-          <div class="lp-field"><label>Headline / Summary</label><input class="lp-value" id="f-headline" type="text" placeholder="—"></div>
-          <div class="lp-actions">
-            <button class="lp-btn lp-btn-primary" id="btn-find-apollo" onclick="findInApollo()" disabled>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-              Find in Apollo
-            </button>
-          </div>
-        </div>
-
-        <!-- Apollo match -->
-        <div class="lp-card" id="apollo-card">
-          <div class="lp-card-title">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.99 15a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.92 4.26h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 11.91a16 16 0 0 0 4 4l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 20 16.18v2.74a2 2 0 0 1-2 2z"/></svg>
-            Apollo Contact Data
-            <span id="apollo-status-badge"></span>
-          </div>
-          <div id="apollo-fields">
-            <p style="color:var(--text-muted,#888);font-size:0.85rem;margin:0">Click "Find in Apollo" to search for this contact and retrieve their email address.</p>
-          </div>
-        </div>
-
+  <!-- 4. Sequence & Email -->
+  <div class="lp-section lp-section--hidden" id="section-email">
+    <div class="lp-card">
+      <div class="lp-card-title">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+        Sequence &amp; Email
+      </div>
+      <div class="lp-field">
+        <label>Apollo Sequence</label>
+        <select class="lp-select" id="sequence-select">
+          <option value="">Loading sequences...</option>
+        </select>
+      </div>
+      <div class="lp-actions">
+        <button class="lp-btn lp-btn-primary" id="btn-gen-email" onclick="generateEmail()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+          Generate Email with AI
+        </button>
       </div>
 
-      <!-- Right: Sequence + Email preview -->
-      <div style="display:flex;flex-direction:column;gap:1.25rem;">
-
-        <!-- Sequence selector -->
-        <div class="lp-card">
-          <div class="lp-card-title">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-            Apollo Sequence
-          </div>
-          <div class="lp-field">
-            <label>Select sequence to enroll into</label>
-            <select class="lp-select" id="sequence-select">
-              <option value="">Loading sequences…</option>
-            </select>
-          </div>
-          <div class="lp-actions">
-            <button class="lp-btn lp-btn-secondary" id="btn-gen-email" onclick="generateEmail()" disabled>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-              Generate Email with AI
-            </button>
-          </div>
+      <!-- Email preview (hidden until generated) -->
+      <div id="email-preview-wrap" style="display:none">
+        <hr style="border:none;border-top:1px solid var(--color-border);margin:1.25rem 0">
+        <div class="lp-field">
+          <label>Subject</label>
+          <input class="lp-value" id="email-subject" type="text" placeholder="(generated by AI)">
         </div>
-
-        <!-- Email preview -->
-        <div class="lp-card" style="flex:1">
-          <div class="lp-card-title">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-            Email Preview
-          </div>
-          <div class="lp-field">
-            <label>Subject</label>
-            <input class="lp-value" id="email-subject" type="text" placeholder="(generated by AI)">
-          </div>
-          <div class="lp-field">
-            <label>Body</label>
-            <div class="lp-email-preview placeholder" id="email-body-preview">Generate an email above to see a personalized preview based on this contact's LinkedIn profile.</div>
-          </div>
-          <div class="lp-actions">
-            <button class="lp-btn lp-btn-primary" id="btn-enroll" onclick="enrollContact()" disabled>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-              Enroll in Sequence
-            </button>
-            <button class="lp-btn lp-btn-secondary" id="btn-copy" onclick="copyEmail()" style="display:none">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-              Copy
-            </button>
-          </div>
+        <div class="lp-field">
+          <label>Body</label>
+          <div class="lp-email-preview" id="email-body-preview"></div>
         </div>
-
+        <div class="lp-actions">
+          <button class="lp-btn lp-btn-secondary" id="btn-copy" onclick="copyEmail()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            Copy
+          </button>
+          <button class="lp-btn lp-btn-secondary" onclick="generateEmail()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+            Regenerate
+          </button>
+        </div>
       </div>
+    </div>
+  </div>
+
+  <!-- 5. Enroll -->
+  <div class="lp-section lp-section--hidden" id="section-enroll">
+    <div id="enroll-action">
+      <button class="lp-btn lp-btn-primary" id="btn-enroll" onclick="enrollContact()" style="width:100%;justify-content:center;padding:0.75rem">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        Enroll in Sequence
+      </button>
+    </div>
+    <div id="enroll-success" style="display:none">
+      <div class="lp-success-card">
+        <svg class="lp-success-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        <h3>Enrolled!</h3>
+        <p id="enroll-success-msg"></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 6. Start over -->
+  <div class="lp-section lp-section--hidden" id="section-reset">
+    <div class="lp-start-over">
+      <a href="#" onclick="resetAll(); return false;">Start over with a new screenshot</a>
     </div>
   </div>
 
@@ -147,241 +150,273 @@
 {% block scripts %}
 <script>
 (function() {
-  // State
+  // ── State ──────────────────────────────────────────────────────────────
   let extractedContact = null;
   let apolloContact = null;
   let uploadedFile = null;
   let sequences = [];
 
-  // Step helpers
-  function setStep(n) {
-    for (let i = 1; i <= 5; i++) {
-      const el = document.getElementById('step-' + i);
-      el.className = 'lp-step' + (i < n ? ' done' : i === n ? ' active' : '');
-    }
+  // ── Helpers ────────────────────────────────────────────────────────────
+  function $(id) { return document.getElementById(id); }
+
+  function showSection(id) {
+    const el = $(id);
+    el.classList.remove('lp-section--hidden');
+    el.classList.add('lp-section--visible');
+    setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 80);
   }
 
-  function showToast(msg, type='success') {
-    const t = document.getElementById('lp-toast');
+  function hideSection(id) {
+    const el = $(id);
+    el.classList.remove('lp-section--visible');
+    el.classList.add('lp-section--hidden');
+  }
+
+  function showToast(msg, type) {
+    type = type || 'success';
+    var t = $('lp-toast');
     t.textContent = msg;
     t.className = 'lp-toast visible ' + type;
-    setTimeout(() => t.className = 'lp-toast', 3000);
+    setTimeout(function() { t.className = 'lp-toast'; }, 3000);
   }
 
-  // ── Upload & drag/drop ───────────────────────────────────────────────────
-  const zone = document.getElementById('upload-zone');
-  const fileInput = document.getElementById('file-input');
+  function escH(s) {
+    if (!s) return '';
+    var d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+  }
 
-  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
-  zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
-  zone.addEventListener('drop', e => {
-    e.preventDefault(); zone.classList.remove('drag-over');
-    const file = e.dataTransfer.files[0];
+  var SVG_SPINNER = '<span class="lp-spinner"></span>';
+  var SVG_CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>';
+  var SVG_X = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+
+  function setStatus(id, state) {
+    var item = $(id);
+    var icon = $(id + '-icon');
+    item.className = 'lp-status-item ' + state;
+    if (state === 'active') icon.innerHTML = SVG_SPINNER;
+    else if (state === 'done') icon.innerHTML = SVG_CHECK;
+    else if (state === 'error') icon.innerHTML = SVG_X;
+    else icon.innerHTML = '';
+  }
+
+  // ── Upload & drag/drop ─────────────────────────────────────────────────
+  var zone = $('upload-zone');
+  var fileInput = $('file-input');
+
+  zone.addEventListener('dragover', function(e) { e.preventDefault(); zone.classList.add('drag-over'); });
+  zone.addEventListener('dragleave', function() { zone.classList.remove('drag-over'); });
+  zone.addEventListener('drop', function(e) {
+    e.preventDefault();
+    zone.classList.remove('drag-over');
+    var file = e.dataTransfer.files[0];
     if (file && file.type.startsWith('image/')) handleFile(file);
   });
-  fileInput.addEventListener('change', () => {
+  fileInput.addEventListener('change', function() {
     if (fileInput.files[0]) handleFile(fileInput.files[0]);
   });
 
   function handleFile(file) {
     uploadedFile = file;
-    const reader = new FileReader();
-    reader.onload = e => {
-      const img = document.getElementById('preview-img');
+    var reader = new FileReader();
+    reader.onload = function(e) {
+      var img = $('preview-img');
       img.src = e.target.result;
       img.style.display = 'block';
-      document.getElementById('upload-title').textContent = file.name;
-      document.getElementById('upload-sub').textContent = 'Click to change screenshot';
+      $('upload-title').textContent = file.name;
+      $('upload-sub').textContent = 'Click to change screenshot';
     };
     reader.readAsDataURL(file);
-    setStep(2);
+
+    // Reset downstream sections
+    hideSection('section-contact');
+    hideSection('section-email');
+    hideSection('section-enroll');
+    hideSection('section-reset');
+    $('email-preview-wrap').style.display = 'none';
+    $('enroll-action').style.display = '';
+    $('enroll-success').style.display = 'none';
+
+    // Show status & start auto-chain
+    setStatus('status-extract', 'active');
+    setStatus('status-apollo', '');
+    showSection('section-status');
     extractContact();
   }
 
-  // ── Extract via Gemini ───────────────────────────────────────────────────
+  // ── Extract via AI ─────────────────────────────────────────────────────
   async function extractContact() {
-    document.getElementById('upload-btn').innerHTML = '<span class="lp-spinner"></span> Extracting…';
-    document.getElementById('upload-btn').disabled = true;
-    document.getElementById('results-section').style.display = 'block';
-
-    const formData = new FormData();
+    var formData = new FormData();
     formData.append('image', uploadedFile);
 
     try {
-      const resp = await fetch('/api/linkedin/extract', { method: 'POST', body: formData });
-      const data = await resp.json();
-      if (data.status === 'success' && data.contact) {
-        extractedContact = data.contact;
-        document.getElementById('f-name').value     = data.contact.name || '';
-        document.getElementById('f-title').value    = data.contact.title || '';
-        document.getElementById('f-company').value  = data.contact.company || '';
-        document.getElementById('f-location').value = data.contact.location || '';
-        document.getElementById('f-headline').value = data.contact.headline || '';
-        document.getElementById('btn-find-apollo').disabled = false;
-        setStep(3);
-        showToast('Contact extracted — review fields then click Find in Apollo');
+      var resp = await fetch('/api/linkedin/extract', { method: 'POST', body: formData });
+      var data = await resp.json();
+      // BUG FIX: backend returns { data: {...} } not { contact: {...} }
+      if (data.status === 'success' && data.data) {
+        extractedContact = data.data;
+        setStatus('status-extract', 'done');
+
+        // Populate fields
+        $('f-name').value     = data.data.name || '';
+        $('f-title').value    = data.data.title || '';
+        $('f-company').value  = data.data.company || '';
+        $('f-location').value = data.data.location || '';
+        $('f-headline').value = data.data.headline || '';
+
+        // Auto-trigger Apollo search
+        findInApollo();
       } else {
+        setStatus('status-extract', 'error');
         showToast(data.message || 'Could not extract contact info', 'error');
       }
     } catch(e) {
+      setStatus('status-extract', 'error');
       showToast('Extraction failed — check your connection', 'error');
-    } finally {
-      document.getElementById('upload-btn').innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Change file';
-      document.getElementById('upload-btn').disabled = false;
-      document.getElementById('upload-btn').onclick = () => document.getElementById('file-input').click();
     }
   }
 
-  // ── Find in Apollo ───────────────────────────────────────────────────────
+  // ── Find in Apollo (auto-triggered) ────────────────────────────────────
   window.findInApollo = async function() {
-    const btn = document.getElementById('btn-find-apollo');
-    btn.disabled = true;
-    btn.innerHTML = '<span class="lp-spinner"></span> Searching…';
+    setStatus('status-apollo', 'active');
 
-    const badge = document.getElementById('apollo-status-badge');
-    badge.className = 'lp-badge searching';
-    badge.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg> Searching…';
-
-    const payload = {
-      name: document.getElementById('f-name').value,
-      company: document.getElementById('f-company').value,
-      title: document.getElementById('f-title').value
+    var payload = {
+      name: $('f-name').value,
+      company: $('f-company').value,
+      title: $('f-title').value
     };
 
     try {
-      const resp = await fetch('/api/linkedin/find-contact', {
-        method: 'POST', headers: {'Content-Type':'application/json'},
+      var resp = await fetch('/api/linkedin/find-contact', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-      const data = await resp.json();
+      var data = await resp.json();
+      var badge = $('apollo-badge');
 
       if (data.status === 'success' && data.contact) {
         apolloContact = data.contact;
-        badge.className = 'lp-badge found';
-        badge.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg> Found';
+        setStatus('status-apollo', 'done');
 
-        const af = document.getElementById('apollo-fields');
-        const email = data.contact.email || '';
-        af.innerHTML = `
-          <div class="lp-field"><label>Email</label><input class="lp-value" id="apollo-email" value="${escH(email)}" placeholder="No email found" type="email"></div>
-          <div class="lp-field"><label>Apollo ID</label><div class="lp-value">${escH(data.contact.id || '—')}</div></div>
-          <div class="lp-field"><label>Title (Apollo)</label><div class="lp-value">${escH(data.contact.title || '—')}</div></div>
-          <div class="lp-field"><label>Company (Apollo)</label><div class="lp-value">${escH(data.contact.organization_name || '—')}</div></div>
-        `;
-        if (email) {
-          document.getElementById('btn-gen-email').disabled = false;
-          document.getElementById('btn-enroll').disabled = false;
-          showToast('✓ Found in Apollo — email: ' + email);
-        } else {
-          showToast('Contact found but no email — add manually above', 'error');
-          document.getElementById('btn-gen-email').disabled = false;
+        // Badge
+        badge.style.display = '';
+        badge.className = 'lp-badge found';
+        badge.innerHTML = SVG_CHECK + ' Found';
+
+        // Fill email + phone from Apollo
+        var email = data.contact.email || '';
+        $('f-email').value = email;
+        $('f-phone').value = data.contact.phone_number || data.contact.sanitized_phone || '';
+
+        if (!email) {
+          showToast('Found in Apollo but no email — enter one manually', 'error');
         }
-        setStep(4);
       } else {
+        setStatus('status-apollo', 'done');
+        badge.style.display = '';
         badge.className = 'lp-badge not-found';
-        badge.innerHTML = 'Not found';
-        const af = document.getElementById('apollo-fields');
-        af.innerHTML = `
-          <p style="color:var(--text-muted,#888);font-size:0.85rem;margin:0 0 1rem">Contact not found in Apollo. Enter their email manually to still enroll them.</p>
-          <div class="lp-field"><label>Email (manual)</label><input class="lp-value" id="apollo-email" type="email" placeholder="Enter email address…"></div>
-        `;
-        document.getElementById('btn-gen-email').disabled = false;
-        showToast('Not found in Apollo — you can still add an email manually', 'error');
-        setStep(4);
+        badge.textContent = 'Not found';
+        showToast('Not found in Apollo — enter email manually to continue', 'error');
       }
+
+      // Reveal contact card + email section regardless
+      showSection('section-contact');
+      setTimeout(function() { showSection('section-email'); }, 200);
+      setTimeout(function() { showSection('section-reset'); }, 350);
     } catch(e) {
-      badge.className = 'lp-badge not-found';
-      badge.textContent = 'Error';
-      showToast('Apollo search failed — check API key', 'error');
-    } finally {
-      btn.disabled = false;
-      btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg> Re-search Apollo';
+      setStatus('status-apollo', 'error');
+      showToast('Apollo search failed', 'error');
+      // Still show contact card so user can enter email manually
+      showSection('section-contact');
+      setTimeout(function() { showSection('section-email'); }, 200);
+      setTimeout(function() { showSection('section-reset'); }, 350);
     }
   };
 
-  // ── Generate email via AI ────────────────────────────────────────────────
+  // ── Generate email via AI ──────────────────────────────────────────────
   window.generateEmail = async function() {
-    const btn = document.getElementById('btn-gen-email');
+    var btn = $('btn-gen-email');
     btn.disabled = true;
-    btn.innerHTML = '<span class="lp-spinner"></span> Generating…';
+    btn.innerHTML = '<span class="lp-spinner lp-spinner--white"></span> Generating...';
 
-    const preview = document.getElementById('email-body-preview');
-    preview.className = 'lp-email-preview placeholder';
-    preview.textContent = 'Generating personalized email with AI…';
-
-    const contact = {
-      name: document.getElementById('f-name').value,
-      title: document.getElementById('f-title').value,
-      company: document.getElementById('f-company').value,
-      location: document.getElementById('f-location').value,
-      headline: document.getElementById('f-headline').value,
-      email: document.getElementById('apollo-email')?.value || ''
+    var contact = {
+      name: $('f-name').value,
+      title: $('f-title').value,
+      company: $('f-company').value,
+      location: $('f-location').value,
+      headline: $('f-headline').value,
+      email: $('f-email').value
     };
 
     try {
-      const resp = await fetch('/api/linkedin/generate-email', {
-        method: 'POST', headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({ contact })
+      var resp = await fetch('/api/linkedin/generate-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contact: contact })
       });
-      const data = await resp.json();
-      if (data.status === 'success') {
-        document.getElementById('email-subject').value = data.subject || '';
-        preview.className = 'lp-email-preview';
-        preview.textContent = data.body || '';
-        document.getElementById('btn-copy').style.display = 'inline-flex';
-        document.getElementById('btn-enroll').disabled = false;
-        setStep(5);
+      var data = await resp.json();
+
+      // BUG FIX: backend returns { email: { subject, body } } not { subject, body }
+      if (data.status === 'success' && data.email) {
+        $('email-subject').value = data.email.subject || '';
+        $('email-body-preview').className = 'lp-email-preview';
+        $('email-body-preview').textContent = data.email.body || '';
+        $('email-preview-wrap').style.display = '';
+        showSection('section-enroll');
         showToast('Email generated');
+        $('email-preview-wrap').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       } else {
-        preview.textContent = 'Generation failed: ' + (data.message || 'unknown error');
         showToast(data.message || 'Email generation failed', 'error');
       }
     } catch(e) {
-      preview.textContent = 'Network error';
-      showToast('Network error', 'error');
+      showToast('Network error generating email', 'error');
     } finally {
       btn.disabled = false;
-      btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg> Regenerate Email';
+      btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg> Generate Email with AI';
     }
   };
 
-  // ── Enroll in Apollo sequence ────────────────────────────────────────────
+  // ── Enroll in Apollo sequence ──────────────────────────────────────────
   window.enrollContact = async function() {
-    const email = document.getElementById('apollo-email')?.value?.trim();
+    var email = ($('f-email').value || '').trim();
     if (!email) { showToast('No email address — cannot enroll', 'error'); return; }
 
-    const seqId = document.getElementById('sequence-select').value;
-    const seqName = document.getElementById('sequence-select').selectedOptions[0]?.text || '';
+    var seqId = $('sequence-select').value;
+    var seqName = $('sequence-select').selectedOptions[0] ? $('sequence-select').selectedOptions[0].text : '';
     if (!seqId) { showToast('Please select a sequence', 'error'); return; }
 
-    const btn = document.getElementById('btn-enroll');
+    var btn = $('btn-enroll');
     btn.disabled = true;
-    btn.innerHTML = '<span class="lp-spinner"></span> Enrolling…';
+    btn.innerHTML = '<span class="lp-spinner lp-spinner--white"></span> Enrolling...';
 
-    const nameParts = (document.getElementById('f-name').value || '').trim().split(' ');
-    const payload = {
-      email,
+    var nameParts = ($('f-name').value || '').trim().split(' ');
+    var payload = {
+      email: email,
       first_name: nameParts[0] || '',
       last_name: nameParts.slice(1).join(' ') || '',
       sequence_id: seqId,
-      company_name: document.getElementById('f-company').value || '',
-      personalized_subject: document.getElementById('email-subject').value || '',
-      personalized_email_1: document.getElementById('email-body-preview').textContent || ''
+      company_name: $('f-company').value || '',
+      personalized_subject: $('email-subject').value || '',
+      // BUG FIX: backend reads 'personalized_email_body', not 'personalized_email_1'
+      personalized_email_body: $('email-body-preview').textContent || ''
     };
 
     try {
-      const resp = await fetch('/api/apollo/enroll-sequence', {
-        method: 'POST', headers: {'Content-Type':'application/json'},
+      var resp = await fetch('/api/apollo/enroll-sequence', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-      const data = await resp.json();
+      var data = await resp.json();
+
       if (data.status === 'success') {
-        btn.className = 'lp-btn lp-btn-success';
-        btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" width="15" height="15"><polyline points="20 6 9 17 4 12"/></svg> Enrolled!';
-        showToast('✓ ' + email + ' enrolled in "' + seqName + '"');
-        setStep(5);
-        // Mark step 5 done
-        document.getElementById('step-5').className = 'lp-step done';
+        $('enroll-action').style.display = 'none';
+        $('enroll-success').style.display = '';
+        $('enroll-success-msg').textContent = email + ' enrolled in "' + seqName + '"';
+        showToast(email + ' enrolled successfully');
+        $('enroll-success').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       } else {
         btn.disabled = false;
         btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg> Enroll in Sequence';
@@ -389,41 +424,81 @@
       }
     } catch(e) {
       btn.disabled = false;
-      btn.innerHTML = 'Enroll in Sequence';
+      btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg> Enroll in Sequence';
       showToast('Network error', 'error');
     }
   };
 
-  // ── Copy email ───────────────────────────────────────────────────────────
+  // ── Copy email ─────────────────────────────────────────────────────────
   window.copyEmail = function() {
-    const subj = document.getElementById('email-subject').value;
-    const body = document.getElementById('email-body-preview').textContent;
+    var subj = $('email-subject').value;
+    var body = $('email-body-preview').textContent;
     navigator.clipboard.writeText('Subject: ' + subj + '\n\n' + body)
-      .then(() => showToast('Copied to clipboard'))
-      .catch(() => showToast('Copy failed', 'error'));
+      .then(function() { showToast('Copied to clipboard'); })
+      .catch(function() { showToast('Copy failed', 'error'); });
   };
 
-  // ── Escape HTML helper ───────────────────────────────────────────────────
-  function escH(s) {
-    if (!s) return '';
-    const d = document.createElement('div');
-    d.textContent = s;
-    return d.innerHTML;
-  }
+  // ── Reset everything ──────────────────────────────────────────────────
+  window.resetAll = function() {
+    // Clear state
+    extractedContact = null;
+    apolloContact = null;
+    uploadedFile = null;
 
-  // ── Load sequences on page load ──────────────────────────────────────────
+    // Reset upload zone
+    $('file-input').value = '';
+    $('preview-img').style.display = 'none';
+    $('preview-img').src = '';
+    $('upload-title').textContent = 'Drop a LinkedIn screenshot here';
+    $('upload-sub').textContent = 'PNG or JPG — the full profile page works best';
+    $('upload-btn').disabled = false;
+
+    // Reset fields
+    $('f-name').value = '';
+    $('f-title').value = '';
+    $('f-company').value = '';
+    $('f-location').value = '';
+    $('f-headline').value = '';
+    $('f-phone').value = '';
+    $('f-email').value = '';
+    $('email-subject').value = '';
+    $('email-body-preview').textContent = '';
+    $('email-preview-wrap').style.display = 'none';
+
+    // Reset enroll
+    $('enroll-action').style.display = '';
+    $('enroll-success').style.display = 'none';
+    var enrollBtn = $('btn-enroll');
+    enrollBtn.disabled = false;
+    enrollBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg> Enroll in Sequence';
+
+    // Reset badge
+    $('apollo-badge').style.display = 'none';
+
+    // Hide all sections
+    hideSection('section-status');
+    hideSection('section-contact');
+    hideSection('section-email');
+    hideSection('section-enroll');
+    hideSection('section-reset');
+
+    // Scroll to top
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // ── Load sequences on page init ────────────────────────────────────────
   async function loadSequences() {
-    const sel = document.getElementById('sequence-select');
+    var sel = $('sequence-select');
     try {
-      const resp = await fetch('/api/apollo/sequences');
-      const data = await resp.json();
+      var resp = await fetch('/api/apollo/sequences');
+      var data = await resp.json();
       if (data.status === 'success' && data.sequences && data.sequences.length) {
         sequences = data.sequences;
-        sel.innerHTML = data.sequences.map(s =>
-          `<option value="${escH(s.id)}">${escH(s.name)}${s.active ? '' : ' (inactive)'}</option>`
-        ).join('');
+        sel.innerHTML = data.sequences.map(function(s) {
+          return '<option value="' + escH(s.id) + '">' + escH(s.name) + (s.active ? '' : ' (inactive)') + '</option>';
+        }).join('');
       } else {
-        sel.innerHTML = '<option value="">No sequences found — check API key</option>';
+        sel.innerHTML = '<option value="">No sequences found</option>';
       }
     } catch(e) {
       sel.innerHTML = '<option value="">Could not load sequences</option>';

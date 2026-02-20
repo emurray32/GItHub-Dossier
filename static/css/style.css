@@ -7,42 +7,42 @@
    DESIGN TOKENS
    ============================================================ */
 :root {
-    /* Primary palette */
-    --color-primary: hsl(168, 76%, 32%);
-    --color-primary-hover: hsl(168, 76%, 26%);
-    --color-primary-subtle: hsl(168, 50%, 95%);
-    --color-secondary: hsl(0, 0%, 9%);
-    --color-bg: hsl(0, 0%, 99%);
-    --color-surface: hsl(0, 0%, 97%);
-    --color-border: hsl(0, 0%, 90%);
-    --color-border-subtle: hsl(0, 0%, 94%);
-    --color-text: hsl(0, 0%, 9%);
-    --color-text-secondary: hsl(0, 0%, 46%);
-    --color-text-tertiary: hsl(0, 0%, 64%);
-    --color-text-on-primary: hsl(0, 0%, 100%);
-    --color-destructive: hsl(0, 72%, 51%);
-    --color-warning: hsl(38, 92%, 50%);
-    --color-success: hsl(142, 71%, 35%);
-    --color-info: hsl(214, 82%, 51%);
+    /* Primary palette — Phrase brand */
+    --color-primary: #3CC17E;
+    --color-primary-hover: #2EA96B;
+    --color-primary-subtle: #E8F8F0;
+    --color-secondary: #0A0A0A;
+    --color-bg: #FFFFFF;
+    --color-surface: #F5F5F5;
+    --color-border: #E2E8F0;
+    --color-border-subtle: #F1F5F9;
+    --color-text: #0A0A0A;
+    --color-text-secondary: #6B7280;
+    --color-text-tertiary: #9CA3AF;
+    --color-text-on-primary: #FFFFFF;
+    --color-destructive: #EF4444;
+    --color-warning: #F59E0B;
+    --color-success: #3CC17E;
+    --color-info: #3B82F6;
 
     /* Backward-compat: brand color aliases */
     --phrase-black: var(--color-secondary);
     --phrase-green: var(--color-primary);
     --phrase-dark-green: var(--color-primary-hover);
     --phrase-light-gray: var(--color-surface);
-    --phrase-gray-800: hsl(0, 0%, 20%);
+    --phrase-gray-800: #333333;
     --phrase-gray-400: var(--color-text-secondary);
     --phrase-gray-200: var(--color-border);
     --phrase-gray-100: var(--color-surface);
     --phrase-yellow: var(--color-warning);
     --phrase-blue: var(--color-info);
-    --phrase-purple: hsl(309, 73%, 32%);
+    --phrase-purple: #9333EA;
     --phrase-red: var(--color-destructive);
 
     /* Backward-compat: mapped color aliases */
     --bg-primary: var(--color-bg);
     --bg-secondary: var(--color-surface);
-    --bg-tertiary: hsl(0, 0%, 95%);
+    --bg-tertiary: #F3F4F6;
     --text-primary: var(--color-text);
     --text-secondary: var(--color-text-secondary);
     --text-muted: var(--color-text-tertiary);
@@ -56,17 +56,17 @@
 
     /* Functional aliases */
     --console-bg: var(--color-surface);
-    --console-text: hsl(0, 0%, 20%);
+    --console-text: #333333;
 
     /* Chart aliases */
     --chart-1: var(--color-primary);
     --chart-2: var(--color-info);
     --chart-3: var(--color-warning);
-    --chart-4: hsl(309, 73%, 32%);
+    --chart-4: #9333EA;
     --chart-5: var(--color-destructive);
 
-    /* Typography */
-    --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    /* Typography — Phrase brand */
+    --font-sans: 'Plus Jakarta Sans', 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     --font-mono: 'Berkeley Mono', 'SF Mono', 'Geist Mono', Consolas, monospace;
 
     /* Font Weights */
@@ -83,13 +83,13 @@
     --sidebar-width: 240px;
     --sidebar-collapsed: 56px;
 
-    /* Shadow System */
-    --shadow-xs: 0 1px 2px hsl(0 0% 0% / 0.04);
-    --shadow-sm: 0 1px 3px hsl(0 0% 0% / 0.06), 0 1px 2px hsl(0 0% 0% / 0.04);
-    --shadow-md: 0 4px 8px hsl(0 0% 0% / 0.06), 0 2px 4px hsl(0 0% 0% / 0.04);
-    --shadow-lg: 0 12px 24px hsl(0 0% 0% / 0.08), 0 4px 8px hsl(0 0% 0% / 0.04);
-    --shadow-xl: 0 20px 40px hsl(0 0% 0% / 0.1), 0 8px 16px hsl(0 0% 0% / 0.06);
-    --shadow-primary: 0 10px 15px -3px hsla(168, 76%, 32%, 0.15), 0 4px 6px -4px hsla(168, 76%, 32%, 0.08);
+    /* Shadow System — Phrase brand */
+    --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.04);
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08), 0 4px 12px rgba(0, 0, 0, 0.06);
+    --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.06);
+    --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.12), 0 2px 6px rgba(0, 0, 0, 0.08);
+    --shadow-xl: 0 20px 60px rgba(0, 0, 0, 0.18);
+    --shadow-primary: 0 10px 15px -3px rgba(60, 193, 126, 0.15), 0 4px 6px -4px rgba(60, 193, 126, 0.08);
 
     /* Transitions */
     --transition-fast: 120ms ease-out;
@@ -380,12 +380,12 @@ a:hover {
     gap: 6px;
     height: 28px;
     padding: 0 12px;
-    border-radius: 6px;
+    border-radius: 8px;
     font-size: 13px;
     font-weight: 500;
     font-family: inherit;
     cursor: pointer;
-    transition: all var(--transition-fast);
+    transition: all 150ms ease-out;
     text-decoration: none;
     border: 1px solid transparent;
     line-height: 1;
@@ -401,12 +401,12 @@ a:hover {
     background: var(--color-primary);
     color: var(--color-text-on-primary);
     border: none;
-    border-radius: 6px;
+    border-radius: 8px;
     font-size: 13px;
-    font-weight: 500;
+    font-weight: 600;
     font-family: inherit;
     cursor: pointer;
-    transition: all var(--transition-fast);
+    transition: all 150ms ease-out;
     text-decoration: none;
     line-height: 1;
 }
@@ -414,6 +414,7 @@ a:hover {
 .btn-primary:hover {
     background: var(--color-primary-hover);
     color: var(--color-text-on-primary);
+    transform: translateY(-1px);
 }
 
 .btn-secondary {
@@ -424,12 +425,12 @@ a:hover {
     padding: 0 12px;
     background: var(--color-bg);
     color: var(--color-text);
-    border: 1px solid var(--color-border);
-    border-radius: 6px;
+    border: 1.5px solid var(--color-border);
+    border-radius: 8px;
     font-size: 13px;
     font-weight: 500;
     cursor: pointer;
-    transition: all var(--transition-fast);
+    transition: all 150ms ease-out;
     text-decoration: none;
 }
 
@@ -446,12 +447,12 @@ a:hover {
     padding: 0 12px;
     background: transparent;
     color: var(--color-text-secondary);
-    border: none;
-    border-radius: 6px;
+    border: 1.5px solid var(--color-border);
+    border-radius: 8px;
     font-size: 13px;
     font-weight: 500;
     cursor: pointer;
-    transition: all var(--transition-fast);
+    transition: all 150ms ease-out;
 }
 
 .btn-ghost:hover {
@@ -468,11 +469,11 @@ a:hover {
     background: var(--color-destructive);
     color: var(--color-text-on-primary);
     border: none;
-    border-radius: 6px;
+    border-radius: 8px;
     font-size: 13px;
-    font-weight: 500;
+    font-weight: 600;
     cursor: pointer;
-    transition: all var(--transition-fast);
+    transition: all 150ms ease-out;
 }
 
 .btn-destructive:hover {
@@ -512,9 +513,9 @@ select {
 }
 
 .badge-success {
-    background: #dcfce7;
+    background: #E8F8F0;
     color: #166534;
-    border-color: #bbf7d0;
+    border-color: #A7F3D0;
 }
 
 .badge-warning {
@@ -524,9 +525,9 @@ select {
 }
 
 .badge-neutral {
-    background: #f1f5f9;
-    color: #475569;
-    border-color: #e2e8f0;
+    background: #F3F4F6;
+    color: #374151;
+    border-color: #E5E7EB;
 }
 
 .badge-danger {
@@ -538,7 +539,7 @@ select {
 .badge-primary {
     background: var(--color-primary-subtle);
     color: var(--color-primary);
-    border-color: hsl(168, 50%, 88%);
+    border-color: #A7F3D0;
 }
 
 .badge-info {
@@ -573,7 +574,7 @@ select {
 
 .modal-content {
     background: var(--color-bg);
-    border-radius: 8px;
+    border-radius: 16px;
     width: 480px;
     max-width: 90vw;
     max-height: 85vh;
@@ -820,8 +821,8 @@ select {
     padding: 0 12px;
     font-size: 13px;
     background: var(--color-bg);
-    border: 1px solid var(--color-border);
-    border-radius: 6px;
+    border: 1.5px solid var(--color-border);
+    border-radius: 8px;
     color: var(--color-text);
     outline: none;
     transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
@@ -833,24 +834,25 @@ select {
 
 .search-input:focus {
     border-color: var(--color-primary);
-    box-shadow: 0 0 0 2px hsla(168, 76%, 32%, 0.15);
+    box-shadow: 0 0 0 2px rgba(60, 193, 126, 0.15);
 }
 
 .search-button {
     height: 36px;
     padding: 0 16px;
     font-size: 13px;
-    font-weight: 500;
+    font-weight: 600;
     background: var(--color-primary);
     color: var(--color-text-on-primary);
     border: none;
-    border-radius: 6px;
+    border-radius: 8px;
     cursor: pointer;
-    transition: background var(--transition-fast);
+    transition: all 150ms ease-out;
 }
 
 .search-button:hover {
     background: var(--color-primary-hover);
+    transform: translateY(-1px);
 }
 
 /* Feature List */
@@ -2016,7 +2018,7 @@ select {
 
 .seq-input:focus {
     border-color: var(--color-primary);
-    box-shadow: 0 0 0 2px hsla(168, 76%, 32%, 0.12);
+    box-shadow: 0 0 0 2px rgba(60, 193, 126, 0.12);
 }
 
 .seq-input::placeholder {
@@ -2084,7 +2086,7 @@ select {
 }
 
 .seq-card:hover {
-    border-color: hsl(168, 50%, 70%);
+    border-color: rgba(60, 193, 126, 0.5);
     background: var(--color-primary-subtle);
 }
 
@@ -2174,7 +2176,7 @@ select {
     padding: 12px 20px;
     border-top: 1px solid var(--color-border);
     background: var(--color-surface);
-    border-radius: 0 0 8px 8px;
+    border-radius: 0 0 16px 16px;
 }
 
 /* Saved Sequences List */

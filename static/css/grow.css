@@ -246,12 +246,12 @@
 
 .file-upload-area:hover {
     border-color: var(--color-primary);
-    background: hsla(168, 76%, 32%, 0.04);
+    background: rgba(60, 193, 126, 0.04);
 }
 
 .file-upload-area.drag-over {
     border-color: var(--color-primary);
-    background: hsla(168, 76%, 32%, 0.08);
+    background: rgba(60, 193, 126, 0.08);
 }
 
 .file-upload-label {

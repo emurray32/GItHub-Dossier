@@ -73,7 +73,7 @@
 .contrib-search:focus {
     outline: none;
     border-color: var(--color-primary);
-    box-shadow: 0 0 0 3px hsla(168, 76%, 32%, 0.1);
+    box-shadow: 0 0 0 3px rgba(60, 193, 126, 0.1);
 }
 
 .contrib-filter-select {
@@ -233,7 +233,7 @@
 }
 
 .contrib-table tbody tr.expanded {
-    background: hsla(168, 76%, 32%, 0.04);
+    background: rgba(60, 193, 126, 0.04);
 }
 
 .contrib-table tbody td {
@@ -272,7 +272,7 @@
     justify-content: center;
 }
 
-.expand-btn:hover { color: var(--color-primary); background: hsla(168, 76%, 32%, 0.08); }
+.expand-btn:hover { color: var(--color-primary); background: rgba(60, 193, 126, 0.08); }
 .expand-btn svg { width: 15px; height: 15px; transition: transform 0.2s ease; }
 .expand-btn.open svg { transform: rotate(90deg); }
 
@@ -331,7 +331,7 @@
 .detail-email-form textarea:focus {
     outline: none;
     border-color: var(--color-primary);
-    box-shadow: 0 0 0 3px hsla(168, 76%, 32%, 0.1);
+    box-shadow: 0 0 0 3px rgba(60, 193, 126, 0.1);
 }
 
 .detail-actions {
@@ -383,7 +383,7 @@
 }
 
 .btn-add-sequence.enrolled {
-    background: hsla(168, 76%, 32%, 0.1);
+    background: rgba(60, 193, 126, 0.1);
     border-color: var(--color-primary);
     color: var(--color-primary);
 }
@@ -408,7 +408,7 @@
 }
 
 .apollo-badge.sent {
-    background: hsla(168, 76%, 32%, 0.12);
+    background: rgba(60, 193, 126, 0.12);
     color: var(--color-primary);
 }
 
@@ -640,7 +640,7 @@
 }
 
 .filter-chip.active {
-    background: hsla(168, 76%, 32%, 0.1);
+    background: rgba(60, 193, 126, 0.1);
     border-color: var(--color-primary);
     color: var(--color-primary);
     font-weight: 600;

@@ -106,7 +106,7 @@
 .history-search-input:focus {
     outline: none;
     border-color: var(--color-primary);
-    box-shadow: 0 0 0 2px hsla(168, 76%, 32%, 0.12);
+    box-shadow: 0 0 0 2px rgba(60, 193, 126, 0.12);
 }
 
 .date-filter,
@@ -136,7 +136,7 @@
 .signals-input:focus {
     outline: none;
     border-color: var(--color-primary);
-    box-shadow: 0 0 0 2px hsla(168, 76%, 32%, 0.12);
+    box-shadow: 0 0 0 2px rgba(60, 193, 126, 0.12);
 }
 
 .date-separator,
@@ -425,8 +425,8 @@
 }
 
 .signal-badge.signal-high {
-    background: hsl(142, 76%, 90%);
-    color: hsl(142, 71%, 25%);
+    background: #E8F8F0;
+    color: #166534;
 }
 
 .signal-badge.signal-very-high {
@@ -533,8 +533,8 @@
 }
 
 .btn-view {
-    background: hsla(168, 76%, 32%, 0.08);
-    border: 1px solid hsla(168, 76%, 32%, 0.2);
+    background: rgba(60, 193, 126, 0.08);
+    border: 1px solid rgba(60, 193, 126, 0.2);
     color: var(--color-primary);
     text-decoration: none;
     padding: 4px 8px;
@@ -544,17 +544,17 @@
 }
 
 .btn-view:hover {
-    background: hsla(168, 76%, 32%, 0.14);
+    background: rgba(60, 193, 126, 0.14);
 }
 
 .btn-rescan {
-    background: hsla(168, 76%, 32%, 0.08);
-    border: 1px solid hsla(168, 76%, 32%, 0.2);
+    background: rgba(60, 193, 126, 0.08);
+    border: 1px solid rgba(60, 193, 126, 0.2);
     color: var(--color-primary);
 }
 
 .btn-rescan:hover {
-    background: hsla(168, 76%, 32%, 0.14);
+    background: rgba(60, 193, 126, 0.14);
 }
 
 .btn-delete {
