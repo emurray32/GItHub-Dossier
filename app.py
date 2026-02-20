@@ -5599,7 +5599,6 @@ def api_linkedin_find_contact():
     return jsonify({'status': 'not_found', 'message': f'No contact found for {not_found_name}. They may not be in Apollo yet.'})
 
 
-
 @app.route('/api/linkedin/generate-email', methods=['POST'])
 def api_linkedin_generate_email():
     """Generate a personalized outreach email for a LinkedIn contact using Gemini."""
