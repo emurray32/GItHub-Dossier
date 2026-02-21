@@ -2,6 +2,23 @@
    CONTRIBUTORS PAGE - Sidebar Layout
    ============================================================ */
 
+/* Keyframes */
+@keyframes avatar-ring-rotate {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+@keyframes pulse-value {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.08); }
+    100% { transform: scale(1); }
+}
+
+@keyframes seq-picker-in {
+    from { opacity: 0; transform: translateY(-8px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
 /* Master layout: main + sidebar */
 .contributors-layout {
     display: flex;
@@ -19,11 +36,26 @@
     display: flex;
     flex-direction: column;
     gap: 1rem;
-    transition: margin-right 0.3s ease;
+    transition: margin-right 0.35s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .contributors-main.sidebar-active {
     margin-right: 0;
+}
+
+.sidebar-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.25);
+    backdrop-filter: blur(2px);
+    z-index: 99;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.sidebar-overlay.visible {
+    opacity: 1;
 }
 
 /* -------------------------------------------------------
@@ -36,14 +68,16 @@
     bottom: 0;
     width: 420px;
     max-width: 90vw;
-    background: var(--color-bg);
+    background: rgba(255, 255, 255, 0.92);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
     border-left: 1px solid var(--color-border);
-    box-shadow: -4px 0 24px rgba(0, 0, 0, 0.08);
+    box-shadow: -4px 0 32px rgba(0, 0, 0, 0.1);
     z-index: 100;
     display: flex;
     flex-direction: column;
     transform: translateX(100%);
-    transition: transform 0.3s ease;
+    transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
     overflow: hidden;
 }
 
@@ -80,13 +114,14 @@
     border-radius: 6px;
     display: flex;
     align-items: center;
-    transition: all 0.15s;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
     flex-shrink: 0;
 }
 
 .sidebar-close:hover {
     color: var(--color-text);
     background: var(--color-surface);
+    transform: rotate(90deg);
 }
 
 .sidebar-close svg {
@@ -138,6 +173,33 @@
     font-size: 20px;
     font-weight: 700;
     flex-shrink: 0;
+    position: relative;
+}
+
+.profile-avatar::before {
+    content: '';
+    position: absolute;
+    inset: -3px;
+    border-radius: 50%;
+    background: conic-gradient(
+        from 0deg,
+        var(--color-primary),
+        #4338CA,
+        var(--color-primary-subtle),
+        var(--color-primary)
+    );
+    z-index: -1;
+    animation: avatar-ring-rotate 8s linear infinite;
+    opacity: 0.6;
+}
+
+.profile-avatar::after {
+    content: '';
+    position: absolute;
+    inset: -2px;
+    border-radius: 50%;
+    background: var(--color-bg);
+    z-index: -1;
 }
 
 .profile-info {
@@ -186,7 +248,17 @@
     align-items: baseline;
     padding: 0.3rem 0;
     border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+    animation: fadeInUp 0.3s ease both;
 }
+
+.detail-row:nth-child(1) { animation-delay: 0ms; }
+.detail-row:nth-child(2) { animation-delay: 40ms; }
+.detail-row:nth-child(3) { animation-delay: 80ms; }
+.detail-row:nth-child(4) { animation-delay: 120ms; }
+.detail-row:nth-child(5) { animation-delay: 160ms; }
+.detail-row:nth-child(6) { animation-delay: 200ms; }
+.detail-row:nth-child(7) { animation-delay: 240ms; }
+.detail-row:nth-child(8) { animation-delay: 280ms; }
 
 .detail-row:last-child {
     border-bottom: none;
@@ -247,6 +319,15 @@
     border-radius: 999px;
     font-size: 12px;
     background: var(--color-bg);
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.contrib-stat-pill:hover {
+    box-shadow: var(--shadow-sm);
+}
+
+.stat-pill-value.updated {
+    animation: pulse-value 0.4s ease;
 }
 
 .stat-pill-value {
@@ -301,6 +382,11 @@
     background: var(--color-bg);
     color: var(--color-text-secondary);
     cursor: pointer;
+    transition: border-color 0.15s;
+}
+
+.contrib-filter-select:hover {
+    border-color: var(--color-text-tertiary);
 }
 
 .btn-fetch-contributors {
@@ -316,10 +402,19 @@
     font-size: 14px;
     font-weight: 600;
     cursor: pointer;
-    transition: background var(--transition-fast);
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
 }
 
-.btn-fetch-contributors:hover { background: var(--color-primary-hover); }
+.btn-fetch-contributors:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-primary);
+}
+
+.btn-fetch-contributors:active {
+    transform: translateY(0) scale(0.97);
+}
 .btn-fetch-contributors:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn-fetch-contributors svg { width: 14px; height: 14px; }
 

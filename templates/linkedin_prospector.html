@@ -158,7 +158,7 @@
         </div>
         <div class="lp-field">
           <label>Body</label>
-          <div class="lp-email-preview" id="email-body-preview"></div>
+          <textarea class="lp-email-preview" id="email-body-preview" rows="6"></textarea>
         </div>
         <div class="lp-actions">
           <button class="lp-btn lp-btn-secondary" id="btn-copy" onclick="copyEmail()">
@@ -624,6 +624,7 @@
   window.generateEmail = async function() {
     var btn = $('btn-gen-email');
     btn.disabled = true;
+    btn.classList.add('lp-btn-loading');
     btn.innerHTML = '<span class="lp-spinner lp-spinner--white"></span> Generating...';
 
     var contact = {
@@ -646,7 +647,7 @@
       if (data.status === 'success' && data.email) {
         $('email-subject').value = data.email.subject || '';
         $('email-body-preview').className = 'lp-email-preview';
-        $('email-body-preview').textContent = data.email.body || '';
+        $('email-body-preview').value = data.email.body || '';
         $('email-preview-wrap').style.display = '';
         showSection('section-enroll');
         showToast('Email generated');
@@ -657,6 +658,7 @@
     } catch(e) {
       showToast('Network error generating email', 'error');
     } finally {
+      btn.classList.remove('lp-btn-loading');
       btn.disabled = false;
       btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg> Generate Email with AI';
     }
@@ -683,7 +685,7 @@
       sequence_id: seqId,
       company_name: $('f-company').value || '',
       personalized_subject: $('email-subject').value || '',
-      personalized_email_body: $('email-body-preview').textContent || ''
+      personalized_email_body: $('email-body-preview').value || ''
     };
 
     try {
@@ -715,7 +717,7 @@
   // -- Copy email --
   window.copyEmail = function() {
     var subj = $('email-subject').value;
-    var body = $('email-body-preview').textContent;
+    var body = $('email-body-preview').value;
     var text = 'Subject: ' + subj + '\n\n' + body;
     try {
       if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -767,7 +769,7 @@
     $('f-phone').value = '';
     $('f-email').value = '';
     $('email-subject').value = '';
-    $('email-body-preview').textContent = '';
+    $('email-body-preview').value = '';
     $('email-preview-wrap').style.display = 'none';
 
     // Reset profile card
