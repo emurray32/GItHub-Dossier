@@ -4,10 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Lead Machine{% endblock %}</title>
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='45' fill='%231a237e'/><circle cx='50' cy='50' r='30' fill='none' stroke='white' stroke-width='4'/><line x1='71' y1='71' x2='90' y2='90' stroke='white' stroke-width='8' stroke-linecap='round'/></svg>">
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='45' fill='%234F46E5'/><circle cx='50' cy='50' r='30' fill='none' stroke='white' stroke-width='4'/><line x1='71' y1='71' x2='90' y2='90' stroke='white' stroke-width='8' stroke-linecap='round'/></svg>">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=2">
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
     {% block head %}{% endblock %}
@@ -34,8 +34,8 @@
 
             <nav class="sidebar-nav">
                 <a href="{{ url_for('accounts') }}" class="sidebar-item {% if request.endpoint == 'accounts' %}active{% endif %}">
-                    <i data-lucide="building-2" class="sidebar-icon"></i>
-                    <span class="sidebar-label">Accounts</span>
+                    <i data-lucide="radar" class="sidebar-icon"></i>
+                    <span class="sidebar-label">RepoRadar</span>
                 </a>
                 <a href="{{ url_for('contributors') }}" class="sidebar-item {% if request.endpoint == 'contributors' %}active{% endif %}">
                     <i data-lucide="users" class="sidebar-icon"></i>
@@ -45,26 +45,14 @@
                     <i data-lucide="trending-up" class="sidebar-icon"></i>
                     <span class="sidebar-label">Grow</span>
                 </a>
-                <a href="{{ url_for('history') }}" class="sidebar-item {% if request.endpoint == 'history' %}active{% endif %}">
-                    <i data-lucide="clock" class="sidebar-icon"></i>
-                    <span class="sidebar-label">History</span>
+                <a href="{{ url_for('linkedin_prospector') }}" class="sidebar-item {% if request.endpoint == 'linkedin_prospector' %}active{% endif %}">
+                    <i data-lucide="scan-search" class="sidebar-icon"></i>
+                    <span class="sidebar-label">LinkedIn Prospector</span>
                 </a>
-                <a href="{{ url_for('webscraper_accounts') }}" class="sidebar-item {% if request.endpoint == 'webscraper_accounts' %}active{% endif %}">
-                    <i data-lucide="globe" class="sidebar-icon"></i>
-                    <span class="sidebar-label">WebScraper</span>
+                <a href="{{ url_for('settings') }}" class="sidebar-item {% if request.endpoint == 'settings' %}active{% endif %}">
+                    <i data-lucide="settings" class="sidebar-icon"></i>
+                    <span class="sidebar-label">Settings</span>
                 </a>
-                <a href="{{ url_for('experiment') }}" class="sidebar-item {% if request.endpoint == 'experiment' %}active{% endif %}">
-                    <i data-lucide="wrench" class="sidebar-icon"></i>
-                    <span class="sidebar-label">Analyzer</span>
-                </a>
-                <a href="{{ url_for('rules') }}" class="sidebar-item {% if request.endpoint == 'rules' %}active{% endif %}">
-                    <i data-lucide="shield-check" class="sidebar-icon"></i>
-                    <span class="sidebar-label">Rules</span>
-                </a>
-        <a href="{{ url_for('linkedin_prospector') }}" class="sidebar-item {% if request.endpoint == 'linkedin_prospector' %}active{% endif %}">
-          <i data-lucide="scan-search" class="sidebar-icon"></i>
-          <span class="sidebar-label">LinkedIn Prospector</span>
-        </a>
             </nav>
 
             <!-- Outbound Portal -->

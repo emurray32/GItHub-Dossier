@@ -201,7 +201,7 @@
 }
 .lp-field input.lp-value:focus {
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 2px rgba(60, 193, 126, 0.15);
+  box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.15);
 }
 .lp-fields-row {
   display: grid;
@@ -222,7 +222,7 @@
 }
 .lp-badge svg { width: 10px; height: 10px; }
 .lp-badge.found {
-  background: rgba(60, 193, 126, 0.12);
+  background: rgba(79, 70, 229, 0.12);
   color: var(--color-success);
 }
 .lp-badge.not-found {
@@ -250,7 +250,7 @@
 }
 .lp-select:focus {
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 2px rgba(60, 193, 126, 0.15);
+  box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.15);
 }
 
 /* ── Email preview ───────────────────────────────────────── */
@@ -312,8 +312,8 @@
 
 /* ── Success card ────────────────────────────────────────── */
 .lp-success-card {
-  background: rgba(60, 193, 126, 0.06);
-  border: 1px solid rgba(60, 193, 126, 0.2);
+  background: rgba(79, 70, 229, 0.06);
+  border: 1px solid rgba(79, 70, 229, 0.2);
   border-radius: var(--radius, 0.75rem);
   padding: 1.5rem;
   text-align: center;
@@ -458,7 +458,7 @@
 }
 .lp-url-input:focus {
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 2px rgba(60, 193, 126, 0.15);
+  box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.15);
 }
 .lp-url-input::placeholder {
   color: var(--color-text-tertiary);
@@ -521,8 +521,8 @@
   border: 2px solid var(--color-border);
 }
 .lp-profile-avatar.initials {
-  background: #3CC17E;
-  border-color: #3CC17E;
+  background: #4F46E5;
+  border-color: #4F46E5;
   color: #fff;
   font-size: 1.25rem;
   font-weight: var(--font-weight-semibold, 600);

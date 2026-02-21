@@ -54,7 +54,7 @@
 .meta-tag {
     display: inline-block;
     padding: 0.15rem 0.5rem;
-    background: var(--color-primary-subtle, rgba(60, 193, 126, 0.08));
+    background: var(--color-primary-subtle, rgba(79, 70, 229, 0.08));
     color: var(--color-primary);
     border-radius: 20px;
     font-weight: var(--font-weight-semibold, 600);
@@ -245,7 +245,7 @@
 .skill-tag {
     display: inline-block;
     padding: 0.15rem 0.5rem;
-    background: var(--color-primary-subtle, rgba(60, 193, 126, 0.08));
+    background: var(--color-primary-subtle, rgba(79, 70, 229, 0.08));
     color: var(--color-primary);
     border-radius: 20px;
     font-size: 0.7rem;
@@ -340,7 +340,7 @@
 }
 .email-input:focus {
     border-color: var(--color-primary);
-    box-shadow: 0 0 0 2px rgba(60, 193, 126, 0.15);
+    box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.15);
 }
 
 .email-textarea {
@@ -361,7 +361,7 @@
 }
 .email-textarea:focus {
     border-color: var(--color-primary);
-    box-shadow: 0 0 0 2px rgba(60, 193, 126, 0.15);
+    box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.15);
 }
 
 .email-hint {
@@ -1674,7 +1674,7 @@
 }
 
 .sequence-option-active.active {
-    background: #10b981;
+    background: #4F46E5;
 }
 
 .sequence-option-active.inactive {
@@ -1682,12 +1682,12 @@
 }
 
 .sequence-option-default {
-    background: rgba(60, 193, 126, 0.05);
-    border-left: 2px solid var(--color-primary, #10b981);
+    background: rgba(79, 70, 229, 0.05);
+    border-left: 2px solid var(--color-primary, #4F46E5);
 }
 
 .sequence-option-default:hover {
-    background: rgba(60, 193, 126, 0.1);
+    background: rgba(79, 70, 229, 0.1);
 }
 
 .sequence-default-badge {
@@ -1696,8 +1696,8 @@
     padding: 1px 5px;
     font-size: 10px;
     font-weight: 600;
-    background: rgba(60, 193, 126, 0.15);
-    color: #065f46;
+    background: rgba(79, 70, 229, 0.15);
+    color: #312e81;
     border-radius: 3px;
     vertical-align: middle;
 }
@@ -2456,7 +2456,7 @@
     font-size: 12px;
     font-weight: 600;
     color: white;
-    background: #10b981;
+    background: #4F46E5;
     border: none;
     border-radius: 6px;
     cursor: pointer;
@@ -2464,7 +2464,7 @@
 }
 
 .btn-enroll:hover {
-    background: #059669;
+    background: #4338CA;
 }
 
 .btn-enroll:disabled {
@@ -2646,14 +2646,14 @@
 }
 
 .btn-send-email {
-    background: #10b981;
-    border-color: #10b981;
+    background: #4F46E5;
+    border-color: #4F46E5;
     color: white;
 }
 
 .btn-send-email:hover {
-    background: #059669;
-    border-color: #059669;
+    background: #4338CA;
+    border-color: #4338CA;
 }
 
 .contributor-email-display {
@@ -2665,8 +2665,8 @@
 }
 
 .email-badge-verified {
-    background: #d1fae5;
-    color: #065f46;
+    background: #E0E7FF;
+    color: #312e81;
 }
 
 .email-badge-unverified {
