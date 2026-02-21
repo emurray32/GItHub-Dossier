@@ -39,70 +39,45 @@
     </div>
 </div>
 
-<!-- Status Pipeline Legend -->
-<div class="row row-cards mb-3 status-legend">
-    <div class="col-sm-6 col-lg">
-        <div class="card card-sm">
-            <div class="card-body">
-                <div class="d-flex align-items-center">
-                    <span class="status-dot status-dot-tracking me-2"></span>
-                    <div>
-                        <div class="fw-bold">Tracking - {{ tier_counts['0'] }}</div>
-                        <div class="text-secondary small">Monitoring for activity</div>
-                    </div>
-                </div>
+<!-- Pipeline KPI Strip -->
+<div class="row row-deck g-2 mb-3 kpi-strip">
+    <div class="col">
+        <div class="card card-sm kpi-card kpi-tracking">
+            <div class="card-body py-2 px-3">
+                <div class="kpi-count">{{ tier_counts['0'] }}</div>
+                <div class="kpi-label">Tracking</div>
             </div>
         </div>
     </div>
-    <div class="col-sm-6 col-lg">
-        <div class="card card-sm">
-            <div class="card-body">
-                <div class="d-flex align-items-center">
-                    <span class="status-dot status-dot-warm me-2"></span>
-                    <div>
-                        <div class="fw-bold">Warm Leads - {{ tier_counts['1'] }}</div>
-                        <div class="text-secondary small">Exploring internationalization</div>
-                    </div>
-                </div>
+    <div class="col">
+        <div class="card card-sm kpi-card kpi-warm">
+            <div class="card-body py-2 px-3">
+                <div class="kpi-count">{{ tier_counts['1'] }}</div>
+                <div class="kpi-label">Warm</div>
             </div>
         </div>
     </div>
-    <div class="col-sm-6 col-lg">
-        <div class="card card-sm">
-            <div class="card-body">
-                <div class="d-flex align-items-center">
-                    <span class="status-dot status-dot-hot me-2"></span>
-                    <div>
-                        <div class="fw-bold">Hot Leads - {{ tier_counts['2'] }}</div>
-                        <div class="text-secondary small">Actively setting up for expansion</div>
-                    </div>
-                </div>
+    <div class="col">
+        <div class="card card-sm kpi-card kpi-hot">
+            <div class="card-body py-2 px-3">
+                <div class="kpi-count">{{ tier_counts['2'] }}</div>
+                <div class="kpi-label">Hot</div>
             </div>
         </div>
     </div>
-    <div class="col-sm-6 col-lg">
-        <div class="card card-sm">
-            <div class="card-body">
-                <div class="d-flex align-items-center">
-                    <span class="status-dot status-dot-launched me-2"></span>
-                    <div>
-                        <div class="fw-bold">Launched - {{ tier_counts['3'] }}</div>
-                        <div class="text-secondary small">Already expanded</div>
-                    </div>
-                </div>
+    <div class="col">
+        <div class="card card-sm kpi-card kpi-launched">
+            <div class="card-body py-2 px-3">
+                <div class="kpi-count">{{ tier_counts['3'] }}</div>
+                <div class="kpi-label">Launched</div>
             </div>
         </div>
     </div>
-    <div class="col-sm-6 col-lg">
-        <div class="card card-sm">
-            <div class="card-body">
-                <div class="d-flex align-items-center">
-                    <span class="status-dot status-dot-notfound me-2"></span>
-                    <div>
-                        <div class="fw-bold">Not Found - {{ tier_counts['4'] }}</div>
-                        <div class="text-secondary small">No public GitHub presence</div>
-                    </div>
-                </div>
+    <div class="col">
+        <div class="card card-sm kpi-card kpi-notfound">
+            <div class="card-body py-2 px-3">
+                <div class="kpi-count">{{ tier_counts['4'] }}</div>
+                <div class="kpi-label">Not Found</div>
             </div>
         </div>
     </div>

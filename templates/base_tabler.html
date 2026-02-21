@@ -5,6 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}Lead Machine{% endblock %}</title>
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='45' fill='%231a237e'/><circle cx='50' cy='50' r='30' fill='none' stroke='white' stroke-width='4'/><line x1='71' y1='71' x2='90' y2='90' stroke='white' stroke-width='8' stroke-linecap='round'/></svg>">
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <!-- Tabler Core CSS -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/core@1.4.0/dist/css/tabler.min.css">
     <!-- Tabler Icons -->
@@ -35,7 +39,7 @@
                 <div class="collapse navbar-collapse" id="sidebar-menu">
                     <ul class="navbar-nav pt-lg-3">
                         <li class="nav-item">
-                            <a class="nav-link {% if request.endpoint == 'accounts' or request.endpoint == 'accounts_tabler' %}active{% endif %}" href="{{ url_for('accounts') }}">
+                            <a class="nav-link {% if request.endpoint == 'accounts' %}active{% endif %}" href="{{ url_for('accounts') }}">
                                 <span class="nav-link-icon"><i class="ti ti-building-community"></i></span>
                                 <span class="nav-link-title">Accounts</span>
                             </a>
