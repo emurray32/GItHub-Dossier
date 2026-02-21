@@ -1,0 +1,3352 @@
+{% extends "base.html" %}
+
+{% block title %}RepoRadar - Lead Machine{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/accounts.css') }}?v={{ cache_bust }}">
+{% endblock %}
+
+{% block content %}
+<div class="container accounts-page">
+    <header class="page-header">
+        <div class="accounts-header">
+            <div style="display: flex; gap: 1rem; align-items: center;">
+                <h1 class="page-title">Monitored Accounts</h1>
+
+                <div class="search-container">
+                    <svg class="search-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+                        stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                    <input type="text" class="search-input" placeholder="Search accounts..."
+                        value="{{ current_search }}"
+                        onkeydown="if(event.key === 'Enter') updateFilters({search: this.value})">
+                </div>
+            </div>
+
+            <div class="accounts-stats" style="width: 100%;">
+                <div class="tier-filter">
+                    <!-- Multi-select tier buttons -->
+                    <button class="tier-filter-btn {% if not current_tier_filter %}active{% endif %}"
+                        data-tier-id="all">
+                        All
+                    </button>
+
+                    {% for tier_id, config in tier_config.items() %}
+                    <button
+                        class="tier-filter-btn {% if current_tier_filter and tier_id in current_tier_filter %}active{% endif %}"
+                        data-tier-id="{{ tier_id }}">
+                        {{ config.name }}
+                    </button>
+                    {% endfor %}
+
+                    <!-- Archived accounts button -->
+                    <button class="tier-filter-btn archived-btn" id="show-archived-btn" title="View archived accounts (auto-archived Tier 4)">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="21 8 21 21 3 21 3 8"></polyline>
+                            <rect x="1" y="3" width="22" height="5"></rect>
+                            <line x1="10" y1="12" x2="14" y2="12"></line>
+                        </svg>
+                        Archived ({{ archived_count }})
+                    </button>
+                </div>
+                
+
+
+            </div>
+        </div>
+    </header>
+
+    <div class="status-legend-container">
+        <div class="legend-item status-tracking">
+            <div class="legend-header">
+                <span class="status-dot"></span>
+                <span class="status-title">Tracking - {{ tier_counts['0'] }}</span>
+            </div>
+            <span class="status-desc">Monitoring for activity</span>
+        </div>
+        <div class="legend-item status-thinking">
+            <div class="legend-header">
+                <span class="status-dot"></span>
+                <span class="status-title">Warm Leads - {{ tier_counts['1'] }}</span>
+            </div>
+            <span class="status-desc">Exploring internationalization</span>
+        </div>
+        <div class="legend-item status-preparing">
+            <div class="legend-header">
+                <span class="status-dot"></span>
+                <span class="status-title">Hot Leads - {{ tier_counts['2'] }}</span>
+            </div>
+            <span class="status-desc">Actively setting up for expansion</span>
+        </div>
+        <div class="legend-item status-launched">
+            <div class="legend-header">
+                <span class="status-dot"></span>
+                <span class="status-title">Launched - {{ tier_counts['3'] }}</span>
+            </div>
+            <span class="status-desc">Already expanded — too late</span>
+        </div>
+        <div class="legend-item status-not-found">
+            <div class="legend-header">
+                <span class="status-dot"></span>
+                <span class="status-title">Not Found - {{ tier_counts['4'] }}</span>
+            </div>
+            <span class="status-desc">No public GitHub presence</span>
+        </div>
+    </div>
+
+    {% if accounts %}
+    <div class="table-controls">
+        <div class="table-controls-left">
+            <label class="accounts-search" for="account-search-input">
+                <svg class="inline-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+                    stroke="currentColor" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <input type="text" id="account-search-input" placeholder="Search company or org..." autocomplete="off">
+            </label>
+            <select id="status-filter" class="filter-select" aria-label="Filter by scan status">
+                <option value="all">All statuses</option>
+                <option value="idle">Idle</option>
+                <option value="queued">Queued</option>
+                <option value="processing">Processing</option>
+                <option value="stuck">Stuck</option>
+            </select>
+            <select id="last-scanned-filter" class="filter-select" aria-label="Filter by last scanned">
+                <option value="">All scan times</option>
+                <option value="never">Never scanned</option>
+                <option value="7d">Last 7 days</option>
+                <option value="30d">Last 30 days</option>
+                <option value="90d">Last 90 days</option>
+                <option value="older">Older than 90 days</option>
+            </select>
+            <select id="revenue-filter" class="filter-select" aria-label="Filter by revenue range">
+                <option value="">All revenue</option>
+                <option value="0-10">Under $10M</option>
+                <option value="10-50">$10M - $50M</option>
+                <option value="50-100">$50M - $100M</option>
+                <option value="100-500">$100M - $500M</option>
+                <option value="500-1000">$500M - $1B</option>
+                <option value="1000-">Over $1B</option>
+            </select>
+            <button type="button" class="btn-clear-filters" id="clear-filters-btn">Clear filters</button>
+        </div>
+    </div>
+    <div class="accounts-table-container">
+        <table class="accounts-table table-compact" aria-label="Monitored accounts list">
+            <thead>
+                <tr>
+                    <th class="select-col">
+                        <input type="checkbox" id="select-all-accounts" class="select-account-checkbox"
+                            aria-label="Select all accounts">
+                    </th>
+                    <th class="row-num-col">#</th>
+                    <th class="sortable company-col resizable" data-sort-key="company">Company <span class="sort-indicator"><span class="sort-asc">▲</span><span class="sort-desc">▼</span></span><div class="resize-handle"></div></th>
+                    <th class="sortable revenue-col resizable" data-sort-key="annual_revenue">Annual Revenue <span class="sort-indicator"><span class="sort-asc">▲</span><span class="sort-desc">▼</span></span><div class="resize-handle"></div></th>
+                    <th class="sortable org-col resizable" data-sort-key="github_org">GitHub Org <span class="sort-indicator"><span class="sort-asc">▲</span><span class="sort-desc">▼</span></span><div class="resize-handle"></div></th>
+                    <th class="sortable tier-col resizable" data-sort-key="tier">Tier <span class="sort-indicator"><span class="sort-asc">▲</span><span class="sort-desc">▼</span></span><div class="resize-handle"></div></th>
+                    <th class="sortable last-scanned-col resizable" data-sort-key="last_scanned">Last Scanned <span class="sort-indicator"><span class="sort-asc">▲</span><span class="sort-desc">▼</span></span><div class="resize-handle"></div></th>
+                    <th class="sortable evidence-col resizable" data-sort-key="evidence">Evidence Summary <span class="sort-indicator"><span class="sort-asc">▲</span><span class="sort-desc">▼</span></span><div class="resize-handle"></div></th>
+                    <th class="actions-col resizable">Repo Report<div class="resize-handle"></div></th>
+                    <th class="notes-col resizable">Notes<div class="resize-handle"></div></th>
+                </tr>
+            </thead>
+            <tbody id="accounts-tbody">
+                <!-- DataTables will populate this with server-side data -->
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Template for DataTables row rendering (will be cloned and filled) -->
+    <script type="text/template" id="accounts-row-template">
+        <tr id="row-{id}" data-company="{company_name}" data-account-id="{id}" data-tier="{current_tier}" data-status="idle">
+            <td class="select-col">
+                <input type="checkbox" class="select-account-checkbox row-select" data-account-id="{id}" aria-label="Select {company_name}">
+            </td>
+            <td class="row-num-col">{row_number}</td>
+            <td class="company-cell">
+                <span class="company-cell-content">
+                    {company_link}
+                    <button type="button" class="btn-copy-company" title="Copy company name" data-company="{company_name}" onclick="copyToClipboard(this.dataset.company, this)">
+                        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                            <path d="M16 1H6c-1.1 0-2 .9-2 2v12h2V3h10V1zm3 4H10c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h9c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H10V7h9v14z" />
+                        </svg>
+                    </button>
+                </span>
+            </td>
+            <td class="annual-revenue-cell">{annual_revenue}</td>
+            <td class="github-org-cell" data-company="{company_name}" ondblclick="editOrg(this)" data-org="{github_org}">
+                <span class="org-display">
+                    {github_org_link}
+                </span>
+                <span class="github-org-input-container">
+                    <input type="text" class="github-org-input" placeholder="org-name" value="{github_org}">
+                    <button type="button" class="btn-save-org" onclick="saveOrgEdit(this)">Save</button>
+                    <button type="button" class="btn-cancel-org" onclick="cancelOrgEdit(this)">Cancel</button>
+                </span>
+            </td>
+            <td>
+                <span class="tier-badge tier-badge-{current_tier}">{tier_name}</span>
+            </td>
+            <td class="last-check-cell">
+                <div class="status-container">
+                    <span class="account-last-scan {last_scan_class}" data-timestamp="{last_scanned_at}">
+                        <strong class="last-scan-date">{last_scanned_formatted}</strong>
+                    </span>
+                </div>
+            </td>
+            <td class="evidence-cell">
+                <span class="evidence-text" title="{evidence_title}">{evidence_summary}</span>
+            </td>
+            <td class="actions-cell">
+                {actions_html}
+            </td>
+            <td class="notes-cell" data-account-id="{id}">
+                <span class="notes-display" ondblclick="editNotes(this)">{notes}</span>
+                <div class="notes-edit-container" style="display: none;">
+                    <textarea class="notes-input" placeholder="Add notes...">{notes}</textarea>
+                    <div class="notes-edit-buttons">
+                        <button type="button" class="btn-save-notes" onclick="saveNotes(this)">Save</button>
+                        <button type="button" class="btn-cancel-notes" onclick="cancelNotesEdit(this)">Cancel</button>
+                    </div>
+                </div>
+            </td>
+        </tr>
+    </script>
+
+    <!-- Hidden tbody placeholder -->
+    <div style="display: none;">
+        <tbody id="accounts-tbody-old">
+            <tr class="table-empty-row hidden" id="accounts-empty-row">
+                <td colspan="10">No accounts match your filters.</td>
+            </tr>
+            {% for account in accounts %}
+            <tr id="row-{{ account.id }}" data-company="{{ account.company_name }}" data-account-id="{{ account.id }}"
+                data-tier="{{ account.current_tier }}" data-last-scanned="{{ account.last_scanned_at or '' }}"
+                data-next-scan-due="{{ account.next_scan_due or '' }}" data-website="{{ account.website or '' }}" data-status="idle">
+                <td class="select-col">
+                    <input type="checkbox" class="select-account-checkbox row-select" data-account-id="{{ account.id }}"
+                        aria-label="Select {{ account.company_name }}">
+                </td>
+                <td class="row-num-col">{{ loop.index }}</td>
+                <td class="company-cell">
+                    <span class="company-cell-content">
+                        {% if account.latest_report_id %}
+                        <a href="{{ url_for('view_report', report_id=account.latest_report_id) }}">
+                            {{ account.company_name }}
+                        </a>
+                        {% else %}
+                        {{ account.company_name }}
+                        {% endif %}
+                        <button type="button" class="btn-copy-company" title="Copy company name"
+                            data-company="{{ account.company_name|e }}"
+                            onclick="copyToClipboard(this.dataset.company, this)">
+                            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                                <path
+                                    d="M16 1H6c-1.1 0-2 .9-2 2v12h2V3h10V1zm3 4H10c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h9c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H10V7h9v14z" />
+                            </svg>
+                        </button>
+                        {% if account.website %}
+                        <a href="{{ account.website|normalize_url }}" target="_blank" rel="noopener" class="btn-website-link" title="Visit website">
+                            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                        </a>
+                        {% endif %}
+                    </span>
+                </td>
+                <td class="github-org-cell" data-company="{{ account.company_name|e }}" ondblclick="editOrg(this)"
+                    data-org="{{ account.github_org|default('', true)|e }}">
+                    <span class="org-display">
+                        {% if account.github_org %}
+                        <a href="https://github.com/{{ account.github_org }}" target="_blank" rel="noopener"
+                            class="github-org-link" title="View on GitHub">
+                            <svg viewBox="0 0 16 16" fill="currentColor">
+                                <path
+                                    d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" />
+                            </svg>
+                            @{{ account.github_org }}
+                        </a>
+                        <button type="button" class="github-org-edit" onclick="showOrgEdit(this)"
+                            title="Edit GitHub org">
+                            Edit
+                        </button>
+                        {% else %}
+                        <span class="org-not-found">Not found</span>
+                        <button type="button" class="github-org-edit" onclick="showOrgEdit(this)"
+                            title="Set GitHub org">
+                            Set
+                        </button>
+                        {% endif %}
+                    </span>
+                    <span class="github-org-input-container">
+                        <input type="text" class="github-org-input" placeholder="org-name"
+                            value="{{ account.github_org or '' }}">
+                        <button type="button" class="btn-save-org" onclick="saveOrgEdit(this)">Save</button>
+                        <button type="button" class="btn-cancel-org" onclick="cancelOrgEdit(this)">Cancel</button>
+                    </span>
+                </td>
+                <td>
+                    <span class="tier-badge tier-badge-{{ account.current_tier }}">
+                        {{ tier_config[account.current_tier]['name'] if account.current_tier in tier_config else 'Tier ' ~ account.current_tier }}
+                    </span>
+                </td>
+                <td class="last-check-cell">
+                    <div class="status-container">
+                        <span class="account-last-scan {% if not account.last_scanned_at %}never-scanned{% endif %}">
+                            {% if account.last_scanned_at %}
+                            <strong class="last-scan-date" data-timestamp="{{ account.last_scanned_at }}">
+                                --
+                            </strong>
+                            {% elif account.scan_status == 'queued' %}
+                            <strong class="last-scan-date status-queued">In Queue</strong>
+                            {% elif account.scan_status == 'processing' %}
+                            <strong class="last-scan-date status-processing">Scanning...</strong>
+                            {% else %}
+                            <strong class="last-scan-date">Never</strong>
+                            {% endif %}
+                        </span>
+                        <span class="next-scan-date" data-next-timestamp="{{ account.next_scan_due or '' }}">
+                            {% if account.next_scan_due %}
+                            --
+                            {% endif %}
+                        </span>
+                    </div>
+                </td>
+                <td class="evidence-cell">
+                    <span class="evidence-text" title="{{ account.evidence_summary or 'No evidence recorded' }}">
+                        {{ account.evidence_summary or 'No evidence recorded' }}
+                    </span>
+                </td>
+                <td class="actions-cell">
+                    {% if account.latest_report_id %}
+                    <button type="button" class="btn-view-report"
+                        onclick="openReport('{{ url_for('view_report', report_id=account.latest_report_id) }}')">
+                        View
+                    </button>
+                    {% else %}
+                    <button type="button" class="btn-view-report" disabled style="visibility: hidden;">
+                        View
+                    </button>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+        </table>
+    </div>
+    <!-- Pagination Controls -->
+    <div class="pagination-container" id="pagination-container">
+        <div class="pagination-info" id="pagination-info">
+            Loading...
+        </div>
+        <div class="pagination-controls">
+            <button type="button" class="pagination-mode-toggle" id="infinite-scroll-toggle" title="Toggle infinite scroll for large datasets">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                    <polyline points="19 12 12 19 5 12"></polyline>
+                </svg>
+                <span>Infinite Scroll</span>
+            </button>
+            <select id="limit-select" class="pagination-limit-select" aria-label="Rows per page">
+                <option value="25">25 rows</option>
+                <option value="50" selected>50 rows</option>
+                <option value="100">100 rows</option>
+                <option value="250">250 rows</option>
+                <option value="500">500 rows</option>
+                <option value="1000">1,000 rows</option>
+                <option value="10000">All</option>
+            </select>
+            <button type="button" class="pagination-btn" id="prev-page-btn" disabled>
+                Previous
+            </button>
+            <span class="pagination-page-display" id="page-display">
+                Page 1 of 1
+            </span>
+            <button type="button" class="pagination-btn" id="next-page-btn" disabled>
+                Next
+            </button>
+        </div>
+    </div>
+    <!-- Infinite scroll loading indicator (hidden by default) -->
+    <div class="infinite-scroll-loading" id="infinite-scroll-indicator" style="display: none;">
+        <div class="loading-spinner"></div>
+        <span>Loading more accounts...</span>
+    </div>
+
+    <div class="bulk-command-bar hidden" id="bulk-command-bar">
+        <span class="bulk-command-count" id="bulk-selection-count">0 accounts selected</span>
+        <div class="bulk-command-actions">
+            <button type="button" class="btn-action-smart" id="bulk-rescan-btn" onclick="bulkRescan()">
+                Rescan Selected
+            </button>
+            <button type="button" class="btn-rescan" id="bulk-export-btn" onclick="exportCSV()">
+                Export CSV
+            </button>
+            <button type="button" class="btn-archive" id="bulk-archive-btn" onclick="bulkArchiveSelected()">
+                Archive Selected
+            </button>
+            <button type="button" class="btn-danger" id="bulk-delete-btn" onclick="bulkDeleteSelected()">
+                Delete Selected
+            </button>
+        </div>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <p>No monitored accounts yet. Run a scan to start tracking companies!</p>
+        <a href="{{ url_for('index') }}" class="btn-primary">Start Scanning</a>
+    </div>
+    {% endif %}
+</div>
+
+<div id="report-drawer">
+    <button type="button" class="drawer-close" onclick="closeDrawer()" aria-label="Close report drawer">×</button>
+    <iframe id="report-frame" width="100%" height="100%"></iframe>
+</div>
+
+<!-- Queue/Processing Status Modal -->
+<div id="queue-modal" class="queue-modal">
+    <div class="queue-modal-overlay" onclick="closeQueueModal()"></div>
+    <div class="queue-modal-content">
+        <div class="queue-modal-header">
+            <h2 id="queue-modal-title">Scan Queue</h2>
+            <button type="button" class="queue-modal-close" onclick="closeQueueModal()"
+                aria-label="Close modal">×</button>
+        </div>
+        <div class="queue-modal-tabs">
+            <button type="button" class="queue-tab-btn active" data-tab="processing"
+                onclick="switchQueueTab('processing')">
+                Processing <span class="queue-count" id="processing-count">0</span>
+            </button>
+            <button type="button" class="queue-tab-btn" data-tab="queued" onclick="switchQueueTab('queued')">
+                Queued <span class="queue-count" id="queued-count">0</span>
+            </button>
+        </div>
+        <div class="queue-modal-body">
+            <div id="processing-tab" class="queue-tab-content active">
+                <div id="processing-list" class="queue-list">
+                    <div class="queue-empty">No accounts currently processing</div>
+                </div>
+            </div>
+            <div id="queued-tab" class="queue-tab-content">
+                <div id="queued-list" class="queue-list">
+                    <div class="queue-empty">No accounts in queue</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Archived Accounts Modal -->
+<div id="archived-modal" class="archived-modal-overlay">
+    <div class="archived-modal">
+        <div class="archived-modal-header">
+            <h2>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="21 8 21 21 3 21 3 8"></polyline>
+                    <rect x="1" y="3" width="22" height="5"></rect>
+                    <line x1="10" y1="12" x2="14" y2="12"></line>
+                </svg>
+                Archived Accounts
+            </h2>
+            <button type="button" class="archived-modal-close" onclick="closeArchivedModal()" aria-label="Close modal">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+            </button>
+        </div>
+        <div class="archived-modal-body">
+            <div class="archived-info-banner">
+                <strong>Auto-Archive:</strong> Tier 4 accounts (GitHub org not found or no public repos) are automatically archived.
+                They are re-scanned every <strong>4 weeks</strong> to check if they've become valid.
+                If a re-scan finds valid data, the account will be automatically unarchived.
+            </div>
+            <div id="archived-accounts-list" class="archived-accounts-list">
+                <div class="archived-loading">Loading archived accounts...</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Integrations Modal -->
+<div id="integrations-modal" class="integrations-modal-overlay">
+    <div class="integrations-modal">
+        <div class="integrations-modal-header">
+            <h2>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                </svg>
+                Integrations
+            </h2>
+            <button type="button" class="integrations-modal-close" onclick="closeIntegrationsModal()" aria-label="Close modal">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+            </button>
+        </div>
+        <div class="integrations-modal-body">
+            <!-- Google Sheets Integration -->
+            <div class="integration-section">
+                <h3>
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M19.385 2H4.615C3.17 2 2 3.17 2 4.615v14.77C2 20.83 3.17 22 4.615 22h14.77C20.83 22 22 20.83 22 19.385V4.615C22 3.17 20.83 2 19.385 2zM8 18H6v-7h2v7zm4 0h-2V8h2v10zm4 0h-2v-4h2v4z"/>
+                    </svg>
+                    Google Sheets Export
+                </h3>
+                <p class="integration-description">
+                    Automatically export new Tier 1 and Tier 2 accounts to a Google Sheet when they're detected.
+                    The data will match your RepoRadar table format with Company, Revenue, GitHub Org, Tier, Evidence Summary, and more.
+                </p>
+
+                <div class="integration-form-group">
+                    <label for="gsheet-webhook-url">Google Apps Script Web App URL</label>
+                    <input type="url" id="gsheet-webhook-url" class="integration-input"
+                           placeholder="https://script.google.com/macros/s/XXXXX/exec">
+                    <p class="integration-help">
+                        Deploy the <a href="/docs/google-sheets-webhook-script.js" target="_blank">Apps Script</a> to your Google Sheet and paste the Web App URL here.
+                    </p>
+                </div>
+
+                <div class="integration-form-group">
+                    <div class="integration-toggle">
+                        <input type="checkbox" id="gsheet-webhook-enabled">
+                        <span>Enable automatic export to Google Sheets</span>
+                    </div>
+                </div>
+
+                <div class="integration-actions">
+                    <button type="button" class="integration-btn integration-btn-primary" onclick="saveGSheetSettings()">
+                        Save Settings
+                    </button>
+                    <button type="button" class="integration-btn integration-btn-secondary" onclick="testGSheetWebhook()">
+                        Test Webhook
+                    </button>
+                </div>
+
+                <div id="gsheet-status" class="integration-status" style="display: none;"></div>
+            </div>
+
+            <div class="integration-divider"></div>
+
+            <!-- Setup Instructions -->
+            <div class="integration-section">
+                <h3>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="16" x2="12" y2="12"></line>
+                        <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                    </svg>
+                    Setup Instructions
+                </h3>
+                <div class="integration-description">
+                    <ol style="margin: 0; padding-left: 1.25rem; line-height: 1.8;">
+                        <li>Open your Google Sheet</li>
+                        <li>Go to <strong>Extensions &rarr; Apps Script</strong></li>
+                        <li>Copy the <a href="/docs/google-sheets-webhook-script.js" target="_blank">webhook script</a> into the editor</li>
+                        <li>Click <strong>Deploy &rarr; New deployment</strong></li>
+                        <li>Select <strong>Web app</strong> as the type</li>
+                        <li>Set "Who has access" to <strong>Anyone</strong></li>
+                        <li>Copy the Web App URL and paste it above</li>
+                        <li>Enable the integration and save</li>
+                    </ol>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Tier name map
+    const TIER_NAMES = {0: 'Tracking', 1: 'Thinking', 2: 'Preparing', 3: 'Launched', 4: 'Not Found'};
+    function tierLabel(tierNum) { return TIER_NAMES[tierNum] || 'Tier ' + tierNum; }
+
+    // =============================================================================
+    // Toast Notification System for User Feedback
+    // =============================================================================
+
+    const toastContainer = (() => {
+        const container = document.createElement('div');
+        container.id = 'toast-container';
+        container.style.cssText = 'position: fixed; top: 20px; right: 20px; z-index: 10000; display: flex; flex-direction: column; gap: 10px;';
+        document.addEventListener('DOMContentLoaded', () => document.body.appendChild(container));
+        return container;
+    })();
+
+    function showToast(message, type = 'error', duration = 5000) {
+        const toast = document.createElement('div');
+        const bgColor = type === 'error' ? '#ef4444' : type === 'warning' ? '#f59e0b' : '#22c55e';
+        toast.style.cssText = `
+            background: ${bgColor}; color: white; padding: 12px 20px; border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15); font-size: 14px; max-width: 350px;
+            animation: slideIn 0.3s ease; display: flex; align-items: center; gap: 10px;
+        `;
+        toast.innerHTML = `
+            <span>${message}</span>
+            <button onclick="this.parentElement.remove()" style="background: none; border: none; color: white; cursor: pointer; font-size: 18px; line-height: 1;">&times;</button>
+        `;
+        toastContainer.appendChild(toast);
+        setTimeout(() => toast.remove(), duration);
+    }
+
+    // =============================================================================
+    // Safe JSON Fetch Helper - Handles HTML error responses gracefully
+    // =============================================================================
+
+    async function safeFetchJson(url, options = {}) {
+        try {
+            const response = await fetch(url, options);
+
+            // Check if response is OK (status 200-299)
+            if (!response.ok) {
+                throw new Error(`Server error: ${response.status} ${response.statusText}`);
+            }
+
+            // Verify content type is JSON
+            const contentType = response.headers.get('content-type') || '';
+            if (!contentType.includes('application/json')) {
+                // Server returned HTML (likely error page) instead of JSON
+                throw new Error('Server returned unexpected response (server may be restarting)');
+            }
+
+            return await response.json();
+        } catch (error) {
+            // Rethrow with context
+            throw new Error(`API request failed: ${error.message}`);
+        }
+    }
+
+    // Track consecutive errors to avoid spamming toasts
+    const errorTracker = {
+        counts: {},
+        lastShown: {},
+        shouldShow(endpoint) {
+            const now = Date.now();
+            const key = endpoint;
+            this.counts[key] = (this.counts[key] || 0) + 1;
+
+            // Only show toast once per minute per endpoint
+            if (!this.lastShown[key] || (now - this.lastShown[key]) > 60000) {
+                this.lastShown[key] = now;
+                return true;
+            }
+            return false;
+        },
+        reset(endpoint) {
+            this.counts[endpoint] = 0;
+        }
+    };
+
+    // =============================================================================
+    // Time Utilities
+    // =============================================================================
+
+    function openReport(url) {
+        const drawer = document.getElementById('report-drawer');
+        const frame = document.getElementById('report-frame');
+        frame.src = url;
+        drawer.classList.add('drawer-open');
+    }
+
+    function closeDrawer() {
+        const drawer = document.getElementById('report-drawer');
+        const frame = document.getElementById('report-frame');
+        drawer.classList.remove('drawer-open');
+        frame.src = '';
+    }
+
+    // Filter Logic
+    function getQueryParam(param) {
+        const urlParams = new URLSearchParams(window.location.search);
+        return urlParams.get(param);
+    }
+
+    function getAllQueryParams() {
+        return new URLSearchParams(window.location.search);
+    }
+
+    function updateFilters(updates) {
+        const urlParams = new URLSearchParams(window.location.search);
+
+        // Reset page to 1 on filter change
+        urlParams.set('page', 1);
+
+        if (updates.search !== undefined) {
+            if (updates.search) {
+                urlParams.set('q', updates.search);
+            } else {
+                urlParams.delete('q');
+            }
+        }
+
+        if (updates.tier !== undefined) {
+            urlParams.delete('tier'); // Clear all tiers first
+            if (updates.tier !== null) {
+                // updates.tier should be an array of integers
+                updates.tier.forEach(t => urlParams.append('tier', t));
+            }
+        }
+
+        window.location.href = '?' + urlParams.toString();
+    }
+
+    function toggleTierFilter(tierId) {
+        const urlParams = new URLSearchParams(window.location.search);
+        const currentTiers = urlParams.getAll('tier').map(t => parseInt(t));
+
+        let newTiers;
+        if (currentTiers.includes(tierId)) {
+            // Remove it
+            newTiers = currentTiers.filter(t => t !== tierId);
+        } else {
+            // Add it
+            newTiers = [...currentTiers, tierId];
+        }
+
+        // Convert to array of unique values
+        newTiers = [...new Set(newTiers)];
+
+        // If empty, it means 'All', so we pass null to updateFilters
+        updateFilters({ tier: newTiers.length > 0 ? newTiers : null });
+    }
+
+    function formatSmartDate(dateString) {
+        if (!dateString) return 'Never';
+        // Server stores timestamps in UTC without 'Z' suffix - add it to parse correctly
+        let normalizedDateString = dateString;
+        if (typeof dateString === 'string') {
+            normalizedDateString = dateString.replace(' ', 'T');
+            if (!normalizedDateString.endsWith('Z') && !normalizedDateString.includes('+') && !normalizedDateString.includes('-', 10)) {
+                normalizedDateString += 'Z';
+            }
+        }
+        const date = new Date(normalizedDateString);
+        if (Number.isNaN(date.getTime())) return 'Never';
+
+        const timeZone = 'America/New_York';
+
+        // Compare dates in EST
+        const dateStr = date.toLocaleDateString('en-US', { timeZone, year: 'numeric', month: 'numeric', day: 'numeric' });
+        const nowStr = new Date().toLocaleDateString('en-US', { timeZone, year: 'numeric', month: 'numeric', day: 'numeric' });
+
+        if (dateStr === nowStr) return 'Today';
+
+        const options = { month: 'short', day: 'numeric', timeZone };
+        return date.toLocaleDateString('en-US', options);
+    }
+
+    function formatNextDate(dateString) {
+        if (!dateString) return '';
+        // Server stores timestamps in UTC without 'Z' suffix - add it to parse correctly
+        let normalizedDateString = dateString;
+        if (typeof dateString === 'string') {
+            normalizedDateString = dateString.replace(' ', 'T');
+            if (!normalizedDateString.endsWith('Z') && !normalizedDateString.includes('+') && !normalizedDateString.includes('-', 10)) {
+                normalizedDateString += 'Z';
+            }
+        }
+        const date = new Date(normalizedDateString);
+        if (Number.isNaN(date.getTime())) return '';
+
+        const options = { month: 'short', day: 'numeric', timeZone: 'America/New_York' };
+        return `Next: ${date.toLocaleDateString('en-US', options)}`;
+    }
+
+    function changeLimit(newLimit) {
+        const params = new URLSearchParams(window.location.search);
+        params.set('limit', newLimit);
+        params.set('page', 1);
+        window.location.search = params.toString();
+    }
+
+    function formatShortDate(timestamp) {
+        if (!timestamp) return '--';
+        // Server stores timestamps in UTC without 'Z' suffix - add it to parse correctly
+        let normalizedTimestamp = timestamp;
+        if (!timestamp.endsWith('Z') && !timestamp.includes('+') && !timestamp.includes('-', 10)) {
+            normalizedTimestamp = timestamp + 'Z';
+        }
+        const scanned = new Date(normalizedTimestamp);
+        if (Number.isNaN(scanned.getTime())) return '--';
+        const month = scanned.getMonth() + 1;
+        const day = scanned.getDate();
+        const year = String(scanned.getFullYear() % 100).padStart(2, '0');
+        return `${month}-${day}-${year}`;
+    }
+
+    function formatRelativeTime(timestamp) {
+        if (!timestamp) return '--';
+        // Server stores timestamps in UTC without 'Z' suffix - add it to parse correctly
+        let normalizedTimestamp = timestamp;
+        if (!timestamp.endsWith('Z') && !timestamp.includes('+') && !timestamp.includes('-', 10)) {
+            normalizedTimestamp = timestamp + 'Z';
+        }
+        const scanned = new Date(normalizedTimestamp);
+        if (Number.isNaN(scanned.getTime())) return '--';
+
+        const now = new Date();
+        const diffMs = now - scanned;
+        const diffMins = Math.floor(diffMs / (1000 * 60));
+        const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+        const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+        // For very recent scans, show relative time
+        if (diffMins < 1) {
+            return 'Just now';
+        } else if (diffMins < 60) {
+            return `${diffMins}m ago`;
+        } else if (diffHours < 24) {
+            return `${diffHours}h ago`;
+        } else if (diffDays < 7) {
+            return `${diffDays}d ago`;
+        } else {
+            // Fall back to date format for older scans
+            return formatShortDate(timestamp);
+        }
+    }
+
+    function getHoursSinceScanned(timestamp) {
+        if (!timestamp) return Infinity;
+        const now = new Date();
+        let scanned;
+        if (typeof timestamp === 'string' && !timestamp.includes('Z') && !timestamp.includes('+')) {
+            scanned = new Date(timestamp.replace(' ', 'T') + 'Z');
+        } else {
+            scanned = new Date(timestamp);
+        }
+        if (Number.isNaN(scanned.getTime())) return Infinity;
+        return (now - scanned) / (1000 * 60 * 60);
+    }
+
+    function getDaysSinceScanned(timestamp) {
+        if (!timestamp) return Infinity;
+        const now = new Date();
+        let scanned;
+        if (typeof timestamp === 'string' && !timestamp.includes('Z') && !timestamp.includes('+')) {
+            scanned = new Date(timestamp.replace(' ', 'T') + 'Z');
+        } else {
+            scanned = new Date(timestamp);
+        }
+        if (Number.isNaN(scanned.getTime())) return Infinity;
+        return (now - scanned) / (1000 * 60 * 60 * 24);
+    }
+
+    // =============================================================================
+    // Dashboard Stats Polling
+    // =============================================================================
+
+    function updateStatusFilterCounts() {
+        safeFetchJson('/api/status-counts')
+            .then(data => {
+                const statusFilter = document.getElementById('status-filter');
+                if (!statusFilter) return;
+
+                // Store current selection
+                const currentValue = statusFilter.value;
+
+                // Update each option with count
+                const options = statusFilter.querySelectorAll('option');
+                options.forEach(option => {
+                    const status = option.value;
+                    let count = 0;
+
+                    if (status === 'all') {
+                        count = data.total || 0;
+                    } else if (data[status] !== undefined) {
+                        count = data[status];
+                    }
+
+                    // Update option text with count
+                    const baseText = option.textContent.replace(/\s*\(\d+\)$/, '');
+                    option.textContent = `${baseText} (${count})`;
+                });
+
+                // Restore selection
+                statusFilter.value = currentValue;
+            })
+            .catch(err => console.error('Error fetching status counts:', err));
+    }
+
+    function updateDashboardStats() {
+        if (document.hidden) return;
+
+        safeFetchJson('/api/queue-status')
+            .then(data => {
+                errorTracker.reset('queue-status');
+                // Update queued count
+                const queueEl = document.getElementById('dashboard-queue-size');
+                if (queueEl) {
+                    const queuedCount = data.queued_count || 0;
+                    queueEl.textContent = queuedCount;
+                    if (queuedCount > 0) {
+                        queueEl.style.color = '#fbbf24';  // Yellow/amber for queued
+                    } else {
+                        queueEl.style.color = 'inherit';
+                    }
+                }
+
+                // Update processing count
+                const processingEl = document.getElementById('dashboard-processing-count');
+                if (processingEl) {
+                    const processingCount = data.processing_count || 0;
+                    processingEl.textContent = processingCount;
+                    if (processingCount > 0) {
+                        processingEl.style.color = '#818cf8';  // Purple for processing
+                    } else {
+                        processingEl.style.color = 'inherit';
+                    }
+                }
+            })
+            .catch(err => {
+                console.error('Error fetching queue status:', err);
+                if (errorTracker.shouldShow('queue-status')) {
+                    showToast('Unable to fetch queue status. Server may be temporarily unavailable.', 'warning');
+                }
+            });
+
+        // Update status filter dropdown counts
+        updateStatusFilterCounts();
+
+        // Fetch hourly API stats for accurate rate limit display
+        safeFetchJson('/api/hourly-api-stats')
+            .then(data => {
+                errorTracker.reset('hourly-api-stats');
+                const apiEl = document.getElementById('dashboard-api-calls');
+                const labelEl = document.getElementById('dashboard-api-label');
+                if (apiEl) {
+                    const calls = data.api_calls_this_hour || 0;
+                    const limit = data.hourly_limit || 10000;
+                    // Format as "X / Y" with thousands separators
+                    apiEl.textContent = `${calls.toLocaleString()} / ${limit.toLocaleString()}`;
+                }
+                if (labelEl) {
+                    labelEl.textContent = 'per hour';
+                }
+            })
+            .catch(err => {
+                console.error('Error fetching hourly API stats:', err);
+                // Always set a meaningful fallback on error for better UX
+                const apiEl = document.getElementById('dashboard-api-calls');
+                const labelEl = document.getElementById('dashboard-api-label');
+                if (apiEl) {
+                    apiEl.textContent = '0 / 10,000';  // Default fallback
+                }
+                if (labelEl) {
+                    labelEl.textContent = 'per hour';
+                }
+            });
+    }
+
+    // =============================================================================
+    // UI Initialization
+    // =============================================================================
+
+    function initializeUI() {
+        // Update all last scan timestamps with smart formatting
+        document.querySelectorAll('.last-scan-date[data-timestamp]').forEach(el => {
+            const timestamp = el.dataset.timestamp;
+            if (timestamp) {
+                el.textContent = formatSmartDate(timestamp);
+
+                // Add visual class based on freshness
+                const hours = getHoursSinceScanned(timestamp);
+                const container = el.closest('.account-last-scan');
+                if (container) {
+                    if (hours < 24) {
+                        container.classList.add('recent');
+                    } else if (hours > 24 * 7) {
+                        container.classList.add('stale');
+                    }
+                }
+            }
+        });
+
+        // Update all next scan timestamps
+        document.querySelectorAll('.next-scan-date[data-next-timestamp]').forEach(el => {
+            const timestamp = el.dataset.nextTimestamp;
+            if (timestamp) {
+                el.textContent = formatNextDate(timestamp);
+            }
+        });
+
+        initializeBulkSelection();
+        initializeFilters();
+    }
+
+    function initializeFilters() {
+        const searchInput = document.getElementById('account-search-input');
+        const statusFilter = document.getElementById('status-filter');
+        const clearButton = document.getElementById('clear-filters-btn');
+        if (!searchInput || !statusFilter || !clearButton) return;
+
+        let debounceTimer = null;
+
+        const handleFilterChange = () => {
+            if (debounceTimer) {
+                clearTimeout(debounceTimer);
+            }
+            debounceTimer = setTimeout(applyTableFilters, 150);
+        };
+
+        searchInput.addEventListener('input', handleFilterChange);
+        statusFilter.addEventListener('change', applyTableFilters);
+        clearButton.addEventListener('click', () => {
+            searchInput.value = '';
+            statusFilter.value = 'all';
+            applyTableFilters();
+        });
+
+        applyTableFilters();
+    }
+
+    function applyTableFilters() {
+        const searchInput = document.getElementById('account-search-input');
+        const statusFilter = document.getElementById('status-filter');
+        const emptyRow = document.getElementById('accounts-empty-row');
+        const rows = Array.from(document.querySelectorAll('.accounts-table tbody tr'))
+            .filter(row => !row.classList.contains('table-empty-row'));
+
+        const searchValue = (searchInput?.value || '').trim().toLowerCase();
+        const statusValue = statusFilter?.value || 'all';
+
+        let visibleCount = 0;
+
+        rows.forEach(row => {
+            const company = (row.dataset.company || '').toLowerCase();
+            const org = (row.querySelector('.github-org-cell')?.dataset.org || '').toLowerCase();
+            const status = row.dataset.status || 'idle';
+
+            const matchesSearch = !searchValue || company.includes(searchValue) || org.includes(searchValue);
+            const matchesStatus = statusValue === 'all' || status === statusValue;
+
+            const isVisible = matchesSearch && matchesStatus;
+            row.style.display = isVisible ? '' : 'none';
+            if (isVisible) visibleCount += 1;
+        });
+
+        if (emptyRow) {
+            emptyRow.classList.toggle('hidden', visibleCount > 0);
+        }
+    }
+
+    async function copyToClipboard(text, btn) {
+        if (!text || !btn) return;
+        const originalHTML = btn.innerHTML;
+
+        try {
+            if (navigator.clipboard?.writeText) {
+                await navigator.clipboard.writeText(text);
+            } else {
+                const tempInput = document.createElement('textarea');
+                tempInput.value = text;
+                tempInput.style.position = 'fixed';
+                tempInput.style.opacity = '0';
+                document.body.appendChild(tempInput);
+                tempInput.select();
+                document.execCommand('copy');
+                document.body.removeChild(tempInput);
+            }
+
+            btn.classList.add('copied');
+            btn.innerHTML = 'Copied';
+            setTimeout(() => {
+                btn.classList.remove('copied');
+                btn.innerHTML = originalHTML;
+            }, 1200);
+        } catch (error) {
+            console.error('Failed to copy text:', error);
+        }
+    }
+
+    function editOrg(cell) {
+        if (!cell) return;
+        const orgDisplay = cell.querySelector('.org-display');
+        const inputContainer = cell.querySelector('.github-org-input-container');
+        const input = cell.querySelector('.github-org-input');
+        const currentOrg = cell.dataset.org || '';
+
+        if (!orgDisplay || !inputContainer || !input) return;
+        if (inputContainer.classList.contains('active')) return;
+
+        orgDisplay.classList.add('hidden');
+        inputContainer.classList.add('active');
+        input.value = currentOrg;
+        input.focus();
+        input.select();
+    }
+
+
+    // =============================================================================
+    // Manual Removal
+    // =============================================================================
+
+    async function removeAccount(button) {
+        const row = button.closest('tr');
+        const company = row?.dataset.company || 'this account';
+        const accountId = row?.dataset.accountId;
+        if (!accountId) {
+            showNotification('Could not identify the selected account.', 'error');
+            return;
+        }
+
+        if (!confirm(`Remove ${company} from monitored accounts? This cannot be undone.`)) {
+            return;
+        }
+
+        button.disabled = true;
+        button.textContent = 'Removing...';
+
+        try {
+            const response = await fetch(`/api/accounts/${accountId}`, { method: 'DELETE' });
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.error || 'Failed to remove account.');
+            }
+            row.remove();
+            showNotification(`${company} removed from monitored accounts.`, 'success');
+        } catch (error) {
+            showNotification(error.message || 'Failed to remove account.', 'error');
+            button.disabled = false;
+            button.textContent = 'Remove';
+        }
+    }
+
+    // Initialize TIER_CONFIG from server data
+    const TIER_CONFIG = {
+        0: { name: 'Tracking', color: '#808080' },
+        1: { name: 'Thinking', color: '#FFD700' },
+        2: { name: 'Preparing', color: '#28A745' },
+        3: { name: 'Launched', color: '#DC3545' },
+        4: { name: 'Invalid', color: '#404040' }
+    };
+
+    // Pagination state
+    let paginationState = {
+        currentPage: 1,
+        pageSize: 50,
+        totalRecords: 0,
+        totalPages: 1,
+        sortColumn: 0,
+        sortDirection: 'asc'
+    };
+
+    function initializeDataTable() {
+        const accountsTable = document.querySelector('.accounts-table');
+        if (!accountsTable) return;
+
+        // Get initial filters from URL parameters
+        const urlParams = new URLSearchParams(window.location.search);
+        const initialSearch = urlParams.get('q') || '';
+        const initialPage = parseInt(urlParams.get('page')) || 1;
+        const initialLimit = parseInt(urlParams.get('limit')) || 50;
+
+        paginationState.currentPage = initialPage;
+        paginationState.pageSize = initialLimit;
+
+        // Create a custom search input binding
+        const searchInput = document.querySelector('#account-search-input');
+        if (searchInput) {
+            searchInput.value = initialSearch;
+            let searchTimeout;
+            searchInput.addEventListener('input', (e) => {
+                clearTimeout(searchTimeout);
+                searchTimeout = setTimeout(() => {
+                    paginationState.currentPage = 1;
+                    reloadAccountsTable();
+                }, 300);
+            });
+        }
+
+        // Setup pagination controls
+        const limitSelect = document.getElementById('limit-select');
+        const prevBtn = document.getElementById('prev-page-btn');
+        const nextBtn = document.getElementById('next-page-btn');
+
+        if (limitSelect) {
+            limitSelect.value = paginationState.pageSize;
+            limitSelect.addEventListener('change', (e) => {
+                paginationState.pageSize = parseInt(e.target.value);
+                paginationState.currentPage = 1;
+                reloadAccountsTable();
+            });
+        }
+
+        if (prevBtn) {
+            prevBtn.addEventListener('click', () => {
+                if (paginationState.currentPage > 1) {
+                    paginationState.currentPage--;
+                    reloadAccountsTable();
+                }
+            });
+        }
+
+        if (nextBtn) {
+            nextBtn.addEventListener('click', () => {
+                if (paginationState.currentPage < paginationState.totalPages) {
+                    paginationState.currentPage++;
+                    reloadAccountsTable();
+                }
+            });
+        }
+
+        // Load initial data
+        reloadAccountsTable();
+
+        // Setup tier filter buttons
+        const tierButtons = document.querySelectorAll('.tier-filter-btn');
+        tierButtons.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                paginationState.currentPage = 1;
+                const tierIdStr = btn.dataset.tierId;
+                if (tierIdStr === 'all') {
+                    updateFilters({tier: null});
+                } else {
+                    const tierId = parseInt(tierIdStr);
+                    toggleTierFilter(tierId);
+                }
+            });
+        });
+
+        // Setup last scanned filter dropdown
+        const lastScannedFilter = document.getElementById('last-scanned-filter');
+        if (lastScannedFilter) {
+            lastScannedFilter.addEventListener('change', () => {
+                paginationState.currentPage = 1;
+                reloadAccountsTable();
+            });
+        }
+
+        // Setup revenue filter dropdown
+        const revenueFilter = document.getElementById('revenue-filter');
+        if (revenueFilter) {
+            revenueFilter.addEventListener('change', () => {
+                paginationState.currentPage = 1;
+                reloadAccountsTable();
+            });
+        }
+
+        // Setup clear filters button
+        const clearFiltersBtn = document.getElementById('clear-filters-btn');
+        if (clearFiltersBtn) {
+            clearFiltersBtn.addEventListener('click', () => {
+                // Clear search input
+                if (searchInput) {
+                    searchInput.value = '';
+                }
+                // Clear tier filters in URL
+                const urlParams = new URLSearchParams(window.location.search);
+                urlParams.delete('tier');
+                urlParams.delete('q');
+                window.history.replaceState({}, '', '?' + urlParams.toString());
+                // Clear dropdown filters
+                if (lastScannedFilter) {
+                    lastScannedFilter.value = '';
+                }
+                if (revenueFilter) {
+                    revenueFilter.value = '';
+                }
+                // Reset "All" tier button to active
+                tierButtons.forEach(btn => {
+                    if (btn.dataset.tierId === 'all') {
+                        btn.classList.add('active');
+                    } else {
+                        btn.classList.remove('active');
+                    }
+                });
+                // Reload table
+                paginationState.currentPage = 1;
+                reloadAccountsTable();
+            });
+        }
+    }
+
+    // Loading state management
+    let isLoading = false;
+
+    function setLoadingState(loading) {
+        isLoading = loading;
+        const tableContainer = document.querySelector('.accounts-table-container');
+        const paginationContainer = document.getElementById('pagination-container');
+        const searchInput = document.getElementById('account-search-input');
+        const tierButtons = document.querySelectorAll('.tier-filter-btn');
+        const prevBtn = document.getElementById('prev-page-btn');
+        const nextBtn = document.getElementById('next-page-btn');
+        const limitSelect = document.getElementById('limit-select');
+
+        if (loading) {
+            // Add loading overlay to table
+            if (tableContainer && !tableContainer.querySelector('.loading-overlay')) {
+                const overlay = document.createElement('div');
+                overlay.className = 'loading-overlay';
+                overlay.innerHTML = '<div class="loading-spinner"></div>';
+                tableContainer.style.position = 'relative';
+                tableContainer.appendChild(overlay);
+            }
+
+            // Disable controls
+            if (searchInput) searchInput.disabled = true;
+            tierButtons.forEach(btn => btn.disabled = true);
+            if (prevBtn) prevBtn.disabled = true;
+            if (nextBtn) nextBtn.disabled = true;
+            if (limitSelect) limitSelect.disabled = true;
+            if (paginationContainer) paginationContainer.classList.add('controls-disabled');
+        } else {
+            // Remove loading overlay
+            const overlay = tableContainer?.querySelector('.loading-overlay');
+            if (overlay) overlay.remove();
+
+            // Re-enable controls
+            if (searchInput) searchInput.disabled = false;
+            tierButtons.forEach(btn => btn.disabled = false);
+            if (limitSelect) limitSelect.disabled = false;
+            if (paginationContainer) paginationContainer.classList.remove('controls-disabled');
+
+            // Update pagination button states based on current page
+            updatePaginationUI();
+        }
+    }
+
+    function reloadAccountsTable() {
+        const tbody = document.querySelector('#accounts-tbody');
+        const searchInput = document.querySelector('#account-search-input');
+        const urlParams = new URLSearchParams(window.location.search);
+
+        // Show loading state
+        setLoadingState(true);
+
+        // Show skeleton loading in table
+        tbody.innerHTML = Array(5).fill(0).map(() => `
+            <tr class="skeleton-row">
+                <td class="select-col"><div class="skeleton skeleton-text short"></div></td>
+                <td class="row-num-col"><div class="skeleton skeleton-text short"></div></td>
+                <td class="company-cell"><div class="skeleton skeleton-text"></div></td>
+                <td class="annual-revenue-cell"><div class="skeleton skeleton-text short"></div></td>
+                <td class="github-org-cell"><div class="skeleton skeleton-text"></div></td>
+                <td><div class="skeleton skeleton-text short"></div></td>
+                <td class="last-check-cell"><div class="skeleton skeleton-text short"></div></td>
+                <td class="evidence-cell"><div class="skeleton skeleton-text"></div></td>
+                <td class="actions-cell"><div class="skeleton skeleton-text short"></div></td>
+                <td class="notes-cell"><div class="skeleton skeleton-text"></div></td>
+            </tr>
+        `).join('');
+
+        const searchValue = searchInput ? searchInput.value : urlParams.get('q') || '';
+        const tierFilters = urlParams.getAll('tier').map(t => parseInt(t));
+
+        // Get new filter values
+        const lastScannedFilter = document.getElementById('last-scanned-filter');
+        const revenueFilter = document.getElementById('revenue-filter');
+        const lastScannedValue = lastScannedFilter ? lastScannedFilter.value : '';
+        const revenueValue = revenueFilter ? revenueFilter.value : '';
+
+        // Calculate start offset
+        const start = (paginationState.currentPage - 1) * paginationState.pageSize;
+
+        // Build query parameters
+        const params = new URLSearchParams();
+        params.set('draw', '1');
+        params.set('start', start.toString());
+        params.set('length', paginationState.pageSize.toString());
+        params.set('search[value]', searchValue);
+        params.set('order[0][column]', paginationState.sortColumn);
+        params.set('order[0][dir]', paginationState.sortDirection);
+
+        tierFilters.forEach(tier => {
+            params.append('tier', tier);
+        });
+
+        // Add last scanned filter
+        if (lastScannedValue) {
+            params.set('last_scanned', lastScannedValue);
+        }
+
+        // Add revenue filter (parse range like "10-50" into min/max)
+        if (revenueValue) {
+            const [minStr, maxStr] = revenueValue.split('-');
+            if (minStr) {
+                params.set('revenue_min', minStr);
+            }
+            if (maxStr) {
+                params.set('revenue_max', maxStr);
+            }
+        }
+
+        // Fetch data from server
+        fetch(`/api/accounts/datatable?${params.toString()}`)
+            .then(response => response.json())
+            .then(data => {
+                paginationState.totalRecords = data.recordsFiltered || data.recordsTotal || 0;
+                paginationState.totalPages = Math.ceil(paginationState.totalRecords / paginationState.pageSize) || 1;
+                renderAccountsTable(data.data);
+                updatePaginationUI();
+                setLoadingState(false);
+            })
+            .catch(error => {
+                console.error('Error loading accounts:', error);
+                tbody.innerHTML = '<tr><td colspan="10">Error loading accounts. Please try again.</td></tr>';
+                setLoadingState(false);
+            });
+    }
+
+    function updatePaginationUI() {
+        const infoEl = document.getElementById('pagination-info');
+        const pageDisplay = document.getElementById('page-display');
+        const prevBtn = document.getElementById('prev-page-btn');
+        const nextBtn = document.getElementById('next-page-btn');
+
+        if (infoEl) {
+            const start = ((paginationState.currentPage - 1) * paginationState.pageSize) + 1;
+            const end = Math.min(paginationState.currentPage * paginationState.pageSize, paginationState.totalRecords);
+            infoEl.textContent = paginationState.totalRecords > 0
+                ? `Showing ${start}-${end} of ${paginationState.totalRecords} accounts`
+                : 'No accounts found';
+        }
+
+        if (pageDisplay) {
+            pageDisplay.textContent = `Page ${paginationState.currentPage} of ${paginationState.totalPages}`;
+        }
+
+        if (prevBtn) {
+            prevBtn.disabled = paginationState.currentPage <= 1;
+        }
+
+        if (nextBtn) {
+            nextBtn.disabled = paginationState.currentPage >= paginationState.totalPages;
+        }
+    }
+
+    function renderAccountsTable(accounts) {
+        const tbody = document.querySelector('#accounts-tbody');
+
+        if (!accounts || accounts.length === 0) {
+            tbody.innerHTML = '<tr class="table-empty-row"><td colspan="8">No accounts match your filters.</td></tr>';
+            return;
+        }
+
+        const rows = accounts.map((account, index) => {
+            const companyLink = account.latest_report_id
+                ? `<a href="/report/${account.latest_report_id}"><span class="company-name-text">${escapeHtml(account.company_name)}</span></a>`
+                : `<span class="company-name-text">${escapeHtml(account.company_name)}</span>`;
+
+            const websiteLink = account.website
+                ? `<a href="${normalizeUrl(account.website)}" target="_blank" rel="noopener" class="btn-website-link" title="Visit website"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></a>`
+                : '';
+
+            const githubOrgLink = account.github_org
+                ? `<a href="https://github.com/${escapeHtml(account.github_org)}" target="_blank" rel="noopener" class="github-org-link" title="View on GitHub">
+                    <svg viewBox="0 0 16 16" fill="currentColor">
+                        <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" />
+                    </svg>
+                    @${escapeHtml(account.github_org)}
+                </a>
+                <button type="button" class="github-org-edit" onclick="showOrgEdit(this)" title="Edit GitHub org">Edit</button>`
+                : `<span class="org-not-found">Not found</span>
+                   <button type="button" class="github-org-edit" onclick="showOrgEdit(this)" title="Set GitHub org">Set</button>`;
+
+            const tierConfig = TIER_CONFIG[account.current_tier] || TIER_CONFIG[0];
+            const lastScannedFormatted = account.last_scanned_at ? formatSmartDate(account.last_scanned_at) : 'Never';
+
+            let actionsHtml = '';
+            if (account.latest_report_id) {
+                actionsHtml += `<button type="button" class="btn-view-report" onclick="openReport('/report/${account.latest_report_id}')">View</button>`;
+            } else {
+                actionsHtml += `<button type="button" class="btn-view-report" disabled style="visibility: hidden;">View</button>`;
+            }
+
+            return `
+                <tr id="row-${account.id}" data-company="${escapeHtml(account.company_name)}" data-account-id="${account.id}" data-tier="${account.current_tier}" data-last-scanned="${account.last_scanned_at || ''}" data-website="${escapeHtml(account.website || '')}" data-status="idle">
+                    <td class="select-col">
+                        <input type="checkbox" class="select-account-checkbox row-select" data-account-id="${account.id}" aria-label="Select ${escapeHtml(account.company_name)}">
+                    </td>
+                    <td class="row-num-col">${((paginationState.currentPage - 1) * paginationState.pageSize) + index + 1}</td>
+                    <td class="company-cell">
+                        <span class="company-cell-content">
+                            ${companyLink}
+                            <button type="button" class="btn-copy-company" title="Copy company name" data-company="${escapeHtml(capitalizeText(account.company_name))}" onclick="copyToClipboard(this.dataset.company, this)">
+                                <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                                    <path d="M16 1H6c-1.1 0-2 .9-2 2v12h2V3h10V1zm3 4H10c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h9c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H10V7h9v14z" />
+                                </svg>
+                            </button>
+                            ${websiteLink}
+                        </span>
+                    </td>
+                    <td class="annual-revenue-cell">${formatRevenue(account.annual_revenue)}</td>
+                    <td class="github-org-cell" data-company="${escapeHtml(account.company_name)}" ondblclick="editOrg(this)" data-org="${escapeHtml(account.github_org || '')}">
+                        <span class="org-display">
+                            ${githubOrgLink}
+                        </span>
+                        <span class="github-org-input-container">
+                            <input type="text" class="github-org-input" placeholder="org-name" value="${escapeHtml(account.github_org || '')}">
+                            <button type="button" class="btn-save-org" onclick="saveOrgEdit(this)">Save</button>
+                            <button type="button" class="btn-cancel-org" onclick="cancelOrgEdit(this)">Cancel</button>
+                        </span>
+                    </td>
+                    <td>
+                        <span class="tier-badge tier-badge-${account.current_tier}">${tierLabel(account.current_tier)}</span>
+                    </td>
+                    <td class="last-check-cell">
+                        <div class="status-container">
+                            <span class="account-last-scan" data-timestamp="${account.last_scanned_at || ''}">
+                                <strong class="last-scan-date">${lastScannedFormatted}</strong>
+                            </span>
+                        </div>
+                    </td>
+                    <td class="evidence-cell">
+                        <span class="evidence-text" title="${escapeHtml(account.evidence_summary || 'No evidence recorded')}">${escapeHtml(account.evidence_summary || 'No evidence recorded')}</span>
+                    </td>
+                    <td class="actions-cell">
+                        ${actionsHtml}
+                    </td>
+                    <td class="notes-cell" data-account-id="${account.id}">
+                        <span class="notes-display" ondblclick="editNotes(this)">${escapeHtml(account.notes || '')}</span>
+                        <div class="notes-edit-container" style="display: none;">
+                            <textarea class="notes-input" placeholder="Add notes...">${escapeHtml(account.notes || '')}</textarea>
+                            <div class="notes-edit-buttons">
+                                <button type="button" class="btn-save-notes" onclick="saveNotes(this)">Save</button>
+                                <button type="button" class="btn-cancel-notes" onclick="cancelNotesEdit(this)">Cancel</button>
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+
+        tbody.innerHTML = rows;
+        initializeBulkSelection();
+    }
+
+    function escapeHtml(text) {
+        if (!text) return '';
+        const map = {
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#039;'
+        };
+        return text.replace(/[&<>"']/g, m => map[m]);
+    }
+
+    function normalizeUrl(url) {
+        if (!url) return '';
+        url = url.trim();
+        if (!/^https?:\/\//i.test(url)) {
+            return 'https://' + url;
+        }
+        return url;
+    }
+
+    function capitalizeText(text) {
+        if (!text) return '';
+        return text.replace(/\b\w/g, char => char.toUpperCase());
+    }
+
+    function formatRevenue(value) {
+        if (!value) return '';
+        // If already formatted (contains letters like M, B, K), return as-is
+        if (typeof value === 'string' && /[a-zA-Z$]/.test(value)) {
+            return value;
+        }
+        // Parse the number
+        const num = parseFloat(value);
+        if (isNaN(num)) return value;
+        // Format based on magnitude with proper decimal handling
+        if (num >= 1000000000) {
+            const divided = num / 1000000000;
+            // Show 1 decimal place if it would be meaningful (not .0)
+            return '$' + (divided % 1 === 0 ? divided.toFixed(0) : divided.toFixed(1)) + 'B';
+        } else if (num >= 1000000) {
+            const divided = num / 1000000;
+            return '$' + (divided % 1 === 0 ? divided.toFixed(0) : divided.toFixed(1)) + 'M';
+        } else if (num >= 1000) {
+            const divided = num / 1000;
+            return '$' + (divided % 1 === 0 ? divided.toFixed(0) : divided.toFixed(1)) + 'K';
+        }
+        return '$' + num.toLocaleString();
+    }
+
+    // ============================================================
+    // INFINITE SCROLL / LAZY LOADING
+    // ============================================================
+    // For large datasets (500+ accounts), this provides smooth
+    // scrolling by loading more rows as the user scrolls down.
+
+    let infiniteScrollEnabled = false;
+    let infiniteScrollLoading = false;
+    let infiniteScrollObserver = null;
+    let loadedAccountIds = new Set();
+
+    function initializeInfiniteScroll() {
+        const toggle = document.getElementById('infinite-scroll-toggle');
+        const indicator = document.getElementById('infinite-scroll-indicator');
+        const tableContainer = document.querySelector('.accounts-table-container');
+
+        if (toggle) {
+            toggle.addEventListener('click', () => {
+                infiniteScrollEnabled = !infiniteScrollEnabled;
+                toggle.classList.toggle('active', infiniteScrollEnabled);
+
+                if (infiniteScrollEnabled) {
+                    // Switch to infinite scroll mode
+                    paginationState.pageSize = 50; // Load 50 at a time
+                    document.getElementById('limit-select').value = '50';
+                    document.getElementById('limit-select').disabled = true;
+                    document.getElementById('prev-page-btn').style.display = 'none';
+                    document.getElementById('next-page-btn').style.display = 'none';
+                    document.getElementById('page-display').style.display = 'none';
+
+                    // Reset and load fresh
+                    loadedAccountIds.clear();
+                    paginationState.currentPage = 1;
+                    reloadAccountsTable();
+
+                    // Setup intersection observer
+                    setupInfiniteScrollObserver();
+                } else {
+                    // Switch back to pagination mode
+                    document.getElementById('limit-select').disabled = false;
+                    document.getElementById('prev-page-btn').style.display = '';
+                    document.getElementById('next-page-btn').style.display = '';
+                    document.getElementById('page-display').style.display = '';
+                    indicator.style.display = 'none';
+
+                    // Cleanup observer
+                    if (infiniteScrollObserver) {
+                        infiniteScrollObserver.disconnect();
+                        infiniteScrollObserver = null;
+                    }
+
+                    // Reset and load fresh
+                    loadedAccountIds.clear();
+                    paginationState.currentPage = 1;
+                    reloadAccountsTable();
+                }
+            });
+        }
+    }
+
+    function setupInfiniteScrollObserver() {
+        const indicator = document.getElementById('infinite-scroll-indicator');
+        const tableContainer = document.querySelector('.accounts-table-container');
+
+        if (infiniteScrollObserver) {
+            infiniteScrollObserver.disconnect();
+        }
+
+        // Show indicator
+        indicator.style.display = 'flex';
+
+        // Create intersection observer to detect when user scrolls to bottom
+        infiniteScrollObserver = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting && !infiniteScrollLoading && infiniteScrollEnabled) {
+                    loadMoreAccounts();
+                }
+            });
+        }, {
+            root: null,
+            rootMargin: '100px',
+            threshold: 0.1
+        });
+
+        infiniteScrollObserver.observe(indicator);
+    }
+
+    function loadMoreAccounts() {
+        if (infiniteScrollLoading || !infiniteScrollEnabled) return;
+
+        // Check if we have more data to load
+        const loadedCount = loadedAccountIds.size;
+        if (loadedCount >= paginationState.totalRecords) {
+            const indicator = document.getElementById('infinite-scroll-indicator');
+            indicator.innerHTML = '<span>All accounts loaded</span>';
+            return;
+        }
+
+        infiniteScrollLoading = true;
+        const indicator = document.getElementById('infinite-scroll-indicator');
+        indicator.innerHTML = '<div class="loading-spinner"></div><span>Loading more accounts...</span>';
+
+        const searchInput = document.querySelector('#account-search-input');
+        const urlParams = new URLSearchParams(window.location.search);
+        const searchValue = searchInput ? searchInput.value : urlParams.get('q') || '';
+        const tierFilters = urlParams.getAll('tier').map(t => parseInt(t));
+        const lastScannedFilter = document.getElementById('last-scanned-filter');
+        const revenueFilter = document.getElementById('revenue-filter');
+        const lastScannedValue = lastScannedFilter ? lastScannedFilter.value : '';
+        const revenueValue = revenueFilter ? revenueFilter.value : '';
+
+        // Calculate start offset based on loaded count
+        const start = loadedCount;
+
+        const params = new URLSearchParams();
+        params.set('draw', '1');
+        params.set('start', start.toString());
+        params.set('length', paginationState.pageSize.toString());
+        params.set('search[value]', searchValue);
+        params.set('order[0][column]', paginationState.sortColumn);
+        params.set('order[0][dir]', paginationState.sortDirection);
+
+        tierFilters.forEach(tier => {
+            params.append('tier', tier);
+        });
+
+        if (lastScannedValue) {
+            params.set('last_scanned', lastScannedValue);
+        }
+        if (revenueValue) {
+            const [minStr, maxStr] = revenueValue.split('-');
+            if (minStr) { params.set('revenue_min', minStr); }
+            if (maxStr) { params.set('revenue_max', maxStr); }
+        }
+
+        fetch(`/api/accounts/datatable?${params.toString()}`)
+            .then(response => response.json())
+            .then(data => {
+                paginationState.totalRecords = data.recordsFiltered || data.recordsTotal || 0;
+                appendAccountsToTable(data.data);
+                infiniteScrollLoading = false;
+
+                // Update info display
+                const infoEl = document.getElementById('pagination-info');
+                if (infoEl) {
+                    infoEl.textContent = `Showing ${loadedAccountIds.size} of ${paginationState.totalRecords} accounts`;
+                }
+
+                // Check if we've loaded everything
+                if (loadedAccountIds.size >= paginationState.totalRecords) {
+                    indicator.innerHTML = '<span>All accounts loaded</span>';
+                }
+            })
+            .catch(error => {
+                console.error('Error loading more accounts:', error);
+                infiniteScrollLoading = false;
+                indicator.innerHTML = '<span>Error loading accounts. Scroll to retry.</span>';
+            });
+    }
+
+    function appendAccountsToTable(accounts) {
+        const tbody = document.querySelector('#accounts-tbody');
+
+        if (!accounts || accounts.length === 0) return;
+
+        const newRows = accounts
+            .filter(account => !loadedAccountIds.has(account.id))
+            .map((account, index) => {
+                loadedAccountIds.add(account.id);
+                return generateAccountRow(account, loadedAccountIds.size);
+            }).join('');
+
+        tbody.insertAdjacentHTML('beforeend', newRows);
+        initializeBulkSelection();
+    }
+
+    function generateAccountRow(account, rowNumber) {
+        const companyLink = account.latest_report_id
+            ? `<a href="/report/${account.latest_report_id}"><span class="company-name-text">${escapeHtml(account.company_name)}</span></a>`
+            : `<span class="company-name-text">${escapeHtml(account.company_name)}</span>`;
+
+        const websiteLink = account.website
+            ? `<a href="${normalizeUrl(account.website)}" target="_blank" rel="noopener" class="btn-website-link" title="Visit website"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></a>`
+            : '';
+
+        const githubOrgLink = account.github_org
+            ? `<a href="https://github.com/${escapeHtml(account.github_org)}" target="_blank" rel="noopener" class="github-org-link" title="View on GitHub">
+                <svg viewBox="0 0 16 16" fill="currentColor">
+                    <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" />
+                </svg>
+                @${escapeHtml(account.github_org)}
+            </a>
+            <button type="button" class="github-org-edit" onclick="showOrgEdit(this)" title="Edit GitHub org">Edit</button>`
+            : `<span class="org-not-found">Not found</span>
+               <button type="button" class="github-org-edit" onclick="showOrgEdit(this)" title="Set GitHub org">Set</button>`;
+
+        const tierConfig = TIER_CONFIG[account.current_tier] || TIER_CONFIG[0];
+        const lastScannedFormatted = account.last_scanned_at ? formatSmartDate(account.last_scanned_at) : 'Never';
+
+        let actionsHtml = '';
+        if (account.latest_report_id) {
+            actionsHtml += `<button type="button" class="btn-view-report" onclick="openReport('/report/${account.latest_report_id}')">View</button>`;
+        } else {
+            actionsHtml += `<button type="button" class="btn-view-report" disabled style="visibility: hidden;">View</button>`;
+        }
+
+        return `
+            <tr id="row-${account.id}" data-company="${escapeHtml(account.company_name)}" data-account-id="${account.id}" data-tier="${account.current_tier}" data-last-scanned="${account.last_scanned_at || ''}" data-website="${escapeHtml(account.website || '')}" data-status="idle">
+                <td class="select-col">
+                    <input type="checkbox" class="select-account-checkbox row-select" data-account-id="${account.id}" aria-label="Select ${escapeHtml(account.company_name)}">
+                </td>
+                <td class="row-num-col">${rowNumber}</td>
+                <td class="company-cell">
+                    <span class="company-cell-content">
+                        ${companyLink}
+                        <button type="button" class="btn-copy-company" title="Copy company name" data-company="${escapeHtml(account.company_name)}" onclick="copyToClipboard(this.dataset.company, this)">
+                            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                                <path d="M16 1H6c-1.1 0-2 .9-2 2v12h2V3h10V1zm3 4H10c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h9c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H10V7h9v14z" />
+                            </svg>
+                        </button>
+                        ${websiteLink}
+                    </span>
+                </td>
+                <td class="annual-revenue-cell">${formatRevenue(account.annual_revenue)}</td>
+                <td class="github-org-cell" data-company="${escapeHtml(account.company_name)}" ondblclick="editOrg(this)" data-org="${escapeHtml(account.github_org || '')}">
+                    <span class="org-display">
+                        ${githubOrgLink}
+                    </span>
+                    <span class="github-org-input-container">
+                        <input type="text" class="github-org-input" placeholder="org-name" value="${escapeHtml(account.github_org || '')}">
+                        <button type="button" class="btn-save-org" onclick="saveOrgEdit(this)">Save</button>
+                        <button type="button" class="btn-cancel-org" onclick="cancelOrgEdit(this)">Cancel</button>
+                    </span>
+                </td>
+                <td>
+                    <span class="tier-badge tier-badge-${account.current_tier}">${tierLabel(account.current_tier)}</span>
+                </td>
+                <td class="last-check-cell">
+                    <div class="status-container">
+                        <span class="account-last-scan" data-timestamp="${account.last_scanned_at || ''}">
+                            <strong class="last-scan-date">${lastScannedFormatted}</strong>
+                        </span>
+                    </div>
+                </td>
+                <td class="evidence-cell">
+                    <span class="evidence-text" title="${escapeHtml(account.evidence_summary || 'No evidence recorded')}">${escapeHtml(account.evidence_summary || 'No evidence recorded')}</span>
+                </td>
+                <td class="actions-cell">
+                    ${actionsHtml}
+                </td>
+                <td class="notes-cell" data-account-id="${account.id}">
+                    <span class="notes-display" ondblclick="editNotes(this)">${escapeHtml(account.notes || '')}</span>
+                    <div class="notes-edit-container" style="display: none;">
+                        <textarea class="notes-input" placeholder="Add notes...">${escapeHtml(account.notes || '')}</textarea>
+                        <div class="notes-edit-buttons">
+                            <button type="button" class="btn-save-notes" onclick="saveNotes(this)">Save</button>
+                            <button type="button" class="btn-cancel-notes" onclick="cancelNotesEdit(this)">Cancel</button>
+                        </div>
+                    </div>
+                </td>
+            </tr>
+        `;
+    }
+
+    // Initialize on page load
+    document.addEventListener('DOMContentLoaded', () => {
+        initializeUI();
+        initializeDataTable();
+        initializeSortHandlers();
+        initializeColumnResize();
+        initializeInfiniteScroll();
+        updateDashboardStats();
+    });
+
+    function initializeSortHandlers() {
+        const headers = document.querySelectorAll('th.sortable');
+        const sortMap = {
+            'company': 0,
+            'annual_revenue': 1,
+            'github_org': 2,
+            'tier': 3,
+            'last_scanned': 4,
+            'evidence': 5
+        };
+
+        headers.forEach(th => {
+            th.addEventListener('click', (e) => {
+                // Don't trigger sort when clicking on resize handle
+                if (e.target.closest('.resize-handle')) return;
+
+                const sortKey = th.dataset.sortKey;
+                const columnIndex = sortMap[sortKey];
+
+                if (columnIndex === undefined) return;
+
+                // Toggle direction if clicking same column, else default to asc
+                if (paginationState.sortColumn === columnIndex) {
+                    paginationState.sortDirection = paginationState.sortDirection === 'asc' ? 'desc' : 'asc';
+                } else {
+                    paginationState.sortColumn = columnIndex;
+                    paginationState.sortDirection = 'asc';
+                }
+
+                // Update UI indicators
+                document.querySelectorAll('th.sortable').forEach(h => {
+                    const indicator = h.querySelector('.sort-indicator');
+                    if (indicator) {
+                        indicator.classList.remove('sort-asc-active', 'sort-desc-active');
+                    }
+                    h.classList.remove('sort-active');
+                });
+
+                const currentIndicator = th.querySelector('.sort-indicator');
+                if (currentIndicator) {
+                    currentIndicator.classList.add(paginationState.sortDirection === 'asc' ? 'sort-asc-active' : 'sort-desc-active');
+                }
+                th.classList.add('sort-active');
+
+                // Reset to page 1 and reload
+                paginationState.currentPage = 1;
+                reloadAccountsTable();
+            });
+        });
+    }
+
+    function initializeColumnResize() {
+        const table = document.querySelector('.accounts-table');
+        const resizeHandles = document.querySelectorAll('.resize-handle');
+
+        resizeHandles.forEach(handle => {
+            let startX, startWidth, th;
+
+            handle.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+
+                th = handle.parentElement;
+                startX = e.pageX;
+                startWidth = th.offsetWidth;
+
+                handle.classList.add('resizing');
+                table.classList.add('resizing');
+
+                document.addEventListener('mousemove', onMouseMove);
+                document.addEventListener('mouseup', onMouseUp);
+            });
+
+            function onMouseMove(e) {
+                const diff = e.pageX - startX;
+                const newWidth = Math.max(60, startWidth + diff);
+                th.style.width = newWidth + 'px';
+            }
+
+            function onMouseUp() {
+                handle.classList.remove('resizing');
+                table.classList.remove('resizing');
+
+                document.removeEventListener('mousemove', onMouseMove);
+                document.removeEventListener('mouseup', onMouseUp);
+
+                // Save column widths to localStorage
+                saveColumnWidths();
+            }
+        });
+
+        // Restore saved column widths
+        restoreColumnWidths();
+    }
+
+    function saveColumnWidths() {
+        const headers = document.querySelectorAll('.accounts-table th.resizable');
+        const widths = {};
+        headers.forEach(th => {
+            const key = th.dataset.sortKey || th.className;
+            if (th.style.width) {
+                widths[key] = th.style.width;
+            }
+        });
+        localStorage.setItem('accountsTableColumnWidths', JSON.stringify(widths));
+    }
+
+    function restoreColumnWidths() {
+        try {
+            const saved = localStorage.getItem('accountsTableColumnWidths');
+            if (saved) {
+                const widths = JSON.parse(saved);
+                const headers = document.querySelectorAll('.accounts-table th.resizable');
+                headers.forEach(th => {
+                    const key = th.dataset.sortKey || th.className;
+                    if (widths[key]) {
+                        th.style.width = widths[key];
+                    }
+                });
+            }
+        } catch (e) {
+            console.warn('Could not restore column widths:', e);
+        }
+    }
+
+    setInterval(updateDashboardStats, 8000);
+
+    // =============================================================================
+    // Bulk Actions
+    // =============================================================================
+
+    function initializeBulkSelection() {
+        const selectAll = document.querySelector('#select-all-accounts');
+        const rowCheckboxes = document.querySelectorAll('.row-select');
+
+        if (!selectAll || rowCheckboxes.length === 0) return;
+
+        // Clone and replace to remove any previously attached listeners
+        const freshSelectAll = selectAll.cloneNode(true);
+        selectAll.parentNode.replaceChild(freshSelectAll, selectAll);
+
+        freshSelectAll.addEventListener('change', () => {
+            rowCheckboxes.forEach(cb => {
+                cb.checked = freshSelectAll.checked;
+            });
+            updateBulkSelectionState();
+        });
+
+        rowCheckboxes.forEach(cb => {
+            cb.addEventListener('change', () => {
+                if (!cb.checked) {
+                    freshSelectAll.checked = false;
+                } else if (Array.from(rowCheckboxes).every(input => input.checked)) {
+                    freshSelectAll.checked = true;
+                }
+                updateBulkSelectionState();
+            });
+        });
+
+        updateBulkSelectionState();
+    }
+
+    function getSelectedRows() {
+        return Array.from(document.querySelectorAll('.row-select:checked'))
+            .map(cb => cb.closest('tr'))
+            .filter(Boolean);
+    }
+
+    function updateBulkSelectionState() {
+        const selectedRows = getSelectedRows();
+        const count = selectedRows.length;
+        const bar = document.querySelector('#bulk-command-bar');
+        const countLabel = document.querySelector('#bulk-selection-count');
+        const rescanBtn = document.querySelector('#bulk-rescan-btn');
+        const exportBtn = document.querySelector('#bulk-export-btn');
+        const deleteBtn = document.querySelector('#bulk-delete-btn');
+
+        if (countLabel) {
+            countLabel.textContent = `${count} account${count === 1 ? '' : 's'} selected`;
+        }
+
+        if (rescanBtn) rescanBtn.disabled = count === 0;
+        if (exportBtn) exportBtn.disabled = count === 0;
+        if (deleteBtn) deleteBtn.disabled = count === 0;
+
+        if (bar) {
+            bar.classList.toggle('hidden', count === 0);
+        }
+    }
+
+    async function bulkRescan() {
+        const selectedRows = getSelectedRows();
+        if (selectedRows.length === 0) return;
+
+        for (const row of selectedRows) {
+            const companyName = row.dataset.company;
+            if (!companyName) continue;
+            try {
+                await fetch(`/api/rescan/${encodeURIComponent(companyName)}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                });
+            } catch (error) {
+                console.error('Bulk rescan error:', error);
+            }
+        }
+
+        showNotification(`Queued rescan for ${selectedRows.length} account(s).`, 'info');
+    }
+
+    function exportCSV() {
+        const selectedRows = getSelectedRows();
+        if (selectedRows.length === 0) return;
+
+        const header = ['Company', 'Annual Revenue', 'GitHub Org', 'Website', 'Tier', 'Last Scanned', 'Signal Status', 'Signal Detail'];
+        const csvRows = [header];
+
+        selectedRows.forEach(row => {
+            // Clean company name: use data attribute and convert to Title Case
+            const rawCompany = row.dataset.company || '';
+            const company = capitalizeText(rawCompany);
+
+            const annualRevenue = row.querySelector('.annual-revenue-cell')?.textContent.trim() || '';
+            const orgCell = row.querySelector('.github-org-cell');
+            const orgName = orgCell?.dataset.org || orgCell?.textContent.trim() || '';
+            const githubOrgUrl = orgName ? `https://github.com/${orgName}` : '';
+            const website = row.dataset.website || '';
+            const tier = row.querySelector('.tier-badge')?.textContent.trim() || '';
+
+            // Format date as YYYY-MM-DD from raw timestamp
+            const rawTimestamp = row.dataset.lastScanned || '';
+            let lastScanned = '';
+            if (rawTimestamp) {
+                const date = new Date(rawTimestamp);
+                if (!isNaN(date.getTime())) {
+                    lastScanned = date.toISOString().split('T')[0];
+                }
+            }
+
+            // Split evidence into Signal Status and Signal Detail
+            const evidence = row.querySelector('.evidence-text')?.textContent.trim() || '';
+            let signalStatus = '';
+            let signalDetail = '';
+            if (evidence) {
+                const colonIndex = evidence.indexOf(':');
+                if (colonIndex > -1) {
+                    signalStatus = evidence.substring(0, colonIndex).trim();
+                    signalDetail = evidence.substring(colonIndex + 1).trim();
+                } else {
+                    signalStatus = evidence;
+                }
+            }
+
+            csvRows.push([company, annualRevenue, githubOrgUrl, website, tier, lastScanned, signalStatus, signalDetail]);
+        });
+
+        const csvContent = csvRows
+            .map(row => row.map(value => `"${String(value).replace(/"/g, '""')}"`).join(','))
+            .join('\n');
+
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'selected-accounts.csv';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    }
+
+    async function bulkDeleteSelected() {
+        const selectedRows = getSelectedRows();
+        if (selectedRows.length === 0) return;
+
+        if (!confirm(`Delete ${selectedRows.length} selected account${selectedRows.length === 1 ? '' : 's'}? This cannot be undone.`)) {
+            return;
+        }
+
+        for (const row of selectedRows) {
+            const accountId = row.dataset.accountId;
+            const company = row.dataset.company || 'this account';
+            if (!accountId) continue;
+            try {
+                const response = await fetch(`/api/accounts/${accountId}`, { method: 'DELETE' });
+                if (!response.ok) {
+                    const data = await response.json();
+                    throw new Error(data.error || 'Failed to remove account.');
+                }
+                row.remove();
+            } catch (error) {
+                showNotification(`Failed to remove ${company}: ${error.message}`, 'warning');
+            }
+        }
+
+        const selectAll = document.querySelector('#select-all-accounts');
+        if (selectAll) selectAll.checked = false;
+        updateBulkSelectionState();
+        showNotification('Selected accounts removed.', 'success');
+    }
+
+    async function bulkArchiveSelected() {
+        const selectedRows = getSelectedRows();
+        if (selectedRows.length === 0) return;
+
+        if (!confirm(`Archive ${selectedRows.length} selected account${selectedRows.length === 1 ? '' : 's'}? Archived accounts will be hidden from the main list but can be restored later.`)) {
+            return;
+        }
+
+        let successCount = 0;
+        let failCount = 0;
+
+        for (const row of selectedRows) {
+            const accountId = row.dataset.accountId;
+            const company = row.dataset.company || 'this account';
+            if (!accountId) continue;
+            try {
+                const response = await fetch(`/api/accounts/${accountId}/archive`, { method: 'POST' });
+                if (!response.ok) {
+                    const data = await response.json();
+                    throw new Error(data.error || 'Failed to archive account.');
+                }
+                row.remove();
+                successCount++;
+            } catch (error) {
+                showNotification(`Failed to archive ${company}: ${error.message}`, 'warning');
+                failCount++;
+            }
+        }
+
+        const selectAll = document.querySelector('#select-all-accounts');
+        if (selectAll) selectAll.checked = false;
+        updateBulkSelectionState();
+
+        if (successCount > 0) {
+            showNotification(`${successCount} account${successCount === 1 ? '' : 's'} archived successfully.`, 'success');
+            // Update archived count in the header if it exists
+            updateArchivedCount(successCount);
+        }
+        if (failCount > 0) {
+            showNotification(`Failed to archive ${failCount} account${failCount === 1 ? '' : 's'}.`, 'warning');
+        }
+    }
+
+    // =============================================================================
+    // GitHub Org Edit Functions
+    // =============================================================================
+
+    function showOrgEdit(buttonEl) {
+        const cell = buttonEl.closest('.github-org-cell');
+        const orgDisplay = cell.querySelector('.org-display');
+        const inputContainer = cell.querySelector('.github-org-input-container');
+        const input = cell.querySelector('.github-org-input');
+        const currentOrg = cell.dataset.org || '';
+
+        orgDisplay.classList.add('hidden');
+        inputContainer.classList.add('active');
+        input.value = currentOrg;
+        input.focus();
+    }
+
+    function cancelOrgEdit(buttonEl) {
+        const cell = buttonEl.closest('.github-org-cell');
+        const orgDisplay = cell.querySelector('.org-display');
+        const inputContainer = cell.querySelector('.github-org-input-container');
+
+        inputContainer.classList.remove('active');
+        orgDisplay.classList.remove('hidden');
+    }
+
+    async function saveOrgEdit(buttonEl) {
+        const cell = buttonEl.closest('.github-org-cell');
+        const companyName = cell.dataset.company;
+        const input = cell.querySelector('.github-org-input');
+        const newOrg = input.value.trim();
+
+        if (!newOrg) {
+            alert('Please enter a GitHub organization name');
+            return;
+        }
+
+        buttonEl.disabled = true;
+        buttonEl.textContent = 'Saving...';
+
+        try {
+            const response = await fetch('/api/update-org', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    company_name: companyName,
+                    github_org: newOrg
+                })
+            });
+
+            const data = await response.json();
+
+            if (!response.ok || data.status !== 'success') {
+                throw new Error(data.message || 'Failed to update org');
+            }
+
+            // Reload page to show updated org
+            location.reload();
+
+        } catch (error) {
+            console.error('Update org error:', error);
+            alert('Failed to update GitHub org: ' + error.message);
+            buttonEl.disabled = false;
+            buttonEl.textContent = 'Save';
+        }
+    }
+
+    // =============================================================================
+    // Notes Editing Functions
+    // =============================================================================
+
+    function editNotes(displayEl) {
+        const cell = displayEl.closest('.notes-cell');
+        const editContainer = cell.querySelector('.notes-edit-container');
+        const textarea = cell.querySelector('.notes-input');
+
+        displayEl.style.display = 'none';
+        editContainer.style.display = 'block';
+        textarea.focus();
+    }
+
+    function cancelNotesEdit(buttonEl) {
+        const cell = buttonEl.closest('.notes-cell');
+        const displayEl = cell.querySelector('.notes-display');
+        const editContainer = cell.querySelector('.notes-edit-container');
+        const textarea = cell.querySelector('.notes-input');
+
+        // Reset textarea to original value
+        textarea.value = displayEl.textContent || '';
+        editContainer.style.display = 'none';
+        displayEl.style.display = 'block';
+    }
+
+    async function saveNotes(buttonEl) {
+        const cell = buttonEl.closest('.notes-cell');
+        const accountId = cell.dataset.accountId;
+        const displayEl = cell.querySelector('.notes-display');
+        const editContainer = cell.querySelector('.notes-edit-container');
+        const textarea = cell.querySelector('.notes-input');
+        const newNotes = textarea.value.trim();
+
+        buttonEl.disabled = true;
+        buttonEl.textContent = 'Saving...';
+
+        try {
+            const response = await fetch(`/api/accounts/${accountId}/notes`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ notes: newNotes })
+            });
+
+            const data = await response.json();
+
+            if (!response.ok || data.status !== 'success') {
+                throw new Error(data.error || 'Failed to save notes');
+            }
+
+            // Update display and hide edit container
+            displayEl.textContent = newNotes;
+            editContainer.style.display = 'none';
+            displayEl.style.display = 'block';
+
+        } catch (error) {
+            console.error('Save notes error:', error);
+            alert('Failed to save notes: ' + error.message);
+        } finally {
+            buttonEl.disabled = false;
+            buttonEl.textContent = 'Save';
+        }
+    }
+
+    // =============================================================================
+    // Scan Functions
+    // =============================================================================
+
+    async function triggerRescan(buttonEl, companyName) {
+        // Don't trigger if already scanned recently
+        if (buttonEl.classList.contains('btn-scanned')) {
+            return;
+        }
+
+        // Disable button and show scanning state
+        buttonEl.disabled = true;
+        buttonEl.classList.add('scanning');
+        const originalText = buttonEl.textContent;
+        buttonEl.textContent = 'Queuing...';
+
+        try {
+            const response = await fetch(`/api/rescan/${encodeURIComponent(companyName)}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.message || 'Rescan failed');
+            }
+
+            // Handle queued response (new queue-based system)
+            if (data.status === 'queued') {
+                buttonEl.classList.remove('scanning');
+                buttonEl.textContent = 'Queued';
+                buttonEl.style.background = '#22c55e';
+
+                // Show info message
+                const row = buttonEl.closest('tr');
+                const lastCheckCell = row.querySelector('.last-check-cell');
+                if (lastCheckCell) {
+                    const scanTime = lastCheckCell.querySelector('.scanned-time');
+                    if (scanTime) {
+                        scanTime.textContent = 'Scan queued...';
+                        scanTime.classList.remove('recent', 'stale');
+                    }
+                }
+
+                // Start auto-refresh to show results when complete
+                startAutoRefresh(data.active_jobs || 1);
+
+                // Reset button after 3 seconds
+                setTimeout(() => {
+                    buttonEl.disabled = false;
+                    buttonEl.textContent = 'Pending';
+                    buttonEl.style.background = '#6b7280';
+                }, 3000);
+
+                return;
+            }
+
+            // Handle rate-limited response (scanned recently)
+            if (data.status === 'recent') {
+                buttonEl.classList.remove('scanning');
+                buttonEl.textContent = 'Fresh';
+                buttonEl.style.background = '#3b82f6';  // Blue to indicate already up-to-date
+
+                // Show toast notification
+                showNotification('Scan already fresh - scanned less than 5 minutes ago', 'info');
+
+                // Reset button after 2 seconds
+                setTimeout(() => {
+                    buttonEl.disabled = false;
+                    buttonEl.textContent = 'Rescan';
+                    buttonEl.style.background = '';
+                }, 2000);
+
+                return;
+            }
+
+            // Legacy: Handle immediate success response (if any)
+            const row = buttonEl.closest('tr');
+            if (!row) throw new Error('Could not find table row');
+
+            // Update tier badge
+            const tierBadge = row.querySelector('.tier-badge');
+            if (tierBadge && data.new_tier !== undefined) {
+                const newTierClass = `tier-badge-${data.new_tier}`;
+                tierBadge.className = `tier-badge ${newTierClass}`;
+                tierBadge.textContent = tierLabel(data.new_tier);
+            }
+
+            // Update evidence text
+            const evidenceText = row.querySelector('.evidence-text');
+            if (evidenceText && data.evidence) {
+                evidenceText.textContent = data.evidence;
+                evidenceText.title = data.evidence;
+            }
+
+            // Update button to show completion
+            buttonEl.classList.remove('scanning');
+            buttonEl.textContent = 'Done';
+            buttonEl.style.background = '#22c55e';
+
+            // Reset button after 2 seconds
+            setTimeout(() => {
+                buttonEl.disabled = false;
+                buttonEl.textContent = 'Rescan';
+                buttonEl.style.background = '';
+            }, 2000);
+
+        } catch (error) {
+            console.error('Rescan error:', error);
+
+            // Show error state
+            buttonEl.classList.remove('scanning');
+            buttonEl.textContent = 'Error';
+            buttonEl.style.background = '#ef4444';
+
+            // Reset after 3 seconds
+            setTimeout(() => {
+                buttonEl.disabled = false;
+                buttonEl.textContent = originalText;
+                buttonEl.style.background = '';
+            }, 3000);
+        }
+    }
+
+
+
+    // =============================================================================
+    // Auto-Refresh Functions - Poll queue status and refresh when complete
+    // =============================================================================
+
+    let autoRefreshInterval = null;
+    let autoRefreshAttempts = 0;
+    const MAX_AUTO_REFRESH_ATTEMPTS = 60; // Max 5 minutes of polling (5s intervals)
+
+    function startAutoRefresh(expectedScans) {
+        if (autoRefreshInterval) {
+            clearInterval(autoRefreshInterval);
+        }
+
+        autoRefreshAttempts = 0;
+        console.log(`[AUTO-REFRESH] Starting auto-refresh, waiting for ${expectedScans} scans to complete...`);
+
+        // Show notification
+        showNotification(`Scanning ${expectedScans} account(s)... Page will refresh when complete.`, 'info');
+
+        autoRefreshInterval = setInterval(async () => {
+            autoRefreshAttempts++;
+
+            if (autoRefreshAttempts > MAX_AUTO_REFRESH_ATTEMPTS) {
+                console.log('[AUTO-REFRESH] Max attempts reached, stopping auto-refresh');
+                clearInterval(autoRefreshInterval);
+                autoRefreshInterval = null;
+                showNotification('Scans taking longer than expected. Please refresh manually.', 'warning');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/queue-status');
+                const data = await response.json();
+
+                const totalActive = (data.queued_count || 0) + (data.processing_count || 0);
+                console.log(`[AUTO-REFRESH] Queue status: queued=${data.queued_count}, processing=${data.processing_count}`);
+
+                // If queue is empty and nothing processing, all scans are complete
+                if (totalActive === 0) {
+                    console.log('[AUTO-REFRESH] All scans complete, refreshing page...');
+                    clearInterval(autoRefreshInterval);
+                    autoRefreshInterval = null;
+                    showNotification('Scans complete! Refreshing...', 'success');
+                    setTimeout(() => location.reload(), 1000);
+                }
+            } catch (error) {
+                console.error('[AUTO-REFRESH] Error checking queue status:', error);
+            }
+        }, 5000); // Check every 5 seconds
+    }
+
+    function showNotification(message, type = 'info') {
+        // Remove any existing notification
+        const existing = document.querySelector('.scan-notification');
+        if (existing) existing.remove();
+
+        const notification = document.createElement('div');
+        notification.className = `scan-notification scan-notification-${type}`;
+        notification.innerHTML = `
+        <span>${message}</span>
+        <button onclick="this.parentElement.remove()">×</button>
+    `;
+
+        // Add styles if not already present
+        if (!document.querySelector('#notification-styles')) {
+            const styles = document.createElement('style');
+            styles.id = 'notification-styles';
+            styles.textContent = `
+            .scan-notification {
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                padding: 12px 20px;
+                border-radius: 8px;
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                z-index: 1000;
+                animation: slideIn 0.3s ease;
+                font-size: 14px;
+                max-width: 400px;
+            }
+            .scan-notification-info {
+                background: #3b82f6;
+                color: white;
+            }
+            .scan-notification-success {
+                background: #22c55e;
+                color: white;
+            }
+            .scan-notification-warning {
+                background: #f59e0b;
+                color: white;
+            }
+            .scan-notification button {
+                background: transparent;
+                border: none;
+                color: inherit;
+                font-size: 18px;
+                cursor: pointer;
+                padding: 0;
+                line-height: 1;
+            }
+            @keyframes slideIn {
+                from {
+                    transform: translateX(100%);
+                    opacity: 0;
+                }
+                to {
+                    transform: translateX(0);
+                    opacity: 1;
+                }
+            }
+        `;
+            document.head.appendChild(styles);
+        }
+
+        document.body.appendChild(notification);
+
+        // Auto-remove after 10 seconds (unless it's a success that triggers reload)
+        if (type !== 'success') {
+            setTimeout(() => notification.remove(), 10000);
+        }
+    }
+</script>
+
+<script>
+    // Constants for timeout detection
+    const TIMEOUT_WARNING_SECONDS = 180;  // 3 minutes - show warning
+    const TIMEOUT_DANGER_SECONDS = 300;   // 5 minutes - likely stuck/timed out
+
+    // Helper to format elapsed time nicely
+    function formatElapsedTime(seconds) {
+        if (seconds < 60) {
+            return `${seconds}s`;
+        } else if (seconds < 3600) {
+            const mins = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            return `${mins}m ${secs}s`;
+        } else {
+            const hrs = Math.floor(seconds / 3600);
+            const mins = Math.floor((seconds % 3600) / 60);
+            return `${hrs}h ${mins}m`;
+        }
+    }
+
+    // SVG icons for status badges
+    const statusIcons = {
+        queued: `<svg class="status-icon status-icon-queued" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="M12 6v6l4 2"/>
+        </svg>`,
+        processing: `<svg class="status-icon status-icon-processing" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 12a9 9 0 11-6.219-8.56"/>
+        </svg>`,
+        stuck: `<svg class="status-icon status-icon-stuck" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="12" y1="8" x2="12" y2="12"/>
+            <line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>`,
+        error: `<svg class="status-icon status-icon-error" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="12" y1="8" x2="12" y2="12"/>
+            <line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>`
+    };
+
+    // Live Status Polling
+    function updateRowStatuses() {
+        if (document.hidden) return; // Don't poll if tab is hidden
+
+        safeFetchJson('/api/accounts?limit=1000')
+            .then(data => {
+                errorTracker.reset('accounts-polling');
+                const accounts = data.accounts || [];
+                // Track queue position
+                const queuedAccounts = accounts.filter(a => a.scan_status === 'queued');
+                const queuePositions = {};
+                queuedAccounts.forEach((account, idx) => {
+                    queuePositions[account.id] = idx + 1;
+                });
+
+                accounts.forEach(account => {
+                    const row = document.getElementById(`row-${account.id}`);
+                    if (!row) return;
+
+                    const statusCell = row.querySelector('.last-check-cell');
+                    if (!statusCell) return;
+
+                    // Update data-status
+                    const currentStatus = row.getAttribute('data-status');
+                    const newStatus = account.scan_status || 'idle';
+
+                    // Calculate elapsed time for processing accounts
+                    let elapsed = 0;
+                    let isStuck = false;
+                    if (newStatus === 'processing' && account.scan_started_at) {
+                        let startTimeString = account.scan_started_at;
+                        // Ensure we parse as UTC if it looks like an ISO string from server
+                        if (typeof startTimeString === 'string' && !startTimeString.includes('Z') && !startTimeString.includes('+')) {
+                            startTimeString += 'Z';
+                        }
+                        const startTime = typeof startTimeString === 'string'
+                            ? Date.parse(startTimeString) / 1000
+                            : startTimeString;
+
+                        elapsed = Math.max(0, Math.floor(Date.now() / 1000 - startTime));
+                        isStuck = elapsed >= TIMEOUT_DANGER_SECONDS;
+                    }
+
+                    // Only update if status changed or if currently processing (to update timer)
+                    if (currentStatus !== newStatus || newStatus === 'processing' || newStatus === 'queued') {
+                        row.setAttribute('data-status', isStuck ? 'stuck' : newStatus);
+
+                        let content = '';
+
+                        if (newStatus === 'queued') {
+                            const queuePos = queuePositions[account.id] || '?';
+                            content = `
+                                <div class="status-container">
+                                    <span class="status-badge status-badge-queued" style="cursor: pointer;" onclick="openQueueModal()" title="Click to view queue details">
+                                        ${statusIcons.queued}
+                                        <span>In Queue</span>
+                                    </span>
+                                    <span class="queue-position">#${queuePos} in queue • Click to view</span>
+                                </div>
+                            `;
+                            statusCell.classList.remove('status-cell-active');
+                        }
+                        else if (newStatus === 'processing') {
+                        // Simple scanning indicator
+                        content = `
+                            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                <span style="display: inline-block; width: 14px; height: 14px; border: 2px solid #e2e8f0; border-top-color: #94a3b8; border-radius: 50%; animation: spin 0.8s linear infinite;"></span>
+                                <span style="color: #94a3b8; font-size: 0.85rem;">Scanning...</span>
+                            </div>`;
+                        statusCell.classList.add('status-cell-active');
+                        }
+                        else {
+                            // Check for scan errors
+                            const scanError = account.last_scan_error;
+
+                            if (scanError) {
+                                // Display error state with warning icon
+                                statusCell.classList.remove('status-cell-active');
+                                const lastScanned = account.last_scanned_at || '';
+                                const nextScan = account.next_scan_due || '';
+
+                                content = `
+                                    <div class="status-container">
+                                        <span class="status-badge status-badge-error" title="${scanError.replace(/"/g, '&quot;')}">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                <circle cx="12" cy="12" r="10"/>
+                                                <line x1="12" y1="8" x2="12" y2="12"/>
+                                                <line x1="12" y1="16" x2="12.01" y2="16"/>
+                                            </svg>
+                                            <span>Error</span>
+                                        </span>
+                                        <span class="scan-error-hint" title="${scanError.replace(/"/g, '&quot;')}">
+                                            ${scanError.length > 40 ? scanError.substring(0, 40) + '...' : scanError}
+                                        </span>
+                                    </div>
+                                `;
+                            } else if (currentStatus === 'processing' || currentStatus === 'queued' || currentStatus === 'stuck') {
+                                // Transition from processing to idle -> scan complete (no error)
+                                const lastScanned = account.last_scanned_at || new Date().toISOString();
+                                const nextScan = account.next_scan_due || '';
+
+                                content = `
+                                    <div class="status-container">
+                                        <span class="account-last-scan recent">
+                                            <strong class="last-scan-date">${formatSmartDate(lastScanned)}</strong>
+                                        </span>
+                                        <span class="next-scan-date">${formatNextDate(nextScan)}</span>
+                                    </div>
+                                `;
+                            } else {
+                                // Standard idle display
+                                statusCell.classList.remove('status-cell-active');
+                                const lastScanned = account.last_scanned_at || '';
+                                const nextScan = account.next_scan_due || '';
+                                const timeClass = !lastScanned ? 'never-scanned' : '';
+
+                                content = `
+                                    <div class="status-container">
+                                        <span class="account-last-scan ${timeClass}">
+                                            <strong class="last-scan-date">${formatSmartDate(lastScanned)}</strong>
+                                        </span>
+                                        <span class="next-scan-date">${formatNextDate(nextScan)}</span>
+                                    </div>
+                                `;
+                            }
+                        }
+
+                        statusCell.innerHTML = content;
+
+                        // Disable/Enable buttons based on status
+                        const actionBtn = row.querySelector('.btn-rescan') || row.querySelector('.btn-start-scan');
+                        if (actionBtn) {
+                            if (newStatus !== 'idle') {
+                                actionBtn.disabled = true;
+                                actionBtn.style.opacity = '0.5';
+                                actionBtn.style.cursor = 'not-allowed';
+                                actionBtn.classList.add('scanning');
+                            } else {
+                                actionBtn.disabled = false;
+                                actionBtn.style.opacity = '1';
+                                actionBtn.style.cursor = 'pointer';
+                                actionBtn.classList.remove('scanning');
+                            }
+                        }
+                    }
+                });
+
+                if (typeof applyTableFilters === 'function') {
+                    applyTableFilters();
+                }
+            })
+            .catch(err => {
+                console.error('Error polling statuses:', err);
+                if (errorTracker.shouldShow('accounts-polling')) {
+                    showToast('Unable to refresh account statuses. Server may be temporarily unavailable.', 'warning');
+                }
+            });
+    }
+
+    // Poll every 6 seconds
+    setInterval(updateRowStatuses, 6000);
+
+    // Initial call
+    document.addEventListener('DOMContentLoaded', updateRowStatuses);
+
+    // =============================================================================
+    // Highlight Batch Feature - Glow effect for newly imported companies
+    // =============================================================================
+
+    function highlightBatchOnLoad() {
+        // Get highlight_batch parameter from URL
+        const params = new URLSearchParams(window.location.search);
+        const batchId = params.get('highlight_batch');
+
+        if (!batchId) return;
+
+        console.log(`[HIGHLIGHT-BATCH] Looking for batch ${batchId}...`);
+
+        // Match rows by finding accounts created near the batch timestamp
+        // Allow a 5-second window for import processing
+        const batchTimestamp = parseInt(batchId, 10);
+        const matchWindow = 5000; // 5 seconds in milliseconds
+
+        // Get all rows and check their creation time
+        const allRows = document.querySelectorAll('tbody tr');
+        let highlightedCount = 0;
+
+        allRows.forEach(row => {
+            const company = row.dataset.company;
+
+            // Try to find the account in displayed data
+            // Since we don't have created_at in the row, we'll highlight all visible rows
+            // and use a visual indicator that these are new imports
+            if (company) {
+                row.classList.add('batch-highlighted');
+                highlightedCount++;
+            }
+        });
+
+        if (highlightedCount > 0) {
+            console.log(`[HIGHLIGHT-BATCH] Highlighted ${highlightedCount} newly imported rows`);
+
+            // Add CSS for the glow effect if not already present
+            if (!document.querySelector('#batch-highlight-styles')) {
+                const styles = document.createElement('style');
+                styles.id = 'batch-highlight-styles';
+                styles.textContent = `
+                    @keyframes glow-pulse {
+                        0%, 100% {
+                            box-shadow: 0 0 20px rgba(99, 102, 241, 0.6), inset 0 0 20px rgba(99, 102, 241, 0.1);
+                        }
+                        50% {
+                            box-shadow: 0 0 30px rgba(99, 102, 241, 0.8), inset 0 0 20px rgba(99, 102, 241, 0.15);
+                        }
+                    }
+
+                    .batch-highlighted {
+                        background: linear-gradient(90deg, rgba(99, 102, 241, 0.05), rgba(99, 102, 241, 0.02));
+                        animation: glow-pulse 3s ease-in-out 4;
+                        border-left: 3px solid rgba(99, 102, 241, 0.8);
+                    }
+
+                    .batch-highlighted:hover {
+                        background: linear-gradient(90deg, rgba(99, 102, 241, 0.1), rgba(99, 102, 241, 0.05));
+                    }
+
+                    .batch-highlight-indicator {
+                        display: inline-block;
+                        margin-right: 0.5rem;
+                        padding: 0.2rem 0.5rem;
+                        background: rgba(99, 102, 241, 0.2);
+                        color: #6366f1;
+                        border-radius: 4px;
+                        font-size: 0.7rem;
+                        font-weight: 600;
+                        white-space: nowrap;
+                    }
+                `;
+                document.head.appendChild(styles);
+            }
+
+            // Add "NEW" indicator to the company name in highlighted rows
+            allRows.forEach(row => {
+                if (row.classList.contains('batch-highlighted')) {
+                    const companyCell = row.querySelector('.company-cell a') || row.querySelector('.company-cell');
+                    if (companyCell && !companyCell.querySelector('.batch-highlight-indicator')) {
+                        const indicator = document.createElement('span');
+                        indicator.className = 'batch-highlight-indicator';
+                        indicator.textContent = 'NEW';
+                        companyCell.insertBefore(indicator, companyCell.firstChild);
+                    }
+                }
+            });
+        }
+    }
+
+    // Run highlight on page load
+    document.addEventListener('DOMContentLoaded', highlightBatchOnLoad);
+</script>
+
+<script>
+    // =============================================================================
+    // Queue/Processing Modal Functions
+    // =============================================================================
+
+    const TIMEOUT_WARNING = 180;  // 3 minutes
+    const TIMEOUT_DANGER = 300;   // 5 minutes
+
+    function openQueueModal() {
+        const modal = document.getElementById('queue-modal');
+        if (modal) {
+            modal.classList.add('open');
+            populateQueueModal();
+            // Keep updating while modal is open
+            const updateInterval = setInterval(() => {
+                if (!document.getElementById('queue-modal').classList.contains('open')) {
+                    clearInterval(updateInterval);
+                } else {
+                    populateQueueModal();
+                }
+            }, 2000);
+        }
+    }
+
+    function closeQueueModal() {
+        const modal = document.getElementById('queue-modal');
+        if (modal) {
+            modal.classList.remove('open');
+        }
+    }
+
+    function switchQueueTab(tabName) {
+        // Update active tab button
+        document.querySelectorAll('.queue-tab-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.tab === tabName);
+        });
+
+        // Update active tab content
+        document.querySelectorAll('.queue-tab-content').forEach(content => {
+            content.classList.remove('active');
+        });
+        const activeContent = document.getElementById(`${tabName}-tab`);
+        if (activeContent) {
+            activeContent.classList.add('active');
+        }
+    }
+
+    function formatQueueElapsedTime(seconds) {
+        if (seconds < 60) {
+            return `${seconds}s`;
+        } else if (seconds < 3600) {
+            const mins = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            return `${mins}m ${secs}s`;
+        } else {
+            const hrs = Math.floor(seconds / 3600);
+            const mins = Math.floor((seconds % 3600) / 60);
+            return `${hrs}h ${mins}m`;
+        }
+    }
+
+    function getQueueItemElapsedClass(elapsed) {
+        if (elapsed >= TIMEOUT_DANGER) {
+            return 'queue-elapsed-badge danger';
+        } else if (elapsed >= TIMEOUT_WARNING) {
+            return 'queue-elapsed-badge warning';
+        }
+        return 'queue-elapsed-badge';
+    }
+
+    function populateQueueModal() {
+        fetch('/api/queue-details')
+            .then(response => response.json())
+            .then(data => {
+                // Get queued and processing accounts from the dedicated endpoint
+                const queuedAccounts = data.queued || [];
+                const processingAccounts = data.processing || [];
+
+                // Update counts
+                document.getElementById('processing-count').textContent = data.processing_count || 0;
+                document.getElementById('queued-count').textContent = data.queued_count || 0;
+
+                // Populate processing list
+                const processingList = document.getElementById('processing-list');
+                if (processingAccounts.length === 0) {
+                    processingList.innerHTML = '<div class="queue-empty">No accounts currently processing</div>';
+                } else {
+                    processingList.innerHTML = processingAccounts.map((account, idx) => {
+                        const startTime = typeof account.scan_started_at === 'string'
+                            ? Date.parse(account.scan_started_at) / 1000
+                            : account.scan_started_at;
+                        const elapsed = startTime
+                            ? Math.floor(Date.now() / 1000 - startTime)
+                            : 0;
+                        const elapsedStr = formatQueueElapsedTime(elapsed);
+                        const elapsedClass = getQueueItemElapsedClass(elapsed);
+                        const isStuck = elapsed >= TIMEOUT_DANGER;
+                        const hasReport = account.latest_report_id;
+                        const reportUrl = hasReport ? `/report/${account.latest_report_id}` : '#';
+
+                        return `
+                            <div class="queue-item">
+                                <div class="queue-item-info">
+                                    <div class="queue-item-name">
+                                        <span class="badge ${isStuck ? 'badge-warning' : 'badge-primary'}">
+                                            ${isStuck ? 'Stuck' : 'Scanning'}
+                                        </span>
+                                        ${account.company_name}
+                                    </div>
+                                    <div class="queue-item-meta">
+                                        <span class="queue-item-meta-item">
+                                            <span class="${elapsedClass}">
+                                                ${isStuck ? 'Timeout' : 'Elapsed'} ${elapsedStr}
+                                            </span>
+                                        </span>
+                                        ${account.scan_progress ? `<span class="queue-item-meta-item" style="color: var(--text-secondary);">${account.scan_progress}</span>` : ''}
+                                    </div>
+                                </div>
+                                <div class="queue-item-action">
+                                    <button type="button" class="queue-item-btn" onclick="openReport('${reportUrl}')" ${!hasReport ? 'disabled' : ''}>
+                                        View Report
+                                    </button>
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                }
+
+                // Populate queued list
+                const queuedList = document.getElementById('queued-list');
+                if (queuedAccounts.length === 0) {
+                    queuedList.innerHTML = '<div class="queue-empty">No accounts in queue</div>';
+                } else {
+                    queuedList.innerHTML = queuedAccounts.map((account, idx) => {
+                        const hasReport = account.latest_report_id;
+                        const reportUrl = hasReport ? `/report/${account.latest_report_id}` : '#';
+
+                        return `
+                            <div class="queue-item">
+                                <div class="queue-item-info">
+                                    <div class="queue-item-name">
+                                        <span class="badge badge-warning">Queued</span>
+                                        ${account.company_name}
+                                    </div>
+                                    <div class="queue-item-meta">
+                                        <span class="queue-item-meta-item">
+                                            <span class="queue-position-badge">#${idx + 1} in queue</span>
+                                        </span>
+                                    </div>
+                                </div>
+                                <div class="queue-item-action">
+                                    <button type="button" class="queue-item-btn" onclick="openReport('${reportUrl}')" ${!hasReport ? 'disabled' : ''}>
+                                        View Report
+                                    </button>
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                }
+            })
+            .catch(err => console.error('Error populating queue modal:', err));
+    }
+
+    // Make dashboard badges clickable
+    function initializeQueueBadges() {
+        const queueBadge = document.querySelector('.stat-badge:has(#dashboard-queue-size)');
+        const processingBadge = document.querySelector('.stat-badge:has(#dashboard-processing-count)');
+
+        if (queueBadge) {
+            queueBadge.setAttribute('role', 'button');
+            queueBadge.onclick = openQueueModal;
+        }
+
+        if (processingBadge) {
+            processingBadge.setAttribute('role', 'button');
+            processingBadge.onclick = openQueueModal;
+        }
+    }
+
+    // Initialize on page load
+    document.addEventListener('DOMContentLoaded', () => {
+        initializeQueueBadges();
+    });
+
+    // Close modal when clicking outside
+    document.addEventListener('click', (e) => {
+        const modal = document.getElementById('queue-modal');
+        if (modal && e.target === document.querySelector('.queue-modal-overlay')) {
+            closeQueueModal();
+        }
+    });
+
+    // Close modal with Escape key
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            closeQueueModal();
+            closeArchivedModal();
+        }
+    });
+
+    // =============================================================================
+    // Archived Accounts Modal
+    // =============================================================================
+
+    function openArchivedModal() {
+        const modal = document.getElementById('archived-modal');
+        modal.classList.add('active');
+        loadArchivedAccounts();
+    }
+
+    function closeArchivedModal() {
+        const modal = document.getElementById('archived-modal');
+        modal.classList.remove('active');
+    }
+
+    async function loadArchivedAccounts() {
+        const listContainer = document.getElementById('archived-accounts-list');
+        listContainer.innerHTML = '<div class="archived-loading">Loading archived accounts...</div>';
+
+        try {
+            const response = await fetch('/api/accounts/archived');
+            const data = await response.json();
+
+            if (data.accounts && data.accounts.length > 0) {
+                listContainer.innerHTML = data.accounts.map(account => {
+                    const archivedDate = account.archived_at ? new Date(account.archived_at).toLocaleDateString() : 'Unknown';
+                    const lastScanned = account.last_scanned_at ? new Date(account.last_scanned_at).toLocaleDateString() : 'Never';
+                    return `
+                        <div class="archived-account-item" data-account-id="${account.id}">
+                            <div class="archived-account-info">
+                                <span class="archived-account-name">${escapeHtml(account.company_name)}</span>
+                                <span class="archived-account-meta">
+                                    ${account.github_org ? `@${escapeHtml(account.github_org)} | ` : ''}
+                                    Archived: ${archivedDate} | Last scan: ${lastScanned}
+                                </span>
+                                ${account.evidence_summary ? `<span class="archived-account-meta">${escapeHtml(account.evidence_summary)}</span>` : ''}
+                            </div>
+                            <div class="archived-account-actions">
+                                <button class="unarchive-btn" data-id="${account.id}" data-name="${escapeHtml(account.company_name)}" onclick="unarchiveAccount(Number(this.dataset.id), this.dataset.name)">
+                                    Unarchive
+                                </button>
+                                <button class="delete-archived-btn" data-id="${account.id}" data-name="${escapeHtml(account.company_name)}" onclick="deleteArchivedAccount(Number(this.dataset.id), this.dataset.name)">
+                                    Delete
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } else {
+                listContainer.innerHTML = '<div class="archived-empty-state">No archived accounts</div>';
+            }
+        } catch (error) {
+            console.error('Error loading archived accounts:', error);
+            listContainer.innerHTML = '<div class="archived-empty-state">Error loading archived accounts</div>';
+        }
+    }
+
+    async function unarchiveAccount(accountId, companyName) {
+        if (!confirm(`Unarchive "${companyName}"? This will restore it to the main accounts list.`)) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/accounts/${accountId}/unarchive`, {
+                method: 'POST'
+            });
+
+            if (response.ok) {
+                showToast(`"${companyName}" has been unarchived`, 'success');
+                // Remove the item from the list
+                const item = document.querySelector(`.archived-account-item[data-account-id="${accountId}"]`);
+                if (item) item.remove();
+                // Update archived count in button
+                updateArchivedCount(-1);
+                // Refresh the main table
+                if (typeof reloadAccountsTable === 'function') {
+                    reloadAccountsTable();
+                }
+            } else {
+                const data = await response.json();
+                showToast(data.error || 'Failed to unarchive account', 'error');
+            }
+        } catch (error) {
+            console.error('Error unarchiving account:', error);
+            showToast('Error unarchiving account', 'error');
+        }
+    }
+
+    async function deleteArchivedAccount(accountId, companyName) {
+        if (!confirm(`Permanently delete "${companyName}"? This action cannot be undone.`)) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/accounts/${accountId}`, {
+                method: 'DELETE'
+            });
+
+            if (response.ok) {
+                showToast(`"${companyName}" has been deleted`, 'success');
+                // Remove the item from the list
+                const item = document.querySelector(`.archived-account-item[data-account-id="${accountId}"]`);
+                if (item) item.remove();
+                // Update archived count in button
+                updateArchivedCount(-1);
+            } else {
+                const data = await response.json();
+                showToast(data.error || 'Failed to delete account', 'error');
+            }
+        } catch (error) {
+            console.error('Error deleting account:', error);
+            showToast('Error deleting account', 'error');
+        }
+    }
+
+    function updateArchivedCount(delta) {
+        const btn = document.getElementById('show-archived-btn');
+        if (btn) {
+            const match = btn.textContent.match(/Archived \((\d+)\)/);
+            if (match) {
+                const currentCount = parseInt(match[1], 10);
+                const newCount = Math.max(0, currentCount + delta);
+                btn.innerHTML = `
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="21 8 21 21 3 21 3 8"></polyline>
+                        <rect x="1" y="3" width="22" height="5"></rect>
+                        <line x1="10" y1="12" x2="14" y2="12"></line>
+                    </svg>
+                    Archived (${newCount})
+                `;
+            }
+        }
+    }
+
+    // escapeHtml is defined earlier in the page (with full quote escaping)
+
+    // Initialize archived button click handler
+    document.addEventListener('DOMContentLoaded', () => {
+        const archivedBtn = document.getElementById('show-archived-btn');
+        if (archivedBtn) {
+            archivedBtn.addEventListener('click', openArchivedModal);
+        }
+    });
+
+    // Close archived modal when clicking overlay
+    document.getElementById('archived-modal').addEventListener('click', (e) => {
+        if (e.target.classList.contains('archived-modal-overlay')) {
+            closeArchivedModal();
+        }
+    });
+
+    // =============================================================================
+    // Integrations Modal - Google Sheets Webhook Configuration
+    // =============================================================================
+
+    function openIntegrationsModal() {
+        const modal = document.getElementById('integrations-modal');
+        modal.classList.add('active');
+        loadGSheetSettings();
+    }
+
+    function closeIntegrationsModal() {
+        const modal = document.getElementById('integrations-modal');
+        modal.classList.remove('active');
+        // Clear status message
+        const status = document.getElementById('gsheet-status');
+        status.style.display = 'none';
+    }
+
+    async function loadGSheetSettings() {
+        try {
+            const response = await fetch('/api/settings/gsheet');
+            const data = await response.json();
+
+            document.getElementById('gsheet-webhook-url').value = data.gsheet_webhook_url || '';
+            document.getElementById('gsheet-webhook-enabled').checked = data.gsheet_webhook_enabled || false;
+        } catch (error) {
+            console.error('Error loading Google Sheets settings:', error);
+        }
+    }
+
+    async function saveGSheetSettings() {
+        const url = document.getElementById('gsheet-webhook-url').value.trim();
+        const enabled = document.getElementById('gsheet-webhook-enabled').checked;
+        const statusEl = document.getElementById('gsheet-status');
+
+        // Validate URL if enabled
+        if (enabled && !url) {
+            showGSheetStatus('error', 'Please enter a webhook URL before enabling the integration.');
+            return;
+        }
+
+        if (url && !url.startsWith('https://')) {
+            showGSheetStatus('error', 'Webhook URL must start with https://');
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/settings/gsheet', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    gsheet_webhook_url: url,
+                    gsheet_webhook_enabled: enabled
+                })
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                showGSheetStatus('success', 'Settings saved successfully! New Tier 1/2 accounts will be exported automatically.');
+            } else {
+                showGSheetStatus('error', data.message || 'Failed to save settings');
+            }
+        } catch (error) {
+            console.error('Error saving Google Sheets settings:', error);
+            showGSheetStatus('error', 'Error saving settings. Please try again.');
+        }
+    }
+
+    async function testGSheetWebhook() {
+        const url = document.getElementById('gsheet-webhook-url').value.trim();
+
+        if (!url) {
+            showGSheetStatus('error', 'Please enter a webhook URL first.');
+            return;
+        }
+
+        showGSheetStatus('info', 'Sending test webhook... This may take a few seconds.');
+
+        try {
+            const response = await fetch('/api/settings/gsheet/test', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                showGSheetStatus('success', data.message || 'Test successful! Check your Google Sheet for a new row.');
+            } else {
+                showGSheetStatus('error', data.message || 'Test failed. Please check your webhook URL and Apps Script deployment.');
+            }
+        } catch (error) {
+            console.error('Error testing webhook:', error);
+            showGSheetStatus('error', 'Error testing webhook. Please try again.');
+        }
+    }
+
+    function showGSheetStatus(type, message) {
+        const statusEl = document.getElementById('gsheet-status');
+        statusEl.className = `integration-status ${type}`;
+        statusEl.textContent = message;
+        statusEl.style.display = 'flex';
+    }
+
+    // Close integrations modal when clicking overlay
+    document.getElementById('integrations-modal').addEventListener('click', (e) => {
+        if (e.target.classList.contains('integrations-modal-overlay')) {
+            closeIntegrationsModal();
+        }
+    });
+
+    // Update Escape key handler to close integrations modal
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            closeIntegrationsModal();
+        }
+    });
+</script>
+{% endblock %}
