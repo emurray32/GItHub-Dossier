@@ -68,6 +68,15 @@ app = Flask(__name__)
 app.config.from_object(Config)
 
 
+@app.after_request
+def add_no_cache_headers(response):
+    if 'text/html' in response.content_type or 'text/css' in response.content_type or 'javascript' in response.content_type:
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+    return response
+
+
 # =============================================================================
 # HELPER FUNCTIONS
 # =============================================================================
