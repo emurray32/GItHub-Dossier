@@ -1458,6 +1458,35 @@ def accounts():
     )
 
 
+@app.route('/accounts-tabler')
+def accounts_tabler():
+    """Tabler UI proof-of-concept for the accounts dashboard."""
+    page = request.args.get('page', 1, type=int)
+    limit = request.args.get('limit', 50, type=int)
+    tiers = request.args.getlist('tier', type=int)
+    if not tiers:
+        tiers = None
+    search_query = request.args.get('q', '').strip()
+    if not search_query:
+        search_query = None
+    result = get_all_accounts(page=page, limit=limit, tier_filter=tiers, search_query=search_query)
+    tier_counts = get_tier_counts()
+    archived_count = get_archived_count()
+    return render_template(
+        'accounts_tabler.html',
+        accounts=result['accounts'],
+        total_items=result['total_items'],
+        total_pages=result['total_pages'],
+        current_page=result['current_page'],
+        limit=result['limit'],
+        current_tier_filter=tiers,
+        current_search=search_query or '',
+        tier_config=TIER_CONFIG,
+        tier_counts=tier_counts,
+        archived_count=archived_count
+    )
+
+
 @app.route('/api/accounts')
 def api_accounts():
     """API endpoint to get all monitored accounts with live scan status and pagination."""
