@@ -275,7 +275,7 @@
         }
 
         // ── Render saved list ────────────────────────────────────
-        function renderSaved() {
+        function renderSaved(animateLatest) {
             var list = loadSequences();
             var container = document.getElementById('seqSavedList');
             if (!container) return;
@@ -285,10 +285,15 @@
                 return;
             }
 
+            var lastIdx = list.length - 1;
             container.innerHTML = list.map(function (seq, idx) {
-                return '<div class="seq-saved-item">' +
+                var displayName = seq.name || seq.id;
+                var subtitle = seq.name ? seq.id : '';
+                var animClass = (animateLatest && idx === lastIdx) ? ' seq-item-enter' : '';
+                return '<div class="seq-saved-item' + animClass + '">' +
                     '<div class="seq-saved-info">' +
-                    '<span class="seq-saved-id">' + escHtml(seq.id) + '</span>' +
+                    '<span class="seq-saved-name">' + escHtml(displayName) + '</span>' +
+                    (subtitle ? '<span class="seq-saved-id">' + escHtml(subtitle) + '</span>' : '') +
                     '<span class="seq-saved-type">' + escHtml(CONFIG_LABELS[seq.config] || seq.config) + '</span>' +
                     '</div>' +
                     '<button class="seq-saved-delete" data-idx="' + idx + '" aria-label="Delete sequence">' +
@@ -312,6 +317,7 @@
 
         // ── Card selection ───────────────────────────────────────
         var selectedConfig = null;
+        var detectedName = '';
 
         function selectCard(value) {
             document.querySelectorAll('.seq-card').forEach(function (c) {
@@ -368,7 +374,8 @@
                 if (data.status === 'success' && data.detected_config) {
                     selectCard(data.detected_config);
                     showAutodetectBadge(data.detected_config);
-                    var name = data.sequence_name ? ' — ' + data.sequence_name : '';
+                    detectedName = data.sequence_name || '';
+                    var name = detectedName ? ' — ' + detectedName : '';
                     setDetectStatus('Auto-detected: ' + (CONFIG_LABELS[data.detected_config] || data.detected_config) + name, 'status-ok');
                 } else if (data.status === 'not_found') {
                     setDetectStatus('Sequence not found — select config manually.', 'status-warn');
@@ -503,11 +510,12 @@
                     var existing = seqs.findIndex(function (s) { return s.id === id; });
                     if (existing !== -1) {
                         seqs[existing].config = selectedConfig;
+                        if (detectedName) seqs[existing].name = detectedName;
                     } else {
-                        seqs.push({ id: id, config: selectedConfig });
+                        seqs.push({ id: id, config: selectedConfig, name: detectedName || '' });
                     }
                     saveSequences(seqs);
-                    renderSaved();
+                    renderSaved(true);
 
                     // Reset form for next entry
                     if (input) input.value = '';
@@ -519,6 +527,7 @@
                     setDetectStatus('');
                     selectedConfig = null;
                     lastDetectedId = '';
+                    detectedName = '';
                     if (input) input.focus();
                 });
             }

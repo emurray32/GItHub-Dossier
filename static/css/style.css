@@ -2228,10 +2228,19 @@ select {
     min-width: 0;
 }
 
-.seq-saved-id {
-    font-size: 11px;
-    font-weight: 500;
+.seq-saved-name {
+    font-size: 12px;
+    font-weight: 600;
     color: var(--color-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.seq-saved-id {
+    font-size: 10px;
+    font-weight: 400;
+    color: var(--color-text-tertiary);
     font-family: var(--font-mono);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -2241,6 +2250,28 @@ select {
 .seq-saved-type {
     font-size: 11px;
     color: var(--color-text-tertiary);
+}
+
+/* Slide-in animation for newly added sequences */
+@keyframes seqItemEnter {
+    from {
+        opacity: 0;
+        transform: translateY(-8px);
+        max-height: 0;
+        padding-top: 0;
+        padding-bottom: 0;
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+        max-height: 80px;
+        padding-top: 8px;
+        padding-bottom: 8px;
+    }
+}
+
+.seq-item-enter {
+    animation: seqItemEnter 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
 }
 
 .seq-saved-delete {
