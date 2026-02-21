@@ -66,27 +66,32 @@
 
 /* ── Upload zone ─────────────────────────────────────────── */
 .lp-upload-zone {
-  border: 2px solid var(--color-border);
+  border: 2px dashed var(--color-border);
   border-radius: 16px;
   background: var(--color-surface);
   padding: 3rem 2rem;
   text-align: center;
   cursor: pointer;
-  transition: border-color 300ms cubic-bezier(0.4, 0, 0.2, 1), background 300ms cubic-bezier(0.4, 0, 0.2, 1), box-shadow 300ms cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: var(--shadow-card);
+  transition: border-color 300ms cubic-bezier(0.4, 0, 0.2, 1), background 300ms cubic-bezier(0.4, 0, 0.2, 1), box-shadow 300ms cubic-bezier(0.4, 0, 0.2, 1), transform 300ms cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
 }
 .lp-upload-zone:hover,
 .lp-upload-zone.drag-over {
   border-color: var(--color-primary);
   background: var(--color-primary-subtle);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-card-hover), 0 0 0 3px rgba(79, 70, 229, 0.1);
 }
 .lp-upload-zone input[type=file] { display: none; }
 .lp-upload-icon {
   width: 48px;
   height: 48px;
   margin: 0 auto 1rem;
-  color: var(--color-text-tertiary);
-  opacity: 0.6;
+  color: var(--color-primary);
+  background: rgba(79, 70, 229, 0.08);
+  border-radius: 12px;
+  padding: 10px;
 }
 .lp-upload-zone h3 {
   color: var(--color-text);
@@ -111,9 +116,10 @@
   font-size: 0.875rem;
   font-weight: var(--font-weight-semibold, 600);
   cursor: pointer;
+  box-shadow: var(--shadow-sm);
   transition: all 200ms cubic-bezier(0.4, 0, 0.2, 1);
 }
-.lp-upload-btn:hover { background: var(--color-primary-hover); transform: translateY(-1px); box-shadow: var(--shadow-primary); }
+.lp-upload-btn:hover { background: var(--color-primary-hover); transform: translateY(-1px); box-shadow: var(--shadow-primary), 0 0 0 3px rgba(79, 70, 229, 0.15); }
 .lp-upload-btn:active {
   transform: translateY(0) scale(0.97);
   box-shadow: none;
@@ -198,6 +204,7 @@
   border: 1px solid var(--color-border);
   border-radius: var(--radius, 0.75rem);
   padding: 1.5rem;
+  box-shadow: var(--shadow-card);
 }
 .lp-card-title {
   font-size: 0.8rem;
@@ -354,6 +361,7 @@
   border-radius: var(--radius, 0.75rem);
   padding: 1.5rem;
   text-align: center;
+  box-shadow: var(--shadow-card);
 }
 .lp-success-card h3 {
   font-size: 1rem;
@@ -537,6 +545,7 @@
   border: 1px solid var(--color-border);
   border-radius: var(--radius, 0.75rem);
   overflow: hidden;
+  box-shadow: var(--shadow-card);
 }
 
 .lp-profile-header {

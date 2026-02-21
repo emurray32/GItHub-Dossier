@@ -1,0 +1,172 @@
+/* =============================================================================
+   settings.css — Settings page card grid
+   ============================================================================= */
+
+.settings-container {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 32px 24px;
+}
+
+.settings-header {
+    margin-bottom: 32px;
+}
+
+.settings-title {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--color-text);
+    margin: 0 0 6px;
+    letter-spacing: -0.025em;
+}
+
+.settings-subtitle {
+    font-size: 14px;
+    color: var(--color-text-secondary);
+    margin: 0;
+}
+
+/* ---------------------------------------------------------------------------
+   Card Grid
+   --------------------------------------------------------------------------- */
+.settings-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 20px;
+}
+
+@media (max-width: 640px) {
+    .settings-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* ---------------------------------------------------------------------------
+   Settings Card — full clickable link
+   --------------------------------------------------------------------------- */
+.settings-card {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 24px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    box-shadow: var(--shadow-card);
+    text-decoration: none;
+    color: inherit;
+    transition: transform 0.2s var(--ease-smooth), box-shadow 0.2s var(--ease-smooth), border-color 0.2s var(--ease-smooth);
+}
+
+.settings-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-card-hover);
+    border-color: var(--color-primary);
+    color: inherit;
+}
+
+.settings-card:hover .settings-card-arrow {
+    transform: translateX(3px);
+    color: var(--color-primary);
+}
+
+/* Card top: icon + title */
+.settings-card-top {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.settings-card-title-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.settings-card-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--color-text);
+    margin: 0;
+}
+
+/* Icon containers — color variants */
+.settings-card-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.settings-card-icon i,
+.settings-card-icon svg {
+    width: 20px;
+    height: 20px;
+}
+
+.settings-card-icon--indigo {
+    background: rgba(99, 102, 241, 0.12);
+    color: #818CF8;
+}
+
+.settings-card-icon--emerald {
+    background: rgba(16, 185, 129, 0.12);
+    color: #34D399;
+}
+
+.settings-card-icon--blue {
+    background: rgba(59, 130, 246, 0.12);
+    color: #60A5FA;
+}
+
+.settings-card-icon--amber {
+    background: rgba(249, 115, 22, 0.12);
+    color: #FB923C;
+}
+
+/* Description */
+.settings-card-desc {
+    font-size: 13px;
+    color: var(--color-text-secondary);
+    margin: 0;
+    line-height: 1.5;
+}
+
+/* Footer link + arrow */
+.settings-card-footer {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: auto;
+    padding-top: 8px;
+}
+
+.settings-card-link {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--color-primary);
+}
+
+.settings-card-arrow {
+    width: 14px;
+    height: 14px;
+    color: var(--color-primary);
+    transition: transform 0.2s var(--ease-smooth), color 0.2s;
+}
+
+/* WIP Badge */
+.settings-wip-badge {
+    font-size: 11px;
+    font-weight: 600;
+    color: #92400E;
+    background: #FEF3C7;
+    border: 1px solid #FDE68A;
+    padding: 2px 8px;
+    border-radius: 999px;
+    letter-spacing: 0.025em;
+    white-space: nowrap;
+    line-height: 1;
+}
