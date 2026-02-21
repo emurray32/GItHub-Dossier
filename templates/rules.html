@@ -3,7 +3,7 @@
 {% block title %}Rule Set - Lead Machine{% endblock %}
 
 {% block head %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/rules.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/rules.css') }}?v={{ cache_bust }}">
 {% endblock %}
 
 {% block breadcrumb %}

@@ -21,7 +21,7 @@
 {% endblock %}
 
 {% block head %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/grow.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/grow.css') }}?v={{ cache_bust }}">
 {% endblock %}
 
 

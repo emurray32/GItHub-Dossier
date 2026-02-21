@@ -3,7 +3,7 @@
 {% block title %}RepoRadar - Lead Machine{% endblock %}
 
 {% block head %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/accounts.css') }}?v=3">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/accounts.css') }}?v={{ cache_bust }}">
 {% endblock %}
 
 {% block content %}

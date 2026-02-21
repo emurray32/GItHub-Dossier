@@ -2,7 +2,7 @@
 {% block title %}LinkedIn Prospector - Lead Machine{% endblock %}
 {% block breadcrumb %}{% endblock %}
 {% block head %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/linkedin_prospector.css') }}?v=4">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/linkedin_prospector.css') }}?v={{ cache_bust }}">
 {% endblock %}
 {% block content %}
 <div class="lp-container">

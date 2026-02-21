@@ -68,6 +68,11 @@ app = Flask(__name__)
 app.config.from_object(Config)
 
 
+@app.context_processor
+def inject_cache_buster():
+    return {'cache_bust': int(time.time())}
+
+
 @app.after_request
 def add_no_cache_headers(response):
     if 'text/html' in response.content_type or 'text/css' in response.content_type or 'javascript' in response.content_type:

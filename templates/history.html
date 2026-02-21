@@ -3,7 +3,7 @@
 {% block title %}Scan History - Lead Machine{% endblock %}
 
 {% block head %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/history.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/history.css') }}?v={{ cache_bust }}">
 {% endblock %}
 
 {% block breadcrumb %}

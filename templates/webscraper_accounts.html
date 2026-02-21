@@ -3,7 +3,7 @@
 {% block title %}WebScraper Accounts - Lead Machine{% endblock %}
 
 {% block head %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/webscraper_accounts.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/webscraper_accounts.css') }}?v={{ cache_bust }}">
 {% endblock %}
 
 {% block content %}
