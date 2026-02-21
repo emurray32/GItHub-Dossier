@@ -11,7 +11,7 @@
                     <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
                     <polyline points="9 22 9 12 15 12 15 22"></polyline>
                 </svg>
-                Accounts
+                RepoRadar
             </a>
         </li>
         <li class="breadcrumb-separator">/</li>
@@ -78,6 +78,19 @@
                 </div>
                 <input type="file" id="csvFileInput" accept=".csv" onchange="handleCSVFile(event)">
                 <div id="fileSelectedInfo" style="display: none;" class="file-selected-info"></div>
+
+                <!-- Column Mapping Preview -->
+                <div id="columnMappingPreview" style="display: none; margin: 1rem 0; border: 1px solid var(--color-border); border-radius: 8px; overflow: hidden;">
+                    <div style="padding: 0.75rem 1rem; background: var(--color-primary-subtle); border-bottom: 1px solid var(--color-border); display: flex; align-items: center; justify-content: space-between;">
+                        <span style="font-weight: 600; font-size: 0.9rem; color: var(--color-text);">Column Mapping</span>
+                        <span id="mappingStatus" style="font-size: 0.8rem; color: var(--color-text-secondary);"></span>
+                    </div>
+                    <div id="mappingRows" style="padding: 0.75rem 1rem; display: flex; flex-direction: column; gap: 0.5rem;"></div>
+                    <div id="unmappedWarning" style="display: none; padding: 0.5rem 1rem 0.75rem; font-size: 0.8rem; color: var(--color-warning); background: rgba(245, 158, 11, 0.06);">
+                        ⚠ Some columns couldn't be mapped and will be stored as metadata
+                    </div>
+                </div>
+
                 <button type="button" class="process-batch-btn" id="processCSVBtn" style="display: none;" onclick="processCSVImport()">
                     ▶ Process CSV
                 </button>
@@ -127,68 +140,12 @@ GOOGLE_SHEETS_CREDENTIALS_JSON={"type":"service_account",...}</pre>
                 </div>
             </div>
 
-            <label class="import-label" for="consoleLog" style="margin-top: 1.5rem;">Console Log</label>
+            <label class="import-label" for="consoleLog" style="margin-top: 1.5rem;">Activity Feed</label>
             <div class="console-log" id="consoleLog" role="log" aria-live="polite">
-                <div class="console-empty">Console output will appear here...</div>
+                <div class="console-empty">Activity will appear here when you start an import</div>
             </div>
         </div>
 
-        <!-- Bottom Panel: Discovery Engine -->
-        <div class="panel">
-            <h2 class="panel-title">Universal Discovery Engine</h2>
-
-            <!-- Discovery Mode Toggle -->
-            <div class="discovery-mode-toggle">
-                <button class="mode-btn" id="modeStream" onclick="setDiscoveryMode('stream')">🔥 Lead Stream</button>
-                <button class="mode-btn" id="modeGithub" onclick="setDiscoveryMode('github')">GitHub Search</button>
-                <button class="mode-btn active" id="modeAI" onclick="setDiscoveryMode('ai')">AI Discovery</button>
-            </div>
-
-            <!-- Lead Stream Controls (hidden by default) -->
-            <div class="lead-stream-controls" id="leadStreamControls" style="display: none;">
-                <button type="button" class="lead-stream-btn" id="loadMoreBtn" onclick="loadMoreLeads()">
-                    Load More Leads
-                </button>
-                <div class="lead-stream-stats">
-                    <div class="lead-stream-stat">
-                        <span>Total Leads:</span>
-                        <span class="lead-stream-stat-value" id="totalLeadsCount">0</span>
-                    </div>
-                    <div class="lead-stream-stat">
-                        <span>Added:</span>
-                        <span class="lead-stream-stat-value" id="addedLeadsCount">0</span>
-                    </div>
-                </div>
-            </div>
-
-            <!-- ICP Presets -->
-            <div class="icp-presets" id="icpPresets">
-                <button type="button" class="icp-btn" onclick="selectICP('Retail/DTC E-commerce')">Retail/DTC</button>
-                <button type="button" class="icp-btn" onclick="selectICP('Fintech Banking')">Fintech</button>
-                <button type="button" class="icp-btn" onclick="selectICP('HealthTech Medical')">HealthTech</button>
-                <button type="button" class="icp-btn" onclick="selectICP('Logistics Supply Chain')">Logistics</button>
-                <button type="button" class="icp-btn" onclick="selectICP('SaaS B2B Software')">SaaS</button>
-            </div>
-
-            <div class="search-box">
-                <input type="text" class="discovery-search" id="discoverySearch"
-                    placeholder="Enter industry (e.g., Fintech, HealthTech, DTC Retail)"
-                    onkeyup="handleSearchKeyup(event)" oninput="handleSearchInput()" />
-                <button class="search-discovery-btn" id="searchBtn" onclick="performDiscovery()">
-                    Discover
-                </button>
-            </div>
-
-            <!-- Results Grid (for AI and GitHub modes) -->
-            <div class="results-grid" id="resultsGrid">
-                <div class="console-empty">Select an ICP preset or enter an industry to discover companies...</div>
-            </div>
-
-            <!-- Lead Stream Grid (for stream mode) -->
-            <div class="lead-stream-grid" id="leadStreamGrid" style="display: none;">
-                <div class="stream-empty">Start the lead stream to see rapid-fire leads for approval...</div>
-            </div>
-        </div>
     </div>
 </div>
 
@@ -198,11 +155,185 @@ GOOGLE_SHEETS_CREDENTIALS_JSON={"type":"service_account",...}</pre>
 <!-- Papa Parse for robust CSV parsing -->
 <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 <script>
-    // Discovery mode: 'ai' or 'github' or 'stream'
-    let discoveryMode = 'ai';
     let selectedCSVData = null;
     let csvFileInput = null;
-    
+    let currentColumnMappings = {}; // Stores current header→field mappings
+
+    // --- Smart Column Mapping ---
+    const FIELD_SYNONYMS = {
+        'company_name': ['company_name', 'company name', 'company', 'account name', 'account_name',
+                         'organization', 'org name', 'org_name', 'name', 'account', 'business name',
+                         'business_name', 'firm', 'client name', 'client_name', 'prospect'],
+        'website':      ['domain', 'website', 'company domain', 'company_domain', 'website url',
+                         'website_url', 'url', 'web', 'company website', 'company_website',
+                         'primary domain', 'site', 'homepage', 'web address'],
+        'annual_revenue': ['annual_revenue', 'revenue', 'annual revenue', 'estimated_revenue',
+                           'arr', 'yearly revenue', 'yearly_revenue', 'total revenue', 'company revenue',
+                           'estimated revenue', 'rev'],
+        'industry':     ['industry', 'sector', 'vertical', 'company industry', 'company_industry',
+                         'account industry', 'market', 'segment', 'business type'],
+        'employee_count': ['employees', 'employee count', 'employee_count', '# employees',
+                           'num_employees', 'company size', 'number of employees', 'headcount',
+                           'staff count', 'team size', 'size', 'num employees', 'employee_size'],
+        'city':         ['city', 'hq city', 'headquarters city', 'company city', 'location city'],
+        'state':        ['state', 'hq state', 'headquarters state', 'company state', 'region',
+                         'province', 'location state'],
+        'country':      ['country', 'hq country', 'headquarters country', 'company country',
+                         'location country', 'nation'],
+        'salesforce_id': ['salesforce_id', 'sf_id', 'account id', 'account_id', 'sfdc id',
+                          'sfdc_id', 'crm_id', 'crm id', 'sf id', 'salesforce id']
+    };
+
+    const FIELD_LABELS = {
+        'company_name': 'Company Name',
+        'website': 'Website / Domain',
+        'annual_revenue': 'Annual Revenue',
+        'industry': 'Industry',
+        'employee_count': 'Employee Count',
+        'city': 'City',
+        'state': 'State / Region',
+        'country': 'Country',
+        'salesforce_id': 'Salesforce ID'
+    };
+
+    function levenshtein(a, b) {
+        const m = a.length, n = b.length;
+        const dp = Array.from({length: m + 1}, () => Array(n + 1).fill(0));
+        for (let i = 0; i <= m; i++) dp[i][0] = i;
+        for (let j = 0; j <= n; j++) dp[0][j] = j;
+        for (let i = 1; i <= m; i++)
+            for (let j = 1; j <= n; j++)
+                dp[i][j] = a[i-1] === b[j-1] ? dp[i-1][j-1] : 1 + Math.min(dp[i-1][j], dp[i][j-1], dp[i-1][j-1]);
+        return dp[m][n];
+    }
+
+    function fuzzyMatchColumn(header) {
+        const h = header.toLowerCase().trim();
+        // Exact match first
+        for (const [field, synonyms] of Object.entries(FIELD_SYNONYMS)) {
+            if (synonyms.includes(h)) return { field, confidence: 'exact' };
+        }
+        // Contains match
+        for (const [field, synonyms] of Object.entries(FIELD_SYNONYMS)) {
+            for (const syn of synonyms) {
+                if (h.includes(syn) || syn.includes(h)) return { field, confidence: 'partial' };
+            }
+        }
+        // Fuzzy/Levenshtein match (threshold: 2 edits)
+        let bestField = null, bestDist = Infinity;
+        for (const [field, synonyms] of Object.entries(FIELD_SYNONYMS)) {
+            for (const syn of synonyms) {
+                const dist = levenshtein(h, syn);
+                if (dist < bestDist && dist <= 2) { bestDist = dist; bestField = field; }
+            }
+        }
+        if (bestField) return { field: bestField, confidence: 'fuzzy' };
+        return { field: null, confidence: 'none' };
+    }
+
+    function autoMapColumns(headers) {
+        const mappings = {};
+        const usedFields = new Set();
+        // First pass: exact matches
+        for (const header of headers) {
+            const match = fuzzyMatchColumn(header);
+            if (match.confidence === 'exact' && !usedFields.has(match.field)) {
+                mappings[header] = match.field;
+                usedFields.add(match.field);
+            }
+        }
+        // Second pass: partial + fuzzy for unmapped
+        for (const header of headers) {
+            if (mappings[header]) continue;
+            const match = fuzzyMatchColumn(header);
+            if (match.field && !usedFields.has(match.field)) {
+                mappings[header] = match.field;
+                usedFields.add(match.field);
+            }
+        }
+        return mappings;
+    }
+
+    function renderMappingPreview(headers, mappings) {
+        const container = document.getElementById('mappingRows');
+        const preview = document.getElementById('columnMappingPreview');
+        const statusEl = document.getElementById('mappingStatus');
+        const unmappedEl = document.getElementById('unmappedWarning');
+        container.innerHTML = '';
+
+        const mappedCount = Object.values(mappings).filter(v => v).length;
+        const hasCompanyName = Object.values(mappings).includes('company_name');
+        statusEl.textContent = `${mappedCount} of ${headers.length} columns mapped`;
+
+        let hasUnmapped = false;
+        for (const header of headers) {
+            const mapped = mappings[header] || '';
+            if (!mapped) hasUnmapped = true;
+
+            const row = document.createElement('div');
+            row.style.cssText = 'display:flex;align-items:center;gap:0.5rem;padding:0.35rem 0;font-size:0.85rem;';
+
+            const arrow = mapped ? '→' : '·';
+            const conf = fuzzyMatchColumn(header);
+            const badge = conf.confidence === 'exact' ? '' :
+                          conf.confidence === 'partial' ? '<span style="font-size:0.7rem;color:var(--color-info);margin-left:0.25rem;">~partial</span>' :
+                          conf.confidence === 'fuzzy' ? '<span style="font-size:0.7rem;color:var(--color-warning);margin-left:0.25rem;">~fuzzy</span>' : '';
+
+            row.innerHTML = `
+                <span style="flex:1;font-family:var(--font-mono);color:var(--color-text-secondary);font-size:0.8rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(header)}">${escapeHtml(header)}</span>
+                <span style="color:var(--color-text-tertiary);">${arrow}</span>
+                <select data-csv-header="${escapeHtml(header)}" onchange="updateColumnMapping(this)" style="flex:1;padding:0.35rem 0.5rem;border:1px solid var(--color-border);border-radius:6px;font-size:0.8rem;background:var(--color-bg);color:var(--color-text);">
+                    <option value="">— skip (metadata) —</option>
+                    ${Object.entries(FIELD_LABELS).map(([k,v]) => `<option value="${k}" ${mapped===k ? 'selected' : ''}>${v}</option>`).join('')}
+                </select>
+                ${badge}
+            `;
+            container.appendChild(row);
+        }
+
+        unmappedEl.style.display = hasUnmapped ? 'block' : 'none';
+
+        if (!hasCompanyName) {
+            statusEl.innerHTML = '<span style="color:var(--color-destructive);">⚠ No company name column detected — please map one</span>';
+        }
+
+        preview.style.display = 'block';
+        currentColumnMappings = {...mappings};
+    }
+
+    function updateColumnMapping(selectEl) {
+        const header = selectEl.dataset.csvHeader;
+        const newField = selectEl.value;
+
+        // Remove old mapping for this header
+        if (currentColumnMappings[header]) {
+            delete currentColumnMappings[header];
+        }
+
+        // Check if field is already mapped by another header
+        if (newField) {
+            for (const [h, f] of Object.entries(currentColumnMappings)) {
+                if (f === newField && h !== header) {
+                    currentColumnMappings[h] = ''; // Clear duplicate
+                    // Update the other select
+                    const otherSelect = document.querySelector(`select[data-csv-header="${h}"]`);
+                    if (otherSelect) otherSelect.value = '';
+                }
+            }
+            currentColumnMappings[header] = newField;
+        }
+
+        // Update status
+        const statusEl = document.getElementById('mappingStatus');
+        const mappedCount = Object.values(currentColumnMappings).filter(v => v).length;
+        const totalHeaders = document.querySelectorAll('#mappingRows select').length;
+        const hasCompanyName = Object.values(currentColumnMappings).includes('company_name');
+        statusEl.textContent = `${mappedCount} of ${totalHeaders} columns mapped`;
+        if (!hasCompanyName) {
+            statusEl.innerHTML = '<span style="color:var(--color-destructive);">⚠ No company name column detected — please map one</span>';
+        }
+    }
+
     // Restore CSV data from localStorage on page load (fixes data loss between page states)
     try {
         const savedCSVData = localStorage.getItem('pendingCSVImport');
@@ -213,10 +344,6 @@ GOOGLE_SHEETS_CREDENTIALS_JSON={"type":"service_account",...}</pre>
     } catch (e) {
         console.error('[CSV Import] Error restoring from localStorage:', e);
     }
-    let leadStreamOffset = 0;
-    let leadStreamTotal = 0;
-    let addedLeadsCount = 0;
-    let allStreamLeads = [];
 
     function switchImportTab(tab) {
         // Update tab buttons
@@ -262,6 +389,11 @@ GOOGLE_SHEETS_CREDENTIALS_JSON={"type":"service_account",...}</pre>
         });
     }
 
+    // Store raw parsed CSV rows for re-mapping
+    let rawCSVRows = null;
+    let rawCSVHeaders = null;
+    let currentCSVFileName = '';
+
     async function handleCSVFile(event) {
         const file = event.target.files[0];
         if (!file) return;
@@ -270,6 +402,7 @@ GOOGLE_SHEETS_CREDENTIALS_JSON={"type":"service_account",...}</pre>
             addConsoleEntry('Please select a CSV file', 'error');
             return;
         }
+        currentCSVFileName = file.name;
 
         // Use Papa Parse to correctly handle multi-line quoted fields
         Papa.parse(file, {
@@ -278,60 +411,42 @@ GOOGLE_SHEETS_CREDENTIALS_JSON={"type":"service_account",...}</pre>
             transformHeader: (header) => header.trim().toLowerCase(),
             complete: async (results) => {
                 try {
-                    // Map Papa Parse results to our company format
-                    const companies = results.data
-                        .map(row => {
-                            // Find company name column (try multiple common names)
-                            const companyName = row['account name'] || row['company name'] || row['company'] || row['account'] || row['company_name'] || row['name'];
-                            if (!companyName || !companyName.trim()) return null;
+                    rawCSVRows = results.data;
+                    rawCSVHeaders = results.meta.fields || [];
 
-                            // Find optional fields
-                            const rawRevenue = row['annual_revenue'] || row['revenue'] || row['annual revenue'] || row['estimated_revenue'];
-                            const rawWebsite = row['website'] || row['url'] || row['company_website'] || row['company website'] || row['site'];
+                    // Auto-map columns using fuzzy matching
+                    const mappings = autoMapColumns(rawCSVHeaders);
+                    currentColumnMappings = mappings;
 
-                            // Collect metadata (all other fields)
-                            const metadata = {};
-                            const knownFields = new Set(['account name', 'company name', 'company', 'account', 'company_name', 'name', 'annual_revenue', 'revenue', 'annual revenue', 'estimated_revenue', 'website', 'url', 'company_website', 'company website', 'site']);
-                            for (const [key, value] of Object.entries(row)) {
-                                if (!knownFields.has(key.toLowerCase()) && value && value.trim()) {
-                                    metadata[key] = value.trim();
-                                }
-                            }
+                    // Show mapping preview
+                    renderMappingPreview(rawCSVHeaders, mappings);
 
-                            return {
-                                name: companyName.trim(),
-                                annual_revenue: validateRevenueValue(rawRevenue),
-                                website: rawWebsite ? rawWebsite.trim() : null,
-                                metadata: Object.keys(metadata).length > 0 ? metadata : null
-                            };
-                        })
-                        .filter(company => company !== null);
+                    // Build companies from mappings
+                    const companies = buildCompaniesFromMappings(rawCSVRows, rawCSVHeaders, mappings);
 
                     if (companies.length === 0) {
-                        addConsoleEntry('No valid company names found in CSV', 'error');
+                        addConsoleEntry('No valid company names found in CSV. Check the column mapping above.', 'error');
                         return;
                     }
 
                     selectedCSVData = companies;
-                    // Save to localStorage as backup (fixes data loss between page states)
+                    // Save to localStorage as backup
                     try {
                         localStorage.setItem('pendingCSVImport', JSON.stringify(companies));
-                        console.log('[CSV Import] Saved', companies.length, 'companies to localStorage');
                     } catch (e) {
                         console.error('[CSV Import] Error saving to localStorage:', e);
                     }
                     const infoDiv = document.getElementById('fileSelectedInfo');
 
-                    // Show initial loading message
+                    // Check for duplicates
                     infoDiv.textContent = `Checking ${companies.length} companies for duplicates...`;
                     infoDiv.style.display = 'block';
                     infoDiv.style.background = 'rgba(14, 165, 233, 0.1)';
                     infoDiv.style.color = 'var(--accent-color)';
 
-                    // Check for duplicates (now optimized with bulk queries)
                     try {
                         const controller = new AbortController();
-                        const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout
+                        const timeoutId = setTimeout(() => controller.abort(), 60000);
 
                         const response = await fetch('/api/import/check-duplicates', {
                             method: 'POST',
@@ -347,21 +462,18 @@ GOOGLE_SHEETS_CREDENTIALS_JSON={"type":"service_account",...}</pre>
                             const newCount = data.new_companies || 0;
                             const duplicateCount = data.duplicates_found || 0;
 
-                            // Update message with duplicate check results
                             if (duplicateCount > 0) {
-                                infoDiv.textContent = `✓ ${newCount} new accounts found (${duplicateCount} duplicates skipped) - ${file.name}`;
+                                infoDiv.textContent = `✓ ${newCount} new accounts found (${duplicateCount} duplicates skipped) — ${file.name}`;
                                 addConsoleEntry(`Found ${newCount} new companies and ${duplicateCount} duplicates in CSV`, 'info');
                             } else {
-                                infoDiv.textContent = `✓ ${newCount} new accounts found - ${file.name}`;
-                                addConsoleEntry(`All ${newCount} companies are new - ready to process`, 'success');
+                                infoDiv.textContent = `✓ ${newCount} new accounts ready to import — ${file.name}`;
+                                addConsoleEntry(`All ${newCount} companies are new — ready to process`, 'success');
                             }
 
                             infoDiv.style.background = 'rgba(34, 197, 94, 0.1)';
                             infoDiv.style.color = 'var(--success-color)';
-
                             document.getElementById('processCSVBtn').style.display = 'block';
                         } else {
-                            // Fallback if duplicate check fails
                             infoDiv.textContent = `✓ ${companies.length} companies loaded from ${file.name}`;
                             infoDiv.style.background = 'rgba(34, 197, 94, 0.1)';
                             infoDiv.style.color = 'var(--success-color)';
@@ -369,10 +481,9 @@ GOOGLE_SHEETS_CREDENTIALS_JSON={"type":"service_account",...}</pre>
                             addConsoleEntry(`Ready to process ${companies.length} companies from CSV`, 'info');
                         }
                     } catch (error) {
-                        // Fallback if duplicate check fails or times out
                         if (error.name === 'AbortError') {
                             infoDiv.textContent = `✓ ${companies.length} companies loaded from ${file.name} (duplicate check timed out)`;
-                            addConsoleEntry(`Duplicate check timed out - duplicates will be skipped automatically during import`, 'warning');
+                            addConsoleEntry(`Duplicate check timed out — duplicates will be skipped during import`, 'warning');
                         } else {
                             infoDiv.textContent = `✓ ${companies.length} companies loaded from ${file.name}`;
                             addConsoleEntry(`Ready to process ${companies.length} companies from CSV`, 'info');
@@ -389,6 +500,55 @@ GOOGLE_SHEETS_CREDENTIALS_JSON={"type":"service_account",...}</pre>
                 addConsoleEntry(`Error parsing CSV: ${error.message}`, 'error');
             }
         });
+    }
+
+    function buildCompaniesFromMappings(rows, headers, mappings) {
+        // Build reverse map: field → csv header
+        const fieldToHeader = {};
+        for (const [header, field] of Object.entries(mappings)) {
+            if (field) fieldToHeader[field] = header;
+        }
+
+        const mappedHeaders = new Set(Object.keys(mappings).filter(h => mappings[h]));
+
+        return rows.map(row => {
+            const nameHeader = fieldToHeader['company_name'];
+            if (!nameHeader) return null;
+            const companyName = row[nameHeader];
+            if (!companyName || !companyName.trim()) return null;
+
+            const revenueHeader = fieldToHeader['annual_revenue'];
+            const websiteHeader = fieldToHeader['website'];
+            const industryHeader = fieldToHeader['industry'];
+            const employeesHeader = fieldToHeader['employee_count'];
+            const cityHeader = fieldToHeader['city'];
+            const stateHeader = fieldToHeader['state'];
+            const countryHeader = fieldToHeader['country'];
+            const sfIdHeader = fieldToHeader['salesforce_id'];
+
+            // Collect unmapped fields as metadata
+            const metadata = {};
+            for (const [key, value] of Object.entries(row)) {
+                if (!mappedHeaders.has(key) && value && value.trim()) {
+                    metadata[key] = value.trim();
+                }
+            }
+
+            // Add mapped non-core fields to metadata too (so backend gets them)
+            if (industryHeader && row[industryHeader]) metadata['industry'] = row[industryHeader].trim();
+            if (employeesHeader && row[employeesHeader]) metadata['employee_count'] = row[employeesHeader].trim();
+            if (cityHeader && row[cityHeader]) metadata['city'] = row[cityHeader].trim();
+            if (stateHeader && row[stateHeader]) metadata['state'] = row[stateHeader].trim();
+            if (countryHeader && row[countryHeader]) metadata['country'] = row[countryHeader].trim();
+            if (sfIdHeader && row[sfIdHeader]) metadata['salesforce_id'] = row[sfIdHeader].trim();
+
+            return {
+                name: companyName.trim(),
+                annual_revenue: validateRevenueValue(revenueHeader ? row[revenueHeader] : null),
+                website: websiteHeader && row[websiteHeader] ? row[websiteHeader].trim() : null,
+                metadata: Object.keys(metadata).length > 0 ? metadata : null
+            };
+        }).filter(company => company !== null);
     }
 
     // Validate that a value looks like a revenue number (e.g., "$50M", "4.6B", "50000000")
@@ -674,386 +834,6 @@ GOOGLE_SHEETS_CREDENTIALS_JSON={"type":"service_account",...}</pre>
             setTimeout(() => {
                 window.location.href = `/accounts?highlight_batch=${data.batch_id}`;
             }, 2000);
-        }
-    }
-
-    async function initLeadStream() {
-        // Reset stream state
-        leadStreamOffset = 0;
-        leadStreamTotal = 0;
-        addedLeadsCount = 0;
-        allStreamLeads = [];
-
-        // Show stream grid
-        document.getElementById('leadStreamGrid').style.display = 'grid';
-        document.getElementById('leadStreamGrid').innerHTML = '<div class="loading"><div class="spinner"></div> Loading lead stream...</div>';
-
-        // Load initial batch
-        await loadMoreLeads();
-    }
-
-    async function loadMoreLeads() {
-        const grid = document.getElementById('leadStreamGrid');
-        const btn = document.getElementById('loadMoreBtn');
-        btn.disabled = true;
-
-        try {
-            const response = await fetch(`/api/lead-stream?offset=${leadStreamOffset}&limit=10`);
-            const data = await response.json();
-
-            if (response.ok) {
-                leadStreamTotal = data.total;
-                const leads = data.leads || [];
-
-                if (leads.length === 0 && leadStreamOffset === 0) {
-                    grid.innerHTML = '<div class="stream-empty">No leads available at this time. Try again later.</div>';
-                    btn.disabled = false;
-                    return;
-                }
-
-                // Add new leads to our collection
-                allStreamLeads.push(...leads);
-                leadStreamOffset += leads.length;
-
-                // Render the leads
-                displayLeadStream(leads, leadStreamOffset === leads.length);
-
-                // Update stats
-                document.getElementById('totalLeadsCount').textContent = leadStreamTotal;
-                document.getElementById('addedLeadsCount').textContent = addedLeadsCount;
-            } else {
-                grid.innerHTML = `<div class="stream-empty">Error loading leads: ${data.error || 'Unknown error'}</div>`;
-            }
-        } catch (error) {
-            grid.innerHTML = `<div class="stream-empty">Error: ${error.message}</div>`;
-        } finally {
-            btn.disabled = false;
-        }
-    }
-
-    function displayLeadStream(leads, isInitial) {
-        const grid = document.getElementById('leadStreamGrid');
-
-        if (isInitial) {
-            grid.innerHTML = '';
-        }
-
-        const html = leads.map(lead => {
-            const githubData = lead.github_data || {};
-            const orgLogin = githubData.login || '';
-            const avatarUrl = githubData.avatar_url || 'https://via.placeholder.com/60?text=' + encodeURIComponent(lead.name.charAt(0));
-
-            return `
-                <div class="lead-card" data-login="${escapeHtml(orgLogin)}">
-                    <div class="lead-card-header">
-                        <img src="${avatarUrl}" alt="${escapeHtml(lead.name)}" class="lead-card-avatar" onerror="this.src='https://via.placeholder.com/60'">
-                        <div class="lead-card-info">
-                            <div class="lead-card-name">${escapeHtml(lead.name)}</div>
-                            <div class="lead-card-github">@${escapeHtml(orgLogin)}</div>
-                        </div>
-                    </div>
-
-                    <span class="lead-card-industry">${escapeHtml(lead.industry || 'Technology')}</span>
-
-                    <div class="lead-card-description">${escapeHtml(lead.description || 'No description available')}</div>
-
-                    <div class="lead-card-meta">
-                        <div class="lead-card-revenue">💰 ${escapeHtml(lead.revenue || 'Unknown')}</div>
-                        <span>${githubData.public_repos || 0} repos</span>
-                    </div>
-
-                    <div class="lead-card-actions">
-                        <button
-                            class="lead-approve-btn"
-                            onclick="approveLeadQuick('${escapeHtml(orgLogin)}', '${escapeHtml(lead.name)}', this)"
-                            data-org="${escapeHtml(orgLogin)}"
-                        >
-                            ✓ Add Lead
-                        </button>
-                        <button class="lead-skip-btn" onclick="skipLead(this)">Skip</button>
-                    </div>
-                </div>
-            `;
-        }).join('');
-
-        grid.innerHTML += html;
-    }
-
-    async function approveLeadQuick(orgLogin, companyName, button) {
-        button.disabled = true;
-
-        try {
-            const response = await fetch('/api/track', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    org_login: orgLogin,
-                    company_name: companyName || orgLogin
-                })
-            });
-
-            const data = await response.json();
-
-            if (response.ok) {
-                addedLeadsCount++;
-                document.getElementById('addedLeadsCount').textContent = addedLeadsCount;
-                button.parentElement.parentElement.classList.add('added');
-                button.textContent = '✓ Added';
-            } else {
-                addConsoleEntry(`Failed to add ${orgLogin}: ${data.error}`, 'error');
-                button.disabled = false;
-            }
-        } catch (error) {
-            addConsoleEntry(`Error adding ${orgLogin}: ${error.message}`, 'error');
-            button.disabled = false;
-        }
-    }
-
-    function skipLead(button) {
-        button.parentElement.parentElement.classList.add('added');
-        button.disabled = true;
-        button.textContent = 'Skipped';
-    }
-
-    function setDiscoveryMode(mode) {
-        discoveryMode = mode;
-
-        // Update button states
-        document.getElementById('modeAI').classList.toggle('active', mode === 'ai');
-        document.getElementById('modeGithub').classList.toggle('active', mode === 'github');
-        document.getElementById('modeStream').classList.toggle('active', mode === 'stream');
-
-        // Hide results grids
-        document.getElementById('resultsGrid').style.display = 'none';
-        document.getElementById('leadStreamGrid').style.display = 'none';
-
-        // Show/hide ICP presets (only for AI mode)
-        document.getElementById('icpPresets').style.display = mode === 'ai' ? 'flex' : 'none';
-
-        // Show/hide search box (not for stream mode)
-        document.querySelector('.search-box').style.display = mode === 'stream' ? 'none' : 'flex';
-
-        // Show/hide lead stream controls
-        document.getElementById('leadStreamControls').style.display = mode === 'stream' ? 'flex' : 'none';
-
-        if (mode === 'stream') {
-            // Initialize lead stream
-            initLeadStream();
-        } else if (mode === 'ai') {
-            document.getElementById('resultsGrid').style.display = 'block';
-            showGridMessage('Select an ICP preset or enter an industry to discover companies...');
-        } else if (mode === 'github') {
-            document.getElementById('resultsGrid').style.display = 'block';
-            showGridMessage('Enter a keyword to search GitHub organizations...');
-        }
-
-        // Update placeholder
-        const searchInput = document.getElementById('discoverySearch');
-        if (mode === 'ai') {
-            searchInput.placeholder = 'Enter industry (e.g., Fintech, HealthTech, DTC Retail)';
-        } else {
-            searchInput.placeholder = 'Search keywords (e.g., fintech, health, react)';
-        }
-    }
-
-    function selectICP(industry) {
-        // Update search input
-        document.getElementById('discoverySearch').value = industry;
-
-        // Clear active state from all ICP buttons
-        document.querySelectorAll('.icp-btn').forEach(btn => btn.classList.remove('active'));
-
-        // Mark clicked button as active
-        event.target.classList.add('active');
-
-        // Trigger discovery
-        performDiscovery();
-    }
-
-    let discoveryDebounceTimer = null;
-
-    function handleSearchInput() {
-        if (discoveryDebounceTimer) {
-            clearTimeout(discoveryDebounceTimer);
-        }
-
-        // Use a longer debounce for discovery since it's an expensive operation
-        // 800ms feels responsive but prevents too many accidental triggers
-        discoveryDebounceTimer = setTimeout(() => {
-            const keyword = document.getElementById('discoverySearch').value.trim();
-            if (keyword.length >= 3) {
-                performDiscovery();
-            }
-        }, 800);
-    }
-
-    function handleSearchKeyup(event) {
-        if (event.key === 'Enter') {
-            if (discoveryDebounceTimer) {
-                clearTimeout(discoveryDebounceTimer);
-            }
-            performDiscovery();
-        }
-    }
-
-    async function performDiscovery() {
-        const keyword = document.getElementById('discoverySearch').value.trim();
-        if (!keyword) {
-            showGridMessage('Please enter a search keyword');
-            return;
-        }
-
-        const grid = document.getElementById('resultsGrid');
-        const btn = document.getElementById('searchBtn');
-        btn.disabled = true;
-
-        // Show loading with mode-specific message
-        const loadingMsg = discoveryMode === 'ai'
-            ? 'AI is discovering companies...'
-            : 'Searching GitHub...';
-        grid.innerHTML = `<div class="loading"><div class="spinner"></div> ${loadingMsg}</div>`;
-
-        try {
-            // Use different API based on mode
-            const apiUrl = discoveryMode === 'ai'
-                ? `/api/ai-discover?q=${encodeURIComponent(keyword)}`
-                : `/api/discover?q=${encodeURIComponent(keyword)}`;
-
-            const response = await fetch(apiUrl);
-            const data = await response.json();
-
-            if (response.ok) {
-                if (discoveryMode === 'ai') {
-                    displayAIResults(data);
-                } else {
-                    displayGitHubResults(data);
-                }
-            } else {
-                showGridMessage(`Error: ${data.error || 'Search failed'}`);
-            }
-        } catch (error) {
-            showGridMessage(`Error: ${error.message}`);
-        } finally {
-            btn.disabled = false;
-        }
-    }
-
-    function displayAIResults(companies) {
-        const grid = document.getElementById('resultsGrid');
-
-        if (!companies || companies.length === 0) {
-            showGridMessage('No companies found. Try a different industry or check if AI is configured.');
-            return;
-        }
-
-        grid.innerHTML = companies.map(company => {
-            const githubData = company.github_data || {};
-            const orgLogin = githubData.login || company.suggested_github_org || '';
-            const avatarUrl = githubData.avatar_url || 'https://via.placeholder.com/50?text=' + encodeURIComponent(company.name.charAt(0));
-            const repoCount = githubData.public_repos || 0;
-            const isValidated = company.github_validated;
-
-            return `
-                <div class="org-card" data-login="${escapeHtml(orgLogin)}">
-                    <span class="revenue-badge">Revenue: ${escapeHtml(company.revenue || 'Unknown')}</span>
-
-                    <div class="org-card-header">
-                        <img src="${avatarUrl}" alt="${escapeHtml(company.name)}" class="org-avatar" onerror="this.src='https://via.placeholder.com/50'">
-                        <div class="org-header-info">
-                            <div class="org-name">${escapeHtml(company.name)}</div>
-                            <div class="org-company-name">@${escapeHtml(orgLogin)}</div>
-                        </div>
-                    </div>
-
-                    <span class="industry-tag">${escapeHtml(company.industry || 'Tech')}</span>
-
-                    <div class="org-description">${escapeHtml(company.description || 'No description available')}</div>
-
-                    <div class="org-meta">
-                        <span class="org-repos">${repoCount} repos</span>
-                        <span class="github-status ${isValidated ? 'validated' : 'uncertain'}">
-                            ${isValidated ? 'GitHub Found' : 'GitHub Uncertain'}
-                        </span>
-                    </div>
-
-                    <button
-                        class="track-btn"
-                        onclick="trackOrganization('${escapeHtml(orgLogin)}', '${escapeHtml(company.name)}', this)"
-                        data-org="${escapeHtml(orgLogin)}"
-                        ${!isValidated ? 'disabled title="GitHub org not validated"' : ''}
-                    >
-                        ${isValidated ? '+ Track' : 'GitHub Not Found'}
-                    </button>
-                </div>
-            `;
-        }).join('');
-    }
-
-    function displayGitHubResults(orgs) {
-        const grid = document.getElementById('resultsGrid');
-
-        if (!orgs || orgs.length === 0) {
-            showGridMessage('No organizations found matching this keyword');
-            return;
-        }
-
-        grid.innerHTML = orgs.map(org => `
-            <div class="org-card" data-login="${escapeHtml(org.login)}">
-                <div class="org-card-header">
-                    <img src="${org.avatar_url}" alt="${escapeHtml(org.login)}" class="org-avatar" onerror="this.src='https://via.placeholder.com/50'">
-                    <div class="org-header-info">
-                        <div class="org-name">${escapeHtml(org.login)}</div>
-                    </div>
-                </div>
-
-                <div class="org-description">${escapeHtml(org.description || 'No description')}</div>
-
-                <div class="org-meta">
-                    <span class="org-repos">${org.public_repos} repos</span>
-                    <span class="github-status validated">GitHub Found</span>
-                </div>
-
-                <button
-                    class="track-btn"
-                    onclick="trackOrganization('${escapeHtml(org.login)}', '${escapeHtml(org.login)}', this)"
-                    data-org="${escapeHtml(org.login)}"
-                >
-                    + Track
-                </button>
-            </div>
-        `).join('');
-    }
-
-    function showGridMessage(message) {
-        document.getElementById('resultsGrid').innerHTML = `<div class="console-empty">${escapeHtml(message)}</div>`;
-    }
-
-    async function trackOrganization(orgLogin, companyName, button) {
-        button.disabled = true;
-
-        try {
-            const response = await fetch('/api/track', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    org_login: orgLogin,
-                    company_name: companyName || orgLogin
-                })
-            });
-
-            const data = await response.json();
-
-            if (response.ok) {
-                button.textContent = 'Added';
-                button.parentElement.classList.add('added');
-                addConsoleEntry(`Tracked ${companyName || orgLogin} (@${orgLogin}) to Tier 0`, 'success');
-            } else {
-                addConsoleEntry(`Failed to track ${orgLogin}: ${data.error}`, 'error');
-                button.disabled = false;
-            }
-        } catch (error) {
-            addConsoleEntry(`Error tracking ${orgLogin}: ${error.message}`, 'error');
-            button.disabled = false;
         }
     }
 
@@ -1360,8 +1140,6 @@ GOOGLE_SHEETS_CREDENTIALS_JSON={"type":"service_account",...}</pre>
     }
 
     document.addEventListener('DOMContentLoaded', function () {
-        setDiscoveryMode('ai');
-
         const textarea = document.querySelector('.companies-textarea');
         if (textarea) {
             const resizeTextarea = () => {

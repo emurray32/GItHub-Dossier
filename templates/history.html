@@ -15,7 +15,7 @@
                     <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
                     <polyline points="9 22 9 12 15 12 15 22"></polyline>
                 </svg>
-                Accounts
+                RepoRadar
             </a>
         </li>
         <li class="breadcrumb-separator">/</li>
@@ -41,12 +41,6 @@
                 <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
             </svg>
             Favorites
-        </button>
-        <button class="history-tab" data-filter="high-signals" role="tab" aria-selected="false" aria-controls="history-content">
-            <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path>
-            </svg>
-            High Signals (5+)
         </button>
     </div>
 
@@ -120,18 +114,6 @@
                 </button>
             </div>
 
-            <!-- Compare Mode -->
-            <button class="btn-compare" id="toggle-compare" aria-pressed="false">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                    <rect x="3" y="3" width="8" height="18" rx="1"></rect>
-                    <rect x="13" y="3" width="8" height="18" rx="1"></rect>
-                </svg>
-                Compare
-            </button>
-            <button class="btn-compare-action hidden" id="run-compare" disabled aria-label="Compare selected reports">
-                Compare Selected (<span id="compare-count">0</span>)
-            </button>
-
             <!-- Items per page -->
             <div class="per-page-selector">
                 <label for="per-page">Show:</label>
@@ -158,9 +140,6 @@
             <table class="history-table" role="grid" aria-label="Scan history reports">
                 <thead>
                     <tr role="row">
-                        <th class="compare-col hidden" scope="col">
-                            <span class="visually-hidden">Select for comparison</span>
-                        </th>
                         <th scope="col" class="sortable" data-sort="company_name" role="columnheader" aria-sort="none" tabindex="0">
                             Company
                             <span class="sort-icon" aria-hidden="true"></span>
@@ -319,12 +298,9 @@ document.addEventListener('DOMContentLoaded', function() {
         dateTo: '',
         minSignals: null,
         maxSignals: null,
-        favoritesOnly: false,
-        highSignalsOnly: false
+        favoritesOnly: false
     };
     let currentView = 'table';
-    let compareMode = false;
-    let selectedForCompare = new Set();
     let deleteReportId = null;
 
     // DOM Elements
@@ -352,9 +328,6 @@ document.addEventListener('DOMContentLoaded', function() {
     const showingStart = document.getElementById('showing-start');
     const showingEnd = document.getElementById('showing-end');
     const totalItemsEl = document.getElementById('total-items');
-    const toggleCompareBtn = document.getElementById('toggle-compare');
-    const runCompareBtn = document.getElementById('run-compare');
-    const compareCount = document.getElementById('compare-count');
     const previewModal = document.getElementById('preview-modal');
     const deleteModal = document.getElementById('delete-modal');
 
@@ -424,11 +397,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
                 const filter = this.dataset.filter;
                 currentFilters.favoritesOnly = filter === 'favorites';
-                currentFilters.highSignalsOnly = filter === 'high-signals';
-                if (filter === 'high-signals') {
-                    currentFilters.minSignals = 5;
-                    minSignalsInput.value = '5';
-                } else if (filter !== 'favorites') {
+                if (filter !== 'favorites') {
                     currentFilters.minSignals = null;
                     minSignalsInput.value = '';
                 }
@@ -463,30 +432,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     handleSort(this);
                 }
             });
-        });
-
-        // Compare mode
-        toggleCompareBtn.addEventListener('click', function() {
-            compareMode = !compareMode;
-            this.setAttribute('aria-pressed', compareMode);
-            document.querySelectorAll('.compare-col').forEach(el => {
-                el.classList.toggle('hidden', !compareMode);
-            });
-            runCompareBtn.classList.toggle('hidden', !compareMode);
-            if (!compareMode) {
-                selectedForCompare.clear();
-                updateCompareCount();
-                document.querySelectorAll('.compare-checkbox').forEach(cb => cb.checked = false);
-            }
-        });
-
-        runCompareBtn.addEventListener('click', function() {
-            if (selectedForCompare.size >= 2) {
-                const ids = Array.from(selectedForCompare).join(',');
-                // TODO: Compare route not yet implemented
-                // window.open(`/compare?ids=${ids}`, '_blank');
-                alert('Compare feature coming soon');
-            }
         });
 
         // Pagination
@@ -570,8 +515,7 @@ document.addEventListener('DOMContentLoaded', function() {
             dateTo: '',
             minSignals: null,
             maxSignals: null,
-            favoritesOnly: false,
-            highSignalsOnly: false
+            favoritesOnly: false
         };
 
         // Reset tabs
@@ -667,7 +611,7 @@ document.addEventListener('DOMContentLoaded', function() {
     function hasActiveFilters() {
         return currentFilters.search || currentFilters.dateFrom || currentFilters.dateTo ||
                currentFilters.minSignals !== null || currentFilters.maxSignals !== null ||
-               currentFilters.favoritesOnly || currentFilters.highSignalsOnly;
+               currentFilters.favoritesOnly;
     }
 
     function updateViewDisplay() {
@@ -683,11 +627,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
         return `
             <tr role="row" data-report-id="${report.id}">
-                <td class="compare-col ${compareMode ? '' : 'hidden'}">
-                    <input type="checkbox" class="compare-checkbox" data-id="${report.id}"
-                           ${selectedForCompare.has(report.id) ? 'checked' : ''}
-                           aria-label="Select ${report.company_name} for comparison">
-                </td>
                 <td class="company-cell">${escapeHtml(report.company_name)}</td>
                 <td class="org-cell">@${escapeHtml(report.github_org || '-')}</td>
                 <td class="number-cell">
@@ -742,12 +681,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
         return `
             <div class="history-card" role="listitem" data-report-id="${report.id}">
-                ${compareMode ? `
-                    <div class="card-compare">
-                        <input type="checkbox" class="compare-checkbox" data-id="${report.id}"
-                               ${selectedForCompare.has(report.id) ? 'checked' : ''}>
-                    </div>
-                ` : ''}
                 <div class="card-header">
                     <div>
                         <div class="card-title">${escapeHtml(report.company_name)}</div>
@@ -836,18 +769,6 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         });
 
-        // Compare checkboxes
-        document.querySelectorAll('.compare-checkbox').forEach(cb => {
-            cb.addEventListener('change', function() {
-                const id = parseInt(this.dataset.id);
-                if (this.checked) {
-                    selectedForCompare.add(id);
-                } else {
-                    selectedForCompare.delete(id);
-                }
-                updateCompareCount();
-            });
-        });
     }
 
     async function toggleFavorite(id, button) {
@@ -964,12 +885,6 @@ document.addEventListener('DOMContentLoaded', function() {
     function closeDeleteModal() {
         deleteModal.classList.add('hidden');
         deleteReportId = null;
-    }
-
-    function updateCompareCount() {
-        const count = selectedForCompare.size;
-        compareCount.textContent = count;
-        runCompareBtn.disabled = count < 2;
     }
 
     function updatePagination() {

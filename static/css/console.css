@@ -57,64 +57,78 @@
     margin-bottom: 1rem;
 }
 
+/* Panel header — simple, clean, no terminal aesthetic */
 .console-header {
-    background: var(--color-surface);
-    padding: 8px 12px;
+    background: var(--color-bg);
+    padding: 10px 14px;
     border-bottom: 1px solid var(--color-border);
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
 }
 
+/* Hide macOS-style terminal dots — kept in markup but invisible */
 .console-dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
+    display: none;
 }
 
-.console-dot.red { background: #ff5f56; }
-.console-dot.yellow { background: #ffbd2e; }
-.console-dot.green { background: #27c93f; }
+.console-dot.red,
+.console-dot.yellow,
+.console-dot.green {
+    display: none;
+}
 
 .console-title {
-    margin-left: 6px;
-    font-size: 12px;
-    color: var(--color-text-secondary);
+    margin-left: 0;
+    font-family: var(--font-sans);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-text);
 }
 
+/* Activity feed output area — light theme, sans-serif */
 .console-output {
     height: 400px;
     overflow-y: auto;
     padding: 12px;
-    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-family: var(--font-sans);
     font-size: 13px;
     line-height: 1.6;
-    color: #e2e8f0;
-    background: #1e293b;
-    border: 1px solid #334155;
+    color: var(--color-text);
+    background: #FAFAFA;
+    border: none;
 }
 
 .console-line {
     white-space: pre-wrap;
     word-break: break-all;
+    padding: 0.3rem 0.5rem;
+    margin-bottom: 0.2rem;
+    border-left: 3px solid var(--color-border);
+    border-radius: 0 4px 4px 0;
 }
 
 .console-line.phase {
     color: var(--color-primary);
-    font-weight: bold;
+    font-weight: 600;
     margin-top: 0.75rem;
+    border-left-color: var(--color-primary);
+    background: rgba(79, 70, 229, 0.04);
 }
 
 .console-line.separator {
     color: var(--color-text-tertiary);
+    border-left-color: transparent;
 }
 
 .console-line.error {
-    color: var(--color-destructive);
+    color: #b91c1c;
+    border-left-color: #dc2626;
 }
 
 .console-line.success {
-    color: var(--color-success);
+    color: #15803d;
+    border-left-color: #16a34a;
 }
 
 .progress-bar {

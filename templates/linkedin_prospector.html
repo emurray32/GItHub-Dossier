@@ -1,8 +1,17 @@
 {% extends "base.html" %}
 {% block title %}LinkedIn Prospector - Lead Machine{% endblock %}
-{% block breadcrumb %}{% endblock %}
+{% block breadcrumb %}
+<nav class="breadcrumb-container" aria-label="Breadcrumb">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{{ url_for('accounts') }}">
+      <svg class="breadcrumb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>RepoRadar</a></li>
+    <li class="breadcrumb-separator">/</li>
+    <li class="breadcrumb-item active" aria-current="page">LinkedIn Prospector</li>
+  </ol>
+</nav>
+{% endblock %}
 {% block head %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/linkedin_prospector.css') }}?v={{ cache_bust }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/linkedin_prospector.css') }}">
 {% endblock %}
 {% block content %}
 <div class="lp-container">
@@ -16,6 +25,7 @@
   <div class="lp-input-zone" id="input-zone">
     <div class="lp-upload-zone" id="upload-zone">
       <input type="file" id="file-input" accept="image/*">
+      <svg class="lp-collapsed-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
       <svg class="lp-upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
         <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
         <polyline points="21 15 16 10 5 21"/>
@@ -148,7 +158,7 @@
         </div>
         <div class="lp-field">
           <label>Body</label>
-          <textarea class="lp-email-preview" id="email-body-preview" rows="6"></textarea>
+          <div class="lp-email-preview" id="email-body-preview"></div>
         </div>
         <div class="lp-actions">
           <button class="lp-btn lp-btn-secondary" id="btn-copy" onclick="copyEmail()">
@@ -614,7 +624,6 @@
   window.generateEmail = async function() {
     var btn = $('btn-gen-email');
     btn.disabled = true;
-    btn.classList.add('lp-btn-loading');
     btn.innerHTML = '<span class="lp-spinner lp-spinner--white"></span> Generating...';
 
     var contact = {
@@ -637,7 +646,7 @@
       if (data.status === 'success' && data.email) {
         $('email-subject').value = data.email.subject || '';
         $('email-body-preview').className = 'lp-email-preview';
-        $('email-body-preview').value = data.email.body || '';
+        $('email-body-preview').textContent = data.email.body || '';
         $('email-preview-wrap').style.display = '';
         showSection('section-enroll');
         showToast('Email generated');
@@ -649,7 +658,6 @@
       showToast('Network error generating email', 'error');
     } finally {
       btn.disabled = false;
-      btn.classList.remove('lp-btn-loading');
       btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg> Generate Email with AI';
     }
   };
@@ -675,7 +683,7 @@
       sequence_id: seqId,
       company_name: $('f-company').value || '',
       personalized_subject: $('email-subject').value || '',
-      personalized_email_body: $('email-body-preview').value || ''
+      personalized_email_body: $('email-body-preview').textContent || ''
     };
 
     try {
@@ -707,7 +715,7 @@
   // -- Copy email --
   window.copyEmail = function() {
     var subj = $('email-subject').value;
-    var body = $('email-body-preview').value;
+    var body = $('email-body-preview').textContent;
     var text = 'Subject: ' + subj + '\n\n' + body;
     try {
       if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -759,7 +767,7 @@
     $('f-phone').value = '';
     $('f-email').value = '';
     $('email-subject').value = '';
-    $('email-body-preview').value = '';
+    $('email-body-preview').textContent = '';
     $('email-preview-wrap').style.display = 'none';
 
     // Reset profile card

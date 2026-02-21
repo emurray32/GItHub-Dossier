@@ -1659,6 +1659,12 @@ def grow():
     return render_template('grow.html')
 
 
+@app.route('/settings')
+def settings():
+    """Settings page with links to tools and configuration."""
+    return render_template('settings.html')
+
+
 @app.route('/rules')
 def rules():
     """View the scanning rule set configuration."""
