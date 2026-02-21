@@ -358,15 +358,15 @@
                 <div class="sequence-thread">
                     <div class="thread-label">Thread 1</div>
                     <div class="outreach-field">
-                        <label class="outreach-label">Subject 1 <span class="outreach-hint">personalized_subject_1</span></label>
+                        <label class="outreach-label">Subject 1 <span class="outreach-var-name">personalized_subject_1</span></label>
                         <input type="text" id="email-subject1-${c.id}" class="outreach-input" placeholder="Subject line..." value="${escapeHtml(aiSubject)}">
                     </div>
                     <div class="outreach-field">
-                        <label class="outreach-label">Email 1 <span class="outreach-hint">personalized_email_1</span></label>
+                        <label class="outreach-label">Email 1 <span class="outreach-var-name">personalized_email_1</span></label>
                         <textarea id="email-body1-${c.id}" class="outreach-textarea" rows="4" placeholder="Initial outreach...">${escapeHtml(aiBody)}</textarea>
                     </div>
                     <div class="outreach-field">
-                        <label class="outreach-label">Email 2 <span class="outreach-hint">personalized_email_2</span></label>
+                        <label class="outreach-label">Email 2 <span class="outreach-var-name">personalized_email_2</span></label>
                         <textarea id="email-body2-${c.id}" class="outreach-textarea" rows="3" placeholder="Follow-up bump..."></textarea>
                     </div>
                 </div>
@@ -374,20 +374,20 @@
                 <div class="sequence-thread">
                     <div class="thread-label">Thread 2</div>
                     <div class="outreach-field">
-                        <label class="outreach-label">Subject 2 <span class="outreach-hint">personalized_subject_2</span></label>
+                        <label class="outreach-label">Subject 2 <span class="outreach-var-name">personalized_subject_2</span></label>
                         <input type="text" id="email-subject2-${c.id}" class="outreach-input" placeholder="New angle subject...">
                     </div>
                     <div class="outreach-field">
-                        <label class="outreach-label">Email 3 <span class="outreach-hint">personalized_email_3</span></label>
+                        <label class="outreach-label">Email 3 <span class="outreach-var-name">personalized_email_3</span></label>
                         <textarea id="email-body3-${c.id}" class="outreach-textarea" rows="4" placeholder="New thread email..."></textarea>
                     </div>
                     <div class="outreach-field">
-                        <label class="outreach-label">Email 4 <span class="outreach-hint">personalized_email_4</span></label>
+                        <label class="outreach-label">Email 4 <span class="outreach-var-name">personalized_email_4</span></label>
                         <textarea id="email-body4-${c.id}" class="outreach-textarea" rows="3" placeholder="Breakup email..."></textarea>
                     </div>
                 </div>
 
-                <button class="btn-action btn-add-sequence ${isEnrolled ? 'enrolled' : ''}" onclick="toggleSequence(${c.id}, ${isEnrolled ? 'true' : 'false'})" id="seq-btn-${c.id}" ${!hasEmail && !isEnrolled ? 'disabled' : ''}>
+                <button class="btn-action btn-add-sequence ${isEnrolled ? 'enrolled' : ''}" onclick="toggleSequence(${c.id}, ${isEnrolled ? 'true' : 'false'})" id="seq-btn-${c.id}" ${!hasEmail && !isEnrolled ? 'disabled title="Find email first"' : ''}>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         ${isEnrolled
                             ? '<polyline points="20 6 9 17 4 12"></polyline>'
@@ -498,7 +498,7 @@
         .then(data => {
             if (btn) {
                 btn.disabled = false;
-                btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg> Generate Email';
+                btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg> Generate Sequence';
             }
 
             if (data.status === 'success' && data.email) {
@@ -523,7 +523,7 @@
         .catch(() => {
             if (btn) {
                 btn.disabled = false;
-                btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg> Generate Email';
+                btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg> Generate Sequence';
             }
             showToast('Network error generating email', 'error');
         });
