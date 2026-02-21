@@ -396,6 +396,11 @@
   });
 
   function handleFile(file) {
+    // File size limit: 10MB
+    if (file.size > 10 * 1024 * 1024) {
+      showToast('File too large (max 10MB)', 'error');
+      return;
+    }
     uploadedFile = file;
     currentLinkedinUrl = '';
 
@@ -422,7 +427,13 @@
   }
 
   // -- LinkedIn URL lookup --
+  var urlLookupInProgress = false;
   window.handleUrlLookup = async function() {
+    if (urlLookupInProgress) return;
+    urlLookupInProgress = true;
+    var lookupBtn = $('url-btn');
+    if (lookupBtn) lookupBtn.disabled = true;
+
     var urlInput = $('url-input');
     var rawUrl = (urlInput.value || '').trim();
 
@@ -430,6 +441,8 @@
     var match = rawUrl.match(/linkedin\.com\/in\/([a-zA-Z0-9_-]+)/);
     if (!match) {
       showToast('Enter a valid LinkedIn URL (linkedin.com/in/...)', 'error');
+      urlLookupInProgress = false;
+      if (lookupBtn) lookupBtn.disabled = false;
       return;
     }
 
@@ -457,6 +470,8 @@
 
     // Go directly to Apollo with linkedin_url
     await findInApollo(currentLinkedinUrl);
+    urlLookupInProgress = false;
+    if (lookupBtn) lookupBtn.disabled = false;
   };
 
   // Allow Enter key in URL input
@@ -701,9 +716,25 @@
   window.copyEmail = function() {
     var subj = $('email-subject').value;
     var body = $('email-body-preview').textContent;
-    navigator.clipboard.writeText('Subject: ' + subj + '\n\n' + body)
-      .then(function() { showToast('Copied to clipboard'); })
-      .catch(function() { showToast('Copy failed', 'error'); });
+    var text = 'Subject: ' + subj + '\n\n' + body;
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text)
+          .then(function() { showToast('Copied to clipboard'); })
+          .catch(function() { showToast('Copy failed', 'error'); });
+      } else {
+        // Fallback for non-secure contexts
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        showToast('Copied to clipboard');
+      }
+    } catch(e) { showToast('Copy failed', 'error'); }
   };
 
   // -- Reset everything --

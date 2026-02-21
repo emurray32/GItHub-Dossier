@@ -436,6 +436,22 @@ def init_db() -> None:
         ON contributors(apollo_status)
     ''')
 
+    # Migrate contributors table: add org membership classification columns
+    try:
+        cursor.execute('ALTER TABLE contributors ADD COLUMN is_org_member INTEGER DEFAULT NULL')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
+    try:
+        cursor.execute('ALTER TABLE contributors ADD COLUMN github_profile_company TEXT')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_contributors_org_member
+        ON contributors(is_org_member)
+    ''')
+
     conn.commit()
     conn.close()
 
@@ -1443,19 +1459,22 @@ def update_account_notes(account_id: int, notes: str) -> bool:
         True if the update was successful, False if account not found.
     """
     conn = get_db_connection()
-    cursor = conn.cursor()
-
-    cursor.execute('''
-        UPDATE monitored_accounts
-        SET notes = ?
-        WHERE id = ?
-    ''', (notes, account_id))
-
-    updated = cursor.rowcount > 0
-    conn.commit()
-    conn.close()
-
-    return updated
+    try:
+        cursor = conn.cursor()
+        cursor.execute('''
+            UPDATE monitored_accounts
+            SET notes = ?
+            WHERE id = ?
+        ''', (notes, account_id))
+        updated = cursor.rowcount > 0
+        conn.commit()
+        return updated
+    except Exception as e:
+        print(f"[DB] Error updating notes for account {account_id}: {e}")
+        conn.rollback()
+        return False
+    finally:
+        conn.close()
 
 
 def get_all_accounts(page: int = 1, limit: int = 50, tier_filter: Optional[list] = None, search_query: Optional[str] = None) -> dict:
@@ -4396,18 +4415,21 @@ def save_contributor(contributor_data: dict) -> Optional[int]:
             INSERT INTO contributors (
                 github_login, github_url, name, email, blog,
                 company, company_size, annual_revenue, repo_source,
-                github_org, contributions, insight
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                github_org, contributions, insight,
+                is_org_member, github_profile_company
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(github_login, github_org) DO UPDATE SET
-                name = COALESCE(excluded.name, contributors.name),
-                email = COALESCE(excluded.email, contributors.email),
-                blog = COALESCE(excluded.blog, contributors.blog),
-                company = COALESCE(excluded.company, contributors.company),
-                company_size = COALESCE(excluded.company_size, contributors.company_size),
-                annual_revenue = COALESCE(excluded.annual_revenue, contributors.annual_revenue),
-                repo_source = COALESCE(excluded.repo_source, contributors.repo_source),
-                contributions = COALESCE(excluded.contributions, contributors.contributions),
-                insight = COALESCE(excluded.insight, contributors.insight),
+                name = COALESCE(NULLIF(excluded.name, ''), contributors.name),
+                email = COALESCE(NULLIF(excluded.email, ''), contributors.email),
+                blog = COALESCE(NULLIF(excluded.blog, ''), contributors.blog),
+                company = COALESCE(NULLIF(excluded.company, ''), contributors.company),
+                company_size = COALESCE(NULLIF(excluded.company_size, ''), contributors.company_size),
+                annual_revenue = COALESCE(NULLIF(excluded.annual_revenue, ''), contributors.annual_revenue),
+                repo_source = COALESCE(NULLIF(excluded.repo_source, ''), contributors.repo_source),
+                contributions = CASE WHEN excluded.contributions > 0 THEN excluded.contributions ELSE contributors.contributions END,
+                insight = COALESCE(NULLIF(excluded.insight, ''), contributors.insight),
+                is_org_member = excluded.is_org_member,
+                github_profile_company = COALESCE(NULLIF(excluded.github_profile_company, ''), contributors.github_profile_company),
                 updated_at = CURRENT_TIMESTAMP
         ''', (
             contributor_data.get('github_login', ''),
@@ -4421,7 +4443,9 @@ def save_contributor(contributor_data: dict) -> Optional[int]:
             contributor_data.get('repo_source', ''),
             contributor_data.get('github_org', ''),
             contributor_data.get('contributions', 0),
-            contributor_data.get('insight', '')
+            contributor_data.get('insight', ''),
+            contributor_data.get('is_org_member'),
+            contributor_data.get('github_profile_company', '')
         ))
 
         contributor_id = cursor.lastrowid
@@ -4447,18 +4471,21 @@ def save_contributors_batch(contributors: list) -> int:
                 INSERT INTO contributors (
                     github_login, github_url, name, email, blog,
                     company, company_size, annual_revenue, repo_source,
-                    github_org, contributions, insight
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    github_org, contributions, insight,
+                    is_org_member, github_profile_company
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(github_login, github_org) DO UPDATE SET
-                    name = COALESCE(excluded.name, contributors.name),
-                    email = COALESCE(excluded.email, contributors.email),
-                    blog = COALESCE(excluded.blog, contributors.blog),
-                    company = COALESCE(excluded.company, contributors.company),
-                    company_size = COALESCE(excluded.company_size, contributors.company_size),
-                    annual_revenue = COALESCE(excluded.annual_revenue, contributors.annual_revenue),
-                    repo_source = COALESCE(excluded.repo_source, contributors.repo_source),
-                    contributions = COALESCE(excluded.contributions, contributors.contributions),
-                    insight = COALESCE(excluded.insight, contributors.insight),
+                    name = COALESCE(NULLIF(excluded.name, ''), contributors.name),
+                    email = COALESCE(NULLIF(excluded.email, ''), contributors.email),
+                    blog = COALESCE(NULLIF(excluded.blog, ''), contributors.blog),
+                    company = COALESCE(NULLIF(excluded.company, ''), contributors.company),
+                    company_size = COALESCE(NULLIF(excluded.company_size, ''), contributors.company_size),
+                    annual_revenue = COALESCE(NULLIF(excluded.annual_revenue, ''), contributors.annual_revenue),
+                    repo_source = COALESCE(NULLIF(excluded.repo_source, ''), contributors.repo_source),
+                    contributions = CASE WHEN excluded.contributions > 0 THEN excluded.contributions ELSE contributors.contributions END,
+                    insight = COALESCE(NULLIF(excluded.insight, ''), contributors.insight),
+                    is_org_member = excluded.is_org_member,
+                    github_profile_company = COALESCE(NULLIF(excluded.github_profile_company, ''), contributors.github_profile_company),
                     updated_at = CURRENT_TIMESTAMP
             ''', (
                 c.get('github_login', ''),
@@ -4472,7 +4499,9 @@ def save_contributors_batch(contributors: list) -> int:
                 c.get('repo_source', ''),
                 c.get('github_org', ''),
                 c.get('contributions', 0),
-                c.get('insight', '')
+                c.get('insight', ''),
+                c.get('is_org_member'),
+                c.get('github_profile_company', '')
             ))
             saved += 1
 
@@ -4508,8 +4537,8 @@ def get_contributors_datatable(draw=1, start=0, length=50, search_value='',
     sort_col = columns[order_column] if 0 <= order_column < len(columns) else 'contributions'
     sort_dir = 'DESC' if order_dir.lower() == 'desc' else 'ASC'
 
-    # Build WHERE clause
-    conditions = []
+    # Build WHERE clause — default: hide confirmed external contributors
+    conditions = ["(is_org_member IS NULL OR is_org_member = 1)"]
     params = []
 
     if search_value:
@@ -4548,8 +4577,8 @@ def get_contributors_datatable(draw=1, start=0, length=50, search_value='',
     if conditions:
         where_clause = 'WHERE ' + ' AND '.join(conditions)
 
-    # Total records (unfiltered)
-    cursor.execute('SELECT COUNT(*) as cnt FROM contributors')
+    # Total records (excluding confirmed externals)
+    cursor.execute('SELECT COUNT(*) as cnt FROM contributors WHERE (is_org_member IS NULL OR is_org_member = 1)')
     total_records = cursor.fetchone()['cnt']
 
     # Filtered records
@@ -4590,6 +4619,7 @@ def get_contributor_stats() -> dict:
             SUM(CASE WHEN apollo_status = 'sent' OR enrolled_in_sequence = 1 THEN 1 ELSE 0 END) as total_enrolled,
             SUM(emails_sent) as total_emails_sent
         FROM contributors
+        WHERE (is_org_member IS NULL OR is_org_member = 1)
     ''')
     row = cursor.fetchone()
     conn.close()
@@ -4641,6 +4671,28 @@ def increment_contributor_emails(contributor_id: int) -> bool:
     conn.commit()
     conn.close()
     return updated
+
+
+def update_contributor_email(contributor_id: int, email: str) -> bool:
+    """Update email address for a contributor (persists Apollo lookup results)."""
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute('''
+            UPDATE contributors
+            SET email = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        ''', (email, contributor_id))
+        updated = cursor.rowcount > 0
+        conn.commit()
+        return updated
+    except Exception as e:
+        print(f"[DB] Error updating email for contributor {contributor_id}: {e}")
+        conn.rollback()
+        return False
+    finally:
+        conn.close()
 
 
 def get_contributor_by_id(contributor_id: int) -> Optional[dict]:

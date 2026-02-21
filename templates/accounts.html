@@ -1674,6 +1674,10 @@
         const urlParams = new URLSearchParams(window.location.search);
         const searchValue = searchInput ? searchInput.value : urlParams.get('q') || '';
         const tierFilters = urlParams.getAll('tier').map(t => parseInt(t));
+        const lastScannedFilter = document.getElementById('last-scanned-filter');
+        const revenueFilter = document.getElementById('revenue-filter');
+        const lastScannedValue = lastScannedFilter ? lastScannedFilter.value : '';
+        const revenueValue = revenueFilter ? revenueFilter.value : '';
 
         // Calculate start offset based on loaded count
         const start = loadedCount;
@@ -1689,6 +1693,15 @@
         tierFilters.forEach(tier => {
             params.append('tier', tier);
         });
+
+        if (lastScannedValue) {
+            params.set('last_scanned', lastScannedValue);
+        }
+        if (revenueValue) {
+            const [minStr, maxStr] = revenueValue.split('-');
+            if (minStr) { params.set('revenue_min', minStr); }
+            if (maxStr) { params.set('revenue_max', maxStr); }
+        }
 
         fetch(`/api/accounts/datatable?${params.toString()}`)
             .then(response => response.json())
@@ -1966,9 +1979,13 @@
 
         if (!selectAll || rowCheckboxes.length === 0) return;
 
-        selectAll.addEventListener('change', () => {
+        // Clone and replace to remove any previously attached listeners
+        const freshSelectAll = selectAll.cloneNode(true);
+        selectAll.parentNode.replaceChild(freshSelectAll, selectAll);
+
+        freshSelectAll.addEventListener('change', () => {
             rowCheckboxes.forEach(cb => {
-                cb.checked = selectAll.checked;
+                cb.checked = freshSelectAll.checked;
             });
             updateBulkSelectionState();
         });
@@ -1976,9 +1993,9 @@
         rowCheckboxes.forEach(cb => {
             cb.addEventListener('change', () => {
                 if (!cb.checked) {
-                    selectAll.checked = false;
+                    freshSelectAll.checked = false;
                 } else if (Array.from(rowCheckboxes).every(input => input.checked)) {
-                    selectAll.checked = true;
+                    freshSelectAll.checked = true;
                 }
                 updateBulkSelectionState();
             });
@@ -3100,10 +3117,10 @@
                                 ${account.evidence_summary ? `<span class="archived-account-meta">${escapeHtml(account.evidence_summary)}</span>` : ''}
                             </div>
                             <div class="archived-account-actions">
-                                <button class="unarchive-btn" onclick="unarchiveAccount(${account.id}, '${escapeHtml(account.company_name)}')">
+                                <button class="unarchive-btn" data-id="${account.id}" data-name="${escapeHtml(account.company_name)}" onclick="unarchiveAccount(Number(this.dataset.id), this.dataset.name)">
                                     Unarchive
                                 </button>
-                                <button class="delete-archived-btn" onclick="deleteArchivedAccount(${account.id}, '${escapeHtml(account.company_name)}')">
+                                <button class="delete-archived-btn" data-id="${account.id}" data-name="${escapeHtml(account.company_name)}" onclick="deleteArchivedAccount(Number(this.dataset.id), this.dataset.name)">
                                     Delete
                                 </button>
                             </div>
@@ -3137,8 +3154,8 @@
                 // Update archived count in button
                 updateArchivedCount(-1);
                 // Refresh the main table
-                if (typeof accountsTable !== 'undefined' && accountsTable) {
-                    accountsTable.ajax.reload(null, false);
+                if (typeof reloadAccountsTable === 'function') {
+                    reloadAccountsTable();
                 }
             } else {
                 const data = await response.json();
@@ -3196,11 +3213,7 @@
         }
     }
 
-    function escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-    }
+    // escapeHtml is defined earlier in the page (with full quote escaping)
 
     // Initialize archived button click handler
     document.addEventListener('DOMContentLoaded', () => {

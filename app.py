@@ -41,7 +41,7 @@ from database import (
     is_webscraper_accounts_empty, WEBSCRAPER_TIER_CONFIG, update_webscraper_scan_results,
     # Contributors
     save_contributor, save_contributors_batch, get_contributors_datatable,
-    get_contributor_stats, update_contributor_apollo_status,
+    get_contributor_stats, update_contributor_apollo_status, update_contributor_email,
     increment_contributor_emails, get_contributor_by_id, delete_contributor
 )
 from monitors.webscraper_utils import (
@@ -104,6 +104,7 @@ def get_top_contributors(org_login: str, repo_name: str, limit: int = 5) -> list
                     user_data = {
                         'login': login,
                         'github_url': c['html_url'],
+                        'contributions': c.get('contributions', 0),
                         'name': login,  # Fallback
                         'email': '',
                         'blog': ''
@@ -118,6 +119,7 @@ def get_top_contributors(org_login: str, repo_name: str, limit: int = 5) -> list
                             user_data['email'] = ''  # Emails come from Apollo only, not GitHub profiles
                             user_data['github_email'] = user_info.get('email') or ''  # Keep for reference
                             user_data['blog'] = user_info.get('blog') or ''
+                            user_data['github_profile_company'] = user_info.get('company') or ''
                     except Exception as e:
                         print(f"[ZAPIER] Failed to fetch user profile for {login}: {e}")
 
@@ -1715,6 +1717,20 @@ def api_update_contributor_apollo(contributor_id: int):
     return jsonify({'status': 'success'})
 
 
+@app.route('/api/contributors/<int:contributor_id>/email', methods=['POST'])
+def api_update_contributor_email(contributor_id: int):
+    """Save an email address found via Apollo lookup for a contributor."""
+    data = request.get_json() or {}
+    email = data.get('email', '').strip()
+    if not email:
+        return jsonify({'error': 'No email provided'}), 400
+
+    updated = update_contributor_email(contributor_id, email)
+    if not updated:
+        return jsonify({'error': 'Contributor not found'}), 404
+    return jsonify({'status': 'success', 'email': email})
+
+
 @app.route('/api/contributors/<int:contributor_id>/send-email', methods=['POST'])
 def api_contributor_send_email(contributor_id: int):
     """Send an outreach email to a contributor via AgentMail."""
@@ -1792,6 +1808,17 @@ def api_fetch_contributors():
         revenue = account.get('annual_revenue', '')
 
         try:
+            # Fetch org members list once per org (1 API call) for employee classification
+            org_members = set()
+            try:
+                members_url = f"{Config.GITHUB_API_BASE}/orgs/{org}/members"
+                members_resp = make_github_request(members_url, params={'per_page': 100}, timeout=15)
+                if members_resp.status_code == 200:
+                    for m in members_resp.json():
+                        org_members.add(m.get('login', '').lower())
+            except Exception as e:
+                print(f"[CONTRIBUTORS] Could not fetch members for {org}: {e}")
+
             url = f"{Config.GITHUB_API_BASE}/orgs/{org}/repos"
             response = make_github_request(url, params={'per_page': 5, 'sort': 'pushed'}, timeout=15)
             if response.status_code != 200:
@@ -1804,6 +1831,22 @@ def api_fetch_contributors():
 
                 batch = []
                 for c in contributors_list:
+                    # Classify contributor as org member or external
+                    is_member = 0
+                    login_lower = c['login'].lower()
+                    profile_company = c.get('github_profile_company', '')
+
+                    # Signal 1: Direct org membership
+                    if login_lower in org_members:
+                        is_member = 1
+
+                    # Signal 2: GitHub profile company matches org/company name
+                    if not is_member and profile_company:
+                        clean = profile_company.lower().strip().lstrip('@')
+                        if (org.lower() in clean or company.lower() in clean
+                                or clean in org.lower() or clean in company.lower()):
+                            is_member = 1
+
                     batch.append({
                         'github_login': c['login'],
                         'github_url': c.get('github_url', f"https://github.com/{c['login']}"),
@@ -1815,7 +1858,9 @@ def api_fetch_contributors():
                         'repo_source': f"{org}/{repo_name}",
                         'github_org': org,
                         'contributions': c.get('contributions', 0),
-                        'insight': f"Top contributor to {org}/{repo_name} — active in {company}'s codebase."
+                        'insight': f"Top contributor to {org}/{repo_name} — active in {company}'s codebase.",
+                        'is_org_member': is_member,
+                        'github_profile_company': profile_company
                     })
 
                 if batch:
@@ -1831,6 +1876,75 @@ def api_fetch_contributors():
         'contributors_saved': total_saved,
         'errors': errors
     })
+
+
+@app.route('/api/contributors/generate-email', methods=['POST'])
+def api_generate_contributor_email():
+    """Generate a personalized outreach email for a contributor using Gemini AI."""
+    from google import genai
+
+    data = request.get_json()
+    if not data:
+        return jsonify({'status': 'error', 'message': 'No data provided'}), 400
+
+    if not Config.GEMINI_API_KEY:
+        return jsonify({'status': 'error', 'message': 'Gemini API key not configured'}), 400
+
+    name = data.get('name', 'there')
+    first_name = name.split(' ')[0] if name else 'there'
+    github_login = data.get('github_login', '')
+    company = data.get('company', '')
+    repo_source = data.get('repo_source', '')
+    insight = data.get('insight', '')
+    contributions = data.get('contributions', 0)
+
+    prompt = f"""You are a BDR (Business Development Rep) at Phrase, a localization/internationalization platform. Write a personalized cold outreach email to a software contributor.
+
+Contact info:
+- Name: {name}
+- First name: {first_name}
+- GitHub: {github_login}
+- Company: {company}
+- Active repo: {repo_source}
+- Contributions: {contributions}
+- Insight: {insight}
+
+Write a SHORT, personalized cold outreach email. The goal is to start a conversation about their internationalization/localization (i18n) workflow and how Phrase can help their engineering team ship to global markets faster.
+
+Rules:
+- Subject line: short, specific, references their company or repo activity
+- Body: 3-4 sentences MAX. Reference their GitHub activity or repo.
+- End with a simple CTA like "Worth a quick chat?" or "Open to a 15-min call?"
+- No fluff, no "I hope this email finds you well"
+- Sound like a human, not a robot
+- Use their first name
+
+Return ONLY valid JSON with no markdown formatting:
+{{
+  "subject": "the subject line",
+  "body": "the full email body (use \\n for line breaks)"
+}}"""
+
+    try:
+        client = genai.Client(api_key=Config.GEMINI_API_KEY)
+        response = client.models.generate_content(
+            model=Config.GEMINI_MODEL,
+            contents=prompt
+        )
+
+        response_text = response.text.strip()
+        if response_text.startswith('```'):
+            lines = response_text.split('\n')
+            lines = [l for l in lines if not l.startswith('```')]
+            response_text = '\n'.join(lines)
+
+        import json
+        email_data = json.loads(response_text)
+        return jsonify({'status': 'success', 'email': email_data})
+
+    except Exception as e:
+        print(f"[CONTRIBUTOR EMAIL GEN] Error: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
 @app.route('/experiment')
@@ -3006,10 +3120,10 @@ def api_update_org():
     try:
         cursor = conn.cursor()
 
-        # Update the github_org for this account
+        # Update the github_org for this account (preserve existing tier and evidence)
         cursor.execute('''
             UPDATE monitored_accounts
-            SET github_org = ?, current_tier = 0, evidence_summary = 'GitHub org updated manually'
+            SET github_org = ?
             WHERE company_name = ?
         ''', (github_org, company_name))
 
@@ -4945,13 +5059,23 @@ def apollo_lookup():
     last_name = data.get('last_name', '')
     name = data.get('name', '')
     domain = data.get('domain', '')
+    company = data.get('company', '')
     github_login = data.get('github_login', '')
-    
+
     # Parse name if first/last not provided
     if not first_name and name:
         parts = name.strip().split(' ', 1)
         first_name = parts[0]
         last_name = parts[1] if len(parts) > 1 else ''
+
+    # Derive domain from company name if domain not provided
+    if not domain and company:
+        # Simple heuristic: lowercase, remove common suffixes, add .com
+        clean = company.strip().lower()
+        for suffix in [' inc', ' inc.', ' corp', ' corp.', ' ltd', ' ltd.', ' llc', ' co', ' co.', ' gmbh', ' ag', ' sa']:
+            if clean.endswith(suffix):
+                clean = clean[:len(clean) - len(suffix)]
+        domain = clean.replace(' ', '') + '.com'
     
     apollo_key = os.environ.get('APOLLO_API_KEY', '')
     if not apollo_key:
@@ -4967,6 +5091,8 @@ def apollo_lookup():
         }
         if domain:
             payload['organization_domain'] = domain
+        if company:
+            payload['organization_name'] = company
 
         resp = req.post(match_url, json=payload, headers=apollo_headers, timeout=15)
         if resp.status_code == 200:
@@ -5202,10 +5328,20 @@ def api_apollo_enroll_sequence():
     last_name = data.get('last_name', '').strip()
     sequence_id = data.get('sequence_id', '').strip()
     company_name = data.get('company_name', '').strip()
-    personalized_subject = data.get('personalized_subject', '').strip()
-    # Convert plain newlines to HTML line breaks so Apollo renders paragraph spacing
-    raw_body = data.get('personalized_email_body', '').strip()
-    personalized_email_body = raw_body.replace('\n\n', '<br><br>').replace('\n', '<br>') if raw_body else ''
+
+    # Convert plain newlines to HTML breaks for Apollo rendering
+    def to_html(text):
+        if not text:
+            return ''
+        return text.strip().replace('\n\n', '<br><br>').replace('\n', '<br>')
+
+    # All 6 Salesforce custom fields (Personalized_Subject_1__c, _2__c, Personalized_Email_1-4__c)
+    personalized_subject_1 = data.get('personalized_subject', '').strip() or data.get('personalized_subject_1', '').strip()
+    personalized_subject_2 = data.get('personalized_subject_2', '').strip()
+    personalized_email_1 = to_html(data.get('personalized_email_body', '') or data.get('personalized_email_1', ''))
+    personalized_email_2 = to_html(data.get('personalized_email_2', ''))
+    personalized_email_3 = to_html(data.get('personalized_email_3', ''))
+    personalized_email_4 = to_html(data.get('personalized_email_4', ''))
 
     if not email or not sequence_id:
         return jsonify({'status': 'error', 'message': 'Missing required fields: email and sequence_id'}), 400
@@ -5213,15 +5349,29 @@ def api_apollo_enroll_sequence():
     try:
         apollo_headers = {'X-Api-Key': apollo_key, 'Content-Type': 'application/json'}
 
-        # Resolve custom field IDs for personalization variables.
-        # Field IDs are looked up dynamically from /v1/typed_custom_fields (correct endpoint per Apollo docs).
-        # Known stable IDs are cached below as a fallback.
-        KNOWN_FIELD_IDS = {
-            'personalized_subject': os.environ.get('APOLLO_FIELD_PERSONALIZED_SUBJECT', '69956f0b58cb8f0015b2f1ed'),
-            'personalized_email_1': os.environ.get('APOLLO_FIELD_PERSONALIZED_EMAIL_1', '69956f0b58cb8f0015b2f1ef'),
+        # All 6 Salesforce/Apollo custom field mappings.
+        # Field IDs are discovered dynamically from /v1/typed_custom_fields.
+        # Env vars serve as overrides if the API lookup fails.
+        FIELD_ENV_OVERRIDES = {
+            'personalized_subject_1': os.environ.get('APOLLO_FIELD_PERSONALIZED_SUBJECT_1', ''),
+            'personalized_subject_2': os.environ.get('APOLLO_FIELD_PERSONALIZED_SUBJECT_2', ''),
+            'personalized_email_1': os.environ.get('APOLLO_FIELD_PERSONALIZED_EMAIL_1', ''),
+            'personalized_email_2': os.environ.get('APOLLO_FIELD_PERSONALIZED_EMAIL_2', ''),
+            'personalized_email_3': os.environ.get('APOLLO_FIELD_PERSONALIZED_EMAIL_3', ''),
+            'personalized_email_4': os.environ.get('APOLLO_FIELD_PERSONALIZED_EMAIL_4', ''),
         }
+
+        # Map of field key -> value to inject (only non-empty values)
+        field_values = {}
+        if personalized_subject_1: field_values['personalized_subject_1'] = personalized_subject_1
+        if personalized_subject_2: field_values['personalized_subject_2'] = personalized_subject_2
+        if personalized_email_1: field_values['personalized_email_1'] = personalized_email_1
+        if personalized_email_2: field_values['personalized_email_2'] = personalized_email_2
+        if personalized_email_3: field_values['personalized_email_3'] = personalized_email_3
+        if personalized_email_4: field_values['personalized_email_4'] = personalized_email_4
+
         typed_custom_fields = {}
-        if personalized_subject or personalized_email_body:
+        if field_values:
             try:
                 cf_resp = req.get(
                     'https://api.apollo.io/v1/typed_custom_fields',
@@ -5235,26 +5385,27 @@ def api_apollo_enroll_sequence():
                         name = (f.get('name') or '').lower().replace(' ', '_')
                         if fid and name:
                             field_id_map[name] = fid
-                    # Merge known IDs as fallback for any not returned
-                    for k, v in KNOWN_FIELD_IDS.items():
-                        if k not in field_id_map:
+                    # Merge env overrides as fallback
+                    for k, v in FIELD_ENV_OVERRIDES.items():
+                        if v and k not in field_id_map:
                             field_id_map[k] = v
                 else:
-                    field_id_map = KNOWN_FIELD_IDS
+                    # API failed — use env overrides only
+                    field_id_map = {k: v for k, v in FIELD_ENV_OVERRIDES.items() if v}
 
-                if personalized_subject and 'personalized_subject' in field_id_map:
-                    typed_custom_fields[field_id_map['personalized_subject']] = personalized_subject
-                if personalized_email_body and 'personalized_email_1' in field_id_map:
-                    typed_custom_fields[field_id_map['personalized_email_1']] = personalized_email_body
+                # Map values to their resolved Apollo field IDs
+                for field_key, field_val in field_values.items():
+                    if field_key in field_id_map:
+                        typed_custom_fields[field_id_map[field_key]] = field_val
 
-                print(f"[APOLLO ENROLL] Will inject {len(typed_custom_fields)} custom field(s)")
+                print(f"[APOLLO ENROLL] Will inject {len(typed_custom_fields)} custom field(s): {list(field_values.keys())}")
             except Exception as cf_err:
                 print(f"[APOLLO ENROLL] Warning: could not fetch custom field definitions: {cf_err}")
-                # Fall back to known IDs
-                if personalized_subject:
-                    typed_custom_fields[KNOWN_FIELD_IDS['personalized_subject']] = personalized_subject
-                if personalized_email_body:
-                    typed_custom_fields[KNOWN_FIELD_IDS['personalized_email_1']] = personalized_email_body
+                # Fall back to env override IDs
+                for field_key, field_val in field_values.items():
+                    env_id = FIELD_ENV_OVERRIDES.get(field_key, '')
+                    if env_id:
+                        typed_custom_fields[env_id] = field_val
 
         # Step 1: Search for existing contact
         contact_id = None
@@ -5529,7 +5680,7 @@ def api_linkedin_find_contact():
                     'company': person.get('organization_name', '') or (person.get('organization') or {}).get('name', ''),
                     'linkedin_url': person.get('linkedin_url', ''),
                     'photo_url': person.get('photo_url', ''),
-                    'phone': person.get('sanitized_phone', '') or (person.get('phone_numbers') or [{}])[0].get('raw_number', '') if person.get('phone_numbers') else '',
+                    'phone': person.get('sanitized_phone', '') or ((person.get('phone_numbers') or [{}])[0].get('raw_number', '') if person.get('phone_numbers') else ''),
                     'city': person.get('city', ''),
                     'state': person.get('state', ''),
                     'country': person.get('country', '')
@@ -5618,8 +5769,8 @@ def api_linkedin_generate_email():
     first_name = contact.get('first_name') or (name.split(' ')[0] if name else 'there')
     title = contact.get('title') or linkedin_data.get('title', '')
     company = contact.get('company') or linkedin_data.get('company', '')
-    headline = linkedin_data.get('headline', '')
-    summary = linkedin_data.get('summary', '')
+    headline = contact.get('headline') or linkedin_data.get('headline', '')
+    summary = contact.get('summary') or linkedin_data.get('summary', '')
 
     prompt = f"""You are a BDR (Business Development Rep) writing a personalized cold outreach email to a software engineering leader.
 
