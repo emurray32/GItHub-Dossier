@@ -333,7 +333,7 @@
                 <p class="sidebar-insight">${escapeHtml(c.insight || 'No insight available.')}</p>
             </div>
 
-            <!-- Email Actions -->
+            <!-- Outreach Actions -->
             <div class="sidebar-section">
                 <div class="sidebar-section-title">Outreach</div>
 
@@ -345,36 +345,56 @@
                     ${hasEmail ? 'Email found' : 'Find Email via Apollo'}
                 </button>
 
-                <div class="outreach-fields" id="outreach-fields-${c.id}">
+                <button class="btn-action btn-generate-email" onclick="generateEmail(${c.id})" id="gen-email-btn-${c.id}" title="Generate full 4-email sequence with AI">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                    </svg>
+                    Generate Sequence
+                </button>
+            </div>
+
+            <!-- Email Sequence Fields -->
+            <div class="sidebar-section" id="outreach-fields-${c.id}">
+                <div class="sequence-thread">
+                    <div class="thread-label">Thread 1</div>
                     <div class="outreach-field">
-                        <label class="outreach-label">Subject <span class="outreach-hint">personalized_subject</span></label>
-                        <input type="text" id="email-subject-${c.id}" class="outreach-input"
-                               value="${escapeHtml(aiSubject)}"
-                               placeholder="Subject line...">
+                        <label class="outreach-label">Subject 1 <span class="outreach-hint">personalized_subject_1</span></label>
+                        <input type="text" id="email-subject1-${c.id}" class="outreach-input" placeholder="Subject line..." value="${escapeHtml(aiSubject)}">
                     </div>
                     <div class="outreach-field">
                         <label class="outreach-label">Email 1 <span class="outreach-hint">personalized_email_1</span></label>
-                        <textarea id="email-body-${c.id}" class="outreach-textarea" rows="5"
-                                  placeholder="Email body...">${escapeHtml(aiBody)}</textarea>
+                        <textarea id="email-body1-${c.id}" class="outreach-textarea" rows="4" placeholder="Initial outreach...">${escapeHtml(aiBody)}</textarea>
+                    </div>
+                    <div class="outreach-field">
+                        <label class="outreach-label">Email 2 <span class="outreach-hint">personalized_email_2</span></label>
+                        <textarea id="email-body2-${c.id}" class="outreach-textarea" rows="3" placeholder="Follow-up bump..."></textarea>
                     </div>
                 </div>
 
-                <div class="sidebar-action-row">
-                    <button class="btn-action btn-generate-email" onclick="generateEmail(${c.id})" id="gen-email-btn-${c.id}" title="Auto-generate personalized email with AI">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
-                        </svg>
-                        Generate Email
-                    </button>
-                    <button class="btn-action btn-add-sequence ${isEnrolled ? 'enrolled' : ''}" onclick="toggleSequence(${c.id}, ${isEnrolled ? 'true' : 'false'})" id="seq-btn-${c.id}" ${!hasEmail && !isEnrolled ? 'disabled' : ''}>
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            ${isEnrolled
-                                ? '<polyline points="20 6 9 17 4 12"></polyline>'
-                                : '<line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line>'}
-                        </svg>
-                        ${isEnrolled ? 'Enrolled' : 'Add to Sequence'}
-                    </button>
+                <div class="sequence-thread">
+                    <div class="thread-label">Thread 2</div>
+                    <div class="outreach-field">
+                        <label class="outreach-label">Subject 2 <span class="outreach-hint">personalized_subject_2</span></label>
+                        <input type="text" id="email-subject2-${c.id}" class="outreach-input" placeholder="New angle subject...">
+                    </div>
+                    <div class="outreach-field">
+                        <label class="outreach-label">Email 3 <span class="outreach-hint">personalized_email_3</span></label>
+                        <textarea id="email-body3-${c.id}" class="outreach-textarea" rows="4" placeholder="New thread email..."></textarea>
+                    </div>
+                    <div class="outreach-field">
+                        <label class="outreach-label">Email 4 <span class="outreach-hint">personalized_email_4</span></label>
+                        <textarea id="email-body4-${c.id}" class="outreach-textarea" rows="3" placeholder="Breakup email..."></textarea>
+                    </div>
                 </div>
+
+                <button class="btn-action btn-add-sequence ${isEnrolled ? 'enrolled' : ''}" onclick="toggleSequence(${c.id}, ${isEnrolled ? 'true' : 'false'})" id="seq-btn-${c.id}" ${!hasEmail && !isEnrolled ? 'disabled' : ''}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        ${isEnrolled
+                            ? '<polyline points="20 6 9 17 4 12"></polyline>'
+                            : '<line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line>'}
+                    </svg>
+                    ${isEnrolled ? 'Enrolled in Sequence' : 'Approve & Enroll in Sequence'}
+                </button>
             </div>
         `;
 
@@ -482,11 +502,20 @@
             }
 
             if (data.status === 'success' && data.email) {
-                const subjectEl = document.getElementById('email-subject-' + id);
-                const bodyEl = document.getElementById('email-body-' + id);
-                if (subjectEl) subjectEl.value = data.email.subject || '';
-                if (bodyEl) bodyEl.value = data.email.body || '';
-                showToast('Email generated', 'success');
+                const e = data.email;
+                const s1 = document.getElementById('email-subject1-' + id);
+                const s2 = document.getElementById('email-subject2-' + id);
+                const b1 = document.getElementById('email-body1-' + id);
+                const b2 = document.getElementById('email-body2-' + id);
+                const b3 = document.getElementById('email-body3-' + id);
+                const b4 = document.getElementById('email-body4-' + id);
+                if (s1) s1.value = e.subject_1 || e.subject || '';
+                if (s2) s2.value = e.subject_2 || '';
+                if (b1) b1.value = e.email_1 || e.body || '';
+                if (b2) b2.value = e.email_2 || '';
+                if (b3) b3.value = e.email_3 || '';
+                if (b4) b4.value = e.email_4 || '';
+                showToast('Sequence generated — review & approve', 'success');
             } else {
                 showToast(data.message || 'Failed to generate email', 'error');
             }
@@ -574,10 +603,14 @@
         const sequenceId = seqSelect.value;
         const sequenceName = seqSelect.options[seqSelect.selectedIndex].text;
 
-        const subjectEl = document.getElementById('email-subject-' + id);
-        const bodyEl = document.getElementById('email-body-' + id);
-        const subject = subjectEl ? subjectEl.value.trim() : '';
-        const body = bodyEl ? bodyEl.value.trim() : '';
+        const s1El = document.getElementById('email-subject1-' + id);
+        const s2El = document.getElementById('email-subject2-' + id);
+        const b1El = document.getElementById('email-body1-' + id);
+        const b2El = document.getElementById('email-body2-' + id);
+        const b3El = document.getElementById('email-body3-' + id);
+        const b4El = document.getElementById('email-body4-' + id);
+        const subject = s1El ? s1El.value.trim() : '';
+        const body = b1El ? b1El.value.trim() : '';
 
         const picker = document.getElementById('seq-picker-' + id);
         if (picker) picker.innerHTML = '<span class="btn-spinner"></span> Enrolling...';
@@ -595,8 +628,12 @@
                     last_name: (contributor.name || '').split(' ').slice(1).join(' '),
                     sequence_id: sequenceId,
                     company_name: contributor.company || '',
-                    personalized_subject: subject,
-                    personalized_email_body: body
+                    personalized_subject_1: s1El ? s1El.value.trim() : '',
+                    personalized_subject_2: s2El ? s2El.value.trim() : '',
+                    personalized_email_1: b1El ? b1El.value.trim() : '',
+                    personalized_email_2: b2El ? b2El.value.trim() : '',
+                    personalized_email_3: b3El ? b3El.value.trim() : '',
+                    personalized_email_4: b4El ? b4El.value.trim() : ''
                 })
             });
             const enrollData = await enrollResp.json();

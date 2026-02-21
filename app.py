@@ -1898,7 +1898,9 @@ def api_generate_contributor_email():
     insight = data.get('insight', '')
     contributions = data.get('contributions', 0)
 
-    prompt = f"""You are a BDR (Business Development Rep) at Phrase, a localization/internationalization platform. Write a personalized cold outreach email to a software contributor.
+    num_emails = data.get('num_emails', 4)
+
+    prompt = f"""You are a BDR (Business Development Rep) at Phrase, a localization/internationalization platform. Write a personalized cold outreach email SEQUENCE to a software contributor.
 
 Contact info:
 - Name: {name}
@@ -1909,20 +1911,32 @@ Contact info:
 - Contributions: {contributions}
 - Insight: {insight}
 
-Write a SHORT, personalized cold outreach email. The goal is to start a conversation about their internationalization/localization (i18n) workflow and how Phrase can help their engineering team ship to global markets faster.
+Write a {num_emails}-email cold outreach sequence. The goal is to start a conversation about their internationalization/localization (i18n) workflow and how Phrase can help their engineering team ship to global markets faster.
+
+Structure:
+- subject_1: Main subject thread (emails 1 & 2 reply under this subject)
+- subject_2: New subject angle for follow-ups (emails 3 & 4 reply under this subject)
+- email_1: Initial cold outreach (3-4 sentences). Reference their GitHub activity.
+- email_2: Follow-up bump (2-3 sentences). Add a new angle or value prop. Assume they saw email 1 but didn't reply.
+- email_3: New thread with different angle (3-4 sentences). Reference a different pain point or use case.
+- email_4: Final breakup email (2-3 sentences). Light, low-pressure, give them an easy out.
 
 Rules:
-- Subject line: short, specific, references their company or repo activity
-- Body: 3-4 sentences MAX. Reference their GitHub activity or repo.
-- End with a simple CTA like "Worth a quick chat?" or "Open to a 15-min call?"
+- Each email body: concise, specific, references something real about them
+- End each email with a simple CTA
 - No fluff, no "I hope this email finds you well"
 - Sound like a human, not a robot
 - Use their first name
+- Emails 2 and 4 are SHORT follow-ups (they thread under the previous subject)
 
 Return ONLY valid JSON with no markdown formatting:
 {{
-  "subject": "the subject line",
-  "body": "the full email body (use \\n for line breaks)"
+  "subject_1": "main subject line",
+  "subject_2": "second subject line",
+  "email_1": "first email body (use \\n for line breaks)",
+  "email_2": "follow-up bump (use \\n for line breaks)",
+  "email_3": "new thread email (use \\n for line breaks)",
+  "email_4": "breakup email (use \\n for line breaks)"
 }}"""
 
     try:
