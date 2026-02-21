@@ -702,7 +702,7 @@ GOOGLE_SHEETS_CREDENTIALS_JSON={"type":"service_account",...}</pre>
                     addConsoleEntry(`${data.total_count} accounts will be processed automatically`, 'info');
                     addConsoleEntry('You can navigate away - no need to wait on this page', 'info');
                     addConsoleEntry('', 'info');
-                    addConsoleEntry('Redirecting to Accounts page...', 'info');
+                    addConsoleEntry('Redirecting to RepoRadar...', 'info');
                     setTimeout(() => {
                         window.location.href = `/accounts?highlight_batch=${data.batch_id}`;
                     }, 1500);
@@ -712,7 +712,7 @@ GOOGLE_SHEETS_CREDENTIALS_JSON={"type":"service_account",...}</pre>
                 } else {
                     addConsoleEntry('Import started successfully', 'success');
                     if (data.batch_id) {
-                        addConsoleEntry('Redirecting to Accounts page...', 'info');
+                        addConsoleEntry('Redirecting to RepoRadar...', 'info');
                         setTimeout(() => {
                             window.location.href = `/accounts?highlight_batch=${data.batch_id}`;
                         }, 1500);
