@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}Lead Machine{% endblock %}</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='45' fill='%231a237e'/><circle cx='50' cy='50' r='30' fill='none' stroke='white' stroke-width='4'/><line x1='71' y1='71' x2='90' y2='90' stroke='white' stroke-width='8' stroke-linecap='round'/></svg>">
+    <!-- Tabler Core CSS -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/core@1.4.0/dist/css/tabler.min.css">
+    <!-- Tabler Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
+    <!-- App-specific overrides -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/tabler_overrides.css') }}?v={{ cache_bust }}">
+    {% block head %}{% endblock %}
+</head>
+<body class="layout-fluid">
+    <a href="#main-content" class="skip-link visually-hidden">Skip to main content</a>
+
+    <div class="page">
+        <!-- Sidebar Navigation -->
+        <aside class="navbar navbar-vertical navbar-expand-lg" data-bs-theme="dark">
+            <div class="container-fluid">
+                <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#sidebar-menu" aria-controls="sidebar-menu" aria-expanded="false" aria-label="Toggle navigation">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+                <h1 class="navbar-brand navbar-brand-autodark">
+                    <a href="{{ url_for('accounts') }}">
+                        <svg class="navbar-brand-image" viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="11" cy="11" r="7"></circle>
+                            <line x1="16.65" y1="16.65" x2="21" y2="21"></line>
+                        </svg>
+                        <span class="ms-2">Lead Machine</span>
+                    </a>
+                </h1>
+                <div class="collapse navbar-collapse" id="sidebar-menu">
+                    <ul class="navbar-nav pt-lg-3">
+                        <li class="nav-item">
+                            <a class="nav-link {% if request.endpoint == 'accounts' or request.endpoint == 'accounts_tabler' %}active{% endif %}" href="{{ url_for('accounts') }}">
+                                <span class="nav-link-icon"><i class="ti ti-building-community"></i></span>
+                                <span class="nav-link-title">Accounts</span>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if request.endpoint == 'contributors' %}active{% endif %}" href="{{ url_for('contributors') }}">
+                                <span class="nav-link-icon"><i class="ti ti-users"></i></span>
+                                <span class="nav-link-title">Contributors</span>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if request.endpoint == 'grow' %}active{% endif %}" href="{{ url_for('grow') }}">
+                                <span class="nav-link-icon"><i class="ti ti-trending-up"></i></span>
+                                <span class="nav-link-title">Grow</span>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if request.endpoint == 'history' %}active{% endif %}" href="{{ url_for('history') }}">
+                                <span class="nav-link-icon"><i class="ti ti-clock"></i></span>
+                                <span class="nav-link-title">History</span>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if request.endpoint == 'webscraper_accounts' %}active{% endif %}" href="{{ url_for('webscraper_accounts') }}">
+                                <span class="nav-link-icon"><i class="ti ti-world"></i></span>
+                                <span class="nav-link-title">WebScraper</span>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if request.endpoint == 'experiment' %}active{% endif %}" href="{{ url_for('experiment') }}">
+                                <span class="nav-link-icon"><i class="ti ti-tool"></i></span>
+                                <span class="nav-link-title">Analyzer</span>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if request.endpoint == 'rules' %}active{% endif %}" href="{{ url_for('rules') }}">
+                                <span class="nav-link-icon"><i class="ti ti-shield-check"></i></span>
+                                <span class="nav-link-title">Rules</span>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if request.endpoint == 'linkedin_prospector' %}active{% endif %}" href="{{ url_for('linkedin_prospector') }}">
+                                <span class="nav-link-icon"><i class="ti ti-zoom-scan"></i></span>
+                                <span class="nav-link-title">LinkedIn Prospector</span>
+                            </a>
+                        </li>
+                        <li class="nav-item mt-auto">
+                            <hr class="dropdown-divider my-2">
+                        </li>
+                        <li class="nav-item">
+                            <span class="nav-link cursor-pointer" id="mapSequenceBtn">
+                                <span class="nav-link-icon"><i class="ti ti-send"></i></span>
+                                <span class="nav-link-title">Map Sequence</span>
+                            </span>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Map New Sequence Modal -->
+        <div class="modal modal-blur" id="seqModal" tabindex="-1" style="display:none;">
+            <div class="modal-dialog modal-dialog-centered" role="document">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="seqModalTitle">Map New Sequence</h5>
+                        <button type="button" class="btn-close" id="seqModalClose" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label class="form-label" for="seqTemplateId">
+                                Apollo Template ID
+                                <span class="form-help" data-bs-toggle="popover" data-bs-placement="top" data-bs-content="Find your Template ID in Apollo under Sequences -> Settings -> Sequence ID">?</span>
+                            </label>
+                            <div class="input-group">
+                                <input type="text" id="seqTemplateId" class="form-control" placeholder="e.g. 64a3f1b2c8d9e0f12345abcd" autocomplete="off" spellcheck="false">
+                                <span class="input-group-text" id="seqDetectSpinner" style="display:none;">
+                                    <div class="spinner-border spinner-border-sm"></div>
+                                </span>
+                            </div>
+                            <div class="form-text" id="seqDetectStatus"></div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Sequence Configuration</label>
+                            <div class="space-y-2" id="seqCards" role="radiogroup" aria-label="Sequence Configuration">
+                                <label class="form-selectgroup-item seq-card" data-value="one_off">
+                                    <input type="radio" name="seq-config" value="one_off" class="form-selectgroup-input">
+                                    <span class="form-selectgroup-label">
+                                        <strong>One-Off Email</strong>
+                                        <span class="badge bg-green-lt ms-2" id="badge_one_off" style="display:none;">Auto-detected</span>
+                                        <br><small class="text-secondary">Single email, no threading</small>
+                                    </span>
+                                </label>
+                                <label class="form-selectgroup-item seq-card" data-value="threaded_4">
+                                    <input type="radio" name="seq-config" value="threaded_4" class="form-selectgroup-input">
+                                    <span class="form-selectgroup-label">
+                                        <strong>Threaded Sequence (4 Emails)</strong>
+                                        <span class="badge bg-green-lt ms-2" id="badge_threaded_4" style="display:none;">Auto-detected</span>
+                                        <br><small class="text-secondary">4 emails threaded under one subject line</small>
+                                    </span>
+                                </label>
+                                <label class="form-selectgroup-item seq-card" data-value="split_2x2">
+                                    <input type="radio" name="seq-config" value="split_2x2" class="form-selectgroup-input">
+                                    <span class="form-selectgroup-label">
+                                        <strong>Split Thread (2x2)</strong>
+                                        <span class="badge bg-green-lt ms-2" id="badge_split_2x2" style="display:none;">Auto-detected</span>
+                                        <br><small class="text-secondary">Two pairs of threaded emails, each with its own subject line</small>
+                                    </span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="mb-0">
+                            <label class="form-label">Mapped Sequences</label>
+                            <div id="seqSavedList">
+                                <div class="text-secondary">No sequences mapped yet.</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn" id="seqCancelBtn">Cancel</button>
+                        <button class="btn btn-primary" id="seqSaveBtn">Save Sequence</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- Overlay for modal compat -->
+        <div class="modal-overlay" id="seqModalOverlay" style="display:none;"></div>
+
+        <!-- Page wrapper -->
+        <div class="page-wrapper">
+            {% block breadcrumb %}{% endblock %}
+            <div class="page-body" id="main-content">
+                <div class="container-xl">
+                    {% block content %}{% endblock %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tabler Core JS -->
+    <script src="https://cdn.jsdelivr.net/npm/@tabler/core@1.4.0/dist/js/tabler.min.js"></script>
+
+    <script>
+        function timeAgo(dateString) {
+            const date = new Date(dateString);
+            if (Number.isNaN(date.getTime())) return dateString;
+            const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
+            if (seconds < 60) return `${Math.max(seconds, 1)} sec${seconds === 1 ? '' : 's'} ago`;
+            const minutes = Math.floor(seconds / 60);
+            if (minutes < 60) return `${minutes} min${minutes === 1 ? '' : 's'} ago`;
+            const hours = Math.floor(minutes / 60);
+            if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+            const days = Math.floor(hours / 24);
+            if (days < 30) return `${days} day${days === 1 ? '' : 's'} ago`;
+            const months = Math.floor(days / 30);
+            if (months < 12) return `${months} month${months === 1 ? '' : 's'} ago`;
+            const years = Math.floor(months / 12);
+            return `${years} year${years === 1 ? '' : 's'} ago`;
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            document.querySelectorAll('.scanned-time').forEach((element) => {
+                const dateString = element.dataset.iso || element.textContent.trim();
+                element.textContent = timeAgo(dateString);
+            });
+        });
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key !== '/' || event.defaultPrevented) return;
+            const target = event.target;
+            const isEditable = target instanceof HTMLElement
+                && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName));
+            if (isEditable) return;
+            const searchInput = document.querySelector("input[name='q']");
+            if (searchInput) {
+                event.preventDefault();
+                searchInput.focus();
+            }
+        });
+    </script>
+
+    <!-- Outbound Portal: Map New Sequence -->
+    <script>
+    (function () {
+        'use strict';
+        var STORAGE_KEY = 'outbound_sequences_v1';
+        var CONFIG_LABELS = {
+            'one_off': 'One-Off Email',
+            'threaded_4': 'Threaded Sequence (4 Emails)',
+            'split_2x2': 'Split Thread (2x2)'
+        };
+
+        function loadSequences() {
+            try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); }
+            catch (e) { return []; }
+        }
+        function saveSequences(list) { localStorage.setItem(STORAGE_KEY, JSON.stringify(list)); }
+        function escHtml(s) {
+            return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
+        function renderSaved(animateLatest) {
+            var list = loadSequences();
+            var container = document.getElementById('seqSavedList');
+            if (!container) return;
+            if (!list.length) {
+                container.innerHTML = '<div class="text-secondary">No sequences mapped yet.</div>';
+                return;
+            }
+            var lastIdx = list.length - 1;
+            container.innerHTML = list.map(function (seq, idx) {
+                var displayName = seq.name || seq.id;
+                var subtitle = seq.name ? seq.id : '';
+                return '<div class="d-flex align-items-center justify-content-between py-2 border-bottom">' +
+                    '<div>' +
+                    '<div class="fw-medium">' + escHtml(displayName) + '</div>' +
+                    (subtitle ? '<small class="text-secondary">' + escHtml(subtitle) + '</small><br>' : '') +
+                    '<small class="text-secondary">' + escHtml(CONFIG_LABELS[seq.config] || seq.config) + '</small>' +
+                    '</div>' +
+                    '<button class="btn btn-ghost-danger btn-icon btn-sm seq-saved-delete" data-idx="' + idx + '" aria-label="Delete sequence">' +
+                    '<i class="ti ti-x"></i>' +
+                    '</button>' +
+                    '</div>';
+            }).join('');
+
+            container.querySelectorAll('.seq-saved-delete').forEach(function (btn) {
+                btn.addEventListener('click', function () {
+                    var idx = parseInt(this.dataset.idx, 10);
+                    var seqs = loadSequences();
+                    seqs.splice(idx, 1);
+                    saveSequences(seqs);
+                    renderSaved();
+                });
+            });
+        }
+
+        var selectedConfig = null;
+        var detectedName = '';
+
+        function selectCard(value) {
+            document.querySelectorAll('.seq-card input[type="radio"]').forEach(function (input) {
+                input.checked = (input.value === value);
+            });
+            selectedConfig = value;
+        }
+
+        function clearAutodetectBadges() {
+            document.querySelectorAll('#badge_one_off, #badge_threaded_4, #badge_split_2x2').forEach(function (b) {
+                b.style.display = 'none';
+            });
+        }
+
+        function showAutodetectBadge(value) {
+            clearAutodetectBadges();
+            var badge = document.getElementById('badge_' + value);
+            if (badge) badge.style.display = 'inline-flex';
+        }
+
+        var detectTimer = null;
+        var lastDetectedId = '';
+
+        function setDetectStatus(msg, cls) {
+            var el = document.getElementById('seqDetectStatus');
+            if (!el) return;
+            el.textContent = msg;
+            el.className = 'form-text' + (cls === 'status-ok' ? ' text-success' : cls === 'status-warn' ? ' text-warning' : '');
+        }
+
+        function setDetectSpinner(show) {
+            var el = document.getElementById('seqDetectSpinner');
+            if (el) el.style.display = show ? 'flex' : 'none';
+        }
+
+        function tryAutoDetect(seqId) {
+            if (!seqId || seqId === lastDetectedId) return;
+            lastDetectedId = seqId;
+            clearAutodetectBadges();
+            setDetectStatus('');
+            setDetectSpinner(true);
+
+            fetch('/api/apollo/sequence-detect', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sequence_id: seqId })
+            })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                setDetectSpinner(false);
+                if (data.status === 'success' && data.detected_config) {
+                    selectCard(data.detected_config);
+                    showAutodetectBadge(data.detected_config);
+                    detectedName = data.sequence_name || '';
+                    var name = detectedName ? ' \u2014 ' + detectedName : '';
+                    setDetectStatus('Auto-detected: ' + (CONFIG_LABELS[data.detected_config] || data.detected_config) + name, 'status-ok');
+                } else if (data.status === 'not_found') {
+                    setDetectStatus('Sequence not found \u2014 select config manually.', 'status-warn');
+                } else if (data.status === 'no_key') {
+                    setDetectStatus('Apollo API key not set \u2014 select config manually.');
+                } else {
+                    setDetectStatus('Could not auto-detect \u2014 select config manually.');
+                }
+            })
+            .catch(function () {
+                setDetectSpinner(false);
+                setDetectStatus('');
+            });
+        }
+
+        function openModal() {
+            var overlay = document.getElementById('seqModalOverlay');
+            var modal = document.getElementById('seqModal');
+            if (!overlay || !modal) return;
+            var input = document.getElementById('seqTemplateId');
+            if (input) input.value = '';
+            document.querySelectorAll('.seq-card input[type="radio"]').forEach(function (r) { r.checked = false; });
+            clearAutodetectBadges();
+            setDetectStatus('');
+            setDetectSpinner(false);
+            selectedConfig = null;
+            lastDetectedId = '';
+            renderSaved();
+            overlay.style.display = 'flex';
+            modal.style.display = 'block';
+            modal.classList.add('show');
+            if (input) setTimeout(function () { input.focus(); }, 50);
+        }
+
+        function closeModal() {
+            var overlay = document.getElementById('seqModalOverlay');
+            var modal = document.getElementById('seqModal');
+            if (overlay) overlay.style.display = 'none';
+            if (modal) { modal.style.display = 'none'; modal.classList.remove('show'); }
+        }
+
+        document.addEventListener('DOMContentLoaded', function () {
+            var openBtn = document.getElementById('mapSequenceBtn');
+            if (openBtn) openBtn.addEventListener('click', openModal);
+            var closeBtn = document.getElementById('seqModalClose');
+            if (closeBtn) closeBtn.addEventListener('click', closeModal);
+            var cancelBtn = document.getElementById('seqCancelBtn');
+            if (cancelBtn) cancelBtn.addEventListener('click', closeModal);
+            var overlay = document.getElementById('seqModalOverlay');
+            if (overlay) overlay.addEventListener('click', function (e) { if (e.target === overlay) closeModal(); });
+            document.addEventListener('keydown', function (e) {
+                if (e.key === 'Escape') {
+                    var ov = document.getElementById('seqModalOverlay');
+                    if (ov && ov.style.display !== 'none') closeModal();
+                }
+            });
+
+            document.querySelectorAll('.seq-card').forEach(function (card) {
+                card.addEventListener('click', function () {
+                    clearAutodetectBadges();
+                    selectedConfig = card.dataset.value;
+                });
+            });
+
+            var idInput = document.getElementById('seqTemplateId');
+            if (idInput) {
+                idInput.addEventListener('input', function () {
+                    var val = idInput.value.trim();
+                    clearTimeout(detectTimer);
+                    if (val.length >= 16) {
+                        detectTimer = setTimeout(function () { tryAutoDetect(val); }, 600);
+                    } else {
+                        clearAutodetectBadges();
+                        setDetectStatus('');
+                        setDetectSpinner(false);
+                        lastDetectedId = '';
+                    }
+                });
+            }
+
+            var saveBtn = document.getElementById('seqSaveBtn');
+            if (saveBtn) {
+                saveBtn.addEventListener('click', function () {
+                    var input = document.getElementById('seqTemplateId');
+                    var id = input ? input.value.trim() : '';
+                    if (!id) { if (input) { input.classList.add('is-invalid'); setTimeout(function () { input.classList.remove('is-invalid'); }, 1500); } return; }
+
+                    var checkedRadio = document.querySelector('.seq-card input[type="radio"]:checked');
+                    var config = checkedRadio ? checkedRadio.value : selectedConfig;
+                    if (!config) {
+                        var cards = document.getElementById('seqCards');
+                        if (cards) { cards.style.outline = '2px solid var(--tblr-danger)'; cards.style.borderRadius = '8px'; setTimeout(function () { cards.style.outline = ''; cards.style.borderRadius = ''; }, 1500); }
+                        return;
+                    }
+
+                    var seqs = loadSequences();
+                    var existing = seqs.findIndex(function (s) { return s.id === id; });
+                    if (existing !== -1) {
+                        seqs[existing].config = config;
+                        if (detectedName) seqs[existing].name = detectedName;
+                    } else {
+                        seqs.push({ id: id, config: config, name: detectedName || '' });
+                    }
+                    saveSequences(seqs);
+                    renderSaved(true);
+
+                    if (input) input.value = '';
+                    document.querySelectorAll('.seq-card input[type="radio"]').forEach(function (r) { r.checked = false; });
+                    clearAutodetectBadges();
+                    setDetectStatus('');
+                    selectedConfig = null;
+                    lastDetectedId = '';
+                    detectedName = '';
+                    if (input) input.focus();
+                });
+            }
+        });
+    }());
+    </script>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>

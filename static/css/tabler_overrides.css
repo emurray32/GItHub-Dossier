@@ -1,0 +1,769 @@
+/* =============================================================================
+   tabler_overrides.css — Minimal overrides for Lead Machine on Tabler
+   ============================================================================= */
+
+/* -- Tier badge colors (app-specific) ---------------------------------------- */
+.tier-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.2em 0.6em;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.tier-badge-0 { background: rgba(134,142,150,.12); color: #868e96; }
+.tier-badge-1 { background: rgba(250,176,5,.12); color: #c68a00; }
+.tier-badge-2 { background: rgba(47,179,68,.12); color: #2fb344; }
+.tier-badge-3 { background: rgba(214,57,57,.12); color: #d63939; }
+.tier-badge-4 { background: rgba(100,100,100,.10); color: #6c757d; }
+
+/* -- Status legend (pipeline overview) --------------------------------------- */
+.status-legend {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+.status-legend .card {
+    flex: 1;
+    min-width: 140px;
+}
+.status-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+}
+.status-dot-tracking { background: #868e96; }
+.status-dot-warm     { background: #fab005; }
+.status-dot-hot      { background: #2fb344; }
+.status-dot-launched  { background: #d63939; }
+.status-dot-notfound  { background: #6c757d; }
+
+/* -- Compact table tweaks ---------------------------------------------------- */
+.table-accounts th,
+.table-accounts td {
+    font-size: 0.8125rem;
+    vertical-align: middle;
+}
+.table-accounts th {
+    font-weight: 600;
+    white-space: nowrap;
+    user-select: none;
+}
+
+/* Sort indicators */
+.sort-indicator {
+    display: inline-flex;
+    flex-direction: column;
+    margin-left: 4px;
+    font-size: 9px;
+    line-height: 1;
+    vertical-align: middle;
+    opacity: 0.3;
+}
+.sort-indicator .sort-asc,
+.sort-indicator .sort-desc {
+    line-height: 1;
+}
+th.sort-active .sort-indicator {
+    opacity: 1;
+}
+.sort-asc-active .sort-asc { color: var(--tblr-primary); }
+.sort-desc-active .sort-desc { color: var(--tblr-primary); }
+
+/* Column resize handles */
+.resize-handle {
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 4px;
+    cursor: col-resize;
+    z-index: 1;
+}
+.resize-handle:hover,
+.resize-handle.resizing {
+    background: var(--tblr-primary);
+    opacity: 0.5;
+}
+th.resizable {
+    position: relative;
+}
+
+/* -- Evidence text truncation ------------------------------------------------ */
+.evidence-text {
+    display: block;
+    max-width: 260px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* -- Company cell layout ----------------------------------------------------- */
+.company-cell-content {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+.company-name-text {
+    font-weight: 500;
+}
+.btn-copy-company {
+    background: none;
+    border: none;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.15s;
+    padding: 2px;
+    color: var(--tblr-secondary);
+}
+.btn-copy-company:hover { color: var(--tblr-primary); }
+tr:hover .btn-copy-company { opacity: 0.6; }
+.btn-copy-company svg {
+    width: 14px;
+    height: 14px;
+}
+.btn-copy-company.copied {
+    color: var(--tblr-success);
+    opacity: 1;
+    font-size: 11px;
+}
+.btn-website-link {
+    color: var(--tblr-secondary);
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+.btn-website-link:hover { color: var(--tblr-primary); }
+tr:hover .btn-website-link { opacity: 0.6; }
+
+/* -- GitHub org cell --------------------------------------------------------- */
+.github-org-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.8125rem;
+}
+.github-org-link svg {
+    width: 14px;
+    height: 14px;
+}
+.github-org-edit {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 11px;
+    color: var(--tblr-secondary);
+    padding: 2px 4px;
+    border-radius: 3px;
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+.github-org-edit:hover { background: var(--tblr-bg-surface); }
+tr:hover .github-org-edit { opacity: 1; }
+.org-not-found {
+    color: var(--tblr-secondary);
+    font-size: 0.8125rem;
+    font-style: italic;
+}
+.github-org-input-container {
+    display: none;
+    align-items: center;
+    gap: 4px;
+}
+.github-org-input-container.active {
+    display: inline-flex;
+}
+.github-org-input {
+    width: 140px;
+    padding: 2px 6px;
+    font-size: 0.8125rem;
+    border: 1px solid var(--tblr-border-color);
+    border-radius: 4px;
+}
+.btn-save-org, .btn-cancel-org {
+    padding: 2px 8px;
+    font-size: 11px;
+    border-radius: 4px;
+    cursor: pointer;
+    border: 1px solid var(--tblr-border-color);
+    background: var(--tblr-bg-surface);
+}
+.btn-save-org:hover { background: var(--tblr-primary); color: white; border-color: var(--tblr-primary); }
+.hidden { display: none !important; }
+
+/* -- Notes cell -------------------------------------------------------------- */
+.notes-display {
+    cursor: pointer;
+    font-size: 0.8125rem;
+    max-width: 200px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: block;
+}
+.notes-display:empty::before {
+    content: 'Click to add...';
+    color: var(--tblr-secondary);
+    font-style: italic;
+    opacity: 0.5;
+}
+.notes-edit-container {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.notes-input {
+    width: 100%;
+    min-height: 60px;
+    font-size: 0.8125rem;
+    padding: 4px 8px;
+    border: 1px solid var(--tblr-border-color);
+    border-radius: 4px;
+    resize: vertical;
+}
+.notes-edit-buttons {
+    display: flex;
+    gap: 4px;
+}
+.btn-save-notes, .btn-cancel-notes {
+    padding: 2px 8px;
+    font-size: 11px;
+    border-radius: 4px;
+    cursor: pointer;
+    border: 1px solid var(--tblr-border-color);
+    background: var(--tblr-bg-surface);
+}
+.btn-save-notes:hover { background: var(--tblr-primary); color: white; border-color: var(--tblr-primary); }
+
+/* -- Last scan date formatting ----------------------------------------------- */
+.account-last-scan {
+    font-size: 0.8125rem;
+}
+.account-last-scan.recent .last-scan-date {
+    color: var(--tblr-success);
+}
+.account-last-scan.stale .last-scan-date {
+    color: var(--tblr-danger);
+}
+.account-last-scan.never-scanned .last-scan-date {
+    color: var(--tblr-secondary);
+}
+.next-scan-date {
+    display: block;
+    font-size: 11px;
+    color: var(--tblr-secondary);
+}
+.status-queued { color: var(--tblr-warning) !important; }
+.status-processing { color: var(--tblr-purple) !important; }
+
+/* -- Bulk command bar -------------------------------------------------------- */
+.bulk-command-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    background: var(--tblr-bg-surface);
+    border-top: 1px solid var(--tblr-border-color);
+    padding: 0.5rem 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    box-shadow: 0 -4px 12px rgba(0,0,0,0.08);
+    transition: transform 0.2s ease;
+}
+.bulk-command-bar.hidden {
+    transform: translateY(100%);
+    pointer-events: none;
+}
+.bulk-command-count {
+    font-weight: 600;
+    font-size: 0.875rem;
+}
+.bulk-command-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+/* -- Report drawer ----------------------------------------------------------- */
+#report-drawer {
+    position: fixed;
+    top: 0;
+    right: -50vw;
+    width: 50vw;
+    height: 100vh;
+    background: white;
+    z-index: 1050;
+    box-shadow: -4px 0 24px rgba(0,0,0,0.15);
+    transition: right 0.3s ease;
+}
+#report-drawer.drawer-open {
+    right: 0;
+}
+.drawer-close {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    z-index: 10;
+    background: var(--tblr-bg-surface);
+    border: 1px solid var(--tblr-border-color);
+    border-radius: 50%;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 18px;
+}
+
+/* -- View report button ------------------------------------------------------ */
+.btn-view-report {
+    padding: 2px 10px;
+    font-size: 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    background: var(--tblr-primary);
+    color: white;
+    border: none;
+    font-weight: 500;
+    transition: background 0.15s;
+}
+.btn-view-report:hover { background: var(--tblr-primary-darken); }
+.btn-view-report:disabled { opacity: 0.3; cursor: default; }
+
+/* -- Loading overlay --------------------------------------------------------- */
+.loading-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(255,255,255,0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+}
+.loading-spinner {
+    width: 32px;
+    height: 32px;
+    border: 3px solid var(--tblr-border-color);
+    border-top-color: var(--tblr-primary);
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* -- Skeleton loading rows --------------------------------------------------- */
+.skeleton {
+    background: linear-gradient(90deg, var(--tblr-bg-surface) 25%, rgba(0,0,0,0.04) 50%, var(--tblr-bg-surface) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    border-radius: 4px;
+    height: 14px;
+}
+.skeleton-text { width: 80%; }
+.skeleton-text.short { width: 40px; }
+@keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+}
+
+/* -- Pagination -------------------------------------------------------------- */
+.pagination-container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 0;
+    font-size: 0.8125rem;
+}
+.pagination-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+.pagination-limit-select {
+    padding: 4px 8px;
+    font-size: 0.8125rem;
+    border: 1px solid var(--tblr-border-color);
+    border-radius: 4px;
+    background: white;
+}
+.pagination-btn {
+    padding: 4px 12px;
+    font-size: 0.8125rem;
+    border: 1px solid var(--tblr-border-color);
+    border-radius: 4px;
+    background: white;
+    cursor: pointer;
+}
+.pagination-btn:disabled { opacity: 0.4; cursor: default; }
+.pagination-btn:not(:disabled):hover { background: var(--tblr-bg-surface); }
+.pagination-page-display {
+    font-weight: 500;
+}
+.pagination-info {
+    color: var(--tblr-secondary);
+}
+.pagination-mode-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    font-size: 0.75rem;
+    border: 1px solid var(--tblr-border-color);
+    border-radius: 4px;
+    background: white;
+    cursor: pointer;
+    color: var(--tblr-secondary);
+}
+.pagination-mode-toggle svg {
+    width: 14px;
+    height: 14px;
+}
+.pagination-mode-toggle.active {
+    background: var(--tblr-primary-lt);
+    border-color: var(--tblr-primary);
+    color: var(--tblr-primary);
+}
+.controls-disabled { opacity: 0.5; pointer-events: none; }
+
+/* -- Infinite scroll --------------------------------------------------------- */
+.infinite-scroll-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 1rem;
+    color: var(--tblr-secondary);
+    font-size: 0.8125rem;
+}
+
+/* -- Archived modal (using Tabler modal classes) ----------------------------- */
+.archived-modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    backdrop-filter: blur(4px);
+    z-index: 1050;
+    justify-content: center;
+    align-items: center;
+}
+.archived-modal-overlay.active { display: flex; }
+.archived-modal {
+    background: white;
+    border-radius: 8px;
+    max-width: 480px;
+    width: 90%;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+}
+.archived-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--tblr-border-color);
+}
+.archived-modal-header h2 {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+.archived-modal-close {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--tblr-secondary);
+    padding: 4px;
+    border-radius: 4px;
+}
+.archived-modal-close:hover { background: var(--tblr-bg-surface); }
+.archived-modal-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0.75rem 1rem;
+}
+.archived-info-banner {
+    background: var(--tblr-bg-surface);
+    border: 1px solid var(--tblr-border-color);
+    border-radius: 8px;
+    padding: 0.5rem 0.75rem;
+    margin-bottom: 0.75rem;
+    font-size: 0.75rem;
+    color: var(--tblr-secondary);
+}
+.archived-accounts-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+.archived-account-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5rem 0.75rem;
+    background: var(--tblr-bg-surface);
+    border: 1px solid var(--tblr-border-color);
+    border-radius: 8px;
+}
+.archived-account-name {
+    font-weight: 500;
+    font-size: 0.875rem;
+}
+.archived-account-meta {
+    font-size: 0.75rem;
+    color: var(--tblr-secondary);
+}
+
+/* -- Queue modal ------------------------------------------------------------- */
+.queue-modal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 1050;
+}
+.queue-modal.active { display: block; }
+.queue-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+}
+.queue-modal-content {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: white;
+    border-radius: 8px;
+    width: 500px;
+    max-width: 90vw;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+}
+.queue-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--tblr-border-color);
+}
+.queue-modal-header h2 { margin: 0; font-size: 1rem; font-weight: 600; }
+.queue-modal-close {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 18px;
+    color: var(--tblr-secondary);
+}
+.queue-modal-tabs {
+    display: flex;
+    border-bottom: 1px solid var(--tblr-border-color);
+}
+.queue-tab-btn {
+    flex: 1;
+    padding: 0.5rem;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    font-size: 0.8125rem;
+    font-weight: 500;
+}
+.queue-tab-btn.active { border-bottom-color: var(--tblr-primary); color: var(--tblr-primary); }
+.queue-count {
+    background: var(--tblr-bg-surface);
+    padding: 1px 6px;
+    border-radius: 10px;
+    font-size: 11px;
+}
+.queue-modal-body { flex: 1; overflow-y: auto; padding: 0.75rem 1rem; }
+.queue-tab-content { display: none; }
+.queue-tab-content.active { display: block; }
+.queue-empty { color: var(--tblr-secondary); font-size: 0.8125rem; text-align: center; padding: 1rem; }
+
+/* -- Integrations modal ------------------------------------------------------ */
+.integrations-modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    backdrop-filter: blur(4px);
+    z-index: 1050;
+    justify-content: center;
+    align-items: center;
+}
+.integrations-modal-overlay.active { display: flex; }
+.integrations-modal {
+    background: white;
+    border-radius: 8px;
+    max-width: 600px;
+    width: 90%;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+}
+.integrations-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--tblr-border-color);
+}
+.integrations-modal-header h2 { margin: 0; font-size: 1rem; font-weight: 600; display: flex; align-items: center; gap: 0.4rem; }
+.integrations-modal-close {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--tblr-secondary);
+    padding: 4px;
+    border-radius: 4px;
+}
+.integrations-modal-body { flex: 1; overflow-y: auto; padding: 1rem; }
+.integration-section { margin-bottom: 1.5rem; }
+.integration-section h3 {
+    font-size: 0.875rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-bottom: 0.5rem;
+}
+.integration-section h3 svg { width: 18px; height: 18px; }
+.integration-description { font-size: 0.8125rem; color: var(--tblr-secondary); margin-bottom: 0.75rem; }
+.integration-form-group { margin-bottom: 0.75rem; }
+.integration-form-group label { display: block; font-size: 0.8125rem; font-weight: 500; margin-bottom: 0.25rem; }
+.integration-input {
+    width: 100%;
+    padding: 6px 10px;
+    font-size: 0.8125rem;
+    border: 1px solid var(--tblr-border-color);
+    border-radius: 4px;
+}
+.integration-help { font-size: 0.75rem; color: var(--tblr-secondary); margin-top: 0.25rem; }
+.integration-help a { color: var(--tblr-primary); }
+.integration-toggle { display: flex; align-items: center; gap: 0.5rem; font-size: 0.8125rem; }
+.integration-actions { display: flex; gap: 0.5rem; margin-top: 0.75rem; }
+.integration-btn {
+    padding: 6px 14px;
+    font-size: 0.8125rem;
+    border-radius: 4px;
+    cursor: pointer;
+    border: 1px solid var(--tblr-border-color);
+}
+.integration-btn-primary { background: var(--tblr-primary); color: white; border-color: var(--tblr-primary); }
+.integration-btn-secondary { background: white; }
+.integration-status { font-size: 0.8125rem; margin-top: 0.5rem; padding: 0.5rem; border-radius: 4px; }
+.integration-divider { border-top: 1px solid var(--tblr-border-color); margin: 1.5rem 0; }
+
+/* -- Modal overlay compatibility --------------------------------------------- */
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    backdrop-filter: blur(4px);
+    z-index: 1040;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* -- Toast container --------------------------------------------------------- */
+#toast-container {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 10000;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+/* -- Filter buttons (tier filter) -------------------------------------------- */
+.tier-filter-btn {
+    padding: 0.25rem 0.5rem;
+    height: 30px;
+    border-radius: 4px;
+    border: 1px solid var(--tblr-border-color);
+    background: white;
+    color: var(--tblr-secondary);
+    font-size: 0.75rem;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    transition: all 0.15s;
+}
+.tier-filter-btn:hover {
+    border-color: var(--tblr-primary);
+    color: var(--tblr-body-color);
+}
+.tier-filter-btn.active {
+    background: var(--tblr-primary-lt);
+    border-color: var(--tblr-primary);
+    color: var(--tblr-primary);
+    font-weight: 500;
+}
+.tier-filter-btn.archived-btn {
+    background: var(--tblr-bg-surface);
+}
+
+/* -- Filter selects ---------------------------------------------------------- */
+.filter-select {
+    padding: 4px 8px;
+    font-size: 0.8125rem;
+    border: 1px solid var(--tblr-border-color);
+    border-radius: 4px;
+    background: white;
+    color: var(--tblr-body-color);
+}
+
+/* -- Clear filters button ---------------------------------------------------- */
+.btn-clear-filters {
+    background: none;
+    border: none;
+    color: var(--tblr-secondary);
+    font-size: 0.75rem;
+    cursor: pointer;
+    padding: 4px 8px;
+}
+.btn-clear-filters:hover { color: var(--tblr-primary); }
+
+/* -- Selectgroup items for sequence modal ------------------------------------ */
+.form-selectgroup-item {
+    display: block;
+    margin-bottom: 0.5rem;
+}
+.form-selectgroup-label {
+    display: block;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--tblr-border-color);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+.form-selectgroup-input:checked + .form-selectgroup-label {
+    border-color: var(--tblr-primary);
+    background: var(--tblr-primary-lt);
+}
+.form-selectgroup-input { display: none; }
+
+/* -- Notification helper ----------------------------------------------------- */
+.showNotification-enter {
+    animation: slideInRight 0.3s ease;
+}
+@keyframes slideInRight {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+}

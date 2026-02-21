@@ -1,0 +1,505 @@
+{% extends "base_tabler.html" %}
+
+{% block title %}RepoRadar - Lead Machine{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/tabler_overrides.css') }}?v={{ cache_bust }}">
+{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<div class="page-header d-print-none mb-3">
+    <div class="row align-items-center">
+        <div class="col-auto">
+            <h2 class="page-title">Monitored Accounts</h2>
+        </div>
+        <div class="col-auto ms-auto">
+            <div class="input-icon">
+                <span class="input-icon-addon"><i class="ti ti-search"></i></span>
+                <input type="text" class="form-control form-control-sm" placeholder="Search accounts..."
+                    value="{{ current_search }}"
+                    onkeydown="if(event.key === 'Enter') updateFilters({search: this.value})"
+                    style="width: 220px;">
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Tier Filter Buttons -->
+<div class="d-flex align-items-center gap-2 flex-wrap mb-3">
+    <div class="d-flex align-items-center gap-1 flex-wrap">
+        <button class="tier-filter-btn {% if not current_tier_filter %}active{% endif %}" data-tier-id="all">All</button>
+        {% for tier_id, config in tier_config.items() %}
+        <button class="tier-filter-btn {% if current_tier_filter and tier_id in current_tier_filter %}active{% endif %}" data-tier-id="{{ tier_id }}">{{ config.name }}</button>
+        {% endfor %}
+        <button class="tier-filter-btn archived-btn" id="show-archived-btn" title="View archived accounts">
+            <i class="ti ti-archive" style="font-size: 12px;"></i>
+            Archived ({{ archived_count }})
+        </button>
+    </div>
+</div>
+
+<!-- Status Pipeline Legend -->
+<div class="row row-cards mb-3 status-legend">
+    <div class="col-sm-6 col-lg">
+        <div class="card card-sm">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <span class="status-dot status-dot-tracking me-2"></span>
+                    <div>
+                        <div class="fw-bold">Tracking - {{ tier_counts['0'] }}</div>
+                        <div class="text-secondary small">Monitoring for activity</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg">
+        <div class="card card-sm">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <span class="status-dot status-dot-warm me-2"></span>
+                    <div>
+                        <div class="fw-bold">Warm Leads - {{ tier_counts['1'] }}</div>
+                        <div class="text-secondary small">Exploring internationalization</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg">
+        <div class="card card-sm">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <span class="status-dot status-dot-hot me-2"></span>
+                    <div>
+                        <div class="fw-bold">Hot Leads - {{ tier_counts['2'] }}</div>
+                        <div class="text-secondary small">Actively setting up for expansion</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg">
+        <div class="card card-sm">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <span class="status-dot status-dot-launched me-2"></span>
+                    <div>
+                        <div class="fw-bold">Launched - {{ tier_counts['3'] }}</div>
+                        <div class="text-secondary small">Already expanded</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg">
+        <div class="card card-sm">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <span class="status-dot status-dot-notfound me-2"></span>
+                    <div>
+                        <div class="fw-bold">Not Found - {{ tier_counts['4'] }}</div>
+                        <div class="text-secondary small">No public GitHub presence</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if accounts %}
+<!-- Table Controls (Search + Filters) -->
+<div class="card">
+    <div class="card-header">
+        <div class="d-flex align-items-center gap-2 flex-wrap w-100">
+            <div class="input-icon">
+                <span class="input-icon-addon"><i class="ti ti-search"></i></span>
+                <input type="text" id="account-search-input" class="form-control form-control-sm" placeholder="Search company or org..." autocomplete="off" style="width: 220px;">
+            </div>
+            <select id="status-filter" class="form-select form-select-sm" aria-label="Filter by scan status" style="width: auto;">
+                <option value="all">All statuses</option>
+                <option value="idle">Idle</option>
+                <option value="queued">Queued</option>
+                <option value="processing">Processing</option>
+                <option value="stuck">Stuck</option>
+            </select>
+            <select id="last-scanned-filter" class="form-select form-select-sm" aria-label="Filter by last scanned" style="width: auto;">
+                <option value="">All scan times</option>
+                <option value="never">Never scanned</option>
+                <option value="7d">Last 7 days</option>
+                <option value="30d">Last 30 days</option>
+                <option value="90d">Last 90 days</option>
+                <option value="older">Older than 90 days</option>
+            </select>
+            <select id="revenue-filter" class="form-select form-select-sm" aria-label="Filter by revenue range" style="width: auto;">
+                <option value="">All revenue</option>
+                <option value="0-10">Under $10M</option>
+                <option value="10-50">$10M - $50M</option>
+                <option value="50-100">$50M - $100M</option>
+                <option value="100-500">$100M - $500M</option>
+                <option value="500-1000">$500M - $1B</option>
+                <option value="1000-">Over $1B</option>
+            </select>
+            <button type="button" class="btn btn-ghost-secondary btn-sm" id="clear-filters-btn">
+                <i class="ti ti-x me-1"></i>Clear filters
+            </button>
+        </div>
+    </div>
+
+    <!-- Accounts Data Table -->
+    <div class="accounts-table-container" style="position: relative;">
+        <div class="table-responsive">
+            <table class="table table-vcenter table-hover table-nowrap accounts-table table-compact" aria-label="Monitored accounts list">
+                <thead>
+                    <tr>
+                        <th class="w-1 select-col">
+                            <input type="checkbox" class="form-check-input" id="select-all-accounts" aria-label="Select all accounts">
+                        </th>
+                        <th class="w-1 row-num-col">#</th>
+                        <th class="sortable company-col resizable" data-sort-key="company">Company <span class="sort-indicator"><span class="sort-asc">&#9650;</span><span class="sort-desc">&#9660;</span></span><div class="resize-handle"></div></th>
+                        <th class="sortable revenue-col resizable" data-sort-key="annual_revenue">Annual Revenue <span class="sort-indicator"><span class="sort-asc">&#9650;</span><span class="sort-desc">&#9660;</span></span><div class="resize-handle"></div></th>
+                        <th class="sortable org-col resizable" data-sort-key="github_org">GitHub Org <span class="sort-indicator"><span class="sort-asc">&#9650;</span><span class="sort-desc">&#9660;</span></span><div class="resize-handle"></div></th>
+                        <th class="sortable tier-col resizable" data-sort-key="tier">Tier <span class="sort-indicator"><span class="sort-asc">&#9650;</span><span class="sort-desc">&#9660;</span></span><div class="resize-handle"></div></th>
+                        <th class="sortable last-scanned-col resizable" data-sort-key="last_scanned">Last Scanned <span class="sort-indicator"><span class="sort-asc">&#9650;</span><span class="sort-desc">&#9660;</span></span><div class="resize-handle"></div></th>
+                        <th class="sortable evidence-col resizable" data-sort-key="evidence">Evidence Summary <span class="sort-indicator"><span class="sort-asc">&#9650;</span><span class="sort-desc">&#9660;</span></span><div class="resize-handle"></div></th>
+                        <th class="actions-col resizable">Repo Report<div class="resize-handle"></div></th>
+                        <th class="notes-col resizable">Notes<div class="resize-handle"></div></th>
+                    </tr>
+                </thead>
+                <tbody id="accounts-tbody">
+                    <!-- DataTables will populate this with server-side data -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Template for DataTables row rendering -->
+    <script type="text/template" id="accounts-row-template">
+        <tr id="row-{id}" data-company="{company_name}" data-account-id="{id}" data-tier="{current_tier}" data-status="idle">
+            <td class="select-col">
+                <input type="checkbox" class="form-check-input select-account-checkbox row-select" data-account-id="{id}" aria-label="Select {company_name}">
+            </td>
+            <td class="row-num-col">{row_number}</td>
+            <td class="company-cell">
+                <span class="company-cell-content">
+                    {company_link}
+                    <button type="button" class="btn-copy-company" title="Copy company name" data-company="{company_name}" onclick="copyToClipboard(this.dataset.company, this)">
+                        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                            <path d="M16 1H6c-1.1 0-2 .9-2 2v12h2V3h10V1zm3 4H10c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h9c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H10V7h9v14z" />
+                        </svg>
+                    </button>
+                </span>
+            </td>
+            <td class="annual-revenue-cell">{annual_revenue}</td>
+            <td class="github-org-cell" data-company="{company_name}" ondblclick="editOrg(this)" data-org="{github_org}">
+                <span class="org-display">{github_org_link}</span>
+                <span class="github-org-input-container">
+                    <input type="text" class="github-org-input" placeholder="org-name" value="{github_org}">
+                    <button type="button" class="btn-save-org" onclick="saveOrgEdit(this)">Save</button>
+                    <button type="button" class="btn-cancel-org" onclick="cancelOrgEdit(this)">Cancel</button>
+                </span>
+            </td>
+            <td><span class="tier-badge tier-badge-{current_tier}">{tier_name}</span></td>
+            <td class="last-check-cell">
+                <div class="status-container">
+                    <span class="account-last-scan {last_scan_class}" data-timestamp="{last_scanned_at}">
+                        <strong class="last-scan-date">{last_scanned_formatted}</strong>
+                    </span>
+                </div>
+            </td>
+            <td class="evidence-cell">
+                <span class="evidence-text" title="{evidence_title}">{evidence_summary}</span>
+            </td>
+            <td class="actions-cell">{actions_html}</td>
+            <td class="notes-cell" data-account-id="{id}">
+                <span class="notes-display" ondblclick="editNotes(this)">{notes}</span>
+                <div class="notes-edit-container" style="display: none;">
+                    <textarea class="notes-input" placeholder="Add notes...">{notes}</textarea>
+                    <div class="notes-edit-buttons">
+                        <button type="button" class="btn-save-notes" onclick="saveNotes(this)">Save</button>
+                        <button type="button" class="btn-cancel-notes" onclick="cancelNotesEdit(this)">Cancel</button>
+                    </div>
+                </div>
+            </td>
+        </tr>
+    </script>
+
+    <!-- Hidden tbody placeholder for SSR rows -->
+    <div style="display: none;">
+        <tbody id="accounts-tbody-old">
+            <tr class="table-empty-row hidden" id="accounts-empty-row">
+                <td colspan="10">No accounts match your filters.</td>
+            </tr>
+            {% for account in accounts %}
+            <tr id="row-{{ account.id }}" data-company="{{ account.company_name }}" data-account-id="{{ account.id }}"
+                data-tier="{{ account.current_tier }}" data-last-scanned="{{ account.last_scanned_at or '' }}"
+                data-next-scan-due="{{ account.next_scan_due or '' }}" data-website="{{ account.website or '' }}" data-status="idle">
+                <td class="select-col">
+                    <input type="checkbox" class="form-check-input select-account-checkbox row-select" data-account-id="{{ account.id }}" aria-label="Select {{ account.company_name }}">
+                </td>
+                <td class="row-num-col">{{ loop.index }}</td>
+                <td class="company-cell">
+                    <span class="company-cell-content">
+                        {% if account.latest_report_id %}
+                        <a href="{{ url_for('view_report', report_id=account.latest_report_id) }}">{{ account.company_name }}</a>
+                        {% else %}
+                        {{ account.company_name }}
+                        {% endif %}
+                        <button type="button" class="btn-copy-company" title="Copy company name" data-company="{{ account.company_name|e }}" onclick="copyToClipboard(this.dataset.company, this)">
+                            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                                <path d="M16 1H6c-1.1 0-2 .9-2 2v12h2V3h10V1zm3 4H10c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h9c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H10V7h9v14z" />
+                            </svg>
+                        </button>
+                        {% if account.website %}
+                        <a href="{{ account.website|normalize_url }}" target="_blank" rel="noopener" class="btn-website-link" title="Visit website">
+                            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                        </a>
+                        {% endif %}
+                    </span>
+                </td>
+                <td class="github-org-cell" data-company="{{ account.company_name|e }}" ondblclick="editOrg(this)" data-org="{{ account.github_org|default('', true)|e }}">
+                    <span class="org-display">
+                        {% if account.github_org %}
+                        <a href="https://github.com/{{ account.github_org }}" target="_blank" rel="noopener" class="github-org-link" title="View on GitHub">
+                            <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" /></svg>
+                            @{{ account.github_org }}
+                        </a>
+                        <button type="button" class="github-org-edit" onclick="showOrgEdit(this)" title="Edit GitHub org">Edit</button>
+                        {% else %}
+                        <span class="org-not-found">Not found</span>
+                        <button type="button" class="github-org-edit" onclick="showOrgEdit(this)" title="Set GitHub org">Set</button>
+                        {% endif %}
+                    </span>
+                    <span class="github-org-input-container">
+                        <input type="text" class="github-org-input" placeholder="org-name" value="{{ account.github_org or '' }}">
+                        <button type="button" class="btn-save-org" onclick="saveOrgEdit(this)">Save</button>
+                        <button type="button" class="btn-cancel-org" onclick="cancelOrgEdit(this)">Cancel</button>
+                    </span>
+                </td>
+                <td>
+                    <span class="tier-badge tier-badge-{{ account.current_tier }}">
+                        {{ tier_config[account.current_tier]['name'] if account.current_tier in tier_config else 'Tier ' ~ account.current_tier }}
+                    </span>
+                </td>
+                <td class="last-check-cell">
+                    <div class="status-container">
+                        <span class="account-last-scan {% if not account.last_scanned_at %}never-scanned{% endif %}">
+                            {% if account.last_scanned_at %}
+                            <strong class="last-scan-date" data-timestamp="{{ account.last_scanned_at }}">--</strong>
+                            {% elif account.scan_status == 'queued' %}
+                            <strong class="last-scan-date status-queued">In Queue</strong>
+                            {% elif account.scan_status == 'processing' %}
+                            <strong class="last-scan-date status-processing">Scanning...</strong>
+                            {% else %}
+                            <strong class="last-scan-date">Never</strong>
+                            {% endif %}
+                        </span>
+                        <span class="next-scan-date" data-next-timestamp="{{ account.next_scan_due or '' }}">
+                            {% if account.next_scan_due %}--{% endif %}
+                        </span>
+                    </div>
+                </td>
+                <td class="evidence-cell">
+                    <span class="evidence-text" title="{{ account.evidence_summary or 'No evidence recorded' }}">
+                        {{ account.evidence_summary or 'No evidence recorded' }}
+                    </span>
+                </td>
+                <td class="actions-cell">
+                    {% if account.latest_report_id %}
+                    <button type="button" class="btn btn-primary btn-sm" onclick="openReport('{{ url_for('view_report', report_id=account.latest_report_id) }}')">View</button>
+                    {% else %}
+                    <button type="button" class="btn btn-primary btn-sm" disabled style="visibility: hidden;">View</button>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+        </table>
+    </div>
+
+    <!-- Pagination Controls -->
+    <div class="card-footer">
+        <div class="pagination-container" id="pagination-container">
+            <div class="pagination-info" id="pagination-info">Loading...</div>
+            <div class="pagination-controls">
+                <button type="button" class="pagination-mode-toggle" id="infinite-scroll-toggle" title="Toggle infinite scroll">
+                    <i class="ti ti-arrow-down"></i>
+                    <span>Infinite Scroll</span>
+                </button>
+                <select id="limit-select" class="pagination-limit-select" aria-label="Rows per page">
+                    <option value="25">25 rows</option>
+                    <option value="50" selected>50 rows</option>
+                    <option value="100">100 rows</option>
+                    <option value="250">250 rows</option>
+                    <option value="500">500 rows</option>
+                    <option value="1000">1,000 rows</option>
+                    <option value="10000">All</option>
+                </select>
+                <button type="button" class="btn btn-sm" id="prev-page-btn" disabled>Previous</button>
+                <span class="pagination-page-display" id="page-display">Page 1 of 1</span>
+                <button type="button" class="btn btn-sm" id="next-page-btn" disabled>Next</button>
+            </div>
+        </div>
+    </div>
+</div><!-- /.card -->
+
+<!-- Infinite scroll loading indicator -->
+<div class="infinite-scroll-loading" id="infinite-scroll-indicator" style="display: none;">
+    <div class="loading-spinner"></div>
+    <span>Loading more accounts...</span>
+</div>
+
+<!-- Bulk Actions Bar -->
+<div class="bulk-command-bar hidden" id="bulk-command-bar">
+    <span class="bulk-command-count" id="bulk-selection-count">0 accounts selected</span>
+    <div class="bulk-command-actions">
+        <button type="button" class="btn btn-primary btn-sm" id="bulk-rescan-btn" onclick="bulkRescan()">
+            <i class="ti ti-refresh me-1"></i>Rescan Selected
+        </button>
+        <button type="button" class="btn btn-sm" id="bulk-export-btn" onclick="exportCSV()">
+            <i class="ti ti-download me-1"></i>Export CSV
+        </button>
+        <button type="button" class="btn btn-warning btn-sm" id="bulk-archive-btn" onclick="bulkArchiveSelected()">
+            <i class="ti ti-archive me-1"></i>Archive Selected
+        </button>
+        <button type="button" class="btn btn-danger btn-sm" id="bulk-delete-btn" onclick="bulkDeleteSelected()">
+            <i class="ti ti-trash me-1"></i>Delete Selected
+        </button>
+    </div>
+</div>
+
+{% else %}
+<!-- Empty State -->
+<div class="card">
+    <div class="card-body">
+        <div class="empty">
+            <div class="empty-icon"><i class="ti ti-building-community" style="font-size: 3rem;"></i></div>
+            <p class="empty-title">No monitored accounts yet</p>
+            <p class="empty-subtitle text-secondary">Run a scan to start tracking companies!</p>
+            <div class="empty-action">
+                <a href="{{ url_for('index') }}" class="btn btn-primary"><i class="ti ti-scan me-2"></i>Start Scanning</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Report Drawer -->
+<div id="report-drawer">
+    <button type="button" class="drawer-close" onclick="closeDrawer()" aria-label="Close report drawer">&times;</button>
+    <iframe id="report-frame" width="100%" height="100%"></iframe>
+</div>
+
+<!-- Queue/Processing Status Modal -->
+<div id="queue-modal" class="queue-modal">
+    <div class="queue-modal-overlay" onclick="closeQueueModal()"></div>
+    <div class="queue-modal-content">
+        <div class="queue-modal-header">
+            <h2 id="queue-modal-title">Scan Queue</h2>
+            <button type="button" class="queue-modal-close" onclick="closeQueueModal()" aria-label="Close">&times;</button>
+        </div>
+        <div class="queue-modal-tabs">
+            <button type="button" class="queue-tab-btn active" data-tab="processing" onclick="switchQueueTab('processing')">
+                Processing <span class="queue-count" id="processing-count">0</span>
+            </button>
+            <button type="button" class="queue-tab-btn" data-tab="queued" onclick="switchQueueTab('queued')">
+                Queued <span class="queue-count" id="queued-count">0</span>
+            </button>
+        </div>
+        <div class="queue-modal-body">
+            <div id="processing-tab" class="queue-tab-content active">
+                <div id="processing-list" class="queue-list">
+                    <div class="queue-empty">No accounts currently processing</div>
+                </div>
+            </div>
+            <div id="queued-tab" class="queue-tab-content">
+                <div id="queued-list" class="queue-list">
+                    <div class="queue-empty">No accounts in queue</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Archived Accounts Modal -->
+<div id="archived-modal" class="archived-modal-overlay">
+    <div class="archived-modal">
+        <div class="archived-modal-header">
+            <h2><i class="ti ti-archive me-2"></i>Archived Accounts</h2>
+            <button type="button" class="archived-modal-close" onclick="closeArchivedModal()" aria-label="Close">
+                <i class="ti ti-x"></i>
+            </button>
+        </div>
+        <div class="archived-modal-body">
+            <div class="archived-info-banner">
+                <strong>Auto-Archive:</strong> Tier 4 accounts (GitHub org not found or no public repos) are automatically archived.
+                They are re-scanned every <strong>4 weeks</strong> to check if they've become valid.
+                If a re-scan finds valid data, the account will be automatically unarchived.
+            </div>
+            <div id="archived-accounts-list" class="archived-accounts-list">
+                <div class="archived-loading">Loading archived accounts...</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Integrations Modal -->
+<div id="integrations-modal" class="integrations-modal-overlay">
+    <div class="integrations-modal">
+        <div class="integrations-modal-header">
+            <h2><i class="ti ti-plug me-2"></i>Integrations</h2>
+            <button type="button" class="integrations-modal-close" onclick="closeIntegrationsModal()" aria-label="Close">
+                <i class="ti ti-x"></i>
+            </button>
+        </div>
+        <div class="integrations-modal-body">
+            <div class="integration-section">
+                <h3><i class="ti ti-table"></i> Google Sheets Export</h3>
+                <p class="integration-description">
+                    Automatically export new Tier 1 and Tier 2 accounts to a Google Sheet when they're detected.
+                </p>
+                <div class="integration-form-group">
+                    <label for="gsheet-webhook-url">Google Apps Script Web App URL</label>
+                    <input type="url" id="gsheet-webhook-url" class="integration-input" placeholder="https://script.google.com/macros/s/XXXXX/exec">
+                    <p class="integration-help">
+                        Deploy the <a href="/docs/google-sheets-webhook-script.js" target="_blank">Apps Script</a> to your Google Sheet and paste the Web App URL here.
+                    </p>
+                </div>
+                <div class="integration-form-group">
+                    <div class="integration-toggle">
+                        <input type="checkbox" id="gsheet-webhook-enabled" class="form-check-input">
+                        <span>Enable automatic export to Google Sheets</span>
+                    </div>
+                </div>
+                <div class="integration-actions">
+                    <button type="button" class="btn btn-primary btn-sm" onclick="saveGSheetSettings()">Save Settings</button>
+                    <button type="button" class="btn btn-sm" onclick="testGSheetWebhook()">Test Webhook</button>
+                </div>
+                <div id="gsheet-status" class="integration-status" style="display: none;"></div>
+            </div>
+            <div class="integration-divider"></div>
+            <div class="integration-section">
+                <h3><i class="ti ti-info-circle"></i> Setup Instructions</h3>
+                <div class="integration-description">
+                    <ol style="margin: 0; padding-left: 1.25rem; line-height: 1.8;">
+                        <li>Open your Google Sheet</li>
+                        <li>Go to <strong>Extensions &rarr; Apps Script</strong></li>
+                        <li>Copy the <a href="/docs/google-sheets-webhook-script.js" target="_blank">webhook script</a> into the editor</li>
+                        <li>Click <strong>Deploy &rarr; New deployment</strong></li>
+                        <li>Select <strong>Web app</strong> as the type</li>
+                        <li>Set "Who has access" to <strong>Anyone</strong></li>
+                        <li>Copy the Web App URL and paste it above</li>
+                        <li>Enable the integration and save</li>
+                    </ol>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<!-- All JavaScript from original accounts.html preserved verbatim -->
+{% include "accounts_tabler_js.html" %}
+{% endblock %}
