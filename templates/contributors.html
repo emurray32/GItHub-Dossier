@@ -25,69 +25,85 @@
 {% endblock %}
 
 {% block content %}
-<div class="contributors-container">
+<div class="contributors-layout">
 
-    <!-- Stats Row (pills) -->
-    <div class="contrib-stats-row">
-        <span class="contrib-stat-pill"><span class="stat-pill-value" id="stat-total">{{ stats.total_contributors }}</span> <span class="stat-pill-label">contributors</span></span>
-        <span class="contrib-stat-pill stat-enrolled"><span class="stat-pill-value" id="stat-enrolled">{{ stats.total_enrolled }}</span> <span class="stat-pill-label">enrolled</span></span>
-        <span class="contrib-stat-pill stat-emails"><span class="stat-pill-value" id="stat-emails">{{ stats.total_emails_sent }}</span> <span class="stat-pill-label">emails sent</span></span>
+    <!-- Main content area -->
+    <div class="contributors-main" id="contributors-main">
+
+        <!-- Stats Row (pills) -->
+        <div class="contrib-stats-row">
+            <span class="contrib-stat-pill"><span class="stat-pill-value" id="stat-total">{{ stats.total_contributors }}</span> <span class="stat-pill-label">contributors</span></span>
+            <span class="contrib-stat-pill stat-enrolled"><span class="stat-pill-value" id="stat-enrolled">{{ stats.total_enrolled }}</span> <span class="stat-pill-label">enrolled</span></span>
+            <span class="contrib-stat-pill stat-emails"><span class="stat-pill-value" id="stat-emails">{{ stats.total_emails_sent }}</span> <span class="stat-pill-label">emails sent</span></span>
+        </div>
+
+        <!-- Controls -->
+        <div class="contrib-controls">
+            <input type="text" class="contrib-search" id="contrib-search" placeholder="Search contributors, companies, repos..." autocomplete="off">
+            <select class="contrib-filter-select" id="apollo-filter">
+                <option value="">All statuses</option>
+                <option value="not_sent">Not sent to Apollo</option>
+                <option value="sent">Sent to Apollo</option>
+            </select>
+            <button type="button" class="btn-fetch-contributors" id="btn-fetch" onclick="fetchContributors()" data-tooltip="Pull contributor data from monitored GitHub repos">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M23 4v6h-6"></path>
+                    <path d="M1 20v-6h6"></path>
+                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                </svg>
+                <span>Sync Contributors</span>
+            </button>
+        </div>
+
+        <!-- Filter Chips -->
+        <div class="contrib-filter-chips">
+            <button class="filter-chip" id="filter-has-email" onclick="toggleFilter('has_email')">Has email</button>
+            <button class="filter-chip" id="filter-warm-hot" onclick="toggleFilter('warm_hot')">Warm/Hot leads</button>
+            <button class="filter-chip" id="filter-i18n" onclick="toggleFilter('i18n_involved')">i18n involved</button>
+            <button class="filter-chip" id="filter-not-contacted" onclick="toggleFilter('not_contacted')">Not contacted</button>
+        </div>
+
+        <!-- Table -->
+        <div class="contrib-table-container">
+            <table class="contrib-table" id="contrib-table">
+                <thead>
+                    <tr>
+                        <th class="col-name sortable" data-col="1" data-dir="">Name <span class="sort-indicator"><span class="asc">&#9650;</span><span class="desc">&#9660;</span></span></th>
+                        <th class="col-company sortable" data-col="2" data-dir="">Company <span class="sort-indicator"><span class="asc">&#9650;</span><span class="desc">&#9660;</span></span></th>
+                        <th class="col-repo sortable" data-col="6" data-dir="desc">Repo <span class="sort-indicator"><span class="asc">&#9650;</span><span class="desc">&#9660;</span></span></th>
+                        <th class="col-contributions sortable" data-col="6" data-dir="">Contributions <span class="sort-indicator"><span class="asc">&#9650;</span><span class="desc">&#9660;</span></span></th>
+                        <th class="col-apollo sortable" data-col="7" data-dir="">Status <span class="sort-indicator"><span class="asc">&#9650;</span><span class="desc">&#9660;</span></span></th>
+                        <th class="col-insight">Insight</th>
+                    </tr>
+                </thead>
+                <tbody id="contrib-tbody">
+                    <!-- Populated via JS -->
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Pagination -->
+        <div class="contrib-pagination">
+            <span class="page-info" id="contrib-page-info">Showing 0 contributors</span>
+            <div class="contrib-page-buttons" id="contrib-page-buttons"></div>
+        </div>
+
     </div>
 
-    <!-- Controls -->
-    <div class="contrib-controls">
-        <input type="text" class="contrib-search" id="contrib-search" placeholder="Search contributors, companies, repos..." autocomplete="off">
-        <select class="contrib-filter-select" id="apollo-filter">
-            <option value="">All statuses</option>
-            <option value="not_sent">Not sent to Apollo</option>
-            <option value="sent">Sent to Apollo</option>
-        </select>
-        <button type="button" class="btn-fetch-contributors" id="btn-fetch" onclick="fetchContributors()" data-tooltip="Pull contributor data from monitored GitHub repos">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M23 4v6h-6"></path>
-                <path d="M1 20v-6h6"></path>
-                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-            </svg>
-            <span>Sync Contributors</span>
-        </button>
-    </div>
-
-    <!-- Filter Chips -->
-    <div class="contrib-filter-chips">
-        <button class="filter-chip" id="filter-has-email" onclick="toggleFilter('has_email')">Has email</button>
-        <button class="filter-chip" id="filter-warm-hot" onclick="toggleFilter('warm_hot')">Warm/Hot leads</button>
-        <button class="filter-chip" id="filter-i18n" onclick="toggleFilter('i18n_involved')">i18n involved</button>
-        <button class="filter-chip" id="filter-not-contacted" onclick="toggleFilter('not_contacted')">Not contacted</button>
-    </div>
-
-    <!-- Table -->
-    <div class="contrib-table-container">
-        <table class="contrib-table" id="contrib-table">
-            <thead>
-                <tr>
-                    <th class="col-expand"></th>
-                    <th class="col-priority">Priority</th>
-                    <th class="col-name sortable" data-col="1" data-dir="">Name <span class="sort-indicator"><span class="asc">&#9650;</span><span class="desc">&#9660;</span></span></th>
-                    <th class="col-github sortable" data-col="4" data-dir="">GitHub <span class="sort-indicator"><span class="asc">&#9650;</span><span class="desc">&#9660;</span></span></th>
-                    <th class="col-company sortable" data-col="2" data-dir="">Company <span class="sort-indicator"><span class="asc">&#9650;</span><span class="desc">&#9660;</span></span></th>
-                    <th class="col-size sortable" data-col="3" data-dir="">Size <span class="sort-indicator"><span class="asc">&#9650;</span><span class="desc">&#9660;</span></span></th>
-                    <th class="col-revenue sortable" data-col="5" data-dir="">Revenue <span class="sort-indicator"><span class="asc">&#9650;</span><span class="desc">&#9660;</span></span></th>
-                    <th class="col-repo sortable" data-col="6" data-dir="desc">Repo Source <span class="sort-indicator"><span class="asc">&#9650;</span><span class="desc">&#9660;</span></span></th>
-                    <th class="col-apollo sortable" data-col="7" data-dir="">Apollo <span class="sort-indicator"><span class="asc">&#9650;</span><span class="desc">&#9660;</span></span></th>
-                    <th class="col-emails sortable" data-col="8" data-dir="">Emails <span class="sort-indicator"><span class="asc">&#9650;</span><span class="desc">&#9660;</span></span></th>
-                    <th class="col-insight sortable" data-col="9" data-dir="">Insight / Hook <span class="sort-indicator"><span class="asc">&#9650;</span><span class="desc">&#9660;</span></span></th>
-                </tr>
-            </thead>
-            <tbody id="contrib-tbody">
-                <!-- Populated via JS -->
-            </tbody>
-        </table>
-    </div>
-
-    <!-- Pagination -->
-    <div class="contrib-pagination">
-        <span class="page-info" id="contrib-page-info">Showing 0 contributors</span>
-        <div class="contrib-page-buttons" id="contrib-page-buttons"></div>
+    <!-- Right Sidebar (contributor detail panel) -->
+    <div class="contrib-sidebar" id="contrib-sidebar">
+        <div class="sidebar-header">
+            <h3 class="sidebar-title" id="sidebar-title">Contributor</h3>
+            <button class="sidebar-close" id="sidebar-close" onclick="closeSidebar()" title="Close panel">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+            </button>
+        </div>
+        <div class="sidebar-body" id="sidebar-body">
+            <!-- Populated dynamically -->
+        </div>
     </div>
 
 </div>
@@ -106,12 +122,17 @@
     let filteredRecords = 0;
     let currentSort = { col: 6, dir: 'desc' };
     let searchTimeout = null;
-    let expandedRows = new Set();
     let activeFilters = {};
+    let selectedContributorId = null;
+    let cachedRows = [];
 
     const tbody = document.getElementById('contrib-tbody');
     const searchInput = document.getElementById('contrib-search');
     const apolloFilter = document.getElementById('apollo-filter');
+    const sidebar = document.getElementById('contrib-sidebar');
+    const sidebarBody = document.getElementById('sidebar-body');
+    const sidebarTitle = document.getElementById('sidebar-title');
+    const mainArea = document.getElementById('contributors-main');
 
     // Toggle filter chips
     window.toggleFilter = function(filterName) {
@@ -120,7 +141,6 @@
         } else {
             activeFilters[filterName] = '1';
         }
-        // Update chip visuals
         const chipMap = { has_email: 'filter-has-email', warm_hot: 'filter-warm-hot', i18n_involved: 'filter-i18n', not_contacted: 'filter-not-contacted' };
         Object.entries(chipMap).forEach(([key, id]) => {
             const el = document.getElementById(id);
@@ -144,7 +164,6 @@
         const apolloVal = apolloFilter.value;
         if (apolloVal) params.set('apollo_filter', apolloVal);
 
-        // Add active filters
         Object.entries(activeFilters).forEach(([key, val]) => {
             params.set(key, val);
         });
@@ -154,20 +173,21 @@
             .then(data => {
                 totalRecords = data.recordsTotal;
                 filteredRecords = data.recordsFiltered;
+                cachedRows = data.data;
                 renderTable(data.data);
                 renderPagination();
                 updateStats();
             })
             .catch(err => {
                 console.error('Failed to load contributors:', err);
-                tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;padding:3rem;color:var(--text-muted);">Failed to load contributors.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:3rem;color:var(--text-muted);">Failed to load contributors.</td></tr>';
             });
     }
 
     function renderTable(rows) {
         if (!rows || rows.length === 0) {
             tbody.innerHTML = `
-                <tr><td colspan="11">
+                <tr><td colspan="6">
                     <div class="contrib-empty">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                             <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
@@ -183,73 +203,65 @@
         }
 
         let html = '';
-        const startIdx = currentPage * pageLength;
-
-        // Tier color classes
         const tierColors = { 0: '#94a3b8', 1: '#d97706', 2: '#16a34a', 3: '#dc2626', 4: '#64748b' };
 
-        rows.forEach((c, i) => {
-            const isExpanded = expandedRows.has(c.id);
+        rows.forEach((c) => {
             const apolloClass = c.apollo_status === 'sent' ? 'sent' : 'not-sent';
-            const apolloLabel = c.apollo_status === 'sent' ? 'Sent' : 'Not Sent';
-            const apolloIcon = c.apollo_status === 'sent'
-                ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>'
-                : '';
-
-            const ghUrl = c.github_url || ('https://github.com/' + c.github_login);
+            const apolloLabel = c.apollo_status === 'sent' ? 'Enrolled' : 'New';
             const displayName = c.name || c.github_login;
             const escapedInsight = escapeHtml(c.insight || '');
-            const priorityScore = c.priority_score || 0;
-            const tierName = c.company_tier_name || '';
             const tierNum = c.company_tier;
             const tierDot = tierNum !== null && tierNum !== undefined
-                ? `<span class="tier-dot" style="background:${tierColors[tierNum] || '#94a3b8'}" title="${tierName}"></span>`
+                ? `<span class="tier-dot" style="background:${tierColors[tierNum] || '#94a3b8'}" title="${c.company_tier_name || ''}"></span>`
                 : '';
+            const isSelected = c.id === selectedContributorId;
+            const hasEmail = c.email && c.email.trim();
 
             html += `
-            <tr data-id="${c.id}" class="${isExpanded ? 'expanded' : ''}">
-                <td class="col-expand">
-                    <button class="expand-btn ${isExpanded ? 'open' : ''}" onclick="toggleRow(${c.id}, this)" title="Expand details">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                            <polyline points="9 18 15 12 9 6"></polyline>
-                        </svg>
-                    </button>
+            <tr data-id="${c.id}" class="contrib-row ${isSelected ? 'selected' : ''}" onclick="openSidebar(${c.id})">
+                <td class="col-name">
+                    <div class="name-cell">
+                        <div class="avatar-circle">${(displayName[0] || '?').toUpperCase()}</div>
+                        <div class="name-stack">
+                            <span class="name-primary">${escapeHtml(displayName)}</span>
+                            <span class="name-handle">@${escapeHtml(c.github_login)}</span>
+                        </div>
+                    </div>
                 </td>
-                <td class="col-priority"><span class="priority-score">${priorityScore}</span></td>
-                <td class="col-name" title="${escapeHtml(displayName)}">${escapeHtml(displayName)}</td>
-                <td class="col-github">
-                    <a href="${escapeHtml(ghUrl)}" target="_blank" rel="noopener" class="github-link" title="${escapeHtml(c.github_login)}">
-                        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
-                        ${escapeHtml(c.github_login)}
-                    </a>
-                </td>
-                <td class="col-company" title="${escapeHtml(c.company || '')}">${tierDot}${escapeHtml(c.company || '-')}</td>
-                <td class="col-size">${escapeHtml(c.company_size || '-')}</td>
-                <td class="col-revenue">${escapeHtml(c.annual_revenue || '-')}</td>
+                <td class="col-company">${tierDot}${escapeHtml(c.company || '-')}</td>
                 <td class="col-repo" title="${escapeHtml(c.repo_source || '')}">${escapeHtml(c.repo_source || '-')}</td>
+                <td class="col-contributions">${c.contributions || 0}</td>
                 <td class="col-apollo">
-                    <span class="apollo-badge ${apolloClass}">${apolloIcon} ${apolloLabel}</span>
+                    <span class="status-badge ${apolloClass} ${hasEmail ? 'has-email' : ''}">${apolloLabel}</span>
                 </td>
-                <td class="col-emails" style="text-align:center;">${c.emails_sent || 0}</td>
-                <td class="col-insight"><span class="insight-text ${escapedInsight.length > 60 ? 'expandable' : ''}" onclick="this.classList.toggle('expanded')" title="${escapedInsight}">${escapedInsight || '-'}</span></td>
+                <td class="col-insight"><span class="insight-text" title="${escapedInsight}">${escapedInsight || '-'}</span></td>
             </tr>`;
-
-            if (isExpanded) {
-                html += buildDetailRow(c);
-            }
         });
 
         tbody.innerHTML = html;
     }
 
-    function buildDetailRow(c) {
+    // Open sidebar with contributor details
+    window.openSidebar = function(id) {
+        selectedContributorId = id;
+
+        // Highlight selected row
+        document.querySelectorAll('.contrib-row').forEach(r => r.classList.remove('selected'));
+        const row = document.querySelector(`tr[data-id="${id}"]`);
+        if (row) row.classList.add('selected');
+
+        // Find contributor in cached data
+        const c = cachedRows.find(x => x.id === id);
+        if (!c) return;
+
+        const displayName = c.name || c.github_login;
         const ghUrl = c.github_url || ('https://github.com/' + c.github_login);
         const blogUrl = c.blog ? (c.blog.startsWith('http') ? c.blog : 'https://' + c.blog) : '';
         const email = c.email || '';
         const isEnrolled = c.apollo_status === 'sent' || c.enrolled_in_sequence === 1;
         const hasEmail = !!email;
 
-        // Parse AI-generated outreach copy from stored analysis
+        // Parse AI-generated outreach copy
         let aiSubject = '';
         let aiBody = '';
         try {
@@ -259,111 +271,124 @@
             if (ai) { aiSubject = ai.subject || ''; aiBody = ai.body || ''; }
         } catch (e) {}
 
-        return `
-        <tr class="contrib-detail-row" data-detail-id="${c.id}">
-            <td colspan="11">
-                <div class="contrib-detail-content">
-                    <div class="detail-info-grid">
-                        <div class="detail-info-item">
-                            <span class="label">Full Name</span>
-                            <span class="value">${escapeHtml(c.name || c.github_login)}</span>
-                        </div>
-                        <div class="detail-info-item">
-                            <span class="label">Work Email</span>
-                            <span class="value" id="detail-email-${c.id}">${email ? '<a href="mailto:' + escapeHtml(email) + '">' + escapeHtml(email) + '</a>' : '<em style="color:var(--color-text-tertiary)">Use Find Email to look up</em>'}</span>
-                        </div>
-                        <div class="detail-info-item">
-                            <span class="label">GitHub</span>
-                            <span class="value"><a href="${escapeHtml(ghUrl)}" target="_blank" rel="noopener">${escapeHtml(c.github_login)}</a></span>
-                        </div>
-                        <div class="detail-info-item">
-                            <span class="label">Blog / Website</span>
-                            <span class="value">${blogUrl ? '<a href="' + escapeHtml(blogUrl) + '" target="_blank" rel="noopener">' + escapeHtml(c.blog) + '</a>' : '-'}</span>
-                        </div>
-                        <div class="detail-info-item">
-                            <span class="label">Company</span>
-                            <span class="value">${escapeHtml(c.company || '-')}</span>
-                        </div>
-                        <div class="detail-info-item">
-                            <span class="label">Revenue</span>
-                            <span class="value">${escapeHtml(c.annual_revenue || '-')}</span>
-                        </div>
-                        <div class="detail-info-item">
-                            <span class="label">Contributions</span>
-                            <span class="value">${c.contributions || 0}</span>
-                        </div>
-                        <div class="detail-info-item">
-                            <span class="label">Sequence</span>
-                            <span class="value">${c.sequence_name ? escapeHtml(c.sequence_name) : '<em style="color:var(--color-text-tertiary)">Not enrolled</em>'}</span>
-                        </div>
-                    </div>
+        sidebarTitle.textContent = displayName;
 
-                    <div class="detail-outreach-section">
-                        <div class="outreach-field">
-                            <label class="outreach-label">Subject Line <span class="outreach-hint">(→ personalized_subject)</span></label>
-                            <input type="text" id="email-subject-${c.id}" class="outreach-input"
-                                   value="${escapeHtml(aiSubject)}"
-                                   placeholder="AI-generated subject line...">
-                        </div>
-                        <div class="outreach-field">
-                            <label class="outreach-label">Email Body <span class="outreach-hint">(→ personalized_email_1)</span></label>
-                            <textarea id="email-body-${c.id}" class="outreach-textarea" rows="4"
-                                      placeholder="AI-generated email body...">${escapeHtml(aiBody)}</textarea>
-                        </div>
-                    </div>
-
-                    <div class="detail-actions">
-                        <button class="btn-find-email" onclick="findEmail(${c.id}, '${escapeHtml(c.github_login)}', '${escapeHtml(c.name || '')}', '${escapeHtml(c.company || '')}')" id="find-email-btn-${c.id}" ${hasEmail ? 'disabled' : ''}>
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <circle cx="11" cy="11" r="8"></circle>
-                                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                            </svg>
-                            ${hasEmail ? 'Email found' : 'Find Email'}
-                        </button>
-                        <button class="btn-add-sequence ${isEnrolled ? 'enrolled' : ''}" onclick="toggleSequence(${c.id}, ${isEnrolled ? 'true' : 'false'})" id="seq-btn-${c.id}" ${!hasEmail && !isEnrolled ? 'disabled' : ''}>
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                ${isEnrolled
-                                    ? '<polyline points="20 6 9 17 4 12"></polyline>'
-                                    : '<line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line>'}
-                            </svg>
-                            ${isEnrolled ? 'Enrolled in Apollo' : 'Add to Sequence'}
-                        </button>
+        sidebarBody.innerHTML = `
+            <!-- Profile Section -->
+            <div class="sidebar-section">
+                <div class="sidebar-profile">
+                    <div class="profile-avatar">${(displayName[0] || '?').toUpperCase()}</div>
+                    <div class="profile-info">
+                        <div class="profile-name">${escapeHtml(displayName)}</div>
+                        <a href="${escapeHtml(ghUrl)}" target="_blank" rel="noopener" class="profile-github">
+                            <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+                            @${escapeHtml(c.github_login)}
+                        </a>
                     </div>
                 </div>
-            </td>
-        </tr>`;
-    }
+            </div>
 
-    // Toggle expand/collapse
-    window.toggleRow = function(id, btn) {
-        if (expandedRows.has(id)) {
-            expandedRows.delete(id);
-            btn.classList.remove('open');
-            const detailRow = document.querySelector(`tr[data-detail-id="${id}"]`);
-            if (detailRow) detailRow.remove();
-            btn.closest('tr').classList.remove('expanded');
-        } else {
-            expandedRows.add(id);
-            btn.classList.add('open');
-            btn.closest('tr').classList.add('expanded');
+            <!-- Details Grid -->
+            <div class="sidebar-section">
+                <div class="sidebar-section-title">Details</div>
+                <div class="sidebar-details-grid">
+                    <div class="detail-row">
+                        <span class="detail-label">Company</span>
+                        <span class="detail-value">${escapeHtml(c.company || '-')}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Size</span>
+                        <span class="detail-value">${escapeHtml(c.company_size || '-')}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Revenue</span>
+                        <span class="detail-value">${escapeHtml(c.annual_revenue || '-')}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Contributions</span>
+                        <span class="detail-value">${c.contributions || 0}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Repo</span>
+                        <span class="detail-value">${escapeHtml(c.repo_source || '-')}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Blog</span>
+                        <span class="detail-value">${blogUrl ? '<a href="' + escapeHtml(blogUrl) + '" target="_blank" rel="noopener">' + escapeHtml(c.blog) + '</a>' : '-'}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Email</span>
+                        <span class="detail-value" id="sidebar-email">${email ? '<a href="mailto:' + escapeHtml(email) + '">' + escapeHtml(email) + '</a>' : '<span class="text-muted">Not found yet</span>'}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Sequence</span>
+                        <span class="detail-value">${c.sequence_name ? escapeHtml(c.sequence_name) : '<span class="text-muted">Not enrolled</span>'}</span>
+                    </div>
+                </div>
+            </div>
 
-            // Fetch fresh data for this contributor and insert detail row
-            const mainRow = btn.closest('tr');
-            const cid = mainRow.dataset.id;
+            <!-- Insight -->
+            <div class="sidebar-section">
+                <div class="sidebar-section-title">Insight / Hook</div>
+                <p class="sidebar-insight">${escapeHtml(c.insight || 'No insight available.')}</p>
+            </div>
 
-            // Get data from current table state (rebuild from DOM or refetch)
-            fetch('/api/contributors/datatable?search[value]=' + encodeURIComponent(searchInput.value) + '&start=0&length=10000')
-                .then(r => r.json())
-                .then(data => {
-                    const c = data.data.find(x => x.id == cid);
-                    if (c) {
-                        const temp = document.createElement('tbody');
-                        temp.innerHTML = buildDetailRow(c);
-                        const detailTr = temp.firstElementChild;
-                        mainRow.after(detailTr);
-                    }
-                });
-        }
+            <!-- Email Actions -->
+            <div class="sidebar-section">
+                <div class="sidebar-section-title">Outreach</div>
+
+                <button class="btn-action btn-find-email" onclick="findEmail(${c.id}, '${escapeJs(c.github_login)}', '${escapeJs(c.name || '')}', '${escapeJs(c.company || '')}')" id="find-email-btn-${c.id}" ${hasEmail ? 'disabled' : ''}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="11" cy="11" r="8"></circle>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                    </svg>
+                    ${hasEmail ? 'Email found' : 'Find Email via Apollo'}
+                </button>
+
+                <div class="outreach-fields" id="outreach-fields-${c.id}">
+                    <div class="outreach-field">
+                        <label class="outreach-label">Subject <span class="outreach-hint">personalized_subject</span></label>
+                        <input type="text" id="email-subject-${c.id}" class="outreach-input"
+                               value="${escapeHtml(aiSubject)}"
+                               placeholder="Subject line...">
+                    </div>
+                    <div class="outreach-field">
+                        <label class="outreach-label">Email 1 <span class="outreach-hint">personalized_email_1</span></label>
+                        <textarea id="email-body-${c.id}" class="outreach-textarea" rows="5"
+                                  placeholder="Email body...">${escapeHtml(aiBody)}</textarea>
+                    </div>
+                </div>
+
+                <div class="sidebar-action-row">
+                    <button class="btn-action btn-generate-email" onclick="generateEmail(${c.id})" id="gen-email-btn-${c.id}" title="Auto-generate personalized email with AI">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                        </svg>
+                        Generate Email
+                    </button>
+                    <button class="btn-action btn-add-sequence ${isEnrolled ? 'enrolled' : ''}" onclick="toggleSequence(${c.id}, ${isEnrolled ? 'true' : 'false'})" id="seq-btn-${c.id}" ${!hasEmail && !isEnrolled ? 'disabled' : ''}>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            ${isEnrolled
+                                ? '<polyline points="20 6 9 17 4 12"></polyline>'
+                                : '<line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line>'}
+                        </svg>
+                        ${isEnrolled ? 'Enrolled' : 'Add to Sequence'}
+                    </button>
+                </div>
+            </div>
+        `;
+
+        // Show sidebar
+        sidebar.classList.add('open');
+        mainArea.classList.add('sidebar-active');
+    };
+
+    // Close sidebar
+    window.closeSidebar = function() {
+        sidebar.classList.remove('open');
+        mainArea.classList.remove('sidebar-active');
+        selectedContributorId = null;
+        document.querySelectorAll('.contrib-row').forEach(r => r.classList.remove('selected'));
     };
 
     // Find email via Apollo lookup
@@ -371,7 +396,7 @@
         const btn = document.getElementById('find-email-btn-' + id);
         if (!btn) return;
         btn.disabled = true;
-        btn.innerHTML = '<span class="fetch-spinner"></span> Looking up...';
+        btn.innerHTML = '<span class="btn-spinner"></span> Looking up...';
 
         fetch('/api/apollo-lookup', {
             method: 'POST',
@@ -386,36 +411,98 @@
         .then(r => r.json())
         .then(data => {
             if (data.email) {
-                // Update the email display in detail row
-                const emailEl = document.getElementById('detail-email-' + id);
+                const emailEl = document.getElementById('sidebar-email');
                 if (emailEl) {
                     emailEl.innerHTML = '<a href="mailto:' + escapeHtml(data.email) + '">' + escapeHtml(data.email) + '</a>';
                 }
-                btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg> Email found';
+                btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg> Email found';
                 btn.disabled = true;
 
-                // Enable "Add to Sequence" button
+                // Persist email to DB
+                fetch('/api/contributors/' + id + '/email', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: data.email })
+                }).catch(err => console.error('Failed to save email:', err));
+
+                // Update cached row
+                const cached = cachedRows.find(x => x.id === id);
+                if (cached) cached.email = data.email;
+
+                // Enable sequence button
                 const seqBtn = document.getElementById('seq-btn-' + id);
                 if (seqBtn) seqBtn.disabled = false;
 
-                showToast('Found email: ' + data.email, 'success');
+                showToast('Found: ' + data.email, 'success');
+
+                // Auto-generate personalized email
+                generateEmail(id);
             } else {
-                btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg> Not found';
+                btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg> Not found';
                 btn.disabled = false;
                 showToast(data.error || 'No email found via Apollo', 'error');
             }
         })
         .catch(() => {
-            btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg> Find Email';
+            btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg> Find Email via Apollo';
             btn.disabled = false;
             showToast('Network error during lookup', 'error');
+        });
+    };
+
+    // Generate personalized email via AI
+    window.generateEmail = function(id) {
+        const btn = document.getElementById('gen-email-btn-' + id);
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<span class="btn-spinner"></span> Generating...';
+        }
+
+        const c = cachedRows.find(x => x.id === id);
+        if (!c) { if (btn) btn.disabled = false; return; }
+
+        fetch('/api/contributors/generate-email', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contributor_id: id,
+                name: c.name || c.github_login,
+                github_login: c.github_login,
+                company: c.company || '',
+                repo_source: c.repo_source || '',
+                insight: c.insight || '',
+                contributions: c.contributions || 0
+            })
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg> Generate Email';
+            }
+
+            if (data.status === 'success' && data.email) {
+                const subjectEl = document.getElementById('email-subject-' + id);
+                const bodyEl = document.getElementById('email-body-' + id);
+                if (subjectEl) subjectEl.value = data.email.subject || '';
+                if (bodyEl) bodyEl.value = data.email.body || '';
+                showToast('Email generated', 'success');
+            } else {
+                showToast(data.message || 'Failed to generate email', 'error');
+            }
+        })
+        .catch(() => {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg> Generate Email';
+            }
+            showToast('Network error generating email', 'error');
         });
     };
 
     // Toggle sequence enrollment
     window.toggleSequence = function(id, isCurrentlyEnrolled) {
         if (isCurrentlyEnrolled) {
-            // Disenroll: just update DB status
             fetch('/api/contributors/' + id + '/apollo', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -426,6 +513,7 @@
                 if (data.status === 'success') {
                     showToast('Removed from sequence', 'success');
                     loadTable();
+                    if (selectedContributorId === id) openSidebar(id);
                 } else {
                     showToast(data.error || 'Failed to update', 'error');
                 }
@@ -434,14 +522,13 @@
             return;
         }
 
-        // Enroll: fetch sequences then show inline picker
         const seqBtn = document.getElementById('seq-btn-' + id);
         const existingPicker = document.getElementById('seq-picker-' + id);
         if (existingPicker) { existingPicker.remove(); return; }
 
         if (seqBtn) {
             seqBtn.disabled = true;
-            seqBtn.innerHTML = '<span class="fetch-spinner"></span> Loading...';
+            seqBtn.innerHTML = '<span class="btn-spinner"></span> Loading...';
         }
 
         fetch('/api/apollo/sequences')
@@ -449,7 +536,7 @@
             .then(data => {
                 if (seqBtn) {
                     seqBtn.disabled = false;
-                    seqBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg> Add to Sequence';
+                    seqBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg> Add to Sequence';
                 }
                 const sequences = data.sequences || [];
                 if (!sequences.length) {
@@ -461,7 +548,7 @@
                 picker.id = 'seq-picker-' + id;
                 picker.className = 'seq-picker-panel';
                 picker.innerHTML = `
-                    <div class="seq-picker-label">Choose Sequence</div>
+                    <label class="seq-picker-label">Choose Sequence</label>
                     <select class="seq-picker-select" id="seq-select-${id}">
                         ${sequences.map(s => `<option value="${escapeHtml(s.id)}">${escapeHtml(s.name)}</option>`).join('')}
                     </select>
@@ -475,7 +562,7 @@
             .catch(() => {
                 if (seqBtn) {
                     seqBtn.disabled = false;
-                    seqBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg> Add to Sequence';
+                    seqBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg> Add to Sequence';
                 }
                 showToast('Failed to load sequences', 'error');
             });
@@ -493,16 +580,12 @@
         const body = bodyEl ? bodyEl.value.trim() : '';
 
         const picker = document.getElementById('seq-picker-' + id);
-        if (picker) picker.innerHTML = '<span class="fetch-spinner"></span> Enrolling...';
+        if (picker) picker.innerHTML = '<span class="btn-spinner"></span> Enrolling...';
 
         try {
-            // Fetch contributor data for email/name
-            const dtResp = await fetch('/api/contributors/datatable?start=0&length=10000');
-            const dtData = await dtResp.json();
-            const contributor = dtData.data.find(x => x.id == id);
+            const contributor = cachedRows.find(x => x.id == id);
             if (!contributor) { if (picker) picker.remove(); showToast('Contributor not found', 'error'); return; }
 
-            // Step 1: Create/update Apollo contact + inject custom fields
             const enrollResp = await fetch('/api/apollo/enroll-sequence', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -519,7 +602,6 @@
             const enrollData = await enrollResp.json();
 
             if (enrollData.status === 'success') {
-                // Step 2: Record enrollment in local DB
                 await fetch('/api/contributors/' + id + '/apollo', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -528,6 +610,7 @@
                 if (picker) picker.remove();
                 showToast('Enrolled in ' + sequenceName, 'success');
                 loadTable();
+                setTimeout(() => { if (selectedContributorId === id) openSidebar(id); }, 300);
             } else {
                 if (picker) picker.remove();
                 showToast(enrollData.message || 'Failed to enroll', 'error');
@@ -545,7 +628,6 @@
         const btn = document.getElementById('btn-fetch');
         const controlsRow = btn.closest('.contrib-controls');
 
-        // Create progress UI
         let progressEl = document.getElementById('fetch-progress');
         if (!progressEl) {
             progressEl = document.createElement('div');
@@ -557,7 +639,6 @@
         btn.disabled = true;
         fetchAbortController = new AbortController();
 
-        // Show progress UI
         progressEl.style.display = 'block';
         progressEl.innerHTML = `
             <div class="fetch-progress-inner">
@@ -566,7 +647,7 @@
                 <button class="fetch-cancel-btn" id="fetch-cancel-btn" type="button">Cancel</button>
             </div>
         `;
-        btn.innerHTML = '<span class="fetch-spinner"></span> Fetching...';
+        btn.innerHTML = '<span class="btn-spinner"></span> Fetching...';
 
         document.getElementById('fetch-cancel-btn').onclick = function() {
             if (fetchAbortController) fetchAbortController.abort();
@@ -574,7 +655,6 @@
             showToast('Fetch cancelled', 'info');
         };
 
-        // Simulate progress while waiting
         const progressFill = document.getElementById('fetch-progress-fill');
         const progressText = document.getElementById('fetch-progress-text');
         let elapsed = 0;
@@ -620,7 +700,7 @@
             showToast('Network error', 'error');
         });
 
-        function resetFetchUI(label) {
+        function resetFetchUI() {
             clearInterval(progressInterval);
             const pe = document.getElementById('fetch-progress');
             if (pe) pe.style.display = 'none';
@@ -686,7 +766,6 @@
             if (currentSort.col === col && currentSort.dir === 'asc') dir = 'desc';
             currentSort = { col, dir };
 
-            // Update visual indicators
             document.querySelectorAll('.contrib-table thead th.sortable').forEach(h => {
                 h.classList.remove('sort-asc', 'sort-desc');
             });
@@ -712,6 +791,19 @@
         loadTable();
     });
 
+    // Close sidebar on Escape
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && sidebar.classList.contains('open')) {
+            closeSidebar();
+        }
+        if (e.key === '/' && !e.defaultPrevented) {
+            const target = e.target;
+            if (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
+            e.preventDefault();
+            searchInput.focus();
+        }
+    });
+
     // Toast
     function showToast(msg, type) {
         const toast = document.getElementById('contrib-toast');
@@ -723,20 +815,24 @@
     // Escape HTML
     function escapeHtml(str) {
         if (!str) return '';
-        const div = document.createElement('div');
-        div.textContent = str;
-        return div.innerHTML;
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
     }
 
-    // Keyboard shortcut: "/" to focus search
-    document.addEventListener('keydown', (e) => {
-        if (e.key === '/' && !e.defaultPrevented) {
-            const target = e.target;
-            if (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
-            e.preventDefault();
-            searchInput.focus();
-        }
-    });
+    // Escape for JS string literals in onclick attributes
+    function escapeJs(str) {
+        if (!str) return '';
+        return String(str)
+            .replace(/\\/g, '\\\\')
+            .replace(/'/g, "\\'")
+            .replace(/"/g, '\\"')
+            .replace(/\n/g, '\\n')
+            .replace(/\r/g, '\\r');
+    }
 
     // Initial load
     loadTable();
