@@ -3132,6 +3132,9 @@ def api_update_org():
 
     Expects JSON payload: {"company_name": "Company", "github_org": "org-name"}
 
+    If the account is currently tier 4 (Not Found), automatically queues a rescan
+    since the org was likely missing when it was originally scanned.
+
     Returns:
         JSON with update result.
     """
@@ -3148,22 +3151,40 @@ def api_update_org():
     try:
         cursor = conn.cursor()
 
-        # Update the github_org for this account (preserve existing tier and evidence)
+        # Check current tier before updating
+        cursor.execute('''
+            SELECT current_tier, scan_status FROM monitored_accounts
+            WHERE company_name = ?
+        ''', (company_name,))
+        row = cursor.fetchone()
+
+        if not row:
+            return jsonify({'status': 'error', 'message': 'Account not found'}), 404
+
+        current_tier = row[0]
+        scan_status = row[1]
+
+        # Update the github_org
         cursor.execute('''
             UPDATE monitored_accounts
             SET github_org = ?
             WHERE company_name = ?
         ''', (github_org, company_name))
 
-        if cursor.rowcount == 0:
-            return jsonify({'status': 'error', 'message': 'Account not found'}), 404
-
         conn.commit()
+
+        # If account is stuck at tier 4 and not currently scanning, auto-queue a rescan
+        rescan_queued = False
+        if current_tier == 4 and scan_status not in (SCAN_STATUS_QUEUED, SCAN_STATUS_PROCESSING):
+            spawn_background_scan(company_name)
+            rescan_queued = True
+            print(f"[UPDATE-ORG] Auto-queued rescan for {company_name} (was tier 4, org set to @{github_org})")
 
         return jsonify({
             'status': 'success',
             'company_name': company_name,
-            'github_org': github_org
+            'github_org': github_org,
+            'rescan_queued': rescan_queued
         })
 
     except Exception as e:
@@ -3293,6 +3314,59 @@ def api_scan_pending():
         'status': 'success',
         'queued': queued_count,
         'accounts': pending_accounts,
+        'active_jobs': total_active,
+        'max_workers': MAX_SCAN_WORKERS
+    })
+
+
+@app.route('/api/rescan-stuck', methods=['POST'])
+def api_rescan_stuck():
+    """
+    Queue rescans for all tier 4 (Not Found) accounts that have a github_org set.
+
+    These accounts were likely scanned before their org was linked, so they got
+    tier 4 even though the org exists. Re-scanning with the org will classify
+    them correctly.
+
+    Returns:
+        JSON with count of rescans queued.
+    """
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+
+        # Find tier 4 accounts that have a github_org but aren't currently scanning
+        cursor.execute('''
+            SELECT company_name, github_org FROM monitored_accounts
+            WHERE current_tier = 4
+              AND github_org IS NOT NULL
+              AND github_org != ''
+              AND archived_at IS NULL
+              AND (scan_status IS NULL OR scan_status = ?)
+        ''', (SCAN_STATUS_IDLE,))
+
+        stuck_accounts = [(row[0], row[1]) for row in cursor.fetchall()]
+    finally:
+        conn.close()
+
+    # Submit scans for each stuck account
+    queued_count = 0
+    account_names = []
+    for company_name, github_org in stuck_accounts:
+        spawn_background_scan(company_name)
+        account_names.append(company_name)
+        queued_count += 1
+        print(f"[RESCAN-STUCK] Queued {company_name} (tier 4 with org @{github_org})")
+
+    print(f"[RESCAN-STUCK] Submitted {queued_count} stuck accounts for rescanning")
+
+    active_jobs = get_queued_and_processing_accounts()
+    total_active = len(active_jobs.get('queued', [])) + len(active_jobs.get('processing', []))
+
+    return jsonify({
+        'status': 'success',
+        'queued': queued_count,
+        'accounts': account_names,
         'active_jobs': total_active,
         'max_workers': MAX_SCAN_WORKERS
     })
