@@ -1,5 +1,5 @@
 """
-Lead Machine - Deep-Dive Research Engine
+GitHub Dossier - AI-Powered Sales Intelligence for Localization Opportunities
 
 A Flask application for analyzing GitHub organizations for localization signals.
 """
@@ -130,7 +130,7 @@ def get_top_contributors(org_login: str, repo_name: str, limit: int = 5) -> list
                             user_data['blog'] = user_info.get('blog') or ''
                             user_data['github_profile_company'] = user_info.get('company') or ''
                     except Exception as e:
-                        print(f"[ZAPIER] Failed to fetch user profile for {login}: {e}")
+                        print(f"[CONTRIBUTORS] Failed to fetch user profile for {login}: {e}")
 
                     contributors.append(user_data)
 
@@ -139,7 +139,7 @@ def get_top_contributors(org_login: str, repo_name: str, limit: int = 5) -> list
 
             return contributors
     except Exception as e:
-        print(f"[ZAPIER] Contributor fetch failed for {org_login}/{repo_name}: {e}")
+        print(f"[CONTRIBUTORS] Contributor fetch failed for {org_login}/{repo_name}: {e}")
     return []
 
 
@@ -1187,24 +1187,32 @@ def download_pdf(report_id: int):
     if not report:
         return render_template('error.html', message='Report not found'), 404
         
-    # Create temp directory for PDFs if it doesn't exist
-    pdf_dir = os.path.join(app.root_path, 'static', 'pdfs')
-    os.makedirs(pdf_dir, exist_ok=True)
-    
-    filename = f"LeadMachine_Report_{report['github_org']}_{report_id}.pdf"
-    filepath = os.path.join(pdf_dir, filename)
-    
+    import tempfile
+    filename = f"GitHubDossier_Report_{report['github_org']}_{report_id}.pdf"
+
     try:
-        generate_report_pdf(report, filepath)
+        # Write to a temp file and delete after sending — avoids accumulating
+        # PDFs on disk in static/pdfs/ indefinitely.
+        with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp:
+            tmp_path = tmp.name
+
+        generate_report_pdf(report, tmp_path)
         return send_file(
-            filepath,
+            tmp_path,
             as_attachment=True,
             download_name=filename,
-            mimetype='application/pdf'
+            mimetype='application/pdf',
         )
     except Exception as e:
         print(f"[ERROR] PDF generation failed for report {report_id}: {e}")
         return render_template('error.html', message='PDF generation failed. Please try again later.'), 500
+    finally:
+        # Clean up temp file after response is sent
+        try:
+            import os as _os
+            _os.unlink(tmp_path)
+        except Exception:
+            pass
 
 
 @app.route('/report/<int:report_id>')

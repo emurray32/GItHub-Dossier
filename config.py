@@ -14,7 +14,16 @@ class Config:
     """Application configuration for 3-Signal Intent Scanner."""
 
     # Flask
-    SECRET_KEY = os.getenv('FLASK_SECRET_KEY', os.urandom(24).hex())
+    _secret = os.getenv('FLASK_SECRET_KEY')
+    SECRET_KEY = _secret if _secret else os.urandom(24).hex()
+    if not _secret:
+        import warnings
+        warnings.warn(
+            "FLASK_SECRET_KEY is not set. A random key will be generated on every restart, "
+            "invalidating all sessions. Set FLASK_SECRET_KEY in your .env file.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
     DEBUG = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
 
     # ============================================================
@@ -117,7 +126,7 @@ class Config:
 
     # Gemini AI (accepts either GOOGLE_API_KEY or GEMINI_API_KEY)
     GEMINI_API_KEY = os.getenv('GOOGLE_API_KEY') or os.getenv('GEMINI_API_KEY')
-    GEMINI_MODEL = 'gemini-3.1-pro-preview'
+    GEMINI_MODEL = 'gemini-2.5-pro-preview'
 
     # Database
     DATABASE_PATH = os.path.join(os.path.dirname(__file__), 'data', 'lead_machine.db')
