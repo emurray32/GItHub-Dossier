@@ -51,7 +51,7 @@
     padding: 24px;
     background: var(--color-surface);
     border: 1px solid var(--color-border);
-    border-radius: 12px;
+    border-radius: 8px;
     box-shadow: var(--shadow-card);
     text-decoration: none;
     color: inherit;
@@ -94,7 +94,7 @@
 .settings-card-icon {
     width: 40px;
     height: 40px;
-    border-radius: 10px;
+    border-radius: 8px;
     display: flex;
     align-items: center;
     justify-content: center;

@@ -67,7 +67,7 @@
 /* ── Upload zone ─────────────────────────────────────────── */
 .lp-upload-zone {
   border: 2px dashed var(--color-border);
-  border-radius: 16px;
+  border-radius: 8px;
   background: var(--color-surface);
   padding: 3rem 2rem;
   text-align: center;
@@ -90,7 +90,7 @@
   margin: 0 auto 1rem;
   color: var(--color-primary);
   background: rgba(79, 70, 229, 0.08);
-  border-radius: 12px;
+  border-radius: 8px;
   padding: 10px;
 }
 .lp-upload-zone h3 {
@@ -111,7 +111,7 @@
   background: var(--color-primary);
   color: var(--color-text-on-primary);
   border: none;
-  border-radius: 10px;
+  border-radius: 6px;
   padding: 0.6rem 1.3rem;
   font-size: 0.875rem;
   font-weight: var(--font-weight-semibold, 600);
@@ -130,7 +130,7 @@
 .lp-preview-img {
   max-width: 100%;
   max-height: 260px;
-  border-radius: 12px;
+  border-radius: 8px;
   border: 1px solid var(--color-border);
   margin: 1rem auto 0;
   display: block;

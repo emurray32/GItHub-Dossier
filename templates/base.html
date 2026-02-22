@@ -5,9 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Lead Machine{% endblock %}</title>
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='45' fill='%234F46E5'/><circle cx='50' cy='50' r='30' fill='none' stroke='white' stroke-width='4'/><line x1='71' y1='71' x2='90' y2='90' stroke='white' stroke-width='8' stroke-linecap='round'/></svg>">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/geist@1/dist/fonts/geist-sans/style.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=2">
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
     {% block head %}{% endblock %}
@@ -153,6 +151,13 @@
 
         <!-- Main Area -->
         <div class="main-area">
+            <header class="top-header">
+                <h2 class="top-header-title">{% block page_title %}Lead Machine{% endblock %}</h2>
+                <div class="top-header-right">
+                    {% block header_search %}{% endblock %}
+                    <div class="top-header-avatar" title="Eric Murray">EM</div>
+                </div>
+            </header>
             {% block breadcrumb %}{% endblock %}
             <main class="main-content" id="main-content">
                 {% block content %}{% endblock %}

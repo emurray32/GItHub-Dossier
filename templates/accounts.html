@@ -1,47 +1,44 @@
 {% extends "base.html" %}
 
 {% block title %}RepoRadar - Lead Machine{% endblock %}
+{% block page_title %}RepoRadar{% endblock %}
 
 {% block head %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/accounts.css') }}?v={{ cache_bust }}">
+{% endblock %}
+
+{% block header_search %}
+<div class="search-container">
+    <svg class="search-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+        stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+    </svg>
+    <input type="text" class="search-input" name="q" placeholder="Search accounts..."
+        value="{{ current_search }}"
+        onkeydown="if(event.key === 'Enter') updateFilters({search: this.value})">
+</div>
 {% endblock %}
 
 {% block content %}
 <div class="container accounts-page">
     <header class="page-header">
         <div class="accounts-header">
-            <div style="display: flex; gap: 1rem; align-items: center;">
-                <h1 class="page-title">RepoRadar</h1>
-
-                <div class="search-container">
-                    <svg class="search-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
-                        stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                            d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                    </svg>
-                    <input type="text" class="search-input" placeholder="Search accounts..."
-                        value="{{ current_search }}"
-                        onkeydown="if(event.key === 'Enter') updateFilters({search: this.value})">
-                </div>
-            </div>
-
             <div class="accounts-stats" style="width: 100%;">
                 <div class="tier-filter">
-                    <!-- Multi-select tier buttons -->
                     <button class="tier-filter-btn {% if not current_tier_filter %}active{% endif %}"
                         data-tier-id="all">
-                        All
+                        All <span class="tier-filter-count">{{ tier_counts.values()|sum }}</span>
                     </button>
 
                     {% for tier_id, config in tier_config.items() %}
                     <button
                         class="tier-filter-btn {% if current_tier_filter and tier_id in current_tier_filter %}active{% endif %}"
                         data-tier-id="{{ tier_id }}">
-                        {{ config.name }}
+                        {{ config.name }} <span class="tier-filter-count">{{ tier_counts[tier_id|string] }}</span>
                     </button>
                     {% endfor %}
 
-                    <!-- Archived accounts button -->
                     <button class="tier-filter-btn archived-btn" id="show-archived-btn" title="View archived accounts (auto-archived Tier 4)">
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <polyline points="21 8 21 21 3 21 3 8"></polyline>
@@ -51,12 +48,49 @@
                         Archived ({{ archived_count }})
                     </button>
                 </div>
-                
-
-
             </div>
         </div>
     </header>
+
+    <!-- KPI Metrics -->
+    <div class="kpi-row">
+        <div class="kpi-card kpi-card--blue">
+            <div class="kpi-icon kpi-icon--blue">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+            </div>
+            <div class="kpi-content">
+                <span class="kpi-value">{{ tier_counts['0'] }}</span>
+                <span class="kpi-label">Tracking</span>
+            </div>
+        </div>
+        <div class="kpi-card kpi-card--amber">
+            <div class="kpi-icon kpi-icon--amber">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"></path><path d="M2 17l10 5 10-5"></path><path d="M2 12l10 5 10-5"></path></svg>
+            </div>
+            <div class="kpi-content">
+                <span class="kpi-value">{{ tier_counts['1'] }}</span>
+                <span class="kpi-label">Warm</span>
+            </div>
+        </div>
+        <div class="kpi-card kpi-card--indigo">
+            <div class="kpi-icon kpi-icon--indigo">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+            </div>
+            <div class="kpi-content">
+                <span class="kpi-value">{{ tier_counts['2'] }}</span>
+                <span class="kpi-label">Hot</span>
+            </div>
+        </div>
+        <div class="kpi-card kpi-card--emerald">
+            <div class="kpi-icon kpi-icon--emerald">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+            </div>
+            <div class="kpi-content">
+                <span class="kpi-value">{{ tier_counts['3'] }}</span>
+                <span class="kpi-label">Launched</span>
+            </div>
+        </div>
+    </div>
 
     <div class="status-legend-container">
         <div class="legend-item status-tracking">
