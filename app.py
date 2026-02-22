@@ -2212,13 +2212,9 @@ def api_webscraper_analyze_batch():
         cursor = conn.cursor()
 
         placeholders = ','.join('?' * len(account_ids))
-        cursor.execute(f'''
-            SELECT id, company_name, website
-            FROM monitored_accounts
-            WHERE id IN ({placeholders})
-              AND website IS NOT NULL
-              AND website != ''
-        ''', account_ids)
+        cursor.execute(
+            'SELECT id, company_name, website FROM monitored_accounts WHERE id IN (' + placeholders + ') AND website IS NOT NULL AND website != \'\'',
+            account_ids)
 
         accounts = [dict(row) for row in cursor.fetchall()]
         conn.close()
