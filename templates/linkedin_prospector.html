@@ -68,7 +68,7 @@
       </li>
       <li class="lp-status-item" id="status-apollo">
         <span class="lp-status-icon" id="status-apollo-icon"></span>
-        <span>Searching Apollo for email...</span>
+        <span id="status-apollo-text">Searching Apollo for email...</span>
       </li>
     </ul>
   </div>
@@ -424,6 +424,7 @@
     // Show status & start auto-chain
     $('status-extract-text').textContent = 'Extracting contact from screenshot...';
     $('status-extract').style.display = '';
+    $('status-apollo-text').textContent = 'Searching Apollo for email...';
     setStatus('status-extract', 'active');
     setStatus('status-apollo', '');
     showSection('section-status');
@@ -469,6 +470,7 @@
     // Show status — skip extraction step, go straight to Apollo
     $('status-extract-text').textContent = 'Looking up LinkedIn profile...';
     $('status-extract').style.display = 'none';
+    $('status-apollo-text').textContent = 'Searching Apollo for email...';
     setStatus('status-apollo', 'active');
     showSection('section-status');
 
@@ -549,6 +551,7 @@
       if (data.status === 'success' && data.contact) {
         apolloContact = data.contact;
         setStatus('status-apollo', 'done');
+        $('status-apollo-text').textContent = data.contact.email ? 'Email found in Apollo' : 'Found in Apollo (no email)';
 
         // Badge
         badge.style.display = '';
@@ -581,6 +584,7 @@
         }
       } else {
         setStatus('status-apollo', 'done');
+        $('status-apollo-text').textContent = 'Not found in Apollo';
         badge.style.display = '';
         badge.className = 'lp-badge not-found';
         badge.textContent = 'Not found';
@@ -604,6 +608,7 @@
       setTimeout(function() { showSection('section-reset'); }, 350);
     } catch(e) {
       setStatus('status-apollo', 'error');
+      $('status-apollo-text').textContent = 'Apollo search failed';
       showToast('Apollo search failed', 'error');
 
       // Still update profile card from extraction data
@@ -650,7 +655,12 @@
       var data;
       if (!resp.ok) {
         try { data = await resp.json(); } catch(_) { data = {}; }
-        showToast(data.message || 'Email generation failed (server error)', 'error');
+        var errMsg = data.message || 'Email generation failed — please try again shortly';
+        // Never show raw JSON/stack traces to the user
+        if (errMsg.length > 200 || errMsg.indexOf('{') !== -1) {
+          errMsg = 'AI service is temporarily unavailable. Please try again shortly.';
+        }
+        showToast(errMsg, 'error');
         return;
       }
       data = await resp.json();

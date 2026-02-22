@@ -709,6 +709,21 @@ def trigger_gsheet_webhook(event_type: str, company_data: dict) -> None:
 # With 20 workers, we can process ~4x faster (assuming sufficient API tokens)
 MAX_SCAN_WORKERS = int(os.environ.get('SCAN_WORKERS', 20))
 
+# Batch rescan orchestrator state
+_batch_rescan_lock = threading.Lock()
+_batch_rescan_state = {
+    'active': False,
+    'cancelled': False,
+    'total': 0,
+    'completed': 0,
+    'current_batch': 0,
+    'total_batches': 0,
+    'batch_size': 50,
+    'delay_seconds': 30,
+    'started_at': None,
+    'scope': '',
+}
+
 # Thread pool executor for concurrent scans
 _executor = None
 _executor_lock = threading.Lock()
@@ -3447,6 +3462,212 @@ def api_refresh_pipeline():
     })
 
 
+# =============================================================================
+# BATCH RESCAN ORCHESTRATOR — Processes accounts in chunks with delays
+# =============================================================================
+
+def _batch_rescan_worker(accounts, batch_size, delay_seconds):
+    """
+    Background worker that processes accounts in batches.
+
+    Chunks accounts into groups of batch_size, submits each batch to the
+    thread pool, waits for the batch to drain, then sleeps before the next.
+    """
+    import math
+    state = _batch_rescan_state
+    total_batches = math.ceil(len(accounts) / batch_size)
+    state['total_batches'] = total_batches
+
+    try:
+        for batch_idx in range(total_batches):
+            if state['cancelled']:
+                print(f"[BATCH-RESCAN] Cancelled after batch {batch_idx}/{total_batches}")
+                break
+
+            batch_start = batch_idx * batch_size
+            batch = accounts[batch_start:batch_start + batch_size]
+            state['current_batch'] = batch_idx + 1
+            batch_names = [a['company_name'] for a in batch if a.get('company_name')]
+
+            print(f"[BATCH-RESCAN] Starting batch {batch_idx + 1}/{total_batches} ({len(batch_names)} accounts)")
+
+            # Queue the batch in a single DB transaction
+            batch_set_scan_status_queued(batch_names)
+
+            # Submit each to the thread pool
+            for name in batch_names:
+                spawn_background_scan(name)
+
+            # Poll until this batch drains from queued/processing (timeout: 30 min)
+            poll_start = time.time()
+            max_poll_seconds = 30 * 60
+            while True:
+                if state['cancelled']:
+                    break
+                if time.time() - poll_start > max_poll_seconds:
+                    print(f"[BATCH-RESCAN] Batch {batch_idx + 1} timed out after {max_poll_seconds}s, moving on")
+                    break
+                active = get_queued_and_processing_accounts()
+                active_names = set(active.get('queued', []))
+                processing_list = active.get('processing', [])
+                for p in processing_list:
+                    if isinstance(p, dict):
+                        active_names.add(p.get('company_name', ''))
+                    else:
+                        active_names.add(p)
+
+                # Check how many from THIS batch are still active
+                batch_still_active = active_names.intersection(set(batch_names))
+                if len(batch_still_active) == 0:
+                    break
+                time.sleep(5)
+
+            # Update progress (skip if cancelled mid-batch to avoid over-counting)
+            if not state['cancelled']:
+                state['completed'] += len(batch_names)
+                print(f"[BATCH-RESCAN] Batch {batch_idx + 1}/{total_batches} complete. Progress: {state['completed']}/{state['total']}")
+
+            # Delay between batches (skip delay after last batch)
+            if batch_idx < total_batches - 1 and not state['cancelled']:
+                print(f"[BATCH-RESCAN] Waiting {delay_seconds}s before next batch...")
+                # Sleep in small increments so cancel is responsive
+                for _ in range(delay_seconds):
+                    if state['cancelled']:
+                        break
+                    time.sleep(1)
+
+    except Exception as e:
+        print(f"[BATCH-RESCAN] Worker error: {e}")
+        import traceback; traceback.print_exc()
+    finally:
+        state['active'] = False
+        print(f"[BATCH-RESCAN] Finished. Completed: {state['completed']}/{state['total']}")
+
+
+@app.route('/api/batch-rescan', methods=['POST'])
+def api_batch_rescan():
+    """
+    Start a batch rescan of accounts in controlled chunks.
+
+    Accepts JSON body:
+        scope: "all" | "refreshable" | "never_scanned"
+        batch_size: int (default 50)
+        delay_seconds: int (default 30)
+
+    Returns immediately with total count and estimated time.
+    """
+    import math
+
+    with _batch_rescan_lock:
+        if _batch_rescan_state['active']:
+            return jsonify({
+                'status': 'error',
+                'message': 'A batch rescan is already in progress. Cancel it first or wait for it to finish.'
+            }), 409
+        _batch_rescan_state['active'] = True
+
+    data = request.get_json() or {}
+    scope = data.get('scope', 'all')
+    try:
+        batch_size = max(min(int(data.get('batch_size', 50)), 200), 1)
+        delay_seconds = max(int(data.get('delay_seconds', 30)), 5)
+    except (ValueError, TypeError):
+        _batch_rescan_state['active'] = False
+        return jsonify({'status': 'error', 'message': 'batch_size and delay_seconds must be integers'}), 400
+
+    # Query accounts based on scope
+    if scope == 'refreshable':
+        accounts = get_refreshable_accounts()
+    elif scope == 'never_scanned':
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT * FROM monitored_accounts
+                WHERE archived_at IS NULL
+                  AND github_org IS NOT NULL
+                  AND github_org != ''
+                  AND last_scanned_at IS NULL
+            ''')
+            columns = [desc[0] for desc in cursor.description]
+            accounts = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        finally:
+            conn.close()
+    else:
+        # "all" — all non-archived accounts with a github_org
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT * FROM monitored_accounts
+                WHERE archived_at IS NULL
+                  AND github_org IS NOT NULL
+                  AND github_org != ''
+            ''')
+            columns = [desc[0] for desc in cursor.description]
+            accounts = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        finally:
+            conn.close()
+
+    if not accounts:
+        _batch_rescan_state['active'] = False
+        return jsonify({'status': 'error', 'message': f'No accounts found for scope "{scope}"'}), 404
+
+    total = len(accounts)
+    total_batches = math.ceil(total / batch_size)
+    # Estimate: ~3 min per batch of 50 + delay between batches
+    estimated_minutes = round((total_batches * 3) + ((total_batches - 1) * delay_seconds / 60), 1)
+
+    # Reset state (active already set to True in the lock above)
+    state = _batch_rescan_state
+    state['cancelled'] = False
+    state['total'] = total
+    state['completed'] = 0
+    state['current_batch'] = 0
+    state['total_batches'] = total_batches
+    state['batch_size'] = batch_size
+    state['delay_seconds'] = delay_seconds
+    state['started_at'] = datetime.utcnow().isoformat()
+    state['scope'] = scope
+
+    # Start worker in daemon thread
+    worker = threading.Thread(
+        target=_batch_rescan_worker,
+        args=(accounts, batch_size, delay_seconds),
+        daemon=True,
+        name="BatchRescanWorker"
+    )
+    worker.start()
+
+    print(f"[BATCH-RESCAN] Started: scope={scope}, total={total}, batches={total_batches}, batch_size={batch_size}, delay={delay_seconds}s")
+
+    return jsonify({
+        'status': 'started',
+        'total': total,
+        'total_batches': total_batches,
+        'batch_size': batch_size,
+        'delay_seconds': delay_seconds,
+        'estimated_minutes': estimated_minutes,
+        'scope': scope
+    })
+
+
+@app.route('/api/batch-rescan/status')
+def api_batch_rescan_status():
+    """Return current batch rescan progress."""
+    return jsonify(_batch_rescan_state)
+
+
+@app.route('/api/batch-rescan/cancel', methods=['POST'])
+def api_batch_rescan_cancel():
+    """Cancel the running batch rescan after the current batch finishes."""
+    if not _batch_rescan_state['active']:
+        return jsonify({'status': 'error', 'message': 'No batch rescan is currently running'}), 404
+
+    _batch_rescan_state['cancelled'] = True
+    return jsonify({'status': 'cancelled', 'message': 'Batch rescan will stop after the current batch completes'})
+
+
 @app.route('/api/queue-status')
 def api_queue_status():
     """
@@ -5630,6 +5851,19 @@ def api_apollo_enroll_sequence():
 # LinkedIn Prospector Routes
 # ─────────────────────────────────────────────────────────────────────────────
 
+# Personal email domains to filter from Apollo results (not useful for B2B outreach)
+_PERSONAL_EMAIL_DOMAINS = {'gmail.com', 'googlemail.com', 'yahoo.com', 'hotmail.com',
+                           'outlook.com', 'aol.com', 'icloud.com', 'me.com', 'live.com',
+                           'msn.com', 'protonmail.com', 'proton.me', 'mail.com', 'ymail.com'}
+
+
+def _filter_personal_email(email):
+    """Return empty string if email is from a personal domain (gmail, yahoo, etc.)."""
+    if not email:
+        return ''
+    domain = email.lower().split('@')[-1] if '@' in email else ''
+    return '' if domain in _PERSONAL_EMAIL_DOMAINS else email
+
 @app.route('/linkedin-prospector')
 def linkedin_prospector():
     return render_template('linkedin_prospector.html')
@@ -5775,7 +6009,7 @@ def api_linkedin_find_contact():
                     'name': f"{person.get('first_name', '')} {person.get('last_name', '')}".strip(),
                     'first_name': person.get('first_name', ''),
                     'last_name': person.get('last_name', ''),
-                    'email': person.get('email', ''),
+                    'email': _filter_personal_email(person.get('email', '')),
                     'title': person.get('title', ''),
                     'company': person.get('organization_name', '') or (person.get('organization') or {}).get('name', ''),
                     'linkedin_url': person.get('linkedin_url', ''),
@@ -5785,7 +6019,7 @@ def api_linkedin_find_contact():
                     'state': person.get('state', ''),
                     'country': person.get('country', '')
                 }
-                # If we already have email, return immediately
+                # If we already have a (non-personal) email, return immediately
                 if match_person['email']:
                     return jsonify({'status': 'success', 'source': 'people/match', 'contact': match_person})
 
@@ -5822,7 +6056,7 @@ def api_linkedin_find_contact():
                         'name': f"{person.get('first_name', '')} {person.get('last_name', '')}".strip(),
                         'first_name': person.get('first_name', ''),
                         'last_name': person.get('last_name', ''),
-                        'email': person.get('email', ''),
+                        'email': _filter_personal_email(person.get('email', '')),
                         'title': person.get('title', ''),
                         'company': person.get('organization_name', '') or (person.get('account') or {}).get('name', ''),
                         'linkedin_url': person.get('linkedin_url', ''),
@@ -5832,7 +6066,7 @@ def api_linkedin_find_contact():
                         'state': person.get('state', ''),
                         'country': person.get('country', '')
                     }
-                    # If CRM search has email, return it (merge with match data for photo)
+                    # If CRM search has a (non-personal) email, return it (merge with match data for photo)
                     if search_contact['email']:
                         # Prefer match_person's photo_url if search doesn't have one
                         if match_person and not search_contact['photo_url'] and match_person.get('photo_url'):

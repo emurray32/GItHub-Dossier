@@ -166,6 +166,9 @@
                 <option value="1000-">Over $1B</option>
             </select>
             <button type="button" class="btn-clear-filters" id="clear-filters-btn">Clear filters</button>
+            <button type="button" class="btn-action-smart" id="batch-rescan-btn" onclick="showBatchRescanModal()" title="Rescan accounts in controlled batches to avoid rate limits">
+                Batch Rescan
+            </button>
         </div>
     </div>
     <div class="accounts-table-container">
@@ -439,6 +442,42 @@
             </button>
         </div>
     </div>
+
+    <!-- Batch Rescan Progress Bar -->
+    <div class="batch-rescan-progress" id="batch-rescan-progress" style="display:none">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem">
+            <span class="batch-rescan-title" id="batch-rescan-title">Batch Rescan</span>
+            <div style="display:flex;align-items:center;gap:0.5rem">
+                <span class="batch-rescan-stats" id="batch-rescan-stats"></span>
+                <button type="button" class="btn-danger" id="batch-rescan-cancel-btn" onclick="cancelBatchRescan()" style="padding:0.25rem 0.75rem;font-size:0.8rem">Cancel</button>
+            </div>
+        </div>
+        <div style="background:var(--color-border,#333);border-radius:4px;height:8px;overflow:hidden">
+            <div id="batch-rescan-bar" style="height:100%;width:0%;background:var(--color-primary,#3b82f6);border-radius:4px;transition:width 0.5s ease"></div>
+        </div>
+        <div class="batch-rescan-detail" id="batch-rescan-detail" style="font-size:0.8rem;color:var(--text-muted,#888);margin-top:0.35rem"></div>
+    </div>
+
+    <!-- Batch Rescan Confirmation Modal -->
+    <div class="modal-overlay" id="batch-rescan-modal" style="display:none">
+        <div class="modal-content" style="max-width:420px">
+            <h3 style="margin:0 0 1rem">Batch Rescan</h3>
+            <p style="color:var(--text-muted,#888);font-size:0.9rem;margin:0 0 1rem">Rescan accounts in batches of 50 with delays between batches to stay within rate limits.</p>
+            <div style="margin-bottom:1rem">
+                <label style="display:block;font-size:0.85rem;margin-bottom:0.35rem;font-weight:500">Scope</label>
+                <select id="batch-rescan-scope" class="filter-select" style="width:100%">
+                    <option value="all">All accounts with GitHub org</option>
+                    <option value="refreshable">Refreshable (Tiers 0-2, stale)</option>
+                    <option value="never_scanned">Never scanned</option>
+                </select>
+            </div>
+            <div style="display:flex;gap:0.75rem;justify-content:flex-end">
+                <button type="button" class="btn-clear-filters" onclick="hideBatchRescanModal()">Cancel</button>
+                <button type="button" class="btn-action-smart" id="batch-rescan-start-btn" onclick="startBatchRescan()">Start Batch Rescan</button>
+            </div>
+        </div>
+    </div>
+
     {% else %}
     <div class="empty-state-illustrated">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -2652,6 +2691,142 @@
             setTimeout(() => notification.remove(), 10000);
         }
     }
+
+    // ── Batch Rescan ──────────────────────────────────────────────────────
+    let _batchRescanPollInterval = null;
+
+    function showBatchRescanModal() {
+        document.getElementById('batch-rescan-modal').style.display = 'flex';
+    }
+
+    function hideBatchRescanModal() {
+        document.getElementById('batch-rescan-modal').style.display = 'none';
+    }
+
+    // Close modal on backdrop click
+    document.getElementById('batch-rescan-modal')?.addEventListener('click', function(e) {
+        if (e.target === this) hideBatchRescanModal();
+    });
+
+    async function startBatchRescan() {
+        const scope = document.getElementById('batch-rescan-scope').value;
+        const startBtn = document.getElementById('batch-rescan-start-btn');
+        startBtn.disabled = true;
+        startBtn.textContent = 'Starting...';
+
+        try {
+            const resp = await fetch('/api/batch-rescan', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ scope: scope, batch_size: 50, delay_seconds: 30 })
+            });
+            const data = await resp.json();
+
+            if (!resp.ok) {
+                showNotification(data.message || 'Failed to start batch rescan', 'warning');
+                return;
+            }
+
+            hideBatchRescanModal();
+            showNotification(`Batch rescan started: ${data.total} accounts in ${data.total_batches} batches (~${data.estimated_minutes} min)`, 'info');
+
+            // Show progress bar and start polling
+            const progressEl = document.getElementById('batch-rescan-progress');
+            progressEl.style.display = '';
+            document.getElementById('batch-rescan-bar').style.width = '0%';
+            document.getElementById('batch-rescan-stats').textContent = `0 / ${data.total}`;
+            document.getElementById('batch-rescan-detail').textContent = `Batch 0/${data.total_batches} — ${scope} scope`;
+            startBatchRescanPolling();
+        } catch (e) {
+            showNotification('Network error starting batch rescan', 'warning');
+        } finally {
+            startBtn.disabled = false;
+            startBtn.textContent = 'Start Batch Rescan';
+        }
+    }
+
+    function startBatchRescanPolling() {
+        if (_batchRescanPollInterval) clearInterval(_batchRescanPollInterval);
+        _batchRescanPollInterval = setInterval(pollBatchRescanStatus, 3000);
+    }
+
+    async function pollBatchRescanStatus() {
+        try {
+            const resp = await fetch('/api/batch-rescan/status');
+            const s = await resp.json();
+
+            const progressEl = document.getElementById('batch-rescan-progress');
+            const bar = document.getElementById('batch-rescan-bar');
+            const stats = document.getElementById('batch-rescan-stats');
+            const detail = document.getElementById('batch-rescan-detail');
+            const cancelBtn = document.getElementById('batch-rescan-cancel-btn');
+
+            if (!s.active && s.total === 0) {
+                // No batch rescan has ever run
+                progressEl.style.display = 'none';
+                clearInterval(_batchRescanPollInterval);
+                return;
+            }
+
+            const pct = s.total > 0 ? Math.round((s.completed / s.total) * 100) : 0;
+            bar.style.width = pct + '%';
+            stats.textContent = `${s.completed.toLocaleString()} / ${s.total.toLocaleString()} (${pct}%)`;
+            detail.textContent = `Batch ${s.current_batch}/${s.total_batches} — ${s.scope} scope`;
+
+            if (!s.active) {
+                // Finished or cancelled
+                clearInterval(_batchRescanPollInterval);
+                cancelBtn.style.display = 'none';
+                bar.style.background = s.cancelled ? 'var(--color-warning,#f59e0b)' : 'var(--color-success,#22c55e)';
+
+                const title = document.getElementById('batch-rescan-title');
+                if (s.cancelled) {
+                    title.textContent = 'Batch Rescan — Cancelled';
+                    detail.textContent = `Stopped after ${s.completed.toLocaleString()} of ${s.total.toLocaleString()} accounts`;
+                } else {
+                    title.textContent = 'Batch Rescan — Complete';
+                    detail.textContent = `All ${s.total.toLocaleString()} accounts processed`;
+                    bar.style.width = '100%';
+                }
+                showNotification(s.cancelled ? 'Batch rescan cancelled' : `Batch rescan complete: ${s.completed} accounts processed`, s.cancelled ? 'warning' : 'success');
+
+                // Auto-hide after 15s
+                setTimeout(() => { progressEl.style.display = 'none'; }, 15000);
+            }
+        } catch (e) {
+            console.error('[BATCH-RESCAN] Poll error:', e);
+        }
+    }
+
+    async function cancelBatchRescan() {
+        const btn = document.getElementById('batch-rescan-cancel-btn');
+        btn.disabled = true;
+        btn.textContent = 'Cancelling...';
+        try {
+            await fetch('/api/batch-rescan/cancel', { method: 'POST' });
+            showNotification('Batch rescan will stop after the current batch completes', 'warning');
+        } catch (e) {
+            showNotification('Failed to cancel batch rescan', 'warning');
+            btn.disabled = false;
+            btn.textContent = 'Cancel';
+        }
+    }
+
+    // Check if a batch rescan is already running on page load
+    (async function checkBatchRescanOnLoad() {
+        try {
+            const resp = await fetch('/api/batch-rescan/status');
+            const s = await resp.json();
+            if (s.active) {
+                const progressEl = document.getElementById('batch-rescan-progress');
+                progressEl.style.display = '';
+                document.getElementById('batch-rescan-cancel-btn').style.display = '';
+                document.getElementById('batch-rescan-title').textContent = 'Batch Rescan';
+                document.getElementById('batch-rescan-bar').style.background = 'var(--color-primary,#3b82f6)';
+                startBatchRescanPolling();
+            }
+        } catch(e) {}
+    })();
 </script>
 
 <script>
