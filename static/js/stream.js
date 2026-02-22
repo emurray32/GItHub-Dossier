@@ -340,13 +340,16 @@ class StreamHandler {
 
         // Maturity & Score
         if (this.analysisData.localization_maturity) {
-            const maturity = this.escapeHtml(this.analysisData.localization_maturity);
+            const allowedMaturities = ['emerging', 'developing', 'mature', 'advanced'];
+            const rawMaturity = this.analysisData.localization_maturity;
+            const maturityClass = allowedMaturities.includes(rawMaturity) ? rawMaturity : 'unknown';
+            const maturityText = this.escapeHtml(rawMaturity);
             const score = this.escapeHtml(String(this.analysisData.opportunity_score || 5));
             preview.innerHTML += `
                 <div class="preview-section">
                     <h3>Assessment</h3>
                     <div style="display: flex; gap: 1rem; align-items: center;">
-                        <span class="maturity-badge maturity-${maturity}">${maturity}</span>
+                        <span class="maturity-badge maturity-${maturityClass}">${maturityText}</span>
                         <span style="font-weight: 600;">Opportunity Score: ${score}/10</span>
                     </div>
                 </div>
