@@ -23,18 +23,39 @@
   <!-- 1. Upload zone -->
   <div class="lp-input-zone" id="input-zone">
     <div class="lp-upload-zone" id="upload-zone">
-      <input type="file" id="file-input" accept="image/*">
+      <input type="file" id="file-input" accept="image/*" tabindex="-1">
+      <span class="sr-only" id="upload-instructions">Drop a LinkedIn profile screenshot here. PNG or JPG. The full profile page works best.</span>
+
+      <!-- Collapsed state icon -->
       <svg class="lp-collapsed-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-      <svg class="lp-upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-        <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
-        <polyline points="21 15 16 10 5 21"/>
-      </svg>
-      <h3 id="upload-title">Drop a LinkedIn screenshot here</h3>
-      <p id="upload-sub">PNG or JPG — the full profile page works best</p>
-      <button class="lp-upload-btn" id="upload-btn" onclick="document.getElementById('file-input').click()">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-        Choose file
-      </button>
+
+      <!-- Empty state -->
+      <div class="lp-upload-empty" id="upload-empty">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="56" height="56" class="lp-upload-illustration" aria-hidden="true">
+          <rect x="14" y="8" width="36" height="48" rx="6" fill="currentColor" fill-opacity="0.03" stroke="currentColor" stroke-opacity="0.15" stroke-width="1.5"/>
+          <rect x="14" y="8" width="36" height="16" rx="6" fill="currentColor" fill-opacity="0.02" stroke="currentColor" stroke-opacity="0.15" stroke-width="1.5"/>
+          <circle cx="24" cy="24" r="6" fill="currentColor" fill-opacity="0.08" stroke="currentColor" stroke-opacity="0.2" stroke-width="1.5"/>
+          <path d="M20 40h24M24 46h16" stroke="currentColor" stroke-opacity="0.2" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+        <button class="lp-upload-btn" id="upload-btn" onclick="document.getElementById('file-input').click()" aria-describedby="upload-instructions">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          Choose file
+        </button>
+      </div>
+
+      <!-- Filled state (filename bar) -->
+      <div class="lp-upload-filled" id="upload-filled" hidden>
+        <div class="lp-upload-file-info">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+          <span class="lp-upload-filename" id="upload-filename"></span>
+        </div>
+        <button type="button" class="lp-upload-clear-btn" id="clear-file-btn" aria-label="Remove selected file">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+
+      <h3 id="upload-title" style="display:none">Drop a LinkedIn screenshot here</h3>
+      <p id="upload-sub" style="display:none">PNG or JPG</p>
       <img id="preview-img" class="lp-preview-img" style="display:none" alt="LinkedIn screenshot preview">
     </div>
 
@@ -286,6 +307,20 @@
     var zone = $('upload-zone');
     zone.classList.add('collapsed');
     $('upload-title').textContent = filename || 'Screenshot uploaded';
+    $('upload-title').style.display = '';
+  }
+
+  function showFilledState(filename) {
+    $('upload-empty').hidden = true;
+    $('upload-filled').hidden = false;
+    $('upload-filename').textContent = filename;
+  }
+
+  function showEmptyState() {
+    $('upload-empty').hidden = false;
+    $('upload-filled').hidden = true;
+    $('upload-filename').textContent = '';
+    $('file-input').value = '';
   }
 
   // -- Update profile card display --
@@ -390,6 +425,15 @@
   fileInput.addEventListener('change', function() {
     if (fileInput.files[0]) handleFile(fileInput.files[0]);
   });
+  // Clear file button
+  var clearBtn = $('clear-file-btn');
+  if (clearBtn) {
+    clearBtn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      showEmptyState();
+      uploadedFile = null;
+    });
+  }
   // Re-open file picker if collapsed upload zone is clicked
   zone.addEventListener('click', function(e) {
     if (zone.classList.contains('collapsed') && e.target !== fileInput) {
@@ -406,7 +450,8 @@
     uploadedFile = file;
     currentLinkedinUrl = '';
 
-    // Collapse upload zone to single-line bar, hide URL input
+    // Show filled state, then collapse to bar
+    showFilledState(file.name);
     collapseUploadZone(file.name);
     collapseInputZone();
 
@@ -767,11 +812,11 @@
     currentLinkedinUrl = '';
 
     // Reset upload zone
-    $('file-input').value = '';
+    showEmptyState();
     $('preview-img').style.display = 'none';
     $('preview-img').src = '';
     $('upload-title').textContent = 'Drop a LinkedIn screenshot here';
-    $('upload-sub').textContent = 'PNG or JPG — the full profile page works best';
+    $('upload-title').style.display = 'none';
     $('upload-btn').disabled = false;
     $('upload-zone').classList.remove('collapsed');
 
