@@ -330,8 +330,8 @@ class StreamHandler {
 
         // Maturity & Score
         if (this.analysisData.localization_maturity) {
-            const maturity = this.analysisData.localization_maturity;
-            const score = this.analysisData.opportunity_score || 5;
+            const maturity = this.escapeHtml(String(this.analysisData.localization_maturity));
+            const score = parseInt(this.analysisData.opportunity_score, 10) || 5;
             preview.innerHTML += `
                 <div class="preview-section">
                     <h3>Assessment</h3>

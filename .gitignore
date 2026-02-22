@@ -64,3 +64,6 @@ htmlcov/
 
 # Replit
 .pythonlibs/
+
+# Exported configs with credentials
+attached_assets/exported-zap*.json
