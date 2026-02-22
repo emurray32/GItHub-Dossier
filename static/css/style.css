@@ -690,12 +690,13 @@ select {
 
 .modal-content {
     background: var(--color-surface);
-    border-radius: 8px;
+    border-radius: 10px;
     width: 480px;
-    max-width: 90vw;
+    max-width: 92vw;
     max-height: 85vh;
     overflow-y: auto;
     box-shadow: var(--shadow-2xl);
+    border: 1px solid var(--color-border);
 }
 
 /* ============================================================

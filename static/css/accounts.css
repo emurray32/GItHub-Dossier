@@ -2467,6 +2467,14 @@
     border-radius: 8px;
     position: relative;
     overflow: hidden;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.kpi-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+    border-color: var(--color-primary);
 }
 
 .kpi-card::after {
@@ -2475,7 +2483,7 @@
     top: 0;
     right: 0;
     bottom: 0;
-    width: 3px;
+    width: 4px;
 }
 
 .kpi-card--blue::after { background: #3B82F6; }

@@ -137,11 +137,11 @@
 }
 
 .intel-label {
-    color: var(--color-text-tertiary);
+    color: var(--color-text-secondary);
     font-size: 0.7rem;
     text-transform: uppercase;
-    letter-spacing: 0.04em;
-    font-weight: var(--font-weight-medium, 500);
+    letter-spacing: 0.05em;
+    font-weight: var(--font-weight-semibold, 600);
 }
 
 .intel-value {
@@ -150,10 +150,10 @@
 }
 
 .readiness-bar-mini {
-    width: 60px;
-    height: 6px;
+    width: 80px;
+    height: 7px;
     background: var(--color-border);
-    border-radius: 3px;
+    border-radius: 4px;
     overflow: hidden;
 }
 
@@ -235,6 +235,8 @@
     justify-content: space-between;
     align-items: center;
     margin-bottom: 1rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--color-border);
     gap: 0.5rem;
     flex-wrap: wrap;
 }
@@ -678,7 +680,8 @@
 }
 
 .section-title {
-    font-size: 16px;
+    font-size: 15px;
+    font-weight: var(--font-weight-semibold, 600);
     color: var(--color-text);
     margin-bottom: 0.75rem;
     padding-bottom: 0.35rem;
@@ -2093,8 +2096,8 @@
 }
 
 .contributors-grid {
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
     gap: 0.75rem;
 }
 
