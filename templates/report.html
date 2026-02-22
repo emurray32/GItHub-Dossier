@@ -198,7 +198,7 @@
             <div class="contact-reason">{{ contact.outreach_reason }}</div>
           </div>
           <div class="contact-actions">
-            <button class="btn-sm btn-fetch-email" onclick="event.stopPropagation(); fetchApolloEmail(this, {{ contact.name|tojson }}, {{ report.company_name|tojson }})" data-login="{{ contact.login }}">
+            <button class="btn-sm btn-fetch-email" onclick="event.stopPropagation(); fetchContributorEmail(this, {{ contact.name|tojson }}, {{ report.company_name|tojson }})" data-login="{{ contact.login }}">
               Find Email
             </button>
             <div class="seq-enroll-wrapper" style="position:relative;">
@@ -322,7 +322,7 @@
             {% endif %}
           </div>
           <div class="contact-actions compact">
-            <button class="btn-sm btn-fetch-email" onclick="event.stopPropagation(); fetchApolloEmail(this, {{ (contrib.name|default(login))|tojson }}, {{ report.company_name|tojson }})" data-login="{{ login }}">
+            <button class="btn-sm btn-fetch-email" onclick="event.stopPropagation(); fetchContributorEmail(this, {{ (contrib.name|default(login))|tojson }}, {{ report.company_name|tojson }})" data-login="{{ login }}">
               Find Email
             </button>
             <div class="seq-enroll-wrapper" style="position:relative;">
@@ -1102,12 +1102,15 @@
                 </div>
                 ${contrib.i18n_signals ? '<div class="detail-panel-field"><span class="detail-panel-field-label">i18n Signals</span><span class="detail-panel-field-value"><span class="i18n-badge">i18n involved</span></span></div>' : ''}
                 <div class="detail-panel-actions">
-                    <button class="btn-sm btn-fetch-email" onclick="event.stopPropagation(); fetchApolloEmail(this, ${JSON.stringify(name)}, ${JSON.stringify(company)})" data-login="${login}">
+                    <button class="btn-sm btn-fetch-email" onclick="event.stopPropagation(); fetchContributorEmail(this, ${JSON.stringify(name)}, ${JSON.stringify(company)})" data-login="${login}">
                         Find Email
                     </button>
-                    <button class="btn-sm btn-add-sequence" onclick="event.stopPropagation(); showSequenceSelector(${JSON.stringify(login)}, ${JSON.stringify(name)}, ${JSON.stringify(company)})" data-name="${name}" data-company="${company}">
-                        Add to Sequence
-                    </button>
+                    <div class="seq-enroll-wrapper" style="position:relative;">
+                        <button class="btn-sm btn-add-sequence" onclick="event.stopPropagation(); showSequenceSelector(${JSON.stringify(login)}, ${JSON.stringify(name)}, ${JSON.stringify(company)})" data-name="${name}" data-company="${company}">
+                            Add to Sequence
+                        </button>
+                        <div class="sequence-selector-dropdown" id="seq-dropdown-${login}"></div>
+                    </div>
                 </div>
             `;
 

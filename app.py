@@ -2061,7 +2061,8 @@ Return ONLY valid JSON with no markdown formatting:
                 {"role": "user", "content": prompt}
             ],
             response_format={"type": "json_object"},
-            max_completion_tokens=4096
+            temperature=0.7,
+            max_completion_tokens=8192
         )
 
         response_text = response.choices[0].message.content.strip()
@@ -6005,19 +6006,19 @@ def api_linkedin_find_contact():
             if person:
                 print(f"[LINKEDIN] people/match found person: email={person.get('email')}, id={person.get('id')}, has_photo={bool(person.get('photo_url'))}")
                 match_person = {
-                    'id': person.get('id', ''),
-                    'name': f"{person.get('first_name', '')} {person.get('last_name', '')}".strip(),
-                    'first_name': person.get('first_name', ''),
-                    'last_name': person.get('last_name', ''),
-                    'email': _filter_personal_email(person.get('email', '')),
-                    'title': person.get('title', ''),
-                    'company': person.get('organization_name', '') or (person.get('organization') or {}).get('name', ''),
-                    'linkedin_url': person.get('linkedin_url', ''),
-                    'photo_url': person.get('photo_url', ''),
-                    'phone': person.get('sanitized_phone', '') or ((person.get('phone_numbers') or [{}])[0].get('raw_number', '') if person.get('phone_numbers') else ''),
-                    'city': person.get('city', ''),
-                    'state': person.get('state', ''),
-                    'country': person.get('country', '')
+                    'id': person.get('id') or '',
+                    'name': f"{person.get('first_name') or ''} {person.get('last_name') or ''}".strip(),
+                    'first_name': person.get('first_name') or '',
+                    'last_name': person.get('last_name') or '',
+                    'email': _filter_personal_email(person.get('email') or ''),
+                    'title': person.get('title') or '',
+                    'company': person.get('organization_name') or (person.get('organization') or {}).get('name', ''),
+                    'linkedin_url': person.get('linkedin_url') or '',
+                    'photo_url': person.get('photo_url') or '',
+                    'phone': person.get('sanitized_phone') or ((person.get('phone_numbers') or [{}])[0].get('raw_number', '') if person.get('phone_numbers') else ''),
+                    'city': person.get('city') or '',
+                    'state': person.get('state') or '',
+                    'country': person.get('country') or ''
                 }
                 # If we already have a (non-personal) email, return immediately
                 if match_person['email']:
@@ -6052,19 +6053,19 @@ def api_linkedin_find_contact():
                     person = contacts[0]
                     print(f"[LINKEDIN] contacts/search found: email={person.get('email')}")
                     search_contact = {
-                        'id': person.get('id', ''),
-                        'name': f"{person.get('first_name', '')} {person.get('last_name', '')}".strip(),
-                        'first_name': person.get('first_name', ''),
-                        'last_name': person.get('last_name', ''),
-                        'email': _filter_personal_email(person.get('email', '')),
-                        'title': person.get('title', ''),
-                        'company': person.get('organization_name', '') or (person.get('account') or {}).get('name', ''),
-                        'linkedin_url': person.get('linkedin_url', ''),
-                        'photo_url': person.get('photo_url', ''),
-                        'phone': person.get('sanitized_phone', ''),
-                        'city': person.get('city', ''),
-                        'state': person.get('state', ''),
-                        'country': person.get('country', '')
+                        'id': person.get('id') or '',
+                        'name': f"{person.get('first_name') or ''} {person.get('last_name') or ''}".strip(),
+                        'first_name': person.get('first_name') or '',
+                        'last_name': person.get('last_name') or '',
+                        'email': _filter_personal_email(person.get('email') or ''),
+                        'title': person.get('title') or '',
+                        'company': person.get('organization_name') or (person.get('account') or {}).get('name', ''),
+                        'linkedin_url': person.get('linkedin_url') or '',
+                        'photo_url': person.get('photo_url') or '',
+                        'phone': person.get('sanitized_phone') or '',
+                        'city': person.get('city') or '',
+                        'state': person.get('state') or '',
+                        'country': person.get('country') or ''
                     }
                     # If CRM search has a (non-personal) email, return it (merge with match data for photo)
                     if search_contact['email']:
