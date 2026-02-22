@@ -354,7 +354,14 @@
                         : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg> Find Email via Apollo'}
                 </button>
 
-                <button class="btn-action btn-generate-email" onclick="generateEmail(${c.id})" id="gen-email-btn-${c.id}" title="Generate full 4-email sequence with AI">
+                <div class="outreach-field" style="margin:8px 0;">
+                    <label class="outreach-label">Apollo Sequence</label>
+                    <select class="outreach-input" id="seq-select-${c.id}" onchange="onSequenceChanged(${c.id})">
+                        <option value="">Loading sequences...</option>
+                    </select>
+                </div>
+
+                <button class="btn-action btn-generate-email" onclick="generateEmail(${c.id})" id="gen-email-btn-${c.id}" title="Generate emails matching selected sequence">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
                     </svg>
@@ -362,41 +369,11 @@
                 </button>
             </div>
 
-            <!-- Email Sequence Fields -->
+            <!-- Email Sequence Fields (dynamically rebuilt by onSequenceChanged) -->
             <div class="sidebar-section" id="outreach-fields-${c.id}">
-                <div class="sequence-thread">
-                    <div class="thread-label">Thread 1</div>
-                    <div class="outreach-field">
-                        <label class="outreach-label">Subject 1 <span class="outreach-var-name">personalized_subject_1</span></label>
-                        <input type="text" id="email-subject1-${c.id}" class="outreach-input" placeholder="Subject line..." value="${escapeHtml(aiSubject)}">
-                    </div>
-                    <div class="outreach-field">
-                        <label class="outreach-label">Email 1 <span class="outreach-var-name">personalized_email_1</span></label>
-                        <textarea id="email-body1-${c.id}" class="outreach-textarea" rows="4" placeholder="Initial outreach...">${escapeHtml(aiBody)}</textarea>
-                    </div>
-                    <div class="outreach-field">
-                        <label class="outreach-label">Email 2 <span class="outreach-var-name">personalized_email_2</span></label>
-                        <textarea id="email-body2-${c.id}" class="outreach-textarea" rows="3" placeholder="Follow-up bump..."></textarea>
-                    </div>
-                </div>
+                <div id="email-fields-container-${c.id}"></div>
 
-                <div class="sequence-thread">
-                    <div class="thread-label">Thread 2</div>
-                    <div class="outreach-field">
-                        <label class="outreach-label">Subject 2 <span class="outreach-var-name">personalized_subject_2</span></label>
-                        <input type="text" id="email-subject2-${c.id}" class="outreach-input" placeholder="New angle subject...">
-                    </div>
-                    <div class="outreach-field">
-                        <label class="outreach-label">Email 3 <span class="outreach-var-name">personalized_email_3</span></label>
-                        <textarea id="email-body3-${c.id}" class="outreach-textarea" rows="4" placeholder="New thread email..."></textarea>
-                    </div>
-                    <div class="outreach-field">
-                        <label class="outreach-label">Email 4 <span class="outreach-var-name">personalized_email_4</span></label>
-                        <textarea id="email-body4-${c.id}" class="outreach-textarea" rows="3" placeholder="Breakup email..."></textarea>
-                    </div>
-                </div>
-
-                <button class="btn-action btn-add-sequence ${isEnrolled ? 'enrolled' : ''}" onclick="toggleSequence(${c.id}, ${isEnrolled ? 'true' : 'false'})" id="seq-btn-${c.id}" ${!hasEmail && !isEnrolled ? 'disabled title="Find email first"' : ''}>
+                <button class="btn-action btn-add-sequence ${isEnrolled ? 'enrolled' : ''}" onclick="enrollInSelectedSequence(${c.id})" id="seq-btn-${c.id}" ${!hasEmail && !isEnrolled ? 'disabled title="Find email first"' : ''}>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         ${isEnrolled
                             ? '<polyline points="20 6 9 17 4 12"></polyline>'
@@ -410,6 +387,9 @@
         // Show sidebar
         sidebar.classList.add('open');
         mainArea.classList.add('sidebar-active');
+
+        // Load sequence dropdown and build email fields
+        loadSidebarSequences(id);
     };
 
     // Close sidebar
@@ -491,6 +471,13 @@
         const c = cachedRows.find(x => x.id === id);
         if (!c) { if (btn) btn.disabled = false; return; }
 
+        // Determine num_emails from selected sequence
+        var seqSel = document.getElementById('seq-select-' + id);
+        var numEmails = 4;
+        if (seqSel && seqSel.selectedOptions[0]) {
+            numEmails = parseInt(seqSel.selectedOptions[0].dataset.steps) || 4;
+        }
+
         fetch('/api/contributors/generate-email', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -502,7 +489,8 @@
                 repo_source: c.repo_source || '',
                 insight: c.insight || '',
                 contributions: c.contributions || 0,
-                goldilocks_status: c.goldilocks_status || c.company_goldilocks || ''
+                goldilocks_status: c.goldilocks_status || c.company_goldilocks || '',
+                num_emails: numEmails
             })
         })
         .then(r => r.json())
@@ -548,7 +536,127 @@
         });
     };
 
-    // Toggle sequence enrollment
+    // --- Sequence selector support ---
+    var cachedSequences = null;
+
+    window.loadSidebarSequences = async function(contributorId) {
+        var sel = document.getElementById('seq-select-' + contributorId);
+        if (!sel) return;
+        try {
+            if (!cachedSequences) {
+                var resp = await fetch('/api/apollo/sequences');
+                var data = await resp.json();
+                cachedSequences = (data.status === 'success' && data.sequences) ? data.sequences : [];
+            }
+            if (!cachedSequences.length) {
+                sel.innerHTML = '<option value="">No sequences found</option>';
+                return;
+            }
+            sel.innerHTML = cachedSequences.map(function(s) {
+                return '<option value="' + escapeHtml(s.id) + '" data-steps="' + (s.num_steps || 4) + '">' + escapeHtml(s.name) + (s.active ? '' : ' (inactive)') + ' — ' + (s.num_steps || '?') + ' steps</option>';
+            }).join('');
+            onSequenceChanged(contributorId);
+        } catch(e) {
+            sel.innerHTML = '<option value="">Failed to load</option>';
+        }
+    };
+
+    window.onSequenceChanged = function(id) {
+        var sel = document.getElementById('seq-select-' + id);
+        var container = document.getElementById('email-fields-container-' + id);
+        if (!sel || !container) return;
+        var numSteps = parseInt((sel.selectedOptions[0] || {}).dataset?.steps) || 4;
+        container.innerHTML = buildEmailFields(id, numSteps);
+    };
+
+    function buildEmailFields(id, numSteps) {
+        if (numSteps <= 2) {
+            var html = '<div class="sequence-thread"><div class="thread-label">Email Sequence</div>';
+            html += '<div class="outreach-field"><label class="outreach-label">Subject <span class="outreach-var-name">personalized_subject_1</span></label><input type="text" id="email-subject1-' + id + '" class="outreach-input" placeholder="Subject line..."></div>';
+            for (var i = 1; i <= numSteps; i++) {
+                html += '<div class="outreach-field"><label class="outreach-label">Email ' + i + ' <span class="outreach-var-name">personalized_email_' + i + '</span></label><textarea id="email-body' + i + '-' + id + '" class="outreach-textarea" rows="' + (i === 1 ? 4 : 3) + '" placeholder="Email ' + i + '..."></textarea></div>';
+            }
+            html += '</div>';
+            return html;
+        }
+        if (numSteps === 3) {
+            var html = '<div class="sequence-thread"><div class="thread-label">Email Sequence (3 emails)</div>';
+            html += '<div class="outreach-field"><label class="outreach-label">Subject <span class="outreach-var-name">personalized_subject_1</span></label><input type="text" id="email-subject1-' + id + '" class="outreach-input" placeholder="Subject line..."></div>';
+            for (var i = 1; i <= 3; i++) {
+                html += '<div class="outreach-field"><label class="outreach-label">Email ' + i + ' <span class="outreach-var-name">personalized_email_' + i + '</span></label><textarea id="email-body' + i + '-' + id + '" class="outreach-textarea" rows="' + (i === 1 ? 4 : 3) + '" placeholder="Email ' + i + '..."></textarea></div>';
+            }
+            html += '</div>';
+            return html;
+        }
+        // 4+ steps: 2x2 split thread
+        return '<div class="sequence-thread"><div class="thread-label">Thread 1</div>' +
+            '<div class="outreach-field"><label class="outreach-label">Subject 1 <span class="outreach-var-name">personalized_subject_1</span></label><input type="text" id="email-subject1-' + id + '" class="outreach-input" placeholder="Subject line..."></div>' +
+            '<div class="outreach-field"><label class="outreach-label">Email 1 <span class="outreach-var-name">personalized_email_1</span></label><textarea id="email-body1-' + id + '" class="outreach-textarea" rows="4" placeholder="Initial outreach..."></textarea></div>' +
+            '<div class="outreach-field"><label class="outreach-label">Email 2 <span class="outreach-var-name">personalized_email_2</span></label><textarea id="email-body2-' + id + '" class="outreach-textarea" rows="3" placeholder="Follow-up bump..."></textarea></div></div>' +
+            '<div class="sequence-thread"><div class="thread-label">Thread 2</div>' +
+            '<div class="outreach-field"><label class="outreach-label">Subject 2 <span class="outreach-var-name">personalized_subject_2</span></label><input type="text" id="email-subject2-' + id + '" class="outreach-input" placeholder="New angle subject..."></div>' +
+            '<div class="outreach-field"><label class="outreach-label">Email 3 <span class="outreach-var-name">personalized_email_3</span></label><textarea id="email-body3-' + id + '" class="outreach-textarea" rows="4" placeholder="New thread email..."></textarea></div>' +
+            '<div class="outreach-field"><label class="outreach-label">Email 4 <span class="outreach-var-name">personalized_email_4</span></label><textarea id="email-body4-' + id + '" class="outreach-textarea" rows="3" placeholder="Breakup email..."></textarea></div></div>';
+    }
+
+    window.enrollInSelectedSequence = async function(id) {
+        var seqSel = document.getElementById('seq-select-' + id);
+        if (!seqSel || !seqSel.value) { showToast('Please select a sequence first', 'error'); return; }
+        var sequenceId = seqSel.value;
+        var sequenceName = seqSel.selectedOptions[0] ? seqSel.selectedOptions[0].text : '';
+
+        var contributor = cachedRows.find(function(x) { return x.id == id; });
+        if (!contributor || !contributor.email) { showToast('Find email first before enrolling', 'error'); return; }
+
+        var seqBtn = document.getElementById('seq-btn-' + id);
+        if (seqBtn) { seqBtn.disabled = true; seqBtn.innerHTML = '<span class="btn-spinner"></span> Enrolling...'; }
+
+        var s1El = document.getElementById('email-subject1-' + id);
+        var s2El = document.getElementById('email-subject2-' + id);
+        var b1El = document.getElementById('email-body1-' + id);
+        var b2El = document.getElementById('email-body2-' + id);
+        var b3El = document.getElementById('email-body3-' + id);
+        var b4El = document.getElementById('email-body4-' + id);
+
+        try {
+            var enrollResp = await fetch('/api/apollo/enroll-sequence', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    email: contributor.email,
+                    first_name: (contributor.name || '').split(' ')[0] || contributor.github_login,
+                    last_name: (contributor.name || '').split(' ').slice(1).join(' '),
+                    sequence_id: sequenceId,
+                    company_name: contributor.company || '',
+                    personalized_subject_1: s1El ? s1El.value.trim() : '',
+                    personalized_subject_2: s2El ? s2El.value.trim() : '',
+                    personalized_email_1: b1El ? b1El.value.trim() : '',
+                    personalized_email_2: b2El ? b2El.value.trim() : '',
+                    personalized_email_3: b3El ? b3El.value.trim() : '',
+                    personalized_email_4: b4El ? b4El.value.trim() : ''
+                })
+            });
+            var enrollData = await enrollResp.json();
+            if (enrollData.status === 'success') {
+                await fetch('/api/contributors/' + id + '/apollo', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status: 'sent', sequence_name: sequenceName })
+                });
+                showToast('Enrolled in ' + sequenceName, 'success');
+                loadTable();
+                setTimeout(function() { if (selectedContributorId === id) openSidebar(id); }, 300);
+            } else {
+                showToast(enrollData.message || 'Failed to enroll', 'error');
+                if (seqBtn) { seqBtn.disabled = false; seqBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg> Approve & Enroll in Sequence'; }
+            }
+        } catch(e) {
+            showToast('Network error during enrollment', 'error');
+            if (seqBtn) { seqBtn.disabled = false; seqBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg> Approve & Enroll in Sequence'; }
+        }
+    };
+
+    // Toggle sequence enrollment (legacy — kept for unenroll)
     window.toggleSequence = function(id, isCurrentlyEnrolled) {
         if (isCurrentlyEnrolled) {
             fetch('/api/contributors/' + id + '/apollo', {

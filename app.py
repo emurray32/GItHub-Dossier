@@ -1999,6 +1999,35 @@ def api_generate_contributor_email():
 
     num_emails = data.get('num_emails', 4)
 
+    # Build dynamic prompt structure based on num_emails
+    if num_emails == 1:
+        structure_guidance = """Structure:
+- subject: Subject line
+- email_1: Cold outreach email (3-4 sentences). Reference their GitHub activity."""
+        json_structure = """{{\n  "subject_1": "subject line",\n  "email_1": "email body (use \\\\n for line breaks)"\n}}"""
+    elif num_emails == 2:
+        structure_guidance = """Structure:
+- subject_1: Subject line
+- email_1: Initial cold outreach (3-4 sentences). Reference their GitHub activity.
+- email_2: Follow-up bump (2-3 sentences). Add a new angle."""
+        json_structure = """{{\n  "subject_1": "subject line",\n  "email_1": "first email body (use \\\\n for line breaks)",\n  "email_2": "follow-up (use \\\\n for line breaks)"\n}}"""
+    elif num_emails == 3:
+        structure_guidance = """Structure:
+- subject_1: Subject line for all 3 emails
+- email_1: Initial cold outreach (3-4 sentences). Reference their GitHub activity.
+- email_2: Follow-up bump (2-3 sentences). Add a new angle or value prop.
+- email_3: Final breakup email (2-3 sentences). Light, low-pressure."""
+        json_structure = """{{\n  "subject_1": "subject line",\n  "email_1": "first email (use \\\\n for line breaks)",\n  "email_2": "follow-up (use \\\\n for line breaks)",\n  "email_3": "breakup email (use \\\\n for line breaks)"\n}}"""
+    else:
+        structure_guidance = """Structure:
+- subject_1: Main subject thread (emails 1 & 2 reply under this subject)
+- subject_2: New subject angle for follow-ups (emails 3 & 4 reply under this subject)
+- email_1: Initial cold outreach (3-4 sentences). Reference their GitHub activity.
+- email_2: Follow-up bump (2-3 sentences). Add a new angle or value prop.
+- email_3: New thread with different angle (3-4 sentences). Reference a different pain point.
+- email_4: Final breakup email (2-3 sentences). Light, low-pressure."""
+        json_structure = """{{\n  "subject_1": "main subject line",\n  "subject_2": "second subject line",\n  "email_1": "first email (use \\\\n for line breaks)",\n  "email_2": "follow-up bump (use \\\\n for line breaks)",\n  "email_3": "new thread email (use \\\\n for line breaks)",\n  "email_4": "breakup email (use \\\\n for line breaks)"\n}}"""
+
     # Temperature-aware tone guidance
     tone_guidance = ''
     if goldilocks_status == 'preparing':
@@ -2025,13 +2054,7 @@ Contact info:
 
 Write a {num_emails}-email cold outreach sequence. The goal is to start a conversation about their internationalization/localization (i18n) workflow and how Phrase can help their engineering team ship to global markets faster.
 
-Structure:
-- subject_1: Main subject thread (emails 1 & 2 reply under this subject)
-- subject_2: New subject angle for follow-ups (emails 3 & 4 reply under this subject)
-- email_1: Initial cold outreach (3-4 sentences). Reference their GitHub activity.
-- email_2: Follow-up bump (2-3 sentences). Add a new angle or value prop. Assume they saw email 1 but didn't reply.
-- email_3: New thread with different angle (3-4 sentences). Reference a different pain point or use case.
-- email_4: Final breakup email (2-3 sentences). Light, low-pressure, give them an easy out.
+{structure_guidance}
 
 Rules:
 - Each email body: concise, specific, references something real about them
@@ -2039,18 +2062,10 @@ Rules:
 - No fluff, no "I hope this email finds you well"
 - Sound like a human, not a robot
 - Use their first name
-- Emails 2 and 4 are SHORT follow-ups (they thread under the previous subject)
 - Use the actual contact's name and company in the email. Do NOT use template variables like {{{{company}}}}, {{{{name}}}}, or {{{{first_name}}}}.
 
 Return ONLY valid JSON with no markdown formatting:
-{{
-  "subject_1": "main subject line",
-  "subject_2": "second subject line",
-  "email_1": "first email body (use \\n for line breaks)",
-  "email_2": "follow-up bump (use \\n for line breaks)",
-  "email_3": "new thread email (use \\n for line breaks)",
-  "email_4": "breakup email (use \\n for line breaks)"
-}}"""
+{json_structure}"""
 
     try:
         client = OpenAI(api_key=api_key, base_url=base_url)
@@ -2061,7 +2076,6 @@ Return ONLY valid JSON with no markdown formatting:
                 {"role": "user", "content": prompt}
             ],
             response_format={"type": "json_object"},
-            temperature=0.7,
             max_completion_tokens=4096
         )
 
