@@ -115,7 +115,7 @@ def generate_analysis(scan_data: dict) -> Generator[str, None, dict]:
                 base_url=AI_INTEGRATIONS_OPENAI_BASE_URL
             )
             response = client.chat.completions.create(
-                model="gpt-5-mini",
+                model="gpt-4o-mini",
                 messages=[
                     {"role": "system", "content": "You are a sales strategist for a Localization Platform. Return your analysis as valid JSON only, with no markdown formatting."},
                     {"role": "user", "content": prompt}
@@ -802,17 +802,6 @@ def _generate_fallback_analysis(scan_data: dict) -> dict:
         'engineering_velocity': engineering_velocity,
         '_source': 'fallback'
     }
-
-
-def _get_recommended_approach(phase: str) -> str:
-    """Get strategic recommendation based on phase."""
-    approaches = {
-        'Preparing': "IMPLEMENTATION PARTNER: They've bought tools but need help. Position as implementation experts. Offer architecture review or quick-start guidance.",
-        'Active': "ACCELERATOR: They're already building. Position on speed and avoiding common pitfalls. Offer to review their current approach.",
-        'Thinking': "STRATEGIC ADVISOR: They're exploring options. Position as thought partner. Share case studies and best practices to influence their decision.",
-        'None': "EDUCATION FIRST: No active signals. Focus on building awareness and relationship for future opportunities.",
-    }
-    return approaches.get(phase, approaches['None'])
 
 
 def _get_recommended_approach_goldilocks(status: str) -> str:
