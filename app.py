@@ -6047,11 +6047,14 @@ def api_linkedin_find_contact():
             person = match_data.get('person')
             if person:
                 print(f"[LINKEDIN] people/match found person: email={person.get('email')}, id={person.get('id')}, has_photo={bool(person.get('photo_url'))}")
+                apollo_first = person.get('first_name') or ''
+                apollo_last = person.get('last_name') or ''
+                apollo_name = f"{apollo_first} {apollo_last}".strip()
                 match_person = {
                     'id': person.get('id') or '',
-                    'name': f"{person.get('first_name') or ''} {person.get('last_name') or ''}".strip(),
-                    'first_name': person.get('first_name') or '',
-                    'last_name': person.get('last_name') or '',
+                    'name': apollo_name or name or f"{first_name} {last_name}".strip(),
+                    'first_name': apollo_first or first_name,
+                    'last_name': apollo_last or last_name,
                     'email': _filter_personal_email(person.get('email') or ''),
                     'title': person.get('title') or '',
                     'company': person.get('organization_name') or (person.get('organization') or {}).get('name', ''),
@@ -6094,11 +6097,14 @@ def api_linkedin_find_contact():
                 if contacts:
                     person = contacts[0]
                     print(f"[LINKEDIN] contacts/search found: email={person.get('email')}")
+                    s_first = person.get('first_name') or ''
+                    s_last = person.get('last_name') or ''
+                    s_name = f"{s_first} {s_last}".strip()
                     search_contact = {
                         'id': person.get('id') or '',
-                        'name': f"{person.get('first_name') or ''} {person.get('last_name') or ''}".strip(),
-                        'first_name': person.get('first_name') or '',
-                        'last_name': person.get('last_name') or '',
+                        'name': s_name or name or f"{first_name} {last_name}".strip(),
+                        'first_name': s_first or first_name,
+                        'last_name': s_last or last_name,
                         'email': _filter_personal_email(person.get('email') or ''),
                         'title': person.get('title') or '',
                         'company': person.get('organization_name') or (person.get('account') or {}).get('name', ''),
