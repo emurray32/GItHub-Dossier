@@ -1770,6 +1770,10 @@ def api_contributors_datatable():
     tier_names = {0: 'Tracking', 1: 'Thinking', 2: 'Preparing', 3: 'Launched', 4: 'Not Found'}
 
     for row in result.get('data', []):
+        # Filter out personal and domain-mismatched emails before exposing to frontend
+        raw_email = row.get('email', '')
+        row['email'] = _sanitize_contributor_email(raw_email, row.get('company'))
+
         company = (row.get('company') or '').lower()
         tier = tier_lookup.get(company)
         row['company_tier'] = tier
@@ -1817,9 +1821,9 @@ def api_update_contributor_apollo(contributor_id: int):
 def api_update_contributor_email(contributor_id: int):
     """Save an email address found via Apollo lookup for a contributor."""
     data = request.get_json() or {}
-    email = data.get('email', '').strip()
+    email = _filter_personal_email(data.get('email', '').strip())
     if not email:
-        return jsonify({'error': 'No email provided'}), 400
+        return jsonify({'error': 'No valid work email provided'}), 400
 
     updated = update_contributor_email(contributor_id, email)
     if not updated:
@@ -1947,7 +1951,7 @@ def api_fetch_contributors():
                         'github_login': c['login'],
                         'github_url': c.get('github_url', f"https://github.com/{c['login']}"),
                         'name': c.get('name', c['login']),
-                        'email': c.get('email', ''),
+                        'email': _filter_personal_email(c.get('email', '')),
                         'blog': c.get('blog', ''),
                         'company': company,
                         'annual_revenue': revenue,
@@ -5430,16 +5434,14 @@ def apollo_lookup():
     if not apollo_key:
         return jsonify({'status': 'error', 'message': 'Apollo API key not configured'}), 500
 
-    def _check_company_match(email, org_name, target_domain, target_company):
-        """Return True if the email domain or org name plausibly matches the target company."""
+    def _check_apollo_match(email, org_name, target_domain, target_company):
+        """Return True if the Apollo result plausibly matches the target company."""
         if not email and not org_name:
-            return True  # nothing to compare — allow through
-        # Check email domain against target company domain
+            return True
         if email and '@' in email:
             email_domain = email.lower().split('@')[-1]
             if target_domain and email_domain == target_domain.lower():
                 return True
-        # Check Apollo-returned org name against target company name (fuzzy)
         if org_name and target_company:
             org_lower = org_name.lower().strip()
             co_lower = target_company.lower().strip()
@@ -5468,7 +5470,7 @@ def apollo_lookup():
                 email_status = person.get('email_status', 'unknown')
                 org_name = person.get('organization', {}).get('name', '')
 
-                if email and not _check_company_match(email, org_name, domain, company):
+                if email and not _check_apollo_match(email, org_name, domain, company):
                     email_domain = email.split('@')[-1] if '@' in email else ''
                     print(f"[APOLLO LOOKUP] Domain mismatch: {email} (org: {org_name}) does not match target {company} ({domain})")
                     return jsonify({
@@ -5505,7 +5507,7 @@ def apollo_lookup():
                 email = _filter_personal_email(person.get('email', ''))
                 org_name = person.get('organization', {}).get('name', '')
 
-                if email and not _check_company_match(email, org_name, domain, company):
+                if email and not _check_apollo_match(email, org_name, domain, company):
                     email_domain = email.split('@')[-1] if '@' in email else ''
                     print(f"[APOLLO LOOKUP] Domain mismatch: {email} (org: {org_name}) does not match target {company} ({domain})")
                     return jsonify({
@@ -5920,6 +5922,50 @@ def _filter_personal_email(email):
         return ''
     domain = email.lower().split('@')[-1] if '@' in email else ''
     return '' if domain in _PERSONAL_EMAIL_DOMAINS else email
+
+
+def _derive_company_domain(company):
+    """Derive a likely domain from a company name (e.g. 'Clay' -> 'clay.com')."""
+    if not company:
+        return ''
+    clean = company.strip().lower()
+    for suffix in [' inc', ' inc.', ' corp', ' corp.', ' ltd', ' ltd.', ' llc', ' co', ' co.', ' gmbh', ' ag', ' sa']:
+        if clean.endswith(suffix):
+            clean = clean[:len(clean) - len(suffix)]
+    return clean.replace(' ', '') + '.com'
+
+
+def _check_company_match(email, target_company):
+    """Return True if the email domain plausibly matches the target company."""
+    if not email or not target_company:
+        return True  # nothing to compare — allow through
+    if '@' not in email:
+        return True
+    email_domain = email.lower().split('@')[-1]
+    # Check against derived domain
+    target_domain = _derive_company_domain(target_company)
+    if target_domain and email_domain == target_domain:
+        return True
+    # Fuzzy: company name appears in email domain or vice versa
+    co_lower = target_company.lower().strip().replace(' ', '')
+    if co_lower in email_domain or email_domain.split('.')[0] in co_lower:
+        return True
+    return False
+
+
+def _sanitize_contributor_email(email, company=None):
+    """Filter out personal emails and emails that don't match the contributor's company."""
+    if not email:
+        return ''
+    # Filter personal domains
+    email = _filter_personal_email(email)
+    if not email:
+        return ''
+    # Filter domain mismatch (consultant/external contributor)
+    if company and not _check_company_match(email, company):
+        return ''
+    return email
+
 
 @app.route('/linkedin-prospector')
 def linkedin_prospector():

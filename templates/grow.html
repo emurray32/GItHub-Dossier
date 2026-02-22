@@ -42,36 +42,12 @@
 
             <!-- Tabs for different import methods -->
             <div class="bulk-import-tabs">
-                <button class="bulk-import-tab active" onclick="switchImportTab('manual')">Manual Entry</button>
-                <button class="bulk-import-tab" onclick="switchImportTab('csv')">Upload CSV</button>
+                <button class="bulk-import-tab active" onclick="switchImportTab('csv')">Upload CSV</button>
                 <button class="bulk-import-tab" onclick="switchImportTab('sheets')">Google Sheets</button>
             </div>
 
-            <!-- Manual Entry Tab -->
-            <div class="bulk-import-tab-content active" id="manualTab">
-                <form class="import-form" id="importForm" onsubmit="processImport(event)">
-                    <label class="import-label" for="companiesInput">Company Names (one per line)</label>
-                    <textarea class="companies-textarea" id="companiesInput"
-                        placeholder="Shopify&#10;Stripe&#10;Figma&#10;Slack&#10;Notion"></textarea>
-
-                    <div class="import-options" style="display: flex; gap: 1rem; align-items: center; margin-bottom: 1rem;">
-                        <label class="import-option" style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.875rem; color: var(--text-secondary); cursor: pointer;">
-                            <input type="checkbox" id="skipDuplicates" style="accent-color: var(--accent-color);">
-                            <span>Auto-skip duplicates</span>
-                        </label>
-                        <button type="button" class="check-duplicates-btn" onclick="checkForDuplicates()" style="padding: 0.5rem 1rem; font-size: 0.85rem; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-secondary); cursor: pointer;">
-                            Check for Duplicates
-                        </button>
-                    </div>
-
-                    <button type="submit" class="process-batch-btn" id="processBtn">
-                        ▶ Process Batch
-                    </button>
-                </form>
-            </div>
-
             <!-- CSV Upload Tab -->
-            <div class="bulk-import-tab-content" id="csvTab">
+            <div class="bulk-import-tab-content active" id="csvTab">
                 <div class="file-upload-area" id="fileUploadArea" onclick="document.getElementById('csvFileInput').click()">
                     <span class="file-upload-label">📁 Choose CSV File or Drag Here</span>
                     <span class="file-upload-hint">CSV should have "Account Name", "Company Name", "Company", or "Account" column. Optional: "annual_revenue", "website"</span>
@@ -362,13 +338,10 @@ GOOGLE_SHEETS_CREDENTIALS_JSON={"type":"service_account",...}</pre>
         event.target.classList.add('active');
 
         // Update tab contents
-        document.getElementById('manualTab').classList.remove('active');
         document.getElementById('csvTab').classList.remove('active');
         document.getElementById('sheetsTab').classList.remove('active');
 
-        if (tab === 'manual') {
-            document.getElementById('manualTab').classList.add('active');
-        } else if (tab === 'csv') {
+        if (tab === 'csv') {
             document.getElementById('csvTab').classList.add('active');
             setupDragDrop();
         } else if (tab === 'sheets') {
