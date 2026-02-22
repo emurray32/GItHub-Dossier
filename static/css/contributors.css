@@ -85,7 +85,7 @@
     transform: translateX(0);
 }
 
-.sidebar-header {
+.contrib-sidebar .sidebar-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
