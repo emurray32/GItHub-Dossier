@@ -186,7 +186,7 @@
         {% for contact in report.ai_analysis.key_engineering_contacts %}
         {% set details = report.scan_data.contributors.get(contact.login, {}) if report.scan_data.contributors else {} %}
         <div class="contact-card contributor-card" data-contributor-login="{{ contact.login }}"
-             onclick="selectContributor(this, {{ contact.name|tojson }}, {{ contact.login|tojson }}, {{ report.company_name|tojson }})">
+             onclick='selectContributor(this, {{ contact.name|tojson }}, {{ contact.login|tojson }}, {{ report.company_name|tojson }})'>
           <img src="{{ details.avatar_url or 'https://github.com/identicons/' ~ contact.login ~ '.png' }}"
                class="contact-avatar" alt="{{ contact.name }}">
           <div class="contact-body">
@@ -213,13 +213,13 @@
           <div class="prospect-email-section">
             <span class="email-result" id="email-result-{{ contact.login }}" style="display:none;"></span>
             <button class="btn-compose-email" id="compose-btn-{{ contact.login }}" style="display:none;"
-                    onclick="openComposer({{ contact.login|tojson }}, {{ contact.name|tojson }})">
+                    onclick='openComposer({{ contact.login|tojson }}, {{ contact.name|tojson }})'>
               Compose &amp; Send
             </button>
             <div class="inline-email-composer" id="composer-{{ contact.login }}">
               <div class="composer-header">
                 <h4>Email to {{ contact.name }}</h4>
-                <button class="btn-cancel-compose" onclick="closeComposer({{ contact.login|tojson }})">Cancel</button>
+                <button class="btn-cancel-compose" onclick='closeComposer({{ contact.login|tojson }})'>Cancel</button>
               </div>
               <div class="composer-field">
                 <label>To</label>
@@ -234,10 +234,10 @@
                 <textarea id="composer-body-{{ contact.login }}"></textarea>
               </div>
               <div class="composer-actions">
-                <button class="btn-enroll" onclick="sendOutreachEmail({{ contact.login|tojson }}, {{ report.company_name|tojson }}, {{ report.id|tojson }})" id="send-btn-{{ contact.login }}">
+                <button class="btn-enroll" onclick='sendOutreachEmail({{ contact.login|tojson }}, {{ report.company_name|tojson }}, {{ report.id|tojson }})' id="send-btn-{{ contact.login }}">
                   Enroll
                 </button>
-                <button class="btn-cancel-compose" onclick="closeComposer({{ contact.login|tojson }})">Cancel</button>
+                <button class="btn-cancel-compose" onclick='closeComposer({{ contact.login|tojson }})'>Cancel</button>
                 <span class="send-status" id="send-status-{{ contact.login }}"></span>
               </div>
             </div>
@@ -1227,7 +1227,7 @@
                 }
 
                 picker.innerHTML = sequences.map(seq =>
-                    `<div class="sequence-option" onclick="completeEnrichEnroll(this, '${login}', ${JSON.stringify(name)}, ${JSON.stringify(company)}, '${seq.id}', ${JSON.stringify(seq.name)})">
+                    `<div class="sequence-option" onclick='completeEnrichEnroll(this, ${JSON.stringify(login)}, ${JSON.stringify(name)}, ${JSON.stringify(company)}, ${JSON.stringify(seq.id)}, ${JSON.stringify(seq.name)})'>
                         <span class="sequence-option-name">${seq.name}</span>
                         <span class="sequence-option-meta">${seq.num_steps} steps</span>
                     </div>`

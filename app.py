@@ -2057,15 +2057,19 @@ Return ONLY valid JSON with no markdown formatting:
         response = client.chat.completions.create(
             model="gpt-5-mini",
             messages=[
-                {"role": "system", "content": "You are a BDR at Phrase, a localization platform. Return ONLY valid JSON."},
+                {"role": "system", "content": "You are a BDR at Phrase, a localization platform. Write diverse, natural-sounding emails. Vary your sentence structure and word choice. Return ONLY valid JSON."},
                 {"role": "user", "content": prompt}
             ],
             response_format={"type": "json_object"},
             temperature=0.7,
-            max_completion_tokens=8192
+            max_completion_tokens=4096
         )
 
-        response_text = response.choices[0].message.content.strip()
+        response_text = response.choices[0].message.content
+        if not response_text:
+            print(f"[CONTRIBUTOR EMAIL GEN] Empty response from AI. Finish reason: {response.choices[0].finish_reason}")
+            return jsonify({'status': 'error', 'message': 'AI returned empty response. Please try again.'}), 500
+        response_text = response_text.strip()
         if response_text.startswith('```'):
             lines = response_text.split('\n')
             lines = [l for l in lines if not l.startswith('```')]
@@ -2087,7 +2091,7 @@ Return ONLY valid JSON with no markdown formatting:
         return jsonify({'status': 'success', 'email': email_data})
 
     except Exception as e:
-        print(f"[CONTRIBUTOR EMAIL GEN] Error: {e}")
+        print(f"[CONTRIBUTOR EMAIL GEN] Error ({type(e).__name__}): {e}")
         return jsonify({'status': 'error', 'message': sanitize_ai_error(e)}), 500
 
 
@@ -5999,6 +6003,15 @@ def api_linkedin_find_contact():
     name = data.get('name', '').strip()
     linkedin_url = data.get('linkedin_url', '').strip()
 
+    # Parse name from LinkedIn URL slug as last resort
+    if not name and not first_name and linkedin_url:
+        import re as _re
+        slug_match = _re.search(r'/in/([a-zA-Z0-9_-]+)', linkedin_url)
+        if slug_match:
+            slug = slug_match.group(1)
+            # Convert slug like "john-doe" → "John Doe"
+            name = ' '.join(part.capitalize() for part in slug.replace('_', '-').split('-') if part)
+
     # Parse name if first/last not provided
     if name and not first_name:
         parts = name.split(' ')
@@ -6049,10 +6062,11 @@ def api_linkedin_find_contact():
                 print(f"[LINKEDIN] people/match found person: email={person.get('email')}, id={person.get('id')}, has_photo={bool(person.get('photo_url'))}")
                 apollo_first = person.get('first_name') or ''
                 apollo_last = person.get('last_name') or ''
-                apollo_name = f"{apollo_first} {apollo_last}".strip()
+                apollo_name = f"{apollo_first} {apollo_last}".strip() or (person.get('name') or '')
+                fallback_name = name or f"{first_name} {last_name}".strip()
                 match_person = {
                     'id': person.get('id') or '',
-                    'name': apollo_name or name or f"{first_name} {last_name}".strip(),
+                    'name': apollo_name or fallback_name,
                     'first_name': apollo_first or first_name,
                     'last_name': apollo_last or last_name,
                     'email': _filter_personal_email(person.get('email') or ''),
@@ -6099,10 +6113,11 @@ def api_linkedin_find_contact():
                     print(f"[LINKEDIN] contacts/search found: email={person.get('email')}")
                     s_first = person.get('first_name') or ''
                     s_last = person.get('last_name') or ''
-                    s_name = f"{s_first} {s_last}".strip()
+                    s_name = f"{s_first} {s_last}".strip() or (person.get('name') or '')
+                    fallback_name = name or f"{first_name} {last_name}".strip()
                     search_contact = {
                         'id': person.get('id') or '',
-                        'name': s_name or name or f"{first_name} {last_name}".strip(),
+                        'name': s_name or fallback_name,
                         'first_name': s_first or first_name,
                         'last_name': s_last or last_name,
                         'email': _filter_personal_email(person.get('email') or ''),
