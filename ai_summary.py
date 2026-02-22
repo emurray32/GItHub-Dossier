@@ -115,7 +115,7 @@ def generate_analysis(scan_data: dict) -> Generator[str, None, dict]:
                 base_url=AI_INTEGRATIONS_OPENAI_BASE_URL
             )
             response = client.chat.completions.create(
-                model="gpt-4o-mini",
+                model="gpt-5-mini",
                 messages=[
                     {"role": "system", "content": "You are a sales strategist for a Localization Platform. Return your analysis as valid JSON only, with no markdown formatting."},
                     {"role": "user", "content": prompt}
