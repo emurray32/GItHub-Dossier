@@ -1383,7 +1383,7 @@ def api_send_to_bdr():
 @app.route('/api/report/<int:report_id>/deep-dive', methods=['POST'])
 def api_deep_dive(report_id: int):
     """
-    Generate a Deep Dive analysis for a report using Gemini AI.
+    Generate a Deep Dive analysis for a report using OpenAI GPT-5 mini.
 
     Only available for Tier 1-3 accounts (Thinking, Preparing, Launched).
     Not available for Tier 0 (Tracking) or Tier 4 (Invalid).
@@ -1961,15 +1961,17 @@ def api_fetch_contributors():
 
 @app.route('/api/contributors/generate-email', methods=['POST'])
 def api_generate_contributor_email():
-    """Generate a personalized outreach email for a contributor using Gemini AI."""
-    from google import genai
+    """Generate a personalized outreach email for a contributor using OpenAI GPT-5 mini."""
+    from openai import OpenAI
 
     data = request.get_json()
     if not data:
         return jsonify({'status': 'error', 'message': 'No data provided'}), 400
 
-    if not Config.GEMINI_API_KEY:
-        return jsonify({'status': 'error', 'message': 'Gemini API key not configured'}), 400
+    api_key = os.environ.get('AI_INTEGRATIONS_OPENAI_API_KEY', '')
+    base_url = os.environ.get('AI_INTEGRATIONS_OPENAI_BASE_URL', '')
+    if not api_key or not base_url:
+        return jsonify({'status': 'error', 'message': 'OpenAI API key not configured'}), 400
 
     name = data.get('name', 'there')
     first_name = name.split(' ')[0] if name else 'there'
@@ -2036,22 +2038,25 @@ Return ONLY valid JSON with no markdown formatting:
 }}"""
 
     try:
-        client = genai.Client(api_key=Config.GEMINI_API_KEY)
-        response = client.models.generate_content(
-            model=Config.GEMINI_MODEL,
-            contents=prompt
+        client = OpenAI(api_key=api_key, base_url=base_url)
+        response = client.chat.completions.create(
+            model="gpt-5-mini",
+            messages=[
+                {"role": "system", "content": "You are a BDR at Phrase, a localization platform. Return ONLY valid JSON."},
+                {"role": "user", "content": prompt}
+            ],
+            response_format={"type": "json_object"},
+            max_completion_tokens=4096
         )
 
-        response_text = response.text.strip()
+        response_text = response.choices[0].message.content.strip()
         if response_text.startswith('```'):
             lines = response_text.split('\n')
             lines = [l for l in lines if not l.startswith('```')]
             response_text = '\n'.join(lines)
 
-        import json
         email_data = json.loads(response_text)
 
-        # Post-process: replace any unresolved merge tags with actual values
         merge_replacements = {
             '{{company}}': company, '{{name}}': name, '{{first_name}}': first_name,
             '{{ company }}': company, '{{ name }}': name, '{{ first_name }}': first_name,
@@ -4753,7 +4758,7 @@ def api_rules_explain():
     """
     Get AI-generated simple explanations for rules.
 
-    Uses Gemini AI to generate layman-friendly explanations and caches them.
+    Uses OpenAI GPT-5 mini to generate layman-friendly explanations and caches them.
 
     Request body:
         {"rules": ["rule_name_1", "rule_name_2", ...]}
@@ -4762,8 +4767,8 @@ def api_rules_explain():
         JSON with explanations for each rule.
     """
     openai_key = os.environ.get('AI_INTEGRATIONS_OPENAI_API_KEY', '')
-    if not openai_key and not Config.GEMINI_API_KEY:
-        return jsonify({'error': 'No AI API key configured (OpenAI or Gemini)'}), 500
+    if not openai_key:
+        return jsonify({'error': 'No AI API key configured (OpenAI)'}), 500
 
     data = request.get_json() or {}
     rule_names = data.get('rules', [])
@@ -4801,7 +4806,7 @@ def api_rules_explain():
 
 def _generate_rule_explanations(rule_names: list) -> dict:
     """
-    Generate AI explanations for a batch of rules using GPT-5 mini (primary) with Gemini fallback.
+    Generate AI explanations for a batch of rules using GPT-5 mini.
 
     Returns a dict mapping rule names to their explanations.
     """
@@ -4840,24 +4845,9 @@ IMPORTANT: Return ONLY valid JSON, no markdown formatting or code blocks."""
             response_text = response.choices[0].message.content.strip()
             return json.loads(response_text)
         except Exception as e:
-            print(f"[RULES] GPT-5 mini error: {e}, falling back to Gemini...")
+            print(f"[RULES] GPT-5 mini error: {e}")
 
-    try:
-        from google import genai
-        client = genai.Client(api_key=Config.GEMINI_API_KEY)
-        response = client.models.generate_content(
-            model=Config.GEMINI_MODEL,
-            contents=prompt
-        )
-        response_text = response.text.strip()
-        if response_text.startswith('```'):
-            lines = response_text.split('\n')
-            lines = [l for l in lines if not l.startswith('```')]
-            response_text = '\n'.join(lines)
-        return json.loads(response_text)
-    except Exception as e:
-        print(f"[RULES] Gemini fallback error: {e}")
-        return {}
+    return {}
 
 
 def _get_rule_context_for_ai(rule_names: list) -> str:
@@ -4904,8 +4894,8 @@ def api_rules_explain_all():
     Returns all explanations.
     """
     openai_key = os.environ.get('AI_INTEGRATIONS_OPENAI_API_KEY', '')
-    if not openai_key and not Config.GEMINI_API_KEY:
-        return jsonify({'error': 'No AI API key configured (OpenAI or Gemini)'}), 500
+    if not openai_key:
+        return jsonify({'error': 'No AI API key configured (OpenAI)'}), 500
 
     all_rule_names = [
         'rfc_keywords', 'smoking_gun_libs', 'smoking_gun_fork_repos',
@@ -5647,7 +5637,7 @@ def linkedin_prospector():
 
 @app.route('/api/linkedin/extract', methods=['POST'])
 def api_linkedin_extract():
-    """Extract contact info from a LinkedIn screenshot using GPT-5 mini (primary) with Gemini fallback."""
+    """Extract contact info from a LinkedIn screenshot using GPT-5 mini."""
     import base64
 
     if 'image' not in request.files:
@@ -5698,23 +5688,10 @@ Return ONLY the JSON object, nothing else."""
                 )
                 response_text = response.choices[0].message.content.strip()
             except Exception as e:
-                print(f"[LINKEDIN] GPT-5 mini error: {e}, falling back to Gemini...")
+                print(f"[LINKEDIN] GPT-5 mini error: {e}")
 
         if response_text is None:
-            if not Config.GEMINI_API_KEY:
-                return jsonify({'status': 'error', 'message': 'No AI API key configured (OpenAI or Gemini).'}), 400
-
-            from google import genai
-            from google.genai import types as genai_types
-            client = genai.Client(api_key=Config.GEMINI_API_KEY)
-            response = client.models.generate_content(
-                model=Config.GEMINI_MODEL,
-                contents=[
-                    genai_types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
-                    prompt
-                ]
-            )
-            response_text = response.text.strip()
+            return jsonify({'status': 'error', 'message': 'No AI API key configured (OpenAI).'}), 400
 
         if response_text.startswith('```'):
             lines = response_text.split('\n')
@@ -5875,8 +5852,8 @@ def api_linkedin_find_contact():
 
 @app.route('/api/linkedin/generate-email', methods=['POST'])
 def api_linkedin_generate_email():
-    """Generate a personalized outreach email for a LinkedIn contact using Gemini."""
-    from google import genai
+    """Generate a personalized outreach email for a LinkedIn contact using OpenAI GPT-5 mini."""
+    from openai import OpenAI
 
     data = request.get_json()
     if not data:
@@ -5885,8 +5862,10 @@ def api_linkedin_generate_email():
     contact = data.get('contact', {})
     linkedin_data = data.get('linkedin_data', {})
 
-    if not Config.GEMINI_API_KEY:
-        return jsonify({'status': 'error', 'message': 'Gemini API key not configured'}), 400
+    api_key = os.environ.get('AI_INTEGRATIONS_OPENAI_API_KEY', '')
+    base_url = os.environ.get('AI_INTEGRATIONS_OPENAI_BASE_URL', '')
+    if not api_key or not base_url:
+        return jsonify({'status': 'error', 'message': 'OpenAI API key not configured'}), 400
 
     name = contact.get('name') or linkedin_data.get('name', 'there')
     first_name = contact.get('first_name') or (name.split(' ')[0] if name else 'there')
@@ -5896,7 +5875,6 @@ def api_linkedin_generate_email():
     summary = contact.get('summary') or linkedin_data.get('summary', '')
     goldilocks_status = data.get('goldilocks_status', '')
 
-    # Temperature-aware tone guidance
     tone_guidance = ''
     if goldilocks_status == 'preparing':
         tone_guidance = '\nTone: URGENT — this company is actively setting up i18n. Create urgency and push for an immediate meeting.'
@@ -5935,19 +5913,23 @@ Return ONLY valid JSON with no markdown:
 }}"""
 
     try:
-        client = genai.Client(api_key=Config.GEMINI_API_KEY)
-        response = client.models.generate_content(
-            model=Config.GEMINI_MODEL,
-            contents=prompt
+        client = OpenAI(api_key=api_key, base_url=base_url)
+        response = client.chat.completions.create(
+            model="gpt-5-mini",
+            messages=[
+                {"role": "system", "content": "You are a BDR writing personalized cold outreach emails. Return ONLY valid JSON."},
+                {"role": "user", "content": prompt}
+            ],
+            response_format={"type": "json_object"},
+            max_completion_tokens=4096
         )
 
-        response_text = response.text.strip()
+        response_text = response.choices[0].message.content.strip()
         if response_text.startswith('```'):
             lines = response_text.split('\n')
             lines = [l for l in lines if not l.startswith('```')]
             response_text = '\n'.join(lines)
 
-        import json
         email_data = json.loads(response_text)
         return jsonify({'status': 'success', 'email': email_data})
 

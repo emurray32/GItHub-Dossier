@@ -85,11 +85,6 @@ try:
 except ImportError:
     OPENAI_AVAILABLE = False
 
-try:
-    from google import genai
-    GENAI_AVAILABLE = True
-except ImportError:
-    GENAI_AVAILABLE = False
 
 AI_INTEGRATIONS_OPENAI_API_KEY = os.environ.get("AI_INTEGRATIONS_OPENAI_API_KEY")
 AI_INTEGRATIONS_OPENAI_BASE_URL = os.environ.get("AI_INTEGRATIONS_OPENAI_BASE_URL")
@@ -98,8 +93,8 @@ AI_INTEGRATIONS_OPENAI_BASE_URL = os.environ.get("AI_INTEGRATIONS_OPENAI_BASE_UR
 def generate_analysis(scan_data: dict) -> Generator[str, None, dict]:
     """
     Generate AI-powered sales intelligence from 3-Signal scan data.
-    Uses GPT-5 mini (primary), falls back to Gemini 3.1 Pro,
-    then rule-based analysis. Cold email is generated separately via Gemini.
+    Uses GPT-5 mini (primary), then rule-based analysis fallback.
+    Cold email is generated separately via GPT-5 mini.
     """
     yield _sse_log("Initializing AI Sales Intelligence Engine...")
     ai_succeeded = False
@@ -131,46 +126,27 @@ def generate_analysis(scan_data: dict) -> Generator[str, None, dict]:
 
         except Exception as e:
             yield _sse_log(f"GPT-5 mini error: {str(e)}")
-            yield _sse_log("Falling back to Gemini...")
-
-    if not ai_succeeded and GENAI_AVAILABLE and Config.GEMINI_API_KEY:
-        yield _sse_log("Trying Gemini 3.1 Pro fallback...")
-        prompt = _build_sales_intelligence_prompt(scan_data)
-
-        try:
-            client = genai.Client(api_key=Config.GEMINI_API_KEY)
-            response = client.models.generate_content(
-                model=Config.GEMINI_MODEL,
-                contents=prompt
-            )
-            yield _sse_log("Processing AI response...")
-            analysis = _parse_ai_response(response.text, scan_data)
-            yield _sse_log("AI Sales Intelligence Complete (Gemini 3.1 Pro fallback)")
-            ai_succeeded = True
-
-        except Exception as e:
-            yield _sse_log(f"Gemini fallback error: {str(e)}")
 
     if not ai_succeeded:
         yield _sse_log("Using rule-based analysis...")
         analysis = _generate_fallback_analysis(scan_data)
 
     if ai_succeeded:
-        yield _sse_log("Generating cold email with Gemini 3.1 Pro...")
-        cold_email = _generate_cold_email_with_gemini(scan_data, analysis)
+        yield _sse_log("Generating cold email with GPT-5 mini...")
+        cold_email = _generate_cold_email_with_openai(scan_data, analysis)
         if cold_email:
             analysis['cold_email_draft'] = cold_email
             analysis['email_draft'] = cold_email
             yield _sse_log("Cold email generated successfully")
         else:
-            yield _sse_log("Cold email generation skipped (Gemini unavailable)")
+            yield _sse_log("Cold email generation skipped (OpenAI unavailable)")
 
     yield _sse_data('ANALYSIS_COMPLETE', analysis)
 
 
-def _generate_cold_email_with_gemini(scan_data: dict, analysis: dict) -> dict:
-    """Generate cold email draft using Gemini 3.1 Pro (writing/creative task)."""
-    if not GENAI_AVAILABLE or not Config.GEMINI_API_KEY:
+def _generate_cold_email_with_openai(scan_data: dict, analysis: dict) -> dict:
+    """Generate cold email draft using GPT-5 mini (writing/creative task)."""
+    if not OPENAI_AVAILABLE or not AI_INTEGRATIONS_OPENAI_API_KEY or not AI_INTEGRATIONS_OPENAI_BASE_URL:
         return None
 
     raw_company = scan_data.get('company_name', 'Unknown')
@@ -208,12 +184,17 @@ Return ONLY valid JSON with this format:
 """
 
     try:
-        client = genai.Client(api_key=Config.GEMINI_API_KEY)
-        response = client.models.generate_content(
-            model=Config.GEMINI_MODEL,
-            contents=prompt
+        client = OpenAI(api_key=AI_INTEGRATIONS_OPENAI_API_KEY, base_url=AI_INTEGRATIONS_OPENAI_BASE_URL)
+        response = client.chat.completions.create(
+            model="gpt-5-mini",
+            messages=[
+                {"role": "system", "content": "You are a cold email specialist for a Localization Platform. Return ONLY valid JSON."},
+                {"role": "user", "content": prompt}
+            ],
+            response_format={"type": "json_object"},
+            max_completion_tokens=4096
         )
-        text = response.text.strip()
+        text = response.choices[0].message.content.strip()
         if text.startswith('```json'):
             text = text[7:]
         if text.startswith('```'):
@@ -420,7 +401,7 @@ Generate a JSON response with these fields. USE CLEAR, CONCISE, NON-TECHNICAL LA
 
 
 def _parse_ai_response(response_text: str, scan_data: dict) -> dict:
-    """Parse AI response (OpenAI or Gemini) into structured analysis."""
+    """Parse AI response (OpenAI) into structured analysis."""
     try:
         # Clean up response text
         text = response_text.strip()
@@ -887,7 +868,7 @@ def _sse_data(event_type: str, data: dict) -> str:
 
 def generate_deep_dive(scan_data: dict, ai_analysis: dict) -> dict:
     """
-    Generate a Deep Dive analysis using Gemini AI.
+    Generate a Deep Dive analysis using OpenAI GPT-5 mini.
 
     This provides:
     1. Important timeline events from the company's i18n journey
@@ -901,24 +882,25 @@ def generate_deep_dive(scan_data: dict, ai_analysis: dict) -> dict:
     Returns:
         Dictionary with deep_dive analysis results
     """
-    if not GENAI_AVAILABLE:
+    if not OPENAI_AVAILABLE or not AI_INTEGRATIONS_OPENAI_API_KEY or not AI_INTEGRATIONS_OPENAI_BASE_URL:
         return _generate_deep_dive_fallback(scan_data, ai_analysis)
 
-    if not Config.GEMINI_API_KEY:
-        return _generate_deep_dive_fallback(scan_data, ai_analysis)
-
-    # Build the Deep Dive prompt
     prompt = _build_deep_dive_prompt(scan_data, ai_analysis)
 
     try:
-        client = genai.Client(api_key=Config.GEMINI_API_KEY)
+        client = OpenAI(api_key=AI_INTEGRATIONS_OPENAI_API_KEY, base_url=AI_INTEGRATIONS_OPENAI_BASE_URL)
 
-        response = client.models.generate_content(
-            model=Config.GEMINI_MODEL,
-            contents=prompt
+        response = client.chat.completions.create(
+            model="gpt-5-mini",
+            messages=[
+                {"role": "system", "content": "You are a senior sales intelligence analyst. Return ONLY valid JSON."},
+                {"role": "user", "content": prompt}
+            ],
+            response_format={"type": "json_object"},
+            max_completion_tokens=4096
         )
 
-        return _parse_deep_dive_response(response.text, scan_data, ai_analysis)
+        return _parse_deep_dive_response(response.choices[0].message.content, scan_data, ai_analysis)
 
     except Exception as e:
         print(f"[AI] Deep Dive error: {str(e)}")
@@ -1035,7 +1017,7 @@ IMPORTANT:
 
 
 def _parse_deep_dive_response(response_text: str, scan_data: dict, ai_analysis: dict) -> dict:
-    """Parse Gemini Deep Dive response."""
+    """Parse Deep Dive AI response."""
     try:
         # Clean up response text
         text = response_text.strip()
@@ -1057,8 +1039,8 @@ def _parse_deep_dive_response(response_text: str, scan_data: dict, ai_analysis: 
         if 'outreach_narrative' not in result:
             result['outreach_narrative'] = ''
 
-        result['_source'] = 'gemini'
-        result['_model'] = Config.GEMINI_MODEL
+        result['_source'] = 'openai'
+        result['_model'] = 'gpt-5-mini'
 
         return result
 

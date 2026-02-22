@@ -25,11 +25,6 @@ try:
 except ImportError:
     OPENAI_AVAILABLE = False
 
-try:
-    from google import genai
-    GENAI_AVAILABLE = True
-except ImportError:
-    GENAI_AVAILABLE = False
 
 
 class LocalizationScorer:
@@ -567,7 +562,7 @@ class WebAnalyzer:
     def analyze_with_ai(self, website_data: Dict[str, Any], prompt: str) -> Dict[str, Any]:
         """
         Analyze website content using AI based on a natural language prompt.
-        Uses GPT-5 mini (primary) with Gemini 3.1 Pro fallback.
+        Uses GPT-5 mini.
 
         Args:
             website_data: Dictionary containing website content and metadata
@@ -609,33 +604,9 @@ class WebAnalyzer:
                     }
                 }
             except Exception as e:
-                print(f"[WEB_ANALYZER] GPT-5 mini error: {e}, falling back to Gemini...")
+                print(f"[WEB_ANALYZER] GPT-5 mini error: {e}")
 
-        if GENAI_AVAILABLE and Config.GEMINI_API_KEY:
-            try:
-                client = genai.Client(api_key=Config.GEMINI_API_KEY)
-                response = client.models.generate_content(
-                    model=Config.GEMINI_MODEL,
-                    contents=analysis_prompt
-                )
-                analysis_text = response.text
-
-                return {
-                    'success': True,
-                    'analysis': analysis_text,
-                    'metadata': {
-                        'url': website_data.get('url'),
-                        'title': website_data.get('title'),
-                        'content_length': website_data.get('content_length'),
-                        'link_count': website_data.get('link_count'),
-                        'image_count': website_data.get('image_count'),
-                        'model': Config.GEMINI_MODEL,
-                    }
-                }
-            except Exception as e:
-                raise Exception(f"AI analysis failed: {str(e)}")
-
-        raise Exception("No AI provider available. Please configure OpenAI or Gemini API keys.")
+        raise Exception("No AI provider available. Please configure OpenAI API keys.")
 
     def _build_analysis_prompt(self, website_data: Dict[str, Any], user_prompt: str) -> str:
         """

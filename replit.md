@@ -1,14 +1,14 @@
 # Lead Machine - Deep-Dive Research Engine
 
 ## Overview
-A Flask application for analyzing GitHub organizations to detect localization signals. The app scans GitHub repositories, commits, and PRs to find internationalization (i18n) indicators and provides AI-powered analysis using Gemini 3.1 Pro (primary) with OpenAI GPT-5-mini as fallback.
+A Flask application for analyzing GitHub organizations to detect localization signals. The app scans GitHub repositories, commits, and PRs to find internationalization (i18n) indicators and provides AI-powered analysis using OpenAI GPT-5-mini (via Replit AI Integrations).
 
 ## Project Structure
 ```
 ├── app.py              # Main Flask application
 ├── config.py           # Configuration settings
 ├── database.py         # SQLite database module
-├── ai_summary.py       # AI-powered analysis (Gemini 3.1 Pro primary, OpenAI GPT-5-mini fallback)
+├── ai_summary.py       # AI-powered analysis (OpenAI GPT-5-mini via Replit AI Integrations)
 ├── monitors/           # GitHub scanning modules
 │   ├── discovery.py    # GitHub org discovery
 │   └── scanner.py      # Deep scan functionality
@@ -35,7 +35,6 @@ python app.py
 - `FLASK_SECRET_KEY` - Flask secret key (optional, has default)
 - `FLASK_DEBUG` - Enable debug mode (optional)
 - `GITHUB_TOKEN` - GitHub API token for scanning
-- `GEMINI_API_KEY` - Google Gemini API key for AI analysis (primary)
 - `AI_INTEGRATIONS_OPENAI_API_KEY` - Auto-managed by Replit AI Integrations
 - `AI_INTEGRATIONS_OPENAI_BASE_URL` - Auto-managed by Replit AI Integrations
 
@@ -43,16 +42,17 @@ python app.py
 - **Backend**: Python 3.11, Flask
 - **Database**: SQLite (local file-based)
 - **Frontend**: HTML, CSS, JavaScript with Server-Sent Events
-- **AI**: OpenAI GPT-5-mini (analysis/classification), Google Gemini 3.1 Pro (writing/creative only)
+- **AI**: OpenAI GPT-5-mini (all tasks — analysis, writing, cold emails, via Replit AI Integrations)
 
 ## Recent Changes
+- 2026-02-22: Consolidated all AI to OpenAI GPT-5-mini
+  - Removed all Google Gemini dependencies (genai library, GEMINI_API_KEY, GEMINI_MODEL)
+  - GPT-5-mini now handles everything: scan analysis, cold emails, deep-dive narratives, LinkedIn outreach, signal verification, website analysis, company discovery
+  - Single provider via Replit AI Integrations (auto-managed key, no separate API key needed)
+  - Upgraded last remaining gpt-4o-mini reference in ai_summary.py to gpt-5-mini
 - 2026-02-19: Split AI models by task type for cost optimization
-  - GPT-5 mini ($0.25/$2 per 1M tokens): scan analysis, company discovery, website analysis, signal verification, rule explanations, LinkedIn data extraction
-  - Gemini 3.1 Pro ($2/$12 per 1M tokens): cold email drafts, deep-dive narratives, LinkedIn outreach emails (writing only)
-  - Cold email generation separated from main analysis into dedicated Gemini call
   - Fixed AI fallback chain: only one engine runs per scan (was running all three)
   - Fixed LinkedIn Prospector routes that were defined after app.run() (never registered)
-  - Updated signal_verifier from gpt-4o-mini to gpt-5-mini
 - 2026-02-13: Added Apollo sequence enrollment to report page
   - New API: GET /api/apollo/sequences fetches available Apollo email sequences
   - New API: POST /api/apollo/enroll-sequence searches/creates contact and enrolls in sequence

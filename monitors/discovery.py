@@ -18,11 +18,6 @@ try:
 except ImportError:
     OPENAI_AVAILABLE = False
 
-try:
-    from google import genai
-    GENAI_AVAILABLE = True
-except ImportError:
-    GENAI_AVAILABLE = False
 
 
 
@@ -570,19 +565,7 @@ Return ONLY valid JSON array, no markdown formatting or explanation.'''
             )
             response_text = response.choices[0].message.content.strip()
         except Exception as e:
-            print(f"[DISCOVERY] GPT-5 mini error: {e}, falling back to Gemini...")
-
-    if response_text is None and GENAI_AVAILABLE and Config.GEMINI_API_KEY:
-        try:
-            client = genai.Client(api_key=Config.GEMINI_API_KEY)
-            response = client.models.generate_content(
-                model=Config.GEMINI_MODEL,
-                contents=system_prompt
-            )
-            response_text = response.text.strip()
-        except Exception as e:
-            print(f"[DISCOVERY] Gemini fallback error: {e}")
-            return []
+            print(f"[DISCOVERY] GPT-5 mini error: {e}")
 
     if response_text is None:
         return []
