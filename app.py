@@ -1238,11 +1238,13 @@ def download_pdf(report_id: int):
 
 @app.route('/report/<int:report_id>')
 def view_report(report_id: int):
-    """View a saved report."""
+    """View a saved report. Pass ?embed=1 to render without app shell (for drawer/iframe)."""
     report = get_report(report_id)
     if not report:
         return render_template('error.html', message='Report not found'), 404
-    return render_template('report.html', report=report)
+    embed = request.args.get('embed') == '1'
+    template = 'report_embed.html' if embed else 'report.html'
+    return render_template(template, report=report)
 
 
 @app.route('/search')

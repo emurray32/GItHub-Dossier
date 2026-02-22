@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ report.company_name }} — Report</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/geist@1/dist/fonts/geist-sans/style.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=2">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/report.css') }}?v={{ cache_bust }}">
+    <style>
+        /* Embed overrides — no sidebar, no header, full-bleed */
+        body {
+            margin: 0;
+            padding: 0;
+            background: var(--color-bg);
+        }
+        .report-page {
+            max-width: 100%;
+            padding: 1.25rem;
+        }
+        /* Hide sticky header in embed — drawer already shows context */
+        .report-sticky-header {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+{% set goldilocks_status = report.scan_data.goldilocks_status or report.ai_analysis.goldilocks_status or 'none' %}
+{% set lead_status = report.scan_data.lead_status or report.ai_analysis.lead_status or '' %}
+
+{% include "report.html" ignore missing %}
+
+{# Since we can't easily include just the content block, we inline the report body here.
+   This template mirrors the content and scripts blocks from report.html. #}
+
+<div class="report-page">
+
+  <!-- ===== HERO HEADER ===== -->
+  <div class="hero" id="reportHero">
+    <div class="hero-left">
+      <h1 class="hero-company">{{ report.company_name|title }}</h1>
+      <div class="hero-meta">
+        <a href="{{ report.scan_data.org_url }}" target="_blank" class="meta-link">@{{ report.github_org }}</a>
+        {% if report.website %}
+        <a href="{{ report.website|normalize_url }}" target="_blank" class="meta-link">{{ report.website }}</a>
+        {% endif %}
+        {% if report.annual_revenue %}
+        <span class="meta-tag revenue-display" data-raw="{{ report.annual_revenue }}">{{ report.annual_revenue|format_revenue }}</span>
+        {% endif %}
+        <span class="meta-date">{{ report.created_at }}</span>
+      </div>
+    </div>
+    <div class="hero-right">
+      {% if goldilocks_status == 'preparing' %}
+      <div class="verdict-badge verdict-hot">
+        <div class="verdict-label"><svg class="verdict-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>Call Now</div>
+        <div class="verdict-detail">Goldilocks signal detected</div>
+      </div>
+      {% elif goldilocks_status == 'thinking' %}
+      <div class="verdict-badge verdict-warm">
+        <div class="verdict-label"><svg class="verdict-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2c1 3 3 5 6 6-3 1-5 3-6 6-1-3-3-5-6-6 3-1 5-3 6-6z"/></svg>Warm Lead</div>
+        <div class="verdict-detail">Early momentum</div>
+      </div>
+      {% elif goldilocks_status == 'launched' %}
+      <div class="verdict-badge verdict-late">
+        <div class="verdict-label"><svg class="verdict-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>Too Late</div>
+        <div class="verdict-detail">Already localized</div>
+      </div>
+      {% else %}
+      <div class="verdict-badge verdict-cold">
+        <div class="verdict-label"><svg class="verdict-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M8 6l4-4 4 4M8 18l4 4 4-4M2 12h20"/></svg>Cold Lead</div>
+        <div class="verdict-detail">Keep monitoring</div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- ===== INTEL STRIP ===== -->
+  <div class="intel-strip">
+    {% if report.scan_data.scoring_v2 %}
+    {% set v2 = report.scan_data.scoring_v2 %}
+    <div class="intel-item">
+      <span class="intel-label">Maturity</span>
+      <span class="intel-info" title="How mature their i18n infrastructure is">i</span>
+      <span class="intel-value badge-maturity-{{ v2.org_maturity_level|default('unknown') }}">{{ v2.org_maturity_label|default('Unknown') }}</span>
+    </div>
+    <div class="intel-item">
+      <span class="intel-label">Readiness</span>
+      <span class="intel-info" title="How close to needing a localization platform">i</span>
+      <div class="readiness-bar-mini">
+        <div class="readiness-fill" style="width: {{ (v2.readiness_index|default(0) * 100)|int }}%"></div>
+      </div>
+      <span class="intel-value">{{ (v2.readiness_index|default(0) * 100)|int }}%</span>
+    </div>
+    <div class="intel-item">
+      <span class="intel-label">Confidence</span>
+      <span class="intel-info" title="Assessment confidence based on available data">i</span>
+      <span class="intel-value">{{ "%.0f"|format(v2.confidence_percent|default(0)) }}%</span>
+    </div>
+    <div class="intel-item">
+      <span class="intel-label">Risk</span>
+      <span class="intel-info" title="Risk they already have a competing solution">i</span>
+      <span class="intel-value risk-{{ v2.risk_label|default('unknown')|lower }}">{{ v2.risk_label|default('N/A') }}</span>
+    </div>
+    <div class="intel-item">
+      <span class="intel-label">Outreach</span>
+      <span class="intel-value">{{ v2.outreach_strategy|default('N/A') }}</span>
+    </div>
+    {% endif %}
+    <div class="intel-item">
+      <span class="intel-label">Signals</span>
+      <span class="intel-value">{{ report.signals_found }}</span>
+    </div>
+    <div class="intel-item">
+      <span class="intel-label">Repos</span>
+      <span class="intel-value">{{ report.repos_scanned }}</span>
+    </div>
+    <div class="intel-item">
+      <span class="intel-label">Intent</span>
+      <span class="intel-value">{{ report.scan_data.intent_score or 0 }}</span>
+    </div>
+    <div class="intel-item">
+      <span class="intel-label">Opportunity</span>
+      <span class="intel-value">{{ report.ai_analysis.opportunity_score or 5 }}/10</span>
+    </div>
+  </div>
+
+  <!-- ===== EXECUTIVE SUMMARY ===== -->
+  {% if report.ai_analysis.executive_summary %}
+  <div class="summary-bar">
+    {{ report.ai_analysis.executive_summary }}
+  </div>
+  {% endif %}
+
+  <!-- ===== BDR ACTION ALERT ===== -->
+  {% if goldilocks_status == 'preparing' %}
+  <div class="action-alert action-alert-hot">
+    <strong>Action Required:</strong> This company has installed i18n libraries but has zero translation files. The infrastructure is ready, waiting for content. Reach out today.
+  </div>
+  {% elif goldilocks_status == 'launched' %}
+  <div class="action-alert action-alert-low">
+    <strong>Low Priority:</strong> This company already has translation files in place. Focus on higher-priority leads. The email draft below is available if needed.
+  </div>
+  {% endif %}
+
+  <!-- ===== TWO-COLUMN LAYOUT: EMAIL + CONTACTS ===== -->
+  <div class="main-grid">
+
+    <!-- LEFT: Email Draft -->
+    <div class="panel">
+      {% if report.ai_analysis.email_draft %}
+      <div class="panel-header">
+        <h2>Cold Email Draft</h2>
+        <div class="panel-actions">
+          <span class="skill-tag">{{ report.ai_analysis.email_draft.skill_applied|default('Cold Outreach') }}</span>
+          <button class="btn btn-outline" onclick="copyEmailDraft(this)" id="copyEmailBtn">
+            <span class="btn-text">Copy Email</span>
+          </button>
+        </div>
+      </div>
+      <div id="selected-contact-banner" class="selected-contact-indicator"></div>
+      <div class="email-form">
+        <label class="field-label">Subject</label>
+        <input type="text" id="emailSubject" class="email-input" value="{{ report.ai_analysis.email_draft.subject|default('') }}">
+        <label class="field-label">Body</label>
+        <textarea id="emailBody" class="email-textarea" oninput="autoResizeEmailBody(this)">{{ report.ai_analysis.email_draft.body|default('') }}</textarea>
+      </div>
+      <p class="email-hint">Click any field to personalize.</p>
+      {% else %}
+      <div class="panel-header"><h2>Email Draft</h2></div>
+      <p class="empty-state">No email draft generated for this account.</p>
+      {% endif %}
+    </div>
+
+    <!-- RIGHT: Key Contacts -->
+    <div class="panel">
+      <div class="panel-header">
+        <h2>Key Contacts</h2>
+        <span class="contact-count">{{ report.ai_analysis.key_engineering_contacts|length if report.ai_analysis.key_engineering_contacts else 0 }} people</span>
+      </div>
+
+      {% if report.ai_analysis.key_engineering_contacts %}
+      <div class="contacts-list">
+        {% for contact in report.ai_analysis.key_engineering_contacts %}
+        {% set details = report.scan_data.contributors.get(contact.login, {}) if report.scan_data.contributors else {} %}
+        <div class="contact-card contributor-card" data-contributor-login="{{ contact.login }}"
+             onclick="selectContributor(this, {{ contact.name|tojson }}, {{ contact.login|tojson }}, {{ report.company_name|tojson }})">
+          <img src="{{ details.avatar_url or 'https://github.com/identicons/' ~ contact.login ~ '.png' }}"
+               class="contact-avatar" alt="{{ contact.name }}">
+          <div class="contact-body">
+            <div class="contact-name">{{ contact.name }} <span class="contact-handle">@{{ contact.login }}</span></div>
+            <div class="contact-role">{{ contact.role_inference }}</div>
+            {% if details.bio %}
+            <div class="contact-bio">"{{ details.bio }}"</div>
+            {% endif %}
+            <div class="contact-reason">{{ contact.outreach_reason }}</div>
+          </div>
+          <div class="contact-actions">
+            <button class="btn-sm btn-fetch-email" onclick="event.stopPropagation(); fetchApolloEmail(this, {{ contact.name|tojson }}, {{ report.company_name|tojson }})" data-login="{{ contact.login }}">
+              Find Email
+            </button>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="empty-state">No key contacts identified yet.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- ===== SUPPORTING INTEL SECTIONS ===== -->
+  <div class="intel-sections">
+
+    {% if report.ai_analysis.reachout_reasons %}
+    <div class="section">
+      <h2 class="section-title">Why Reach Out</h2>
+      <div class="reasons-grid">
+        {% for reason in report.ai_analysis.reachout_reasons %}
+        <div class="reason-card">{{ reason }}</div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    {% if report.ai_analysis.outreach_suggestions %}
+    <div class="section">
+      <h2 class="section-title">Outreach Suggestions</h2>
+      <div class="suggestions-list">
+        {% for suggestion in report.ai_analysis.outreach_suggestions %}
+        <div class="suggestion-item">{{ suggestion }}</div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    {% if report.ai_analysis.key_contacts_to_find %}
+    <div class="section">
+      <h2 class="section-title">Key Contacts to Find</h2>
+      <div class="suggestions-list">
+        {% for contact_info in report.ai_analysis.key_contacts_to_find %}
+        <div class="suggestion-item">{{ contact_info }}</div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    {% if report.scan_data.engineering_velocity %}
+    <div class="section">
+      <h2 class="section-title">Recent Engineering Velocity</h2>
+      <div class="velocity-content">{{ report.scan_data.engineering_velocity }}</div>
+    </div>
+    {% endif %}
+
+    {% if report.scan_data.contributors %}
+    <div class="section contributors-section">
+      <h2 class="section-title">Contributors
+        <span class="contributor-stats">{{ report.scan_data.contributors|length }} Total &middot; {{ report.scan_data.i18n_contributors|default(0) }} i18n Involved</span>
+      </h2>
+      <div class="contributors-grid">
+        {% for login, contrib in report.scan_data.contributors.items() %}
+        <div class="contributor-card mini" data-contributor-login="{{ login }}">
+          <img src="{{ contrib.avatar_url or 'https://github.com/identicons/' ~ login ~ '.png' }}" class="contrib-avatar" alt="{{ contrib.name|default(login) }}">
+          <div class="contrib-info">
+            <div class="contrib-name">{{ contrib.name|default(login) }} <span class="contact-handle">@{{ login }}</span></div>
+            <div class="contrib-stats-row">
+              <span>{{ contrib.contributions|default(contrib.commits)|default(0) }} commits</span>
+              <span>{{ contrib.repos|default(0) }} repos</span>
+              {% if contrib.i18n_signals %}
+              <span class="i18n-badge">i18n</span>
+              {% endif %}
+            </div>
+            {% if contrib.bio %}
+            <div class="contrib-bio">"{{ contrib.bio }}"</div>
+            {% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+  </div>
+</div>
+
+<!-- Contributor Detail Panel -->
+<div class="report-detail-panel" id="reportDetailPanel">
+  <div class="detail-panel-header">
+    <h3 id="detailPanelTitle">Contributor</h3>
+    <button class="detail-panel-close" onclick="closeDetailPanel()" aria-label="Close panel">&times;</button>
+  </div>
+  <div class="detail-panel-body" id="detailPanelBody"></div>
+</div>
+
+<script>
+    const contributorsData = {{ (report.scan_data.contributors or {})|tojson }};
+    let selectedContributor = null;
+
+    function copyEmailDraft(button) {
+        const subject = document.getElementById('emailSubject').value;
+        const body = document.getElementById('emailBody').value;
+        navigator.clipboard.writeText(`Subject: ${subject}\n\n${body}`).then(() => {
+            button.querySelector('.btn-text').textContent = 'Copied!';
+            setTimeout(() => { button.querySelector('.btn-text').textContent = 'Copy Email'; }, 2000);
+        });
+    }
+
+    function autoResizeEmailBody(textarea) {
+        textarea.style.height = 'auto';
+        textarea.style.height = `${textarea.scrollHeight}px`;
+    }
+
+    function selectContributor(card, name, login, company) {
+        document.querySelectorAll('.contributor-card.selected').forEach(c => c.classList.remove('selected'));
+        card.classList.add('selected');
+        selectedContributor = { name, login, company };
+        openDetailPanel(login);
+
+        const banner = document.getElementById('selected-contact-banner');
+        if (banner) {
+            banner.className = 'selected-contact-indicator visible';
+            banner.innerHTML = `<strong>Selected:</strong> ${name} (@${login})`;
+        }
+
+        const bodyEl = document.getElementById('emailBody');
+        if (bodyEl) {
+            const currentBody = bodyEl.value;
+            if (!currentBody.includes(`Hi ${name}`)) {
+                bodyEl.value = currentBody.replace(/^Hi .*?,/m, `Hi ${name},`).replace(/^Hello .*?,/m, `Hi ${name},`);
+            }
+        }
+    }
+
+    function openDetailPanel(login) {
+        const panel = document.getElementById('reportDetailPanel');
+        const body = document.getElementById('detailPanelBody');
+        const title = document.getElementById('detailPanelTitle');
+        if (!panel || !body) return;
+        const contrib = contributorsData[login] || {};
+        const name = contrib.name || login;
+        const avatarUrl = contrib.avatar_url || ('https://github.com/' + login + '.png');
+        const bio = contrib.bio || '';
+        const contributions = contrib.contributions || contrib.commits || 0;
+        const repos = contrib.repos || 0;
+        title.textContent = name;
+        body.innerHTML = `
+            <div style="display:flex;align-items:center;gap:0.75rem;">
+                <img src="${avatarUrl}" class="detail-panel-avatar" alt="${name}">
+                <div>
+                    <div class="detail-panel-name">${name}</div>
+                    <div class="detail-panel-handle"><a href="https://github.com/${login}" target="_blank">@${login}</a></div>
+                </div>
+            </div>
+            ${bio ? `<div class="detail-panel-field"><span class="detail-panel-field-label">Bio</span><span class="detail-panel-field-value">${bio}</span></div>` : ''}
+            <div class="detail-panel-field">
+                <span class="detail-panel-field-label">Contributions</span>
+                <span class="detail-panel-field-value">${contributions} commits across ${repos} repos</span>
+            </div>
+        `;
+        panel.classList.add('open');
+    }
+
+    function closeDetailPanel() {
+        const panel = document.getElementById('reportDetailPanel');
+        if (panel) panel.classList.remove('open');
+    }
+
+    document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closeDetailPanel(); });
+
+    document.addEventListener('DOMContentLoaded', () => {
+        const textarea = document.getElementById('emailBody');
+        if (textarea) autoResizeEmailBody(textarea);
+    });
+
+    async function fetchApolloEmail(button, name, company) {
+        button.disabled = true;
+        button.textContent = 'Fetching...';
+        try {
+            const resp = await fetch('/api/apollo-lookup', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, company })
+            });
+            const data = await resp.json();
+            if (data.status === 'success' && data.email) {
+                button.textContent = data.email;
+                button.style.background = '#d1fae5';
+                button.style.color = '#065f46';
+                button.classList.add('email-found');
+                const card = button.closest('.contributor-card');
+                if (card) card.dataset.email = data.email;
+            } else {
+                button.textContent = 'Not Found';
+                button.style.background = '#fee2e2';
+                button.style.color = '#991b1b';
+            }
+        } catch (e) {
+            button.textContent = 'Error';
+        }
+        setTimeout(() => { button.disabled = false; }, 2000);
+    }
+</script>
+
+</body>
+</html>
