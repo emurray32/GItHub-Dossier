@@ -408,7 +408,9 @@ a:hover {
 
 .breadcrumb-separator {
     color: var(--color-text-tertiary);
-    font-size: 12px;
+    font-size: 11px;
+    user-select: none;
+    line-height: 1;
 }
 
 .breadcrumb-icon {
@@ -1383,6 +1385,7 @@ select {
     z-index: 2000;
     transition: right 0.3s ease;
     box-shadow: -5px 0 15px rgba(0, 0, 0, 0.2);
+    overflow-y: auto;
 }
 
 #report-drawer.drawer-open {
@@ -2055,6 +2058,7 @@ select {
    ============================================================ */
 .sidebar-section {
     padding: 12px 8px 8px;
+    margin-top: 8px;
     border-top: 1px solid var(--sidebar-border);
 }
 
@@ -2066,10 +2070,10 @@ select {
 
 .sidebar-section-label {
     font-size: 10px;
-    font-weight: 600;
+    font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.07em;
-    color: rgba(148, 163, 184, 0.65);
+    letter-spacing: 0.08em;
+    color: rgba(148, 163, 184, 0.8);
     white-space: nowrap;
     overflow: hidden;
 }

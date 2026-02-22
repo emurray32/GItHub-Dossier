@@ -15,7 +15,7 @@
     gap: 1.25rem;
     max-width: 1400px;
     margin: 0 auto;
-    padding: 1.25rem;
+    padding: 0.75rem 1.25rem 1.25rem;
 }
 
 @media (max-width: 1024px) {
@@ -30,8 +30,8 @@
 .page-header {
     background: var(--color-surface);
     border-bottom: 1px solid var(--color-border);
-    padding: 1.25rem 1.5rem;
-    margin-bottom: 0.75rem;
+    padding: 0.75rem 1.5rem;
+    margin-bottom: 0.25rem;
 }
 
 .page-title {

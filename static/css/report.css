@@ -18,9 +18,9 @@
 /* ── Hero header ──────────────────────────────────────────── */
 .hero {
     display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
+    align-items: center;
     gap: 1rem;
+    flex-wrap: wrap;
     padding: 1.25rem 1.5rem;
     background: var(--color-surface);
     border: 1px solid var(--color-border);
@@ -73,7 +73,7 @@
     text-align: center;
     padding: 0.6rem 1.25rem;
     border-radius: var(--radius, 0.75rem);
-    min-width: 120px;
+    min-width: 100px;
 }
 
 .verdict-label {
@@ -106,9 +106,9 @@
 }
 
 .verdict-cold {
-    background: var(--color-surface);
-    color: var(--color-text-secondary);
-    border: 1px solid var(--color-border);
+    background: linear-gradient(135deg, #dbeafe, #bfdbfe);
+    color: #1e40af;
+    border: 1px solid #93c5fd;
 }
 
 /* ── Intel strip ──────────────────────────────────────────── */
@@ -202,13 +202,17 @@
 /* ── Main two-column grid ─────────────────────────────────── */
 .main-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 2fr 3fr;
     gap: 1rem;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 960px) {
     .main-grid { grid-template-columns: 1fr; }
     .hero { flex-direction: column; }
+}
+
+.main-grid > .panel {
+    align-self: start;
 }
 
 /* ── Panel ────────────────────────────────────────────────── */
@@ -514,6 +518,7 @@
     color: var(--color-text-tertiary);
     font-style: italic;
     margin-top: 0.2rem;
+    word-wrap: break-word;
 }
 
 .i18n-badge {
@@ -2079,6 +2084,7 @@
     position: relative;
     cursor: pointer;
     transition: all 0.2s ease;
+    overflow: visible;
 }
 
 .contributor-card:hover {
@@ -2731,4 +2737,233 @@
     width: 24px;
     height: 24px;
     border-radius: 50%;
+}
+
+/* ============================================================
+   ITEM 3: KEY CONTACTS — HORIZONTAL CARD LAYOUT
+   ============================================================ */
+.contacts-list .contact-card {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    text-align: left;
+}
+
+.contacts-list .contact-name,
+.contacts-list .prospect-info h3 {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 200px;
+}
+
+.contacts-list .contact-bio,
+.contacts-list .prospect-bio {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.contacts-list .contact-actions {
+    flex-shrink: 0;
+    align-items: flex-end;
+}
+
+/* ============================================================
+   ITEM 4: STICKY HEADER ON REPORT PAGE
+   ============================================================ */
+.report-sticky-header {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0 1.25rem;
+    background: var(--color-surface);
+    border-bottom: 1px solid var(--color-border);
+    box-shadow: var(--shadow-sm);
+    transform: translateY(-100%);
+    transition: transform 0.2s ease;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.report-sticky-header.visible {
+    transform: translateY(0);
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.sticky-company-name {
+    font-size: 0.9rem;
+    font-weight: var(--font-weight-semibold, 600);
+    color: var(--color-text);
+}
+
+.sticky-verdict {
+    font-size: 0.7rem;
+    font-weight: var(--font-weight-semibold, 600);
+    padding: 0.15rem 0.5rem;
+    border-radius: 20px;
+}
+
+.sticky-verdict.verdict-hot { background: #dcfce7; color: #166534; }
+.sticky-verdict.verdict-warm { background: #fef3c7; color: #92400e; }
+.sticky-verdict.verdict-cold { background: #dbeafe; color: #1e40af; }
+.sticky-verdict.verdict-late { background: #f1f5f9; color: #475569; }
+
+/* ============================================================
+   ITEM 5: VERDICT BADGE ICONS
+   ============================================================ */
+.verdict-icon {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    vertical-align: -2px;
+    margin-right: 3px;
+}
+
+/* ============================================================
+   ITEM 6: METRIC TOOLTIPS ON INTEL STRIP
+   ============================================================ */
+.intel-info {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 1px solid var(--color-text-tertiary);
+    color: var(--color-text-tertiary);
+    font-size: 9px;
+    font-weight: 600;
+    cursor: help;
+    flex-shrink: 0;
+    line-height: 1;
+}
+
+.intel-info:hover {
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+}
+
+/* ============================================================
+   ITEM 1: CONTRIBUTOR DETAIL PANEL (REPORT PAGE)
+   ============================================================ */
+.report-detail-panel {
+    position: fixed;
+    top: 0;
+    right: 0;
+    width: 320px;
+    height: 100vh;
+    background: var(--color-surface);
+    border-left: 1px solid var(--color-border);
+    box-shadow: -4px 0 16px rgba(0, 0, 0, 0.1);
+    z-index: 100;
+    transform: translateX(100%);
+    transition: transform 0.25s ease;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+}
+
+.report-detail-panel.open {
+    transform: translateX(0);
+}
+
+.detail-panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--color-border);
+    flex-shrink: 0;
+}
+
+.detail-panel-header h3 {
+    margin: 0;
+    font-size: 0.95rem;
+    font-weight: var(--font-weight-semibold, 600);
+}
+
+.detail-panel-close {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--color-text-secondary);
+    padding: 0.25rem;
+    border-radius: 4px;
+}
+
+.detail-panel-close:hover {
+    background: var(--color-bg);
+    color: var(--color-text);
+}
+
+.detail-panel-body {
+    padding: 1.25rem;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.detail-panel-avatar {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    border: 2px solid var(--color-border);
+}
+
+.detail-panel-name {
+    font-size: 1rem;
+    font-weight: var(--font-weight-semibold, 600);
+    color: var(--color-text);
+    margin: 0;
+}
+
+.detail-panel-handle {
+    font-size: 0.8rem;
+    color: var(--color-text-secondary);
+}
+
+.detail-panel-handle a {
+    color: var(--color-primary);
+    text-decoration: none;
+}
+
+.detail-panel-handle a:hover {
+    text-decoration: underline;
+}
+
+.detail-panel-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+}
+
+.detail-panel-field-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--color-text-tertiary);
+    font-weight: var(--font-weight-medium, 500);
+}
+
+.detail-panel-field-value {
+    font-size: 0.85rem;
+    color: var(--color-text);
+    line-height: 1.4;
+}
+
+.detail-panel-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-top: auto;
+    padding-top: 1rem;
+    border-top: 1px solid var(--color-border);
 }

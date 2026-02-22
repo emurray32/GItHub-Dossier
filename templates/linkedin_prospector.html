@@ -82,9 +82,9 @@
           <span id="avatar-initials"></span>
           <img id="avatar-img" style="display:none" alt="">
         </div>
-        <h2 class="lp-profile-name" id="profile-name">—</h2>
-        <p class="lp-profile-title" id="profile-title-display">—</p>
-        <p class="lp-profile-company" id="profile-company-display">—</p>
+        <h2 class="lp-profile-name" id="profile-name"></h2>
+        <p class="lp-profile-title" id="profile-title-display"></p>
+        <p class="lp-profile-company" id="profile-company-display"></p>
         <p class="lp-profile-location" id="profile-location-display"></p>
         <div class="lp-profile-badge">
           <span class="lp-badge" id="apollo-badge" style="display:none"></span>
@@ -115,15 +115,15 @@
       <div class="lp-profile-edit-fields" id="edit-fields">
         <div class="lp-profile-edit-fields-inner">
           <div class="lp-fields-row">
-            <div class="lp-field"><label>Full Name</label><input class="lp-value" id="f-name" type="text" placeholder="—"></div>
-            <div class="lp-field"><label>Company</label><input class="lp-value" id="f-company" type="text" placeholder="—"></div>
+            <div class="lp-field"><label>Full Name</label><input class="lp-value" id="f-name" type="text" placeholder="Full name"></div>
+            <div class="lp-field"><label>Company</label><input class="lp-value" id="f-company" type="text" placeholder="Company name"></div>
           </div>
-          <div class="lp-field"><label>Job Title</label><input class="lp-value" id="f-title" type="text" placeholder="—"></div>
+          <div class="lp-field"><label>Job Title</label><input class="lp-value" id="f-title" type="text" placeholder="Job title"></div>
           <div class="lp-fields-row">
-            <div class="lp-field"><label>Location</label><input class="lp-value" id="f-location" type="text" placeholder="—"></div>
-            <div class="lp-field"><label>Phone</label><input class="lp-value" id="f-phone" type="text" placeholder="—"></div>
+            <div class="lp-field"><label>Location</label><input class="lp-value" id="f-location" type="text" placeholder="City, State"></div>
+            <div class="lp-field"><label>Phone</label><input class="lp-value" id="f-phone" type="text" placeholder="Phone number"></div>
           </div>
-          <div class="lp-field"><label>Headline</label><input class="lp-value" id="f-headline" type="text" placeholder="—"></div>
+          <div class="lp-field"><label>Headline</label><input class="lp-value" id="f-headline" type="text" placeholder="LinkedIn headline"></div>
           <div class="lp-field"><label>Email</label><input class="lp-value" id="f-email" type="email" placeholder="Enter email if not found in Apollo"></div>
         </div>
       </div>
@@ -145,7 +145,7 @@
       </div>
       <div class="lp-actions">
         <button class="lp-btn lp-btn-primary" id="btn-gen-email" onclick="generateEmail()">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/></svg>
           Generate Email with AI
         </button>
       </div>
@@ -179,7 +179,7 @@
   <div class="lp-section lp-section--hidden" id="section-enroll">
     <div id="enroll-action">
       <button class="lp-btn lp-btn-primary" id="btn-enroll" onclick="enrollContact()" style="width:100%;justify-content:center;padding:0.75rem">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
         Enroll in Sequence
       </button>
     </div>
@@ -317,9 +317,12 @@
     }
 
     // Text fields
-    $('profile-name').textContent = name || '—';
-    $('profile-title-display').textContent = title || '—';
-    $('profile-company-display').textContent = company || '—';
+    $('profile-name').textContent = name || '';
+    $('profile-name').style.display = name ? '' : 'none';
+    $('profile-title-display').textContent = title || '';
+    $('profile-title-display').style.display = title ? '' : 'none';
+    $('profile-company-display').textContent = company || '';
+    $('profile-company-display').style.display = company ? '' : 'none';
     $('profile-location-display').textContent = location || '';
 
     // Contact row
@@ -643,7 +646,14 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ contact: contact })
       });
-      var data = await resp.json();
+
+      var data;
+      if (!resp.ok) {
+        try { data = await resp.json(); } catch(_) { data = {}; }
+        showToast(data.message || 'Email generation failed (server error)', 'error');
+        return;
+      }
+      data = await resp.json();
 
       if (data.status === 'success' && data.email) {
         $('email-subject').value = data.email.subject || '';
@@ -774,9 +784,12 @@
     $('email-preview-wrap').style.display = 'none';
 
     // Reset profile card
-    $('profile-name').textContent = '—';
-    $('profile-title-display').textContent = '—';
-    $('profile-company-display').textContent = '—';
+    $('profile-name').textContent = '';
+    $('profile-name').style.display = '';
+    $('profile-title-display').textContent = '';
+    $('profile-title-display').style.display = '';
+    $('profile-company-display').textContent = '';
+    $('profile-company-display').style.display = '';
     $('profile-location-display').textContent = '';
     $('contact-email-text').textContent = 'No email found';
     $('contact-email-text').className = 'lp-no-data';

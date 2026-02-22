@@ -78,7 +78,17 @@
                     </tr>
                 </thead>
                 <tbody id="contrib-tbody">
-                    <!-- Populated via JS -->
+                    <!-- Skeleton loading rows — replaced on data fetch -->
+                    {% for i in range(5) %}
+                    <tr class="skeleton-row">
+                        <td class="col-name"><div style="display:flex;align-items:center;gap:0.5rem;"><div class="skeleton-bar" style="width:28px;height:28px;border-radius:50%;flex-shrink:0;"></div><div style="flex:1;"><div class="skeleton-bar" style="width:70%;margin-bottom:4px;"></div><div class="skeleton-bar" style="width:40%;height:8px;"></div></div></div></td>
+                        <td class="col-company"><div class="skeleton-bar" style="width:60%;"></div></td>
+                        <td class="col-repo"><div class="skeleton-bar" style="width:55%;"></div></td>
+                        <td class="col-contributions"><div class="skeleton-bar" style="width:30%;"></div></td>
+                        <td class="col-apollo"><div class="skeleton-bar" style="width:50%;"></div></td>
+                        <td class="col-insight"><div class="skeleton-bar" style="width:80%;"></div></td>
+                    </tr>
+                    {% endfor %}
                 </tbody>
             </table>
         </div>
@@ -230,7 +240,7 @@
                     </div>
                 </td>
                 <td class="col-company">${tierDot}${escapeHtml(c.company || '-')}</td>
-                <td class="col-repo" title="${escapeHtml(c.repo_source || '')}">${escapeHtml(c.repo_source || '-')}</td>
+                <td class="col-repo" title="${escapeHtml(c.repo_source || '')}">${escapeHtml(formatRepoSource(c.repo_source))}</td>
                 <td class="col-contributions">${c.contributions || 0}</td>
                 <td class="col-apollo">
                     <span class="status-badge ${apolloClass} ${hasEmail ? 'has-email' : ''}">${apolloLabel}</span>
@@ -311,7 +321,7 @@
                     </div>
                     <div class="detail-row">
                         <span class="detail-label">Repo</span>
-                        <span class="detail-value">${escapeHtml(c.repo_source || '-')}</span>
+                        <span class="detail-value">${escapeHtml(formatRepoSource(c.repo_source))}</span>
                     </div>
                     <div class="detail-row">
                         <span class="detail-label">Blog</span>
@@ -338,12 +348,10 @@
             <div class="sidebar-section">
                 <div class="sidebar-section-title">Outreach</div>
 
-                <button class="btn-action btn-find-email" onclick="findEmail(${c.id}, '${escapeJs(c.github_login)}', '${escapeJs(c.name || '')}', '${escapeJs(c.company || '')}')" id="find-email-btn-${c.id}" ${hasEmail ? 'disabled' : ''}>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <circle cx="11" cy="11" r="8"></circle>
-                        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                    </svg>
-                    ${hasEmail ? 'Email found' : 'Find Email via Apollo'}
+                <button class="btn-action btn-find-email ${hasEmail ? 'email-found' : ''}" onclick="findEmail(${c.id}, '${escapeJs(c.github_login)}', '${escapeJs(c.name || '')}', '${escapeJs(c.company || '')}')" id="find-email-btn-${c.id}" ${hasEmail ? 'disabled' : ''}>
+                    ${hasEmail
+                        ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg> ' + escapeHtml(c.email)
+                        : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg> Find Email via Apollo'}
                 </button>
 
                 <button class="btn-action btn-generate-email" onclick="generateEmail(${c.id})" id="gen-email-btn-${c.id}" title="Generate full 4-email sequence with AI">
@@ -436,8 +444,9 @@
                 if (emailEl) {
                     emailEl.innerHTML = '<a href="mailto:' + escapeHtml(data.email) + '">' + escapeHtml(data.email) + '</a>';
                 }
-                btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg> Email found';
+                btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg> ' + escapeHtml(data.email);
                 btn.disabled = true;
+                btn.classList.add('email-found');
 
                 // Persist email to DB
                 fetch('/api/contributors/' + id + '/email', {
@@ -492,7 +501,8 @@
                 company: c.company || '',
                 repo_source: c.repo_source || '',
                 insight: c.insight || '',
-                contributions: c.contributions || 0
+                contributions: c.contributions || 0,
+                goldilocks_status: c.goldilocks_status || c.company_goldilocks || ''
             })
         })
         .then(r => r.json())
@@ -504,18 +514,26 @@
 
             if (data.status === 'success' && data.email) {
                 const e = data.email;
+                // Client-side safety net: replace any unresolved merge tags
+                const mergeTags = {'{{company}}': c.company || '', '{{name}}': c.name || c.github_login || '', '{{first_name}}': (c.name || '').split(' ')[0] || '',
+                    '{{ company }}': c.company || '', '{{ name }}': c.name || c.github_login || '', '{{ first_name }}': (c.name || '').split(' ')[0] || ''};
+                function cleanMergeTags(text) {
+                    if (!text) return text;
+                    for (const [tag, val] of Object.entries(mergeTags)) { if (val) text = text.replaceAll(tag, val); }
+                    return text;
+                }
                 const s1 = document.getElementById('email-subject1-' + id);
                 const s2 = document.getElementById('email-subject2-' + id);
                 const b1 = document.getElementById('email-body1-' + id);
                 const b2 = document.getElementById('email-body2-' + id);
                 const b3 = document.getElementById('email-body3-' + id);
                 const b4 = document.getElementById('email-body4-' + id);
-                if (s1) s1.value = e.subject_1 || e.subject || '';
-                if (s2) s2.value = e.subject_2 || '';
-                if (b1) b1.value = e.email_1 || e.body || '';
-                if (b2) b2.value = e.email_2 || '';
-                if (b3) b3.value = e.email_3 || '';
-                if (b4) b4.value = e.email_4 || '';
+                if (s1) s1.value = cleanMergeTags(e.subject_1 || e.subject || '');
+                if (s2) s2.value = cleanMergeTags(e.subject_2 || '');
+                if (b1) b1.value = cleanMergeTags(e.email_1 || e.body || '');
+                if (b2) b2.value = cleanMergeTags(e.email_2 || '');
+                if (b3) b3.value = cleanMergeTags(e.email_3 || '');
+                if (b4) b4.value = cleanMergeTags(e.email_4 || '');
                 showToast('Sequence generated — review & approve', 'success');
             } else {
                 showToast(data.message || 'Failed to generate email', 'error');
@@ -580,7 +598,7 @@
                 picker.innerHTML = `
                     <label class="seq-picker-label">Choose Sequence</label>
                     <select class="seq-picker-select" id="seq-select-${id}">
-                        ${sequences.map(s => `<option value="${escapeHtml(s.id)}">${escapeHtml(s.name)}</option>`).join('')}
+                        ${sequences.map(s => `<option value="${escapeHtml(s.id)}" ${!s.active ? 'title="This sequence is paused in Apollo"' : ''}>${escapeHtml(s.name)}${s.active === false ? ' (inactive)' : ''}</option>`).join('')}
                     </select>
                     <div class="seq-picker-actions">
                         <button class="btn-confirm-enroll" onclick="confirmEnroll(${id})">Enroll</button>
@@ -859,6 +877,13 @@
             .replace(/>/g, '&gt;')
             .replace(/"/g, '&quot;')
             .replace(/'/g, '&#39;');
+    }
+
+    function formatRepoSource(raw) {
+        if (!raw) return '-';
+        // Clean Python/JS array notation: "['a', 'b']" → "a, b"
+        var cleaned = String(raw).replace(/^\[|\]$/g, '').replace(/'/g, '').replace(/"/g, '').trim();
+        return cleaned || '-';
     }
 
     // Escape for JS string literals in onclick attributes

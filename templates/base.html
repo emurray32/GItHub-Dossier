@@ -44,7 +44,7 @@
                     <span class="sidebar-label">Grow</span>
                 </a>
                 <a href="{{ url_for('linkedin_prospector') }}" class="sidebar-item {% if request.endpoint == 'linkedin_prospector' %}active{% endif %}">
-                    <i data-lucide="scan-search" class="sidebar-icon"></i>
+                    <i data-lucide="user-search" class="sidebar-icon"></i>
                     <span class="sidebar-label">LinkedIn Prospector</span>
                 </a>
                 <a href="{{ url_for('settings') }}" class="sidebar-item {% if request.endpoint == 'settings' %}active{% endif %}">
@@ -415,7 +415,11 @@
 
             // Open / close
             var openBtn = document.getElementById('mapSequenceBtn');
-            if (openBtn) openBtn.addEventListener('click', openModal);
+            if (openBtn) openBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                openModal();
+            });
 
             var closeBtn = document.getElementById('seqModalClose');
             if (closeBtn) closeBtn.addEventListener('click', closeModal);
@@ -524,6 +528,14 @@
                     if (input) input.focus();
                 });
             }
+
+        // Auto-open sequence modal if ?open_sequence=1 is in URL
+        if (new URLSearchParams(window.location.search).get('open_sequence') === '1') {
+            openModal();
+            // Clean URL param without reload
+            var cleanUrl = window.location.pathname + window.location.hash;
+            window.history.replaceState({}, '', cleanUrl);
+        }
 
         }); // end DOMContentLoaded
     }());

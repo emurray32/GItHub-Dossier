@@ -692,7 +692,7 @@
 }
 
 .accounts-table th.tier-col {
-    width: 60px;
+    width: 70px;
 }
 
 .accounts-table th.last-scanned-col,
@@ -702,12 +702,17 @@
 
 .accounts-table th.evidence-col,
 .accounts-table td.evidence-cell {
-    width: 280px;
+    width: 200px;
 }
 
 .accounts-table th.actions-col,
 .accounts-table td.actions-cell {
-    width: 100px;
+    width: 120px;
+    position: sticky;
+    right: 0;
+    background: var(--color-surface);
+    box-shadow: -2px 0 4px rgba(0, 0, 0, 0.05);
+    z-index: 2;
 }
 
 .accounts-table th.notes-col,
@@ -841,6 +846,10 @@
 }
 
 /* Row hover & empty */
+.accounts-table tbody tr[data-account-id] {
+    cursor: pointer;
+}
+
 .accounts-table tbody tr:hover {
     background: rgba(79, 70, 229, 0.04);
 }
@@ -1521,6 +1530,8 @@
     font-size: 12px;
     line-height: 1.4;
     max-height: 2.8em;
+    pointer-events: auto;
+    cursor: help;
 }
 
 /* ---------------------------------------------------------------------------
@@ -2263,6 +2274,13 @@
 /* ---------------------------------------------------------------------------
    Responsive
    --------------------------------------------------------------------------- */
+@media (max-width: 1200px) {
+    .accounts-table th.row-num-col,
+    .accounts-table td.row-num-col {
+        display: none;
+    }
+}
+
 @media (max-width: 768px) {
     .accounts-header {
         flex-direction: column;
@@ -2517,4 +2535,24 @@
 
 .accounts-table-container {
     margin-top: 0.25rem;
+}
+
+/* ============================================================
+   EMAIL-FOUND STATUS BADGE (accounts table)
+   ============================================================ */
+.email-found-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    padding: 0.1rem 0.4rem;
+    background: #d1fae5;
+    color: #065f46;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 600;
+}
+
+.email-found-badge svg {
+    width: 10px;
+    height: 10px;
 }

@@ -717,8 +717,13 @@ def _generate_fallback_analysis(scan_data: dict) -> dict:
 
     # Build key engineering contacts from contributor data
     contributors = scan_data.get('contributors', {})
+    bot_patterns = ('[bot]', '-bot', 'github-actions', 'dependabot', 'renovate', 'greenkeeper', 'snyk-bot')
     key_engineering_contacts = []
-    for login, data in list(contributors.items())[:5]:
+    for login, data in list(contributors.items())[:10]:  # Check more to skip bots
+        if any(p in login.lower() for p in bot_patterns):
+            continue
+        if len(key_engineering_contacts) >= 5:
+            break
         role_inference = "High-volume Committer"
         if data.get('bio'):
             bio_lower = data['bio'].lower()

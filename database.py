@@ -4465,8 +4465,15 @@ def save_contributors_batch(contributors: list) -> int:
     cursor = conn.cursor()
     saved = 0
 
+    # Bot patterns to filter out
+    BOT_PATTERNS = ('[bot]', '-bot', 'github-actions', 'dependabot', 'renovate', 'greenkeeper', 'snyk-bot')
+
     try:
         for c in contributors:
+            login = c.get('github_login', '').lower()
+            if any(p in login for p in BOT_PATTERNS):
+                continue
+
             cursor.execute('''
                 INSERT INTO contributors (
                     github_login, github_url, name, email, blog,

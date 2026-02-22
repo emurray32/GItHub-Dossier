@@ -68,6 +68,22 @@ app = Flask(__name__)
 app.config.from_object(Config)
 
 
+def sanitize_ai_error(exception):
+    """Map raw AI/API exceptions to user-friendly error messages."""
+    msg = str(exception).lower()
+    if '429' in msg or 'resource exhausted' in msg or 'quota' in msg:
+        return 'AI service is temporarily overloaded. Please wait a moment and try again.'
+    if 'timeout' in msg or 'timed out' in msg or 'deadline' in msg:
+        return 'AI request timed out. Please try again.'
+    if '401' in msg or '403' in msg or 'api key' in msg or 'authentication' in msg or 'permission' in msg:
+        return 'AI service authentication error. Please check API key configuration.'
+    if '404' in msg or 'not found' in msg:
+        return 'AI model not found. Please check configuration.'
+    if '500' in msg or '503' in msg or 'internal' in msg or 'unavailable' in msg:
+        return 'AI service is temporarily unavailable. Please try again later.'
+    return 'Email generation failed. Please try again.'
+
+
 @app.context_processor
 def inject_cache_buster():
     return {'cache_bust': int(time.time())}
@@ -1419,6 +1435,12 @@ def history():
     return render_template('history.html', reports=reports)
 
 
+@app.route('/sequence')
+def sequence_redirect():
+    """Redirect /sequence to accounts page with auto-open sequence modal."""
+    return redirect(url_for('accounts', open_sequence=1))
+
+
 @app.route('/accounts')
 def accounts():
     """View monitored accounts dashboard."""
@@ -1946,8 +1968,20 @@ def api_generate_contributor_email():
     repo_source = data.get('repo_source', '')
     insight = data.get('insight', '')
     contributions = data.get('contributions', 0)
+    goldilocks_status = data.get('goldilocks_status', '')
 
     num_emails = data.get('num_emails', 4)
+
+    # Temperature-aware tone guidance
+    tone_guidance = ''
+    if goldilocks_status == 'preparing':
+        tone_guidance = '\nTone: URGENT — this company is actively setting up i18n infrastructure right now. Create urgency, reference their recent activity, and push for an immediate meeting. They are in the Goldilocks window.'
+    elif goldilocks_status == 'thinking':
+        tone_guidance = '\nTone: NURTURE — this company shows early interest in localization. Be helpful and educational. Position yourself as a trusted advisor. Offer value without being pushy.'
+    elif goldilocks_status == 'launched':
+        tone_guidance = '\nTone: LOW PRIORITY — this company already has localization in place. Keep it light. Focus on potential pain points with their current solution or future scaling needs.'
+    else:
+        tone_guidance = '\nTone: EDUCATIONAL — this is a cold lead with no clear i18n signals yet. Focus on education about the market opportunity and plant seeds for when they do start thinking about localization.'
 
     prompt = f"""You are a BDR (Business Development Rep) at Phrase, a localization/internationalization platform. Write a personalized cold outreach email SEQUENCE to a software contributor.
 
@@ -1959,6 +1993,8 @@ Contact info:
 - Active repo: {repo_source}
 - Contributions: {contributions}
 - Insight: {insight}
+- Lead temperature: {goldilocks_status or 'unknown'}
+{tone_guidance}
 
 Write a {num_emails}-email cold outreach sequence. The goal is to start a conversation about their internationalization/localization (i18n) workflow and how Phrase can help their engineering team ship to global markets faster.
 
@@ -1977,6 +2013,7 @@ Rules:
 - Sound like a human, not a robot
 - Use their first name
 - Emails 2 and 4 are SHORT follow-ups (they thread under the previous subject)
+- Use the actual contact's name and company in the email. Do NOT use template variables like {{{{company}}}}, {{{{name}}}}, or {{{{first_name}}}}.
 
 Return ONLY valid JSON with no markdown formatting:
 {{
@@ -2003,11 +2040,24 @@ Return ONLY valid JSON with no markdown formatting:
 
         import json
         email_data = json.loads(response_text)
+
+        # Post-process: replace any unresolved merge tags with actual values
+        merge_replacements = {
+            '{{company}}': company, '{{name}}': name, '{{first_name}}': first_name,
+            '{{ company }}': company, '{{ name }}': name, '{{ first_name }}': first_name,
+            '{company}': company, '{name}': name, '{first_name}': first_name,
+        }
+        for key in email_data:
+            if isinstance(email_data[key], str):
+                for tag, val in merge_replacements.items():
+                    if val:
+                        email_data[key] = email_data[key].replace(tag, val)
+
         return jsonify({'status': 'success', 'email': email_data})
 
     except Exception as e:
         print(f"[CONTRIBUTOR EMAIL GEN] Error: {e}")
-        return jsonify({'status': 'error', 'message': str(e)}), 500
+        return jsonify({'status': 'error', 'message': sanitize_ai_error(e)}), 500
 
 
 @app.route('/experiment')
@@ -5665,9 +5715,9 @@ Return ONLY the JSON object, nothing else."""
         return jsonify({'status': 'success', 'data': extracted})
 
     except json.JSONDecodeError as e:
-        return jsonify({'status': 'error', 'message': f'Failed to parse AI response: {str(e)}', 'raw': response_text[:500] if response_text else ''}), 500
+        return jsonify({'status': 'error', 'message': 'Failed to parse AI response. Please try a clearer screenshot.'}), 500
     except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
+        return jsonify({'status': 'error', 'message': sanitize_ai_error(e)}), 500
 
 
 @app.route('/api/linkedin/find-contact', methods=['POST'])
@@ -5834,6 +5884,18 @@ def api_linkedin_generate_email():
     company = contact.get('company') or linkedin_data.get('company', '')
     headline = contact.get('headline') or linkedin_data.get('headline', '')
     summary = contact.get('summary') or linkedin_data.get('summary', '')
+    goldilocks_status = data.get('goldilocks_status', '')
+
+    # Temperature-aware tone guidance
+    tone_guidance = ''
+    if goldilocks_status == 'preparing':
+        tone_guidance = '\nTone: URGENT — this company is actively setting up i18n. Create urgency and push for an immediate meeting.'
+    elif goldilocks_status == 'thinking':
+        tone_guidance = '\nTone: NURTURE — early i18n signals. Be helpful, educational, and position as a trusted advisor.'
+    elif goldilocks_status == 'launched':
+        tone_guidance = '\nTone: LOW PRIORITY — already localized. Focus on pain points with current solution.'
+    else:
+        tone_guidance = '\nTone: EDUCATIONAL — cold lead. Educate on the market opportunity.'
 
     prompt = f"""You are a BDR (Business Development Rep) writing a personalized cold outreach email to a software engineering leader.
 
@@ -5844,6 +5906,8 @@ Contact info:
 - Company: {company}
 - LinkedIn headline: {headline}
 - LinkedIn summary: {summary}
+- Lead temperature: {goldilocks_status or 'unknown'}
+{tone_guidance}
 
 Write a SHORT, personalized cold outreach email. The goal is to start a conversation about their internationalization/localization (i18n) workflow and how our tool (Lead Machine) can help their engineering team ship to global markets faster.
 
@@ -5878,7 +5942,7 @@ Return ONLY valid JSON with no markdown:
         return jsonify({'status': 'success', 'email': email_data})
 
     except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
+        return jsonify({'status': 'error', 'message': sanitize_ai_error(e)}), 500
 
 if __name__ == '__main__':
     # Initialize when running directly

@@ -188,7 +188,21 @@
                 </tr>
             </thead>
             <tbody id="accounts-tbody">
-                <!-- DataTables will populate this with server-side data -->
+                <!-- Skeleton loading rows — replaced on data fetch -->
+                {% for i in range(5) %}
+                <tr class="skeleton-row">
+                    <td class="select-col"></td>
+                    <td class="row-num-col"><div class="skeleton-bar" style="width:20px;height:10px;"></div></td>
+                    <td><div class="skeleton-bar" style="width:70%;"></div></td>
+                    <td><div class="skeleton-bar" style="width:50%;"></div></td>
+                    <td><div class="skeleton-bar" style="width:60%;"></div></td>
+                    <td><div class="skeleton-bar" style="width:40%;"></div></td>
+                    <td><div class="skeleton-bar" style="width:55%;"></div></td>
+                    <td><div class="skeleton-bar" style="width:80%;"></div></td>
+                    <td><div class="skeleton-bar" style="width:45%;"></div></td>
+                    <td><div class="skeleton-bar" style="width:60%;"></div></td>
+                </tr>
+                {% endfor %}
             </tbody>
         </table>
     </div>
@@ -268,7 +282,7 @@
                 <td class="company-cell">
                     <span class="company-cell-content">
                         {% if account.latest_report_id %}
-                        <a href="{{ url_for('view_report', report_id=account.latest_report_id) }}">
+                        <a href="javascript:void(0)" onclick="openReport('{{ url_for('view_report', report_id=account.latest_report_id) }}')">
                             {{ account.company_name }}
                         </a>
                         {% else %}
@@ -426,9 +440,19 @@
         </div>
     </div>
     {% else %}
-    <div class="empty-state">
-        <p>No monitored accounts yet. Run a scan to start tracking companies!</p>
-        <a href="{{ url_for('index') }}" class="btn-primary">Start Scanning</a>
+    <div class="empty-state-illustrated">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <circle cx="12" cy="12" r="6"></circle>
+            <circle cx="12" cy="12" r="2"></circle>
+            <line x1="12" y1="2" x2="12" y2="4"></line>
+            <line x1="12" y1="20" x2="12" y2="22"></line>
+            <line x1="2" y1="12" x2="4" y2="12"></line>
+            <line x1="20" y1="12" x2="22" y2="12"></line>
+        </svg>
+        <h3>No accounts being monitored</h3>
+        <p>Add companies to start scanning for localization signals.</p>
+        <a href="{{ url_for('grow') }}" class="btn-primary" style="font-size:0.85rem;padding:0.5rem 1.25rem;border-radius:8px;text-decoration:none;">Add Companies</a>
     </div>
     {% endif %}
 </div>
@@ -682,6 +706,8 @@
         const frame = document.getElementById('report-frame');
         frame.src = url;
         drawer.classList.add('drawer-open');
+        drawer.scrollTop = 0;
+        document.body.style.overflow = 'hidden';
     }
 
     function closeDrawer() {
@@ -689,6 +715,7 @@
         const frame = document.getElementById('report-frame');
         drawer.classList.remove('drawer-open');
         frame.src = '';
+        document.body.style.overflow = '';
     }
 
     // Filter Logic
@@ -1004,6 +1031,19 @@
                 el.textContent = formatNextDate(timestamp);
             }
         });
+
+        // Row-click to open report
+        const tbody = document.querySelector('.accounts-table tbody');
+        if (tbody) {
+            tbody.addEventListener('click', function(e) {
+                // Skip if clicking on buttons, inputs, links, or checkboxes
+                if (e.target.closest('button, a, input, select, .btn-rescan, .btn-view-report, .btn-action-smart, .btn-delete-account, .btn-invalid, .select-account-checkbox, .btn-copy-company, .github-org-edit, .github-org-input-container, .notes-display, .notes-edit-container')) return;
+                const row = e.target.closest('tr[data-account-id]');
+                if (!row) return;
+                const viewBtn = row.querySelector('.btn-view-report:not([disabled])');
+                if (viewBtn) viewBtn.click();
+            });
+        }
 
         initializeBulkSelection();
         initializeFilters();
@@ -1462,7 +1502,7 @@
 
         const rows = accounts.map((account, index) => {
             const companyLink = account.latest_report_id
-                ? `<a href="/report/${account.latest_report_id}"><span class="company-name-text">${escapeHtml(account.company_name)}</span></a>`
+                ? `<a href="javascript:void(0)" onclick="openReport('/report/${account.latest_report_id}')"><span class="company-name-text">${escapeHtml(account.company_name)}</span></a>`
                 : `<span class="company-name-text">${escapeHtml(account.company_name)}</span>`;
 
             const websiteLink = account.website
@@ -1780,7 +1820,7 @@
 
     function generateAccountRow(account, rowNumber) {
         const companyLink = account.latest_report_id
-            ? `<a href="/report/${account.latest_report_id}"><span class="company-name-text">${escapeHtml(account.company_name)}</span></a>`
+            ? `<a href="javascript:void(0)" onclick="openReport('/report/${account.latest_report_id}')"><span class="company-name-text">${escapeHtml(account.company_name)}</span></a>`
             : `<span class="company-name-text">${escapeHtml(account.company_name)}</span>`;
 
         const websiteLink = account.website

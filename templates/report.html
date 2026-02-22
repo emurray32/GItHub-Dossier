@@ -1,11 +1,9 @@
 {% extends "base.html" %}
 
 {% block breadcrumb %}
-<nav>
-    <ol>
-        <li><a href="{{ url_for('accounts') }}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg> RepoRadar</a></li>
-        <li class="breadcrumb-separator">/</li>
-        <li class="breadcrumb-item"><a href="{{ url_for('history') }}">Reports</a></li>
+<nav class="breadcrumb-container" aria-label="Breadcrumb">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="{{ url_for('accounts') }}"><svg class="breadcrumb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>RepoRadar</a></li>
         <li class="breadcrumb-separator">/</li>
         <li class="breadcrumb-item active" aria-current="page">{{ report.company_name }}</li>
     </ol>
@@ -22,8 +20,22 @@
 
 <div class="report-page">
 
+  <!-- ===== STICKY HEADER ===== -->
+  <div class="report-sticky-header" id="reportStickyHeader">
+    <span class="sticky-company-name">{{ report.company_name|title }}</span>
+    {% if goldilocks_status == 'preparing' %}
+    <span class="sticky-verdict verdict-hot">Call Now</span>
+    {% elif goldilocks_status == 'thinking' %}
+    <span class="sticky-verdict verdict-warm">Warm Lead</span>
+    {% elif goldilocks_status == 'launched' %}
+    <span class="sticky-verdict verdict-late">Too Late</span>
+    {% else %}
+    <span class="sticky-verdict verdict-cold">Cold Lead</span>
+    {% endif %}
+  </div>
+
   <!-- ===== HERO HEADER ===== -->
-  <div class="hero">
+  <div class="hero" id="reportHero">
     <div class="hero-left">
       <h1 class="hero-company">{{ report.company_name|title }}</h1>
       <div class="hero-meta">
@@ -40,22 +52,22 @@
     <div class="hero-right">
       {% if goldilocks_status == 'preparing' %}
       <div class="verdict-badge verdict-hot">
-        <div class="verdict-label">Call Now</div>
+        <div class="verdict-label"><svg class="verdict-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>Call Now</div>
         <div class="verdict-detail">Goldilocks signal detected</div>
       </div>
       {% elif goldilocks_status == 'thinking' %}
       <div class="verdict-badge verdict-warm">
-        <div class="verdict-label">Warm Lead</div>
+        <div class="verdict-label"><svg class="verdict-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2c1 3 3 5 6 6-3 1-5 3-6 6-1-3-3-5-6-6 3-1 5-3 6-6z"/></svg>Warm Lead</div>
         <div class="verdict-detail">Early momentum</div>
       </div>
       {% elif goldilocks_status == 'launched' %}
       <div class="verdict-badge verdict-late">
-        <div class="verdict-label">Too Late</div>
+        <div class="verdict-label"><svg class="verdict-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>Too Late</div>
         <div class="verdict-detail">Already localized</div>
       </div>
       {% else %}
       <div class="verdict-badge verdict-cold">
-        <div class="verdict-label">Cold Lead</div>
+        <div class="verdict-label"><svg class="verdict-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M8 6l4-4 4 4M8 18l4 4 4-4M2 12h20"/></svg>Cold Lead</div>
         <div class="verdict-detail">Keep monitoring</div>
       </div>
       {% endif %}
@@ -68,10 +80,12 @@
     {% set v2 = report.scan_data.scoring_v2 %}
     <div class="intel-item">
       <span class="intel-label">Maturity</span>
+      <span class="intel-info" title="How mature their i18n infrastructure is">i</span>
       <span class="intel-value badge-maturity-{{ v2.org_maturity_level|default('unknown') }}">{{ v2.org_maturity_label|default('Unknown') }}</span>
     </div>
     <div class="intel-item">
       <span class="intel-label">Readiness</span>
+      <span class="intel-info" title="How close to needing a localization platform">i</span>
       <div class="readiness-bar-mini">
         <div class="readiness-fill" style="width: {{ (v2.readiness_index|default(0) * 100)|int }}%"></div>
       </div>
@@ -79,10 +93,12 @@
     </div>
     <div class="intel-item">
       <span class="intel-label">Confidence</span>
+      <span class="intel-info" title="Assessment confidence based on available data">i</span>
       <span class="intel-value">{{ "%.0f"|format(v2.confidence_percent|default(0)) }}%</span>
     </div>
     <div class="intel-item">
       <span class="intel-label">Risk</span>
+      <span class="intel-info" title="Risk they already have a competing solution">i</span>
       <span class="intel-value risk-{{ v2.risk_label|default('unknown')|lower }}">{{ v2.risk_label|default('N/A') }}</span>
     </div>
     <div class="intel-item">
@@ -295,7 +311,7 @@
           <div class="contrib-info">
             <div class="contrib-name">{{ contrib.name|default(login) }} <span class="contact-handle">@{{ login }}</span></div>
             <div class="contrib-stats-row">
-              <span>{{ contrib.commits|default(0) }} commits</span>
+              <span>{{ contrib.contributions|default(contrib.commits)|default(0) }} commits</span>
               <span>{{ contrib.repos|default(0) }} repos</span>
               {% if contrib.i18n_signals %}
               <span class="i18n-badge">i18n</span>
@@ -326,6 +342,17 @@
   </div>
 </div>
 
+<!-- Contributor Detail Panel -->
+<div class="report-detail-panel" id="reportDetailPanel">
+  <div class="detail-panel-header">
+    <h3 id="detailPanelTitle">Contributor</h3>
+    <button class="detail-panel-close" onclick="closeDetailPanel()" aria-label="Close panel">&times;</button>
+  </div>
+  <div class="detail-panel-body" id="detailPanelBody">
+    <!-- Populated dynamically -->
+  </div>
+</div>
+
 <!-- Send to BDR Modal -->
 <div class="bdr-modal" id="bdrModal" role="dialog" aria-modal="true" aria-labelledby="bdrModalTitle">
   <div class="bdr-modal-content">
@@ -349,6 +376,9 @@
 
 {% block scripts %}
 <script>
+    // Contributor data for detail panel
+    const contributorsData = {{ (report.scan_data.contributors or {})|tojson }};
+
     // Default Apollo sequence — all enrollment flows use this unless overridden
     const DEFAULT_SEQUENCE_ID = '696ea11188bc73001f2afa87';
     const DEFAULT_SEQUENCE_NAME = 'Test Zapier Workflow';
@@ -645,10 +675,13 @@
         function selectContributor(card, name, login, company) {
             // Deselect previous
             document.querySelectorAll('.contributor-card.selected').forEach(c => c.classList.remove('selected'));
-            
+
             // Select this card
             card.classList.add('selected');
             selectedContributor = { name, login, company };
+
+            // Open detail panel
+            openDetailPanel(login);
             
             // Show selected contact indicator in email draft section
             const banner = document.getElementById('selected-contact-banner');
@@ -1033,6 +1066,76 @@
         document.addEventListener('click', function(e) {
             if (!e.target.closest('.btn-enroll-sequence') && !e.target.closest('.sequence-selector-dropdown')) {
                 closeAllSequenceDropdowns();
+            }
+        });
+
+        // ============================================
+        // Item 1: Contributor Detail Panel
+        // ============================================
+        function openDetailPanel(login) {
+            const panel = document.getElementById('reportDetailPanel');
+            const body = document.getElementById('detailPanelBody');
+            const title = document.getElementById('detailPanelTitle');
+            if (!panel || !body) return;
+
+            const contrib = contributorsData[login] || {};
+            const name = contrib.name || login;
+            const avatarUrl = contrib.avatar_url || ('https://github.com/' + login + '.png');
+            const bio = contrib.bio || '';
+            const contributions = contrib.contributions || contrib.commits || 0;
+            const repos = contrib.repos || 0;
+            const company = {{ report.company_name|tojson }};
+
+            title.textContent = name;
+            body.innerHTML = `
+                <div style="display:flex;align-items:center;gap:0.75rem;">
+                    <img src="${avatarUrl}" class="detail-panel-avatar" alt="${name}">
+                    <div>
+                        <div class="detail-panel-name">${name}</div>
+                        <div class="detail-panel-handle"><a href="https://github.com/${login}" target="_blank">@${login}</a></div>
+                    </div>
+                </div>
+                ${bio ? `<div class="detail-panel-field"><span class="detail-panel-field-label">Bio</span><span class="detail-panel-field-value">${bio}</span></div>` : ''}
+                <div class="detail-panel-field">
+                    <span class="detail-panel-field-label">Contributions</span>
+                    <span class="detail-panel-field-value">${contributions} commits across ${repos} repos</span>
+                </div>
+                ${contrib.i18n_signals ? '<div class="detail-panel-field"><span class="detail-panel-field-label">i18n Signals</span><span class="detail-panel-field-value"><span class="i18n-badge">i18n involved</span></span></div>' : ''}
+                <div class="detail-panel-actions">
+                    <button class="btn-sm btn-fetch-email" onclick="event.stopPropagation(); fetchApolloEmail(this, ${JSON.stringify(name)}, ${JSON.stringify(company)})" data-login="${login}">
+                        Find Email
+                    </button>
+                    <button class="btn-sm btn-add-sequence" onclick="event.stopPropagation(); showSequenceSelector(${JSON.stringify(login)}, ${JSON.stringify(name)}, ${JSON.stringify(company)})" data-name="${name}" data-company="${company}">
+                        Add to Sequence
+                    </button>
+                </div>
+            `;
+
+            panel.classList.add('open');
+        }
+
+        function closeDetailPanel() {
+            const panel = document.getElementById('reportDetailPanel');
+            if (panel) panel.classList.remove('open');
+        }
+
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') closeDetailPanel();
+        });
+
+        // ============================================
+        // Item 4: Sticky Header (IntersectionObserver)
+        // ============================================
+        document.addEventListener('DOMContentLoaded', function() {
+            const hero = document.getElementById('reportHero');
+            const stickyHeader = document.getElementById('reportStickyHeader');
+            if (hero && stickyHeader) {
+                const observer = new IntersectionObserver(function(entries) {
+                    entries.forEach(function(entry) {
+                        stickyHeader.classList.toggle('visible', !entry.isIntersecting);
+                    });
+                }, { threshold: 0 });
+                observer.observe(hero);
             }
         });
 

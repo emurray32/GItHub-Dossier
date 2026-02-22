@@ -753,6 +753,13 @@
 
 .btn-find-email:hover { background: var(--color-primary-hover); }
 .btn-find-email:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-find-email.email-found {
+    background: #dcfce7;
+    color: #166534;
+    border: 1px solid #bbf7d0;
+    opacity: 1;
+    cursor: default;
+}
 
 .btn-generate-email {
     background: var(--color-surface);
@@ -848,6 +855,10 @@
     font-weight: 400;
     font-family: monospace;
     opacity: 0.7;
+}
+
+.outreach-var-name {
+    display: none;
 }
 
 .outreach-input,
