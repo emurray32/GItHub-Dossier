@@ -74,6 +74,13 @@
     padding: 0.6rem 1.25rem;
     border-radius: var(--radius, 0.75rem);
     min-width: 100px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.verdict-badge:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
 }
 
 .verdict-label {
@@ -312,6 +319,8 @@
 .btn-sm:hover:not(:disabled) {
     border-color: var(--color-primary);
     color: var(--color-primary);
+    box-shadow: 0 2px 6px rgba(79, 70, 229, 0.1);
+    transform: translateY(-1px);
 }
 
 /* ── Email form (draft panel) ─────────────────────────────── */
@@ -460,10 +469,18 @@
     padding: 0.65rem 0.85rem;
     background: var(--color-bg);
     border: 1px solid var(--color-border);
+    border-left: 3px solid transparent;
     border-radius: 8px;
     font-size: 0.85rem;
     color: var(--color-text);
     line-height: 1.5;
+    transition: all 0.15s ease;
+}
+
+.reason-card:hover {
+    border-left-color: var(--color-primary);
+    background: #EEF2FF;
+    transform: translateX(3px);
 }
 
 .suggestions-list {
@@ -476,10 +493,18 @@
     padding: 0.65rem 0.85rem;
     background: var(--color-bg);
     border: 1px solid var(--color-border);
+    border-left: 3px solid transparent;
     border-radius: 8px;
     font-size: 0.85rem;
     color: var(--color-text);
     line-height: 1.5;
+    transition: all 0.15s ease;
+}
+
+.suggestion-item:hover {
+    border-left-color: var(--color-primary);
+    background: #EEF2FF;
+    transform: translateX(3px);
 }
 
 .velocity-content {

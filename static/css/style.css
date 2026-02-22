@@ -27,7 +27,7 @@
     --sidebar-hover-bg: rgba(148, 163, 184, 0.08);
     --color-text: #0A0A0A;
     --color-text-secondary: #6B7280;
-    --color-text-tertiary: #9CA3AF;
+    --color-text-tertiary: #6B7280;
     --color-text-on-primary: #FFFFFF;
     --color-destructive: #EF4444;
     --color-warning: #F59E0B;
@@ -1416,6 +1416,31 @@ select {
     outline: 2px solid var(--color-primary);
     outline-offset: 1px;
     border-color: var(--color-primary);
+}
+
+/* Global focus-visible for any interactive element not covered above */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+}
+
+/* Global smooth transitions on interactive elements */
+button,
+a,
+input,
+select,
+textarea,
+.btn,
+.btn-sm,
+.btn-primary,
+.btn-secondary,
+.btn-outline {
+    transition: all var(--transition-fast);
 }
 
 /* Skip link */

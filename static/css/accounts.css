@@ -653,8 +653,8 @@
 }
 
 .accounts-table td {
-    padding: 0 0.4rem;
-    height: 34px;
+    padding: 0.35rem 0.4rem;
+    height: 40px;
     border-bottom: 1px solid var(--color-border);
     vertical-align: middle;
 }
@@ -837,7 +837,7 @@
 /* Compact mode */
 .accounts-table.table-compact th,
 .accounts-table.table-compact td {
-    padding: 3px 5px;
+    padding: 0.3rem 0.4rem;
 }
 
 .accounts-table.table-compact th.select-col,
@@ -851,7 +851,7 @@
 }
 
 .accounts-table tbody tr:hover {
-    background: rgba(79, 70, 229, 0.04);
+    background: rgba(79, 70, 229, 0.07);
 }
 
 .accounts-table tbody tr:last-child td {
@@ -998,6 +998,12 @@
     background: var(--color-surface);
     color: var(--color-text);
     font-size: 12px;
+    transition: border-color var(--transition-fast);
+}
+
+.filter-select:focus {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.12);
 }
 
 .btn-clear-filters {
