@@ -5415,7 +5415,24 @@ def apollo_lookup():
     apollo_key = os.environ.get('APOLLO_API_KEY', '')
     if not apollo_key:
         return jsonify({'status': 'error', 'message': 'Apollo API key not configured'}), 500
-    
+
+    def _check_company_match(email, org_name, target_domain, target_company):
+        """Return True if the email domain or org name plausibly matches the target company."""
+        if not email and not org_name:
+            return True  # nothing to compare — allow through
+        # Check email domain against target company domain
+        if email and '@' in email:
+            email_domain = email.lower().split('@')[-1]
+            if target_domain and email_domain == target_domain.lower():
+                return True
+        # Check Apollo-returned org name against target company name (fuzzy)
+        if org_name and target_company:
+            org_lower = org_name.lower().strip()
+            co_lower = target_company.lower().strip()
+            if co_lower in org_lower or org_lower in co_lower:
+                return True
+        return False
+
     try:
         # Try Apollo People Match API
         apollo_headers = {'X-Api-Key': apollo_key, 'Content-Type': 'application/json'}
@@ -5433,8 +5450,20 @@ def apollo_lookup():
         if resp.status_code == 200:
             person = resp.json().get('person', {})
             if person:
-                email = person.get('email', '')
+                email = _filter_personal_email(person.get('email', ''))
                 email_status = person.get('email_status', 'unknown')
+                org_name = person.get('organization', {}).get('name', '')
+
+                if email and not _check_company_match(email, org_name, domain, company):
+                    email_domain = email.split('@')[-1] if '@' in email else ''
+                    print(f"[APOLLO LOOKUP] Domain mismatch: {email} (org: {org_name}) does not match target {company} ({domain})")
+                    return jsonify({
+                        'status': 'domain_mismatch',
+                        'message': f'Email found ({email_domain}) belongs to {org_name or email_domain}, not {company}',
+                        'email': email,
+                        'organization': org_name,
+                    })
+
                 return jsonify({
                     'status': 'success',
                     'email': email,
@@ -5442,9 +5471,9 @@ def apollo_lookup():
                     'name': person.get('name', name),
                     'title': person.get('title', ''),
                     'linkedin_url': person.get('linkedin_url', ''),
-                    'organization': person.get('organization', {}).get('name', ''),
+                    'organization': org_name,
                 })
-        
+
         # Fallback: search by name + domain
         search_url = 'https://api.apollo.io/v1/mixed_people/search'
         search_payload = {
@@ -5459,16 +5488,29 @@ def apollo_lookup():
             people = resp.json().get('people', [])
             if people:
                 person = people[0]
+                email = _filter_personal_email(person.get('email', ''))
+                org_name = person.get('organization', {}).get('name', '')
+
+                if email and not _check_company_match(email, org_name, domain, company):
+                    email_domain = email.split('@')[-1] if '@' in email else ''
+                    print(f"[APOLLO LOOKUP] Domain mismatch: {email} (org: {org_name}) does not match target {company} ({domain})")
+                    return jsonify({
+                        'status': 'domain_mismatch',
+                        'message': f'Email found ({email_domain}) belongs to {org_name or email_domain}, not {company}',
+                        'email': email,
+                        'organization': org_name,
+                    })
+
                 return jsonify({
                     'status': 'success',
-                    'email': person.get('email', ''),
+                    'email': email,
                     'email_status': person.get('email_status', 'unknown'),
                     'name': person.get('name', name),
                     'title': person.get('title', ''),
                     'linkedin_url': person.get('linkedin_url', ''),
-                    'organization': person.get('organization', {}).get('name', ''),
+                    'organization': org_name,
                 })
-        
+
         return jsonify({'status': 'not_found', 'message': 'No matching contact found in Apollo'})
     except Exception as e:
         print(f"[APOLLO LOOKUP ERROR] {e}")
