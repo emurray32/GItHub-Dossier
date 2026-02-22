@@ -307,31 +307,41 @@ class StreamHandler {
 
         // Quick Stats
         if (this.scanData) {
-            preview.innerHTML += `
-                <div class="preview-section">
-                    <h3>Quick Stats</h3>
-                    <div class="preview-stats">
-                        <span class="stat">
-                            <strong>${this.scanData.signals?.length || 0}</strong> signals
-                        </span>
-                        <span class="stat">
-                            <strong>${this.scanData.repos_scanned?.length || 0}</strong> repos
-                        </span>
-                        <span class="stat">
-                            <strong>${this.scanData.total_commits_analyzed || 0}</strong> commits
-                        </span>
-                        <span class="stat">
-                            <strong>${this.scanData.total_prs_analyzed || 0}</strong> PRs
-                        </span>
-                    </div>
-                </div>
-            `;
+            const statsSection = document.createElement('div');
+            statsSection.className = 'preview-section';
+
+            const statsHeading = document.createElement('h3');
+            statsHeading.textContent = 'Quick Stats';
+            statsSection.appendChild(statsHeading);
+
+            const statsContainer = document.createElement('div');
+            statsContainer.className = 'preview-stats';
+
+            const statsConfig = [
+                { value: this.scanData.signals?.length || 0, label: 'signals' },
+                { value: this.scanData.repos_scanned?.length || 0, label: 'repos' },
+                { value: this.scanData.total_commits_analyzed || 0, label: 'commits' },
+                { value: this.scanData.total_prs_analyzed || 0, label: 'PRs' },
+            ];
+
+            statsConfig.forEach(({ value, label }) => {
+                const stat = document.createElement('span');
+                stat.className = 'stat';
+                const strong = document.createElement('strong');
+                strong.textContent = value;
+                stat.appendChild(strong);
+                stat.appendChild(document.createTextNode(' ' + label));
+                statsContainer.appendChild(stat);
+            });
+
+            statsSection.appendChild(statsContainer);
+            preview.appendChild(statsSection);
         }
 
         // Maturity & Score
         if (this.analysisData.localization_maturity) {
-            const maturity = this.analysisData.localization_maturity;
-            const score = this.analysisData.opportunity_score || 5;
+            const maturity = this.escapeHtml(this.analysisData.localization_maturity);
+            const score = this.escapeHtml(String(this.analysisData.opportunity_score || 5));
             preview.innerHTML += `
                 <div class="preview-section">
                     <h3>Assessment</h3>
