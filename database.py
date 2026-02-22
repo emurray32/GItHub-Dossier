@@ -273,17 +273,19 @@ def init_db() -> None:
     ''')
 
     # Scoring V2: Add enrichment columns to scan_signals (idempotent)
-    for col_def in [
+    ALLOWED_SIGNAL_COLUMNS = {
         'raw_strength REAL',
         'age_in_days INTEGER',
         'source_context TEXT',
         'woe_value REAL',
-    ]:
-        col_name = col_def.split()[0]
+    }
+    for col_def in ALLOWED_SIGNAL_COLUMNS:
+        if col_def not in ALLOWED_SIGNAL_COLUMNS:
+            continue
         try:
-            cursor.execute(f'ALTER TABLE scan_signals ADD COLUMN {col_def}')
+            cursor.execute('ALTER TABLE scan_signals ADD COLUMN ' + col_def)
         except sqlite3.OperationalError:
-            pass  # Column already exists
+            pass
 
     # Website Analyses table - stores website quality and localization assessments
     cursor.execute('''
@@ -499,7 +501,7 @@ def cleanup_duplicate_accounts() -> dict:
                 remove_ids = [acc['id'] for acc in accounts[1:]]
                 
                 placeholders = ','.join('?' * len(remove_ids))
-                cursor.execute(f'DELETE FROM monitored_accounts WHERE id IN ({placeholders})', remove_ids)
+                cursor.execute('DELETE FROM monitored_accounts WHERE id IN (' + placeholders + ')', remove_ids)
                 
                 deleted_count += len(remove_ids)
                 kept_count += 1
@@ -532,7 +534,7 @@ def cleanup_duplicate_accounts() -> dict:
                 remove_ids = [acc['id'] for acc in accounts[1:]]
                 
                 placeholders = ','.join('?' * len(remove_ids))
-                cursor.execute(f'DELETE FROM monitored_accounts WHERE id IN ({placeholders})', remove_ids)
+                cursor.execute('DELETE FROM monitored_accounts WHERE id IN (' + placeholders + ')', remove_ids)
                 
                 deleted_count += len(remove_ids)
                 kept_count += 1
@@ -1291,11 +1293,9 @@ def add_account_to_tier_0(company_name: str, github_org: str, annual_revenue: Op
                 update_fields.append('metadata = ?')
                 update_params.append(json.dumps(existing_metadata))
             update_params.append(existing['id'])
-            cursor.execute(f'''
-                UPDATE monitored_accounts
-                SET {', '.join(update_fields)}
-                WHERE id = ?
-            ''', update_params)
+            cursor.execute(
+                'UPDATE monitored_accounts SET ' + ', '.join(update_fields) + ' WHERE id = ?',
+                update_params)
         else:
             cursor.execute('''
                 UPDATE monitored_accounts
@@ -2570,30 +2570,24 @@ def increment_daily_stat(stat_name: str, amount: int = 1) -> None:
         stat_name: One of 'scans_run', 'api_calls_estimated', 'webhooks_fired'
         amount: Amount to increment by (default 1)
     """
+    ALLOWED_STAT_COLUMNS = {'scans_run', 'api_calls_estimated', 'webhooks_fired'}
+    if stat_name not in ALLOWED_STAT_COLUMNS:
+        raise ValueError('Invalid stat_name: ' + stat_name)
+
     conn = get_db_connection()
     cursor = conn.cursor()
     
     today = datetime.now().strftime('%Y-%m-%d')
     
-    # Try to update existing row
-    cursor.execute(f'''
-        UPDATE system_stats
-        SET {stat_name} = {stat_name} + ?
-        WHERE date = ?
-    ''', (amount, today))
+    query = 'UPDATE system_stats SET ' + stat_name + ' = ' + stat_name + ' + ? WHERE date = ?'
+    cursor.execute(query, (amount, today))
     
     if cursor.rowcount == 0:
-        # No row for today, create one
         cursor.execute('''
             INSERT INTO system_stats (date, scans_run, api_calls_estimated, webhooks_fired)
             VALUES (?, 0, 0, 0)
         ''', (today,))
-        # Now update the stat
-        cursor.execute(f'''
-            UPDATE system_stats
-            SET {stat_name} = {stat_name} + ?
-            WHERE date = ?
-        ''', (amount, today))
+        cursor.execute(query, (amount, today))
     
     conn.commit()
     conn.close()
@@ -3111,11 +3105,9 @@ def batch_set_scan_status_queued(company_names: list) -> int:
 
     # Use parameterized query with placeholders for all company names
     placeholders = ','.join(['?' for _ in company_names])
-    cursor.execute(f'''
-        UPDATE monitored_accounts
-        SET scan_status = ?, scan_progress = NULL, scan_start_time = ?
-        WHERE company_name IN ({placeholders})
-    ''', [SCAN_STATUS_QUEUED, now] + list(company_names))
+    cursor.execute(
+        'UPDATE monitored_accounts SET scan_status = ?, scan_progress = NULL, scan_start_time = ? WHERE company_name IN (' + placeholders + ')',
+        [SCAN_STATUS_QUEUED, now] + list(company_names))
 
     updated_count = cursor.rowcount
     conn.commit()
@@ -4236,11 +4228,9 @@ def webscraper_bulk_archive(account_ids: list) -> int:
     cursor = conn.cursor()
 
     placeholders = ','.join(['?'] * len(account_ids))
-    cursor.execute(f'''
-        UPDATE webscraper_accounts
-        SET archived_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-        WHERE id IN ({placeholders}) AND archived_at IS NULL
-    ''', account_ids)
+    cursor.execute(
+        'UPDATE webscraper_accounts SET archived_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id IN (' + placeholders + ') AND archived_at IS NULL',
+        account_ids)
 
     updated = cursor.rowcount
     conn.commit()
@@ -4258,7 +4248,7 @@ def webscraper_bulk_delete(account_ids: list) -> int:
     cursor = conn.cursor()
 
     placeholders = ','.join(['?'] * len(account_ids))
-    cursor.execute(f'DELETE FROM webscraper_accounts WHERE id IN ({placeholders})', account_ids)
+    cursor.execute('DELETE FROM webscraper_accounts WHERE id IN (' + placeholders + ')', account_ids)
 
     deleted = cursor.rowcount
     conn.commit()
@@ -4278,11 +4268,9 @@ def webscraper_bulk_change_tier(account_ids: list, new_tier: int) -> int:
     tier_label = WEBSCRAPER_TIER_CONFIG[new_tier]['name']
     placeholders = ','.join(['?'] * len(account_ids))
 
-    cursor.execute(f'''
-        UPDATE webscraper_accounts
-        SET current_tier = ?, tier_label = ?, updated_at = CURRENT_TIMESTAMP
-        WHERE id IN ({placeholders})
-    ''', [new_tier, tier_label] + account_ids)
+    cursor.execute(
+        'UPDATE webscraper_accounts SET current_tier = ?, tier_label = ?, updated_at = CURRENT_TIMESTAMP WHERE id IN (' + placeholders + ')',
+        [new_tier, tier_label] + account_ids)
 
     updated = cursor.rowcount
     conn.commit()
@@ -4542,6 +4530,8 @@ def get_contributors_datatable(draw=1, start=0, length=50, search_value='',
                'apollo_status', 'emails_sent', 'insight']
 
     sort_col = columns[order_column] if 0 <= order_column < len(columns) else 'contributions'
+    if sort_col not in columns:
+        sort_col = 'contributions'
     sort_dir = 'DESC' if order_dir.lower() == 'desc' else 'ASC'
 
     # Build WHERE clause — default: hide confirmed external contributors
@@ -4589,16 +4579,10 @@ def get_contributors_datatable(draw=1, start=0, length=50, search_value='',
     total_records = cursor.fetchone()['cnt']
 
     # Filtered records
-    cursor.execute(f'SELECT COUNT(*) as cnt FROM contributors {where_clause}', params)
+    cursor.execute('SELECT COUNT(*) as cnt FROM contributors ' + where_clause, params)
     filtered_records = cursor.fetchone()['cnt']
 
-    # Fetch data
-    query = f'''
-        SELECT * FROM contributors
-        {where_clause}
-        ORDER BY {sort_col} {sort_dir}
-        LIMIT ? OFFSET ?
-    '''
+    query = 'SELECT * FROM contributors ' + where_clause + ' ORDER BY ' + sort_col + ' ' + sort_dir + ' LIMIT ? OFFSET ?'
     params.extend([length, start])
     cursor.execute(query, params)
 
