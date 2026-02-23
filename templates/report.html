@@ -436,7 +436,7 @@
                 const lookupResp = await fetch('/api/apollo-lookup', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name: selectedContributor.name, company: selectedContributor.company })
+                    body: JSON.stringify({ name: selectedContributor.name, company: selectedContributor.company, github_login: selectedContributor.login })
                 });
                 const lookupData = await lookupResp.json();
                 if (lookupData.email) {
@@ -983,20 +983,20 @@
                     const lookupResp = await fetch('/api/apollo-lookup', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ name: name, company: company })
+                        body: JSON.stringify({ name: name, company: company, github_login: login })
                     });
                     const lookupData = await lookupResp.json();
 
-                    if (lookupData.status === 'success' && lookupData.email) {
+                    if ((lookupData.status === 'success' || lookupData.status === 'domain_mismatch') && lookupData.email) {
                         email = lookupData.email;
                         if (card) card.dataset.email = email;
                         const fetchBtn = card ? card.querySelector('.btn-fetch-email') : null;
                         if (fetchBtn) {
-                            const isVerified = lookupData.email_status === 'verified';
+                            const isDomainMismatch = lookupData.status === 'domain_mismatch';
                             fetchBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> ${email}`;
-                            fetchBtn.style.background = '#d1fae5';
-                            fetchBtn.style.color = '#065f46';
-                            fetchBtn.style.borderColor = '#a7f3d0';
+                            fetchBtn.style.background = isDomainMismatch ? '#fef3c7' : '#d1fae5';
+                            fetchBtn.style.color = isDomainMismatch ? '#92400e' : '#065f46';
+                            fetchBtn.style.borderColor = isDomainMismatch ? '#fcd34d' : '#a7f3d0';
                             fetchBtn.classList.add('email-found');
                         }
                     } else {
@@ -1195,20 +1195,21 @@
                     const lookupResp = await fetch('/api/apollo-lookup', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ name: name, company: company })
+                        body: JSON.stringify({ name: name, company: company, github_login: login })
                     });
                     const lookupData = await lookupResp.json();
 
-                    if (lookupData.status === 'success' && lookupData.email) {
+                    if ((lookupData.status === 'success' || lookupData.status === 'domain_mismatch') && lookupData.email) {
                         email = lookupData.email;
                         if (card) card.dataset.email = email;
                         // Update the Find Email button too
                         const fetchBtn = card ? card.querySelector('.btn-fetch-email') : null;
                         if (fetchBtn) {
+                            const isDomainMismatch = lookupData.status === 'domain_mismatch';
                             fetchBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> ${email}`;
-                            fetchBtn.style.background = '#d1fae5';
-                            fetchBtn.style.color = '#065f46';
-                            fetchBtn.style.borderColor = '#a7f3d0';
+                            fetchBtn.style.background = isDomainMismatch ? '#fef3c7' : '#d1fae5';
+                            fetchBtn.style.color = isDomainMismatch ? '#92400e' : '#065f46';
+                            fetchBtn.style.borderColor = isDomainMismatch ? '#fcd34d' : '#a7f3d0';
                             fetchBtn.classList.add('email-found');
                         }
                     } else {

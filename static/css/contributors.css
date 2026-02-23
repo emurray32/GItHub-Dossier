@@ -1004,3 +1004,4 @@
 .contrib-toast.success { background: var(--color-success); }
 .contrib-toast.error { background: var(--color-destructive); }
 .contrib-toast.info { background: var(--color-primary, #3b82f6); }
+.contrib-toast.warning { background: #f59e0b; color: #451a03; }

@@ -5479,10 +5479,11 @@ def apollo_lookup():
     try:
         # Try Apollo People Match API
         apollo_headers = {'X-Api-Key': apollo_key, 'Content-Type': 'application/json'}
-        match_url = 'https://api.apollo.io/v1/people/match'
+        match_url = 'https://api.apollo.io/api/v1/people/match'
         payload = {
             'first_name': first_name,
             'last_name': last_name,
+            'reveal_personal_emails': True,
         }
         if domain:
             payload['organization_domain'] = domain
@@ -6132,6 +6133,12 @@ def api_linkedin_find_contact():
         match_payload['last_name'] = last_name
     if company:
         match_payload['organization_name'] = company
+        # Derive domain from company name to improve match confidence
+        clean = company.strip().lower()
+        for suffix in [' inc', ' inc.', ' corp', ' corp.', ' ltd', ' ltd.', ' llc', ' co', ' co.', ' gmbh', ' ag', ' sa']:
+            if clean.endswith(suffix):
+                clean = clean[:len(clean) - len(suffix)]
+        match_payload['organization_domain'] = clean.replace(' ', '') + '.com'
 
     # Step 1: Try people/match for enrichment
     match_person = None

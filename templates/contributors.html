@@ -418,6 +418,7 @@
         .then(r => r.json())
         .then(data => {
             if (data.email) {
+                const isDomainMismatch = data.status === 'domain_mismatch';
                 const emailEl = document.getElementById('sidebar-email');
                 if (emailEl) {
                     emailEl.innerHTML = '<a href="mailto:' + escapeHtml(data.email) + '">' + escapeHtml(data.email) + '</a>';
@@ -425,6 +426,15 @@
                 btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg> ' + escapeHtml(data.email);
                 btn.disabled = true;
                 btn.classList.add('email-found');
+
+                if (isDomainMismatch) {
+                    btn.style.background = '#fef3c7';
+                    btn.style.color = '#92400e';
+                    btn.style.borderColor = '#fcd34d';
+                    showToast('Email found but domain doesn\u2019t match company: ' + data.email, 'warning');
+                } else {
+                    showToast('Found: ' + data.email, 'success');
+                }
 
                 // Persist email to DB
                 fetch('/api/contributors/' + id + '/email', {
@@ -440,8 +450,6 @@
                 // Enable sequence button
                 const seqBtn = document.getElementById('seq-btn-' + id);
                 if (seqBtn) seqBtn.disabled = false;
-
-                showToast('Found: ' + data.email, 'success');
 
                 // Auto-generate personalized email
                 generateEmail(id);
