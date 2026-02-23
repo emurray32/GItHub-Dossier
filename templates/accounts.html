@@ -2874,7 +2874,7 @@
     function updateRowStatuses() {
         if (document.hidden) return; // Don't poll if tab is hidden
 
-        safeFetchJson('/api/accounts?limit=1000')
+        safeFetchJson('/api/accounts/scan-statuses')
             .then(data => {
                 errorTracker.reset('accounts-polling');
                 const accounts = data.accounts || [];

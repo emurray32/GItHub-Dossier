@@ -1534,6 +1534,34 @@ def accounts_tabler():
     )
 
 
+@app.route('/api/accounts/scan-statuses')
+def api_accounts_scan_statuses():
+    """Lightweight endpoint returning only scan status fields for active/recent accounts.
+
+    Used by the 6-second poller instead of fetching all 1000+ full account records.
+    Returns accounts that are currently scanning/queued OR were scanned in the last 2 minutes.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT id, scan_status, scan_start_time, last_scanned_at, next_scan_due, last_scan_error
+        FROM monitored_accounts
+        WHERE scan_status IS NOT NULL AND scan_status != 'idle'
+           OR last_scanned_at >= datetime('now', '-2 minutes')
+    ''')
+    rows = cursor.fetchall()
+    conn.close()
+    accounts = []
+    for row in rows:
+        a = dict(row)
+        if a.get('scan_start_time'):
+            a['scan_started_at'] = a['scan_start_time']
+        if not a.get('scan_status'):
+            a['scan_status'] = 'idle'
+        accounts.append(a)
+    return jsonify({'accounts': accounts})
+
+
 @app.route('/api/accounts')
 def api_accounts():
     """API endpoint to get all monitored accounts with live scan status and pagination."""
