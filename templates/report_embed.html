@@ -14,13 +14,18 @@
             padding: 0;
             background: var(--color-bg);
         }
+        .sidebar,
+        .top-bar,
+        .breadcrumb-container,
+        .report-sticky-header {
+            display: none !important;
+        }
+        .main-area {
+            margin-left: 0 !important;
+        }
         .report-page {
             max-width: 100%;
             padding: 1.25rem;
-        }
-        /* Hide sticky header in embed — drawer already shows context */
-        .report-sticky-header {
-            display: none;
         }
     </style>
 </head>

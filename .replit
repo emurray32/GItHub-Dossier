@@ -5,7 +5,7 @@ integrations = ["agentmail:1.0.0", "python_openai_ai_integrations:1.0.0"]
 
 [nix]
 channel = "stable-25_05"
-packages = ["xcodebuild", "zlib"]
+packages = ["xcodebuild", "zlib", "sqlite"]
 
 [workflows]
 runButton = "Project"
