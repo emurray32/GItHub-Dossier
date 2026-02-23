@@ -81,7 +81,7 @@
                     <!-- Skeleton loading rows — replaced on data fetch -->
                     {% for i in range(5) %}
                     <tr class="skeleton-row">
-                        <td class="col-name"><div style="display:flex;align-items:center;gap:0.5rem;"><div class="skeleton-bar" style="width:28px;height:28px;border-radius:50%;flex-shrink:0;"></div><div style="flex:1;"><div class="skeleton-bar" style="width:70%;margin-bottom:4px;"></div><div class="skeleton-bar" style="width:40%;height:8px;"></div></div></div></td>
+                        <td class="col-name"><div style="flex:1;"><div class="skeleton-bar" style="width:70%;margin-bottom:4px;"></div><div class="skeleton-bar" style="width:40%;height:8px;"></div></div></td>
                         <td class="col-company"><div class="skeleton-bar" style="width:60%;"></div></td>
                         <td class="col-repo"><div class="skeleton-bar" style="width:55%;"></div></td>
                         <td class="col-contributions"><div class="skeleton-bar" style="width:30%;"></div></td>
@@ -232,7 +232,6 @@
             <tr data-id="${c.id}" class="contrib-row ${isSelected ? 'selected' : ''}" onclick="openSidebar(${c.id})">
                 <td class="col-name">
                     <div class="name-cell">
-                        <div class="avatar-circle">${(displayName[0] || '?').toUpperCase()}</div>
                         <div class="name-stack">
                             <span class="name-primary">${escapeHtml(displayName)}</span>
                             <span class="name-handle">@${escapeHtml(c.github_login)}</span>
@@ -288,7 +287,6 @@
             <!-- Profile Section -->
             <div class="sidebar-section">
                 <div class="sidebar-profile">
-                    <div class="profile-avatar">${(displayName[0] || '?').toUpperCase()}</div>
                     <div class="profile-info">
                         <div class="profile-name">${escapeHtml(displayName)}</div>
                         <a href="${escapeHtml(ghUrl)}" target="_blank" rel="noopener" class="profile-github">

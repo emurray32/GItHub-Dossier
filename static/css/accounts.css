@@ -9,9 +9,8 @@
    Page Layout
    --------------------------------------------------------------------------- */
 .accounts-page {
-    max-width: 98%;
-    padding-left: 0.75rem;
-    padding-right: 0.75rem;
+    max-width: 1600px;
+    padding: 0 1.25rem;
     margin: 0 auto;
 }
 
@@ -612,24 +611,24 @@
 }
 
 /* ---------------------------------------------------------------------------
-   Table Container — 8px radius
+   Table Container — clean bordered card
    --------------------------------------------------------------------------- */
 .accounts-table-container {
-    background: var(--color-surface);
+    background: var(--color-bg);
     border-radius: 8px;
     overflow-x: auto;
     border: 1px solid var(--color-border);
-    box-shadow: var(--shadow-card);
+    box-shadow: var(--shadow-sm);
     position: relative;
 }
 
 /* ---------------------------------------------------------------------------
-   Table — 32px header, 40px rows, 11px uppercase labels
+   Table — compact rows, clean headers matching contributors style
    --------------------------------------------------------------------------- */
 .accounts-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 12px;
+    font-size: 13px;
     table-layout: fixed;
 }
 
@@ -638,25 +637,28 @@
 }
 
 .accounts-table th {
-    padding: 0 0.5rem;
-    height: 34px;
+    padding: 0 0.6rem;
+    height: 36px;
     text-align: left;
-    font-weight: 700;
+    font-weight: 600;
     color: var(--color-text-secondary);
     text-transform: uppercase;
     font-size: 11px;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.04em;
     border-bottom: 2px solid var(--color-border);
     position: sticky;
     top: 0;
     z-index: 3;
+    white-space: nowrap;
 }
 
 .accounts-table td {
-    padding: 0.35rem 0.4rem;
-    height: 40px;
+    padding: 0.45rem 0.6rem;
     border-bottom: 1px solid var(--color-border);
     vertical-align: middle;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 /* Column widths (preserved) */
@@ -837,21 +839,22 @@
 /* Compact mode */
 .accounts-table.table-compact th,
 .accounts-table.table-compact td {
-    padding: 0.3rem 0.4rem;
+    padding: 0.35rem 0.5rem;
 }
 
 .accounts-table.table-compact th.select-col,
 .accounts-table.table-compact td.select-col {
-    padding: 0.3rem 0.25rem;
+    padding: 0.35rem 0.25rem;
 }
 
 /* Row hover & empty */
 .accounts-table tbody tr[data-account-id] {
     cursor: pointer;
+    transition: background 0.15s;
 }
 
 .accounts-table tbody tr:hover {
-    background: rgba(79, 70, 229, 0.07);
+    background: rgba(79, 70, 229, 0.06);
 }
 
 .accounts-table tbody tr:last-child td {
@@ -873,6 +876,7 @@
    --------------------------------------------------------------------------- */
 .company-cell {
     font-weight: 600;
+    font-size: 13px;
     color: var(--color-text);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -945,20 +949,20 @@
 }
 
 /* ---------------------------------------------------------------------------
-   Table Controls
+   Table Controls — clean row matching contributors
    --------------------------------------------------------------------------- */
 .table-controls {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 0.75rem;
+    gap: 0.5rem;
     margin-bottom: 0.5rem;
 }
 
 .table-controls-left {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.4rem;
     flex-wrap: wrap;
 }
 
@@ -966,25 +970,33 @@
     display: flex;
     align-items: center;
     gap: 0.35rem;
-    padding: 0.3rem 0.5rem;
+    padding: 0 0.6rem;
+    height: 32px;
     border-radius: 6px;
     border: 1px solid var(--color-border);
-    background: var(--color-surface);
+    background: var(--color-bg);
     color: var(--color-text);
+    transition: border-color var(--transition-fast);
+}
+
+.accounts-search:focus-within {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
 }
 
 .inline-icon {
     width: 14px;
     height: 14px;
     color: var(--color-text-tertiary);
+    flex-shrink: 0;
 }
 
 .accounts-search input {
     border: none;
     background: transparent;
     color: inherit;
-    font-size: 12px;
-    min-width: 200px;
+    font-size: 13px;
+    min-width: 180px;
 }
 
 .accounts-search input:focus {
@@ -992,13 +1004,19 @@
 }
 
 .filter-select {
-    padding: 0.3rem 0.5rem;
+    padding: 0 0.5rem;
+    height: 32px;
     border-radius: 6px;
     border: 1px solid var(--color-border);
-    background: var(--color-surface);
-    color: var(--color-text);
-    font-size: 12px;
+    background: var(--color-bg);
+    color: var(--color-text-secondary);
+    font-size: 13px;
+    cursor: pointer;
     transition: border-color var(--transition-fast);
+}
+
+.filter-select:hover {
+    border-color: var(--color-text-tertiary);
 }
 
 .filter-select:focus {
@@ -1007,20 +1025,22 @@
 }
 
 .btn-clear-filters {
-    padding: 0.3rem 0.5rem;
+    padding: 0 0.5rem;
+    height: 32px;
     border-radius: 6px;
     border: 1px solid var(--color-border);
     background: transparent;
     color: var(--color-text-secondary);
-    font-size: 11px;
+    font-size: 12px;
     cursor: pointer;
+    display: inline-flex;
+    align-items: center;
     transition: all var(--transition-fast);
 }
 
 .btn-clear-filters:hover {
-    background: var(--bg-tertiary);
-    color: var(--color-text);
-    border-color: var(--color-text-tertiary);
+    border-color: var(--color-primary);
+    color: var(--color-primary);
 }
 
 /* ---------------------------------------------------------------------------
@@ -1524,6 +1544,7 @@
     line-height: 1.4;
     white-space: normal;
     overflow: hidden;
+    max-width: 220px;
 }
 
 .evidence-text {
@@ -1538,6 +1559,20 @@
     max-height: 2.8em;
     pointer-events: auto;
     cursor: help;
+    transition: all 0.15s ease;
+}
+
+.evidence-text:hover {
+    -webkit-line-clamp: unset;
+    max-height: none;
+    overflow: visible;
+    position: relative;
+    z-index: 10;
+    background: var(--color-surface, #fff);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+    border-radius: 4px;
+    padding: 4px 6px;
+    margin: -4px -6px;
 }
 
 /* ---------------------------------------------------------------------------
@@ -1814,20 +1849,20 @@
 }
 
 /* ---------------------------------------------------------------------------
-   Pagination — compact bottom bar with page-size selector
+   Pagination — compact bottom bar matching contributors
    --------------------------------------------------------------------------- */
 .pagination-container {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 0.5rem 0.75rem;
-    background: var(--color-surface);
-    border-top: 1px solid var(--color-border);
-    border-radius: 0 0 8px 8px;
+    padding: 0.5rem 0;
+    font-size: 12px;
+    color: var(--color-text-secondary);
 }
 
 .pagination-info {
     font-size: 12px;
+    font-weight: 500;
     color: var(--color-text-secondary);
 }
 
@@ -2351,7 +2386,7 @@
 
 /* ===== REDESIGNED COMPACT HEADER ===== */
 .accounts-page .page-header {
-    padding: 0.5rem 0 0.25rem 0;
+    padding: 0.25rem 0 0.25rem 0;
     margin-bottom: 0;
 }
 
@@ -2366,8 +2401,8 @@
 }
 
 .accounts-stats {
-    margin-top: 0.25rem;
-    margin-bottom: 0.25rem;
+    margin-top: 0;
+    margin-bottom: 0.35rem;
     padding: 0;
     gap: 0.5rem;
 }
@@ -2375,6 +2410,9 @@
 .status-legend-container {
     display: none;
 }
+
+/* ===== KPI ROW (removed from HTML, hide for safety) ===== */
+.kpi-row { display: none; }
 
 /* ===== SEGMENTED CONTROL — Tier Filter ===== */
 .tier-filter {
@@ -2548,7 +2586,7 @@
 }
 
 .accounts-table-container {
-    margin-top: 0.25rem;
+    margin-top: 0;
 }
 
 /* ============================================================
