@@ -503,13 +503,15 @@
             if (data.status === 'success' && data.email) {
                 const e = data.email;
                 // Client-side safety net: replace any unresolved merge tags
+                {% raw %}
                 const mergeTags = {'{{company}}': c.company || '', '{{name}}': c.name || c.github_login || '', '{{first_name}}': (c.name || '').split(' ')[0] || '',
                     '{{ company }}': c.company || '', '{{ name }}': c.name || c.github_login || '', '{{ first_name }}': (c.name || '').split(' ')[0] || ''};
                 function cleanMergeTags(text) {
-                    if (!text) return text;
-                    for (const [tag, val] of Object.entries(mergeTags)) { if (val) text = text.replaceAll(tag, val); }
+                    if (!text || !text.includes('{{')) return text;
+                    for (const [tag, val] of Object.entries(mergeTags)) { if (tag && val && text.includes(tag)) text = text.replaceAll(tag, val); }
                     return text;
                 }
+                {% endraw %}
                 const s1 = document.getElementById('email-subject1-' + id);
                 const s2 = document.getElementById('email-subject2-' + id);
                 const b1 = document.getElementById('email-body1-' + id);
@@ -553,7 +555,7 @@
                 return;
             }
             sel.innerHTML = cachedSequences.map(function(s) {
-                return '<option value="' + escapeHtml(s.id) + '" data-steps="' + (s.num_steps || 4) + '">' + escapeHtml(s.name) + (s.active ? '' : ' (inactive)') + ' — ' + (s.num_steps || '?') + ' steps</option>';
+                return '<option value="' + escapeHtml(s.id) + '" data-steps="' + (s.num_steps != null ? s.num_steps : 4) + '"' + (s.active ? '' : ' title="Paused in Apollo — emails won\'t send until activated"') + '>' + escapeHtml(s.name) + (s.active ? '' : ' (paused)') + ' — ' + (s.num_steps != null ? s.num_steps : '?') + ' steps</option>';
             }).join('');
             onSequenceChanged(contributorId);
         } catch(e) {
@@ -706,7 +708,7 @@
                 picker.innerHTML = `
                     <label class="seq-picker-label">Choose Sequence</label>
                     <select class="seq-picker-select" id="seq-select-${id}">
-                        ${sequences.map(s => `<option value="${escapeHtml(s.id)}" ${!s.active ? 'title="This sequence is paused in Apollo"' : ''}>${escapeHtml(s.name)}${s.active === false ? ' (inactive)' : ''}</option>`).join('')}
+                        ${sequences.map(s => `<option value="${escapeHtml(s.id)}" ${!s.active ? 'title="Paused in Apollo — emails won\'t send until activated"' : ''}>${escapeHtml(s.name)}${s.active === false ? ' (paused)' : ''}</option>`).join('')}
                     </select>
                     <div class="seq-picker-actions">
                         <button class="btn-confirm-enroll" onclick="confirmEnroll(${id})">Enroll</button>

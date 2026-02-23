@@ -842,7 +842,7 @@ async function loadRuleSet() {
 
         body.innerHTML = html;
     } catch (error) {
-        body.innerHTML = `<p style="color: #e74c3c;">Failed to load rule set: ${error.message}</p>`;
+        body.innerHTML = `<p style="color: #e74c3c;">Failed to load rule set: ${escapeHtml(error.message)}</p>`;
     }
 }
 
@@ -889,7 +889,7 @@ async function loadHistory() {
         html += '</div>';
         body.innerHTML = html;
     } catch (error) {
-        body.innerHTML = `<p style="color: #e74c3c;">Failed to load history: ${error.message}</p>`;
+        body.innerHTML = `<p style="color: #e74c3c;">Failed to load history: ${escapeHtml(error.message)}</p>`;
     }
 }
 

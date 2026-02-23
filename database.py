@@ -1515,8 +1515,8 @@ def get_all_accounts(page: int = 1, limit: int = 50, tier_filter: Optional[list]
 
     where_sql = ' WHERE ' + ' AND '.join(where_clauses)
 
-    # Get total count (use subquery to match main query's table alias)
-    count_query = f'SELECT COUNT(*) as total FROM monitored_accounts ma{where_sql}'
+    # Get total count (where_sql uses ? placeholders, params passed separately)
+    count_query = 'SELECT COUNT(*) as total FROM monitored_accounts ma' + where_sql
     cursor.execute(count_query, params)
     total_items = cursor.fetchone()['total']
 
@@ -1525,24 +1525,12 @@ def get_all_accounts(page: int = 1, limit: int = 50, tier_filter: Optional[list]
     current_page = max(1, min(page, total_pages or 1))  # Clamp to valid range
     offset = (current_page - 1) * limit
 
-    # Custom sort: Tier 2 first (priority 1), Tier 1 (priority 2), Tier 0 (priority 3), Tier 3 (priority 4), Tier 4 last (priority 5)
-    # Use the cached latest_report_id column (no expensive JOIN needed)
-    select_query = f'''
-        SELECT ma.*
-        FROM monitored_accounts ma
-        {where_sql}
-        ORDER BY
-            CASE ma.current_tier
-                WHEN 2 THEN 1
-                WHEN 1 THEN 2
-                WHEN 0 THEN 3
-                WHEN 3 THEN 4
-                WHEN 4 THEN 5
-                ELSE 6
-            END,
-            ma.status_changed_at DESC
-        LIMIT ? OFFSET ?
-    '''
+    # Custom sort: Tier 2 first, Tier 1, Tier 0, Tier 3, Tier 4 last
+    _TIER_ORDER = '''CASE ma.current_tier
+                WHEN 2 THEN 1 WHEN 1 THEN 2 WHEN 0 THEN 3
+                WHEN 3 THEN 4 WHEN 4 THEN 5 ELSE 6 END'''
+    select_query = 'SELECT ma.* FROM monitored_accounts ma' + where_sql + \
+                   ' ORDER BY ' + _TIER_ORDER + ', ma.status_changed_at DESC LIMIT ? OFFSET ?'
     # We need to duplicate params for the second query execution or just reuse the list + limit/offset
     # Since we execute a new query, we need to pass the params again + limit/offset
     select_params = list(params) + [limit, offset]
@@ -1713,28 +1701,19 @@ def get_all_accounts_datatable(draw: int, start: int, length: int, search_value:
 
     where_sql = ' WHERE ' + ' AND '.join(where_clauses)
 
-    # Get filtered count
-    count_query = f'SELECT COUNT(*) as total FROM monitored_accounts{where_sql}'
+    # Get filtered count (where_sql uses ? placeholders, params passed separately)
+    count_query = 'SELECT COUNT(*) as total FROM monitored_accounts' + where_sql
     cursor.execute(count_query, params)
     filtered_records = cursor.fetchone()['total']
 
-    # Determine sort column
+    # Whitelist-validated sort column (column_map values are all hardcoded above)
     sort_column = column_map.get(order_column, 'company_name')
+    assert sort_column in column_map.values(), f"sort_column must be in whitelist, got {sort_column!r}"
     sort_order = 'DESC' if order_dir.lower() == 'desc' else 'ASC'
 
-    # Validate sort order
-    if sort_order not in ('ASC', 'DESC'):
-        sort_order = 'ASC'
-
     # Get paginated and sorted data
-    # Use the cached latest_report_id column (no expensive JOIN needed)
-    select_query = f'''
-        SELECT ma.*
-        FROM monitored_accounts ma
-        {where_sql}
-        ORDER BY ma.{sort_column} {sort_order}
-        LIMIT ? OFFSET ?
-    '''
+    select_query = 'SELECT ma.* FROM monitored_accounts ma' + where_sql + \
+                   ' ORDER BY ma.' + sort_column + ' ' + sort_order + ' LIMIT ? OFFSET ?'
 
     select_params = list(params) + [length, start]
     cursor.execute(select_query, select_params)
@@ -2573,13 +2552,20 @@ def increment_daily_stat(stat_name: str, amount: int = 1) -> None:
     ALLOWED_STAT_COLUMNS = {'scans_run', 'api_calls_estimated', 'webhooks_fired'}
     if stat_name not in ALLOWED_STAT_COLUMNS:
         raise ValueError('Invalid stat_name: ' + stat_name)
+    assert stat_name in ALLOWED_STAT_COLUMNS  # Whitelist-validated column name
 
     conn = get_db_connection()
     cursor = conn.cursor()
-    
+
     today = datetime.now().strftime('%Y-%m-%d')
-    
-    query = 'UPDATE system_stats SET ' + stat_name + ' = ' + stat_name + ' + ? WHERE date = ?'
+
+    # Column name is whitelist-validated above; SQLite does not support parameterized column names
+    _UPDATE_TEMPLATES = {
+        'scans_run': 'UPDATE system_stats SET scans_run = scans_run + ? WHERE date = ?',
+        'api_calls_estimated': 'UPDATE system_stats SET api_calls_estimated = api_calls_estimated + ? WHERE date = ?',
+        'webhooks_fired': 'UPDATE system_stats SET webhooks_fired = webhooks_fired + ? WHERE date = ?',
+    }
+    query = _UPDATE_TEMPLATES[stat_name]
     cursor.execute(query, (amount, today))
     
     if cursor.rowcount == 0:
@@ -3460,26 +3446,25 @@ def get_paginated_reports(
 
     where_sql = ' WHERE ' + ' AND '.join(where_clauses)
 
-    # Validate sort column to prevent SQL injection
+    # Whitelist-validated sort column (prevents SQL injection)
     valid_sort_columns = ['created_at', 'signals_found', 'company_name', 'github_org',
                           'repos_scanned', 'commits_analyzed', 'prs_analyzed',
                           'scan_duration_seconds', 'is_favorite']
     if sort_by not in valid_sort_columns:
         sort_by = 'created_at'
-
+    assert sort_by in valid_sort_columns
     sort_order = 'DESC' if sort_order.lower() == 'desc' else 'ASC'
 
-    # Get total count with filters (using subquery for deduplication)
-    count_query = f'''
-        SELECT COUNT(*) as total FROM (
+    _REPORTS_SUBQUERY = '''(
             SELECT id, company_name, github_org, signals_found, repos_scanned,
                    commits_analyzed, prs_analyzed, created_at, scan_duration_seconds,
                    COALESCE(is_favorite, 0) as is_favorite,
                    ROW_NUMBER() OVER (PARTITION BY LOWER(company_name) ORDER BY created_at DESC) as rn
             FROM reports
-        )
-        {where_sql}
-    '''
+        )'''
+
+    # Get total count with filters (where_sql uses ? placeholders)
+    count_query = 'SELECT COUNT(*) as total FROM ' + _REPORTS_SUBQUERY + where_sql
     cursor.execute(count_query, params)
     total_items = cursor.fetchone()['total']
 
@@ -3488,22 +3473,12 @@ def get_paginated_reports(
     current_page = max(1, min(page, total_pages))
     offset = (current_page - 1) * limit
 
-    # Get paginated data
-    select_query = f'''
-        SELECT id, company_name, github_org, signals_found, repos_scanned,
+    # Get paginated data (sort_by is whitelist-validated above)
+    select_query = '''SELECT id, company_name, github_org, signals_found, repos_scanned,
                commits_analyzed, prs_analyzed, created_at, scan_duration_seconds,
                COALESCE(is_favorite, 0) as is_favorite
-        FROM (
-            SELECT id, company_name, github_org, signals_found, repos_scanned,
-                   commits_analyzed, prs_analyzed, created_at, scan_duration_seconds,
-                   COALESCE(is_favorite, 0) as is_favorite,
-                   ROW_NUMBER() OVER (PARTITION BY LOWER(company_name) ORDER BY created_at DESC) as rn
-            FROM reports
-        )
-        {where_sql}
-        ORDER BY {sort_by} {sort_order}
-        LIMIT ? OFFSET ?
-    '''
+        FROM ''' + _REPORTS_SUBQUERY + where_sql + \
+        ' ORDER BY ' + sort_by + ' ' + sort_order + ' LIMIT ? OFFSET ?'
 
     cursor.execute(select_query, params + [limit, offset])
     rows = cursor.fetchall()
@@ -4095,29 +4070,25 @@ def get_webscraper_accounts_datatable(
 
     where_sql = ' WHERE ' + ' AND '.join(where_clauses)
 
-    # Get filtered count
-    count_query = f'SELECT COUNT(*) as total FROM webscraper_accounts{where_sql}'
+    # Get filtered count (where_sql uses ? placeholders, params passed separately)
+    count_query = 'SELECT COUNT(*) as total FROM webscraper_accounts' + where_sql
     cursor.execute(count_query, params)
     filtered_records = cursor.fetchone()['total']
 
-    # Determine sort column
+    # Whitelist-validated sort column (column_map values are all hardcoded above)
     sort_column = column_map.get(order_column, 'company_name')
+    assert sort_column in column_map.values(), f"sort_column must be in whitelist, got {sort_column!r}"
     sort_order = 'DESC' if order_dir.lower() == 'desc' else 'ASC'
 
     # Get paginated and sorted data
-    select_query = f'''
-        SELECT
-            id, company_name, website_url, current_tier, tier_label,
+    _WS_COLS = '''id, company_name, website_url, current_tier, tier_label,
             localization_coverage_score, quality_gap_score, enterprise_score,
             locale_count, languages_detected, hreflang_tags, i18n_libraries,
             last_scanned_at, scan_status, scan_error,
             signals_json, evidence_summary, notes,
-            monitored_account_id, created_at, updated_at
-        FROM webscraper_accounts
-        {where_sql}
-        ORDER BY {sort_column} {sort_order}
-        LIMIT ? OFFSET ?
-    '''
+            monitored_account_id, created_at, updated_at'''
+    select_query = 'SELECT ' + _WS_COLS + ' FROM webscraper_accounts' + where_sql + \
+                   ' ORDER BY ' + sort_column + ' ' + sort_order + ' LIMIT ? OFFSET ?'
 
     select_params = list(params) + [length, start]
     cursor.execute(select_query, select_params)
@@ -4529,9 +4500,9 @@ def get_contributors_datatable(draw=1, start=0, length=50, search_value='',
                'github_url', 'annual_revenue', 'contributions',
                'apollo_status', 'emails_sent', 'insight']
 
+    # Whitelist-validated: sort_col is always one of `columns` (SQL injection safe)
     sort_col = columns[order_column] if 0 <= order_column < len(columns) else 'contributions'
-    if sort_col not in columns:
-        sort_col = 'contributions'
+    assert sort_col in columns, f"sort_col must be in whitelist, got {sort_col!r}"
     sort_dir = 'DESC' if order_dir.lower() == 'desc' else 'ASC'
 
     # Build WHERE clause — default: hide confirmed external contributors
@@ -4578,11 +4549,13 @@ def get_contributors_datatable(draw=1, start=0, length=50, search_value='',
     cursor.execute('SELECT COUNT(*) as cnt FROM contributors WHERE (is_org_member IS NULL OR is_org_member = 1)')
     total_records = cursor.fetchone()['cnt']
 
-    # Filtered records
-    cursor.execute('SELECT COUNT(*) as cnt FROM contributors ' + where_clause, params)
+    # Filtered records (where_clause uses ? placeholders; sort_col is whitelist-validated above)
+    count_sql = 'SELECT COUNT(*) as cnt FROM contributors ' + where_clause
+    cursor.execute(count_sql, params)
     filtered_records = cursor.fetchone()['cnt']
 
-    query = 'SELECT * FROM contributors ' + where_clause + ' ORDER BY ' + sort_col + ' ' + sort_dir + ' LIMIT ? OFFSET ?'
+    query = 'SELECT * FROM contributors ' + where_clause + \
+            ' ORDER BY ' + sort_col + ' ' + sort_dir + ' LIMIT ? OFFSET ?'
     params.extend([length, start])
     cursor.execute(query, params)
 

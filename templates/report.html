@@ -383,6 +383,13 @@
     const DEFAULT_SEQUENCE_ID = '696ea11188bc73001f2afa87';
     const DEFAULT_SEQUENCE_NAME = 'Test Zapier Workflow';
 
+    function escapeHtml(str) {
+        if (!str) return '';
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    }
+
     function copyEmailDraft(button) {
         const subject = document.getElementById('emailSubject').value;
         const body = document.getElementById('emailBody').value;
@@ -656,7 +663,7 @@
             } else {
                 btn.disabled = false;
                 btn.textContent = 'Enroll';
-                status.innerHTML = `<span style="color: #dc3545;">${data.message || 'Failed to send'}</span>`;
+                status.innerHTML = `<span style="color: #dc3545;">${escapeHtml(data.message || 'Failed to send')}</span>`;
             }
         } catch(e) {
             btn.disabled = false;
@@ -689,8 +696,8 @@
                 banner.className = 'selected-contact-indicator visible';
                 const avatarUrl = `https://github.com/${login}.png`;
                 banner.innerHTML = `
-                    <img src="${avatarUrl}" class="contact-avatar-sm" alt="${name}">
-                    <strong>Selected:</strong> ${name} (@${login})
+                    <img src="${escapeHtml(avatarUrl)}" class="contact-avatar-sm" alt="${escapeHtml(name)}">
+                    <strong>Selected:</strong> ${escapeHtml(name)} (@${escapeHtml(login)})
                     <span style="margin-left: auto; font-size: 0.75rem; color: var(--text-secondary);">Email will be sent to this contributor</span>
                 `;
             }
@@ -699,11 +706,27 @@
             const subjectEl = document.getElementById('emailSubject');
             const bodyEl = document.getElementById('emailBody');
             if (subjectEl && bodyEl) {
-                // Keep subject as-is, personalize body opening
-                const currentBody = bodyEl.value;
-                if (!currentBody.includes(`Hi ${name}`)) {
-                    bodyEl.value = currentBody.replace(/^Hi .*?,/m, `Hi ${name},`).replace(/^Hello .*?,/m, `Hi ${name},`);
+                const firstName = name ? name.split(' ')[0] : login;
+                // Resolve all merge tags in subject and body
+                {% raw %}
+                const mergeTags = {
+                    '{{first_name}}': firstName, '{{ first_name }}': firstName,
+                    '{{company}}': company || '', '{{ company }}': company || '',
+                    '{{name}}': name || login, '{{ name }}': name || login,
+                };
+                let updatedSubject = subjectEl.value;
+                let updatedBody = bodyEl.value;
+                for (const [tag, val] of Object.entries(mergeTags)) {
+                    if (tag && val) {
+                        if (updatedSubject.includes(tag)) updatedSubject = updatedSubject.replaceAll(tag, val);
+                        if (updatedBody.includes(tag)) updatedBody = updatedBody.replaceAll(tag, val);
+                    }
                 }
+                // Also fix greeting patterns (Hey/Hi/Hello)
+                updatedBody = updatedBody.replace(/^(Hey|Hi|Hello) \{\{first_name\}\}/m, `$1 ${firstName}`);
+                {% endraw %}
+                subjectEl.value = updatedSubject;
+                bodyEl.value = updatedBody;
             }
             
             // Pre-fill composer to field if we have an email from the card
@@ -724,27 +747,32 @@
             button.innerHTML = '<svg class="spin-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg> Fetching...';
 
             const card = button.closest('.contributor-card');
-            const login = card ? card.dataset.contributorLogin : null;
+            const login = card ? card.dataset.contributorLogin : (button.dataset.login || null);
 
             try {
                 const response = await fetch('/api/apollo-lookup', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name: name, company: company })
+                    body: JSON.stringify({ name: name, company: company, github_login: login || '' })
                 });
 
                 const data = await response.json();
 
-                if (data.status === 'success' && data.email) {
+                // Treat both 'success' and 'domain_mismatch' as usable when email exists
+                if (data.email && (data.status === 'success' || data.status === 'domain_mismatch')) {
                     const isVerified = data.email_status === 'verified';
+                    const isDomainMismatch = data.status === 'domain_mismatch';
                     // Store email on the card for later use by enroll
                     if (card) card.dataset.email = data.email;
 
-                    button.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> ${data.email}`;
-                    button.style.background = '#d1fae5';
-                    button.style.color = '#065f46';
-                    button.style.borderColor = '#a7f3d0';
+                    button.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> ${escapeHtml(data.email)}`;
+                    button.style.background = isDomainMismatch ? '#fef3c7' : '#d1fae5';
+                    button.style.color = isDomainMismatch ? '#92400e' : '#065f46';
+                    button.style.borderColor = isDomainMismatch ? '#fde68a' : '#a7f3d0';
                     button.classList.add('email-found');
+                    if (isDomainMismatch) {
+                        button.title = `Email found at ${data.organization || 'different org'} — verify before enrolling`;
+                    }
 
                     // Show verification badge next to button
                     let badge = button.nextElementSibling;
@@ -767,19 +795,13 @@
                         const composerTo = document.getElementById(`composer-to-${login}`);
                         if (composerTo) composerTo.value = data.email;
                     }
-                } else if (data.status === 'domain_mismatch') {
-                    button.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> External — ${data.organization || 'different company'}`;
-                    button.style.background = '#fef3c7';
-                    button.style.color = '#92400e';
-                    button.style.borderColor = '#fde68a';
-                    button.title = data.message || 'Email belongs to a different company';
                 } else if (data.status === 'not_found') {
                     button.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg> Not Found';
                     button.style.background = '#fee2e2';
                     button.style.color = '#991b1b';
                     button.style.borderColor = '#fecaca';
                 } else {
-                    button.innerHTML = 'Error';
+                    button.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg> ${escapeHtml(data.message || 'Error')}`;
                     button.style.background = '#fee2e2';
                     button.style.color = '#991b1b';
                 }
@@ -921,11 +943,13 @@
                 const dotClass = seq.active ? 'active' : 'inactive';
                 const safeName = seq.name.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
                 const isDefault = seq.id === DEFAULT_SEQUENCE_ID;
+                const inactiveTooltip = !seq.active ? ' title="This sequence is paused in Apollo — contacts can still be added but emails won\'t send until it\'s activated"' : '';
                 html += `
-                    <div class="sequence-option${isDefault ? ' sequence-option-default' : ''}" data-seq-id="${seq.id}" data-seq-name="${safeName}" data-login="${login}" onclick="event.stopPropagation(); enrollInSequence(this.dataset.login, this.closest('.sequence-selector-dropdown').previousElementSibling.dataset.name, this.closest('.sequence-selector-dropdown').previousElementSibling.dataset.company, this.dataset.seqId, this.dataset.seqName)">
+                    <div class="sequence-option${isDefault ? ' sequence-option-default' : ''}${!seq.active ? ' sequence-option-paused' : ''}" data-seq-id="${seq.id}" data-seq-name="${safeName}" data-login="${login}"${inactiveTooltip} onclick="event.stopPropagation(); enrollInSequence(this.dataset.login, this.closest('.sequence-selector-dropdown').previousElementSibling.dataset.name, this.closest('.sequence-selector-dropdown').previousElementSibling.dataset.company, this.dataset.seqId, this.dataset.seqName)">
                         <div>
                             <span class="sequence-option-active ${dotClass}"></span>
                             <span class="sequence-option-name">${safeName}</span>
+                            ${!seq.active ? '<span class="sequence-paused-badge">Paused</span>' : ''}
                             ${isDefault ? '<span class="sequence-default-badge">Default</span>' : ''}
                         </div>
                         <span class="sequence-option-meta">${seq.num_steps} steps</span>
@@ -1095,13 +1119,13 @@
             title.textContent = name;
             body.innerHTML = `
                 <div style="display:flex;align-items:center;gap:0.75rem;">
-                    <img src="${avatarUrl}" class="detail-panel-avatar" alt="${name}">
+                    <img src="${escapeHtml(avatarUrl)}" class="detail-panel-avatar" alt="${escapeHtml(name)}">
                     <div>
-                        <div class="detail-panel-name">${name}</div>
-                        <div class="detail-panel-handle"><a href="https://github.com/${login}" target="_blank">@${login}</a></div>
+                        <div class="detail-panel-name">${escapeHtml(name)}</div>
+                        <div class="detail-panel-handle"><a href="https://github.com/${escapeHtml(login)}" target="_blank">@${escapeHtml(login)}</a></div>
                     </div>
                 </div>
-                ${bio ? `<div class="detail-panel-field"><span class="detail-panel-field-label">Bio</span><span class="detail-panel-field-value">${bio}</span></div>` : ''}
+                ${bio ? `<div class="detail-panel-field"><span class="detail-panel-field-label">Bio</span><span class="detail-panel-field-value">${escapeHtml(bio)}</span></div>` : ''}
                 <div class="detail-panel-field">
                     <span class="detail-panel-field-label">Contributions</span>
                     <span class="detail-panel-field-value">${contributions} commits across ${repos} repos</span>

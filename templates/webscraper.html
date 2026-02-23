@@ -158,7 +158,7 @@
         } catch (error) {
             resultsContent.innerHTML = `
                 <div class="error-message">
-                    <strong>Error:</strong> ${error.message}
+                    <strong>Error:</strong> ${escapeHtml(error.message)}
                 </div>
             `;
         } finally {

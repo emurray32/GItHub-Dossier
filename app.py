@@ -2098,12 +2098,11 @@ Return ONLY valid JSON with no markdown formatting:
         merge_replacements = {
             '{{company}}': company, '{{name}}': name, '{{first_name}}': first_name,
             '{{ company }}': company, '{{ name }}': name, '{{ first_name }}': first_name,
-            '{company}': company, '{name}': name, '{first_name}': first_name,
         }
         for key in email_data:
             if isinstance(email_data[key], str):
                 for tag, val in merge_replacements.items():
-                    if val:
+                    if tag and val and tag in email_data[key]:
                         email_data[key] = email_data[key].replace(tag, val)
 
         return jsonify({'status': 'success', 'email': email_data})
@@ -5583,7 +5582,7 @@ def api_apollo_sequences():
     try:
         apollo_headers = {'X-Api-Key': apollo_key, 'Content-Type': 'application/json'}
         resp = req.post('https://api.apollo.io/api/v1/emailer_campaigns/search',
-                       json={},
+                       json={'per_page': 200},
                        headers=apollo_headers,
                        timeout=15)
 
@@ -6065,8 +6064,13 @@ def api_linkedin_find_contact():
         slug_match = _re.search(r'/in/([a-zA-Z0-9_-]+)', linkedin_url)
         if slug_match:
             slug = slug_match.group(1)
-            # Convert slug like "john-doe" → "John Doe"
-            name = ' '.join(part.capitalize() for part in slug.replace('_', '-').split('-') if part)
+            # Convert slug like "john-doe" → "John Doe", stripping trailing ID segments (contain digits)
+            parts = [part for part in slug.replace('_', '-').split('-') if part]
+            # Remove trailing parts that contain digits (e.g., "123", "a1b2c3")
+            while parts and _re.search(r'\d', parts[-1]):
+                parts.pop()
+            if parts:
+                name = ' '.join(part.capitalize() for part in parts)
 
     # Parse name if first/last not provided
     if name and not first_name:
