@@ -403,6 +403,36 @@
             renderSaved();
             overlay.style.display = 'flex';
             if (input) setTimeout(function () { input.focus(); }, 50);
+
+            // Enrich saved sequences with human-readable names from Apollo
+            enrichSavedNames();
+        }
+
+        function enrichSavedNames() {
+            var seqs = loadSequences();
+            var needsEnrich = seqs.some(function(s) { return !s.name; });
+            if (!needsEnrich) return;
+
+            fetch('/api/apollo/sequences')
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    if (data.status !== 'success' || !data.sequences) return;
+                    var nameMap = {};
+                    data.sequences.forEach(function(s) { nameMap[s.id] = s.name; });
+                    var seqs = loadSequences();
+                    var updated = false;
+                    seqs.forEach(function(s) {
+                        if (!s.name && nameMap[s.id]) {
+                            s.name = nameMap[s.id];
+                            updated = true;
+                        }
+                    });
+                    if (updated) {
+                        saveSequences(seqs);
+                        renderSaved();
+                    }
+                })
+                .catch(function() { /* silent — names stay as IDs */ });
         }
 
         function closeModal() {

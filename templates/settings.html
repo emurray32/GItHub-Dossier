@@ -4,7 +4,7 @@
 {% block page_title %}Settings{% endblock %}
 
 {% block head %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/settings.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/settings.css') }}?v={{ cache_bust }}">
 {% endblock %}
 
 {% block content %}
@@ -14,74 +14,94 @@
         <p class="settings-subtitle">Tools, configuration, and scanning management</p>
     </div>
 
-    <div class="settings-grid">
+    <!-- Active Tools -->
+    <div class="settings-section">
+        <div class="settings-list">
 
-        <!-- RepoRadar Scan History -->
-        <a href="{{ url_for('history') }}" class="settings-card">
-            <div class="settings-card-top">
-                <div class="settings-card-icon settings-card-icon--indigo">
-                    <i data-lucide="clock"></i>
+            <a href="{{ url_for('history') }}" class="settings-row">
+                <div class="settings-row-icon settings-row-icon--indigo">
+                    <i data-lucide="radar"></i>
                 </div>
-                <h3 class="settings-card-title">RepoRadar Scan History</h3>
-            </div>
-            <p class="settings-card-desc">View and manage all RepoRadar scan reports</p>
-            <div class="settings-card-footer">
-                <span class="settings-card-link">View Full Scan History</span>
-                <i data-lucide="arrow-right" class="settings-card-arrow"></i>
-            </div>
-        </a>
+                <div class="settings-row-body">
+                    <div class="settings-row-title">Scan History</div>
+                    <div class="settings-row-desc">Browse previous deep-dive scans across all tracked accounts</div>
+                </div>
+                <span class="settings-row-meta" id="settingsScanMeta"></span>
+                <i data-lucide="chevron-right" class="settings-row-chevron"></i>
+            </a>
 
-        <!-- Scanning Rules -->
-        <a href="{{ url_for('rules') }}" class="settings-card">
-            <div class="settings-card-top">
-                <div class="settings-card-icon settings-card-icon--emerald">
-                    <i data-lucide="shield-check"></i>
+            <a href="{{ url_for('rules') }}" class="settings-row">
+                <div class="settings-row-icon settings-row-icon--emerald">
+                    <i data-lucide="sliders-horizontal"></i>
                 </div>
-                <h3 class="settings-card-title">Scanning Rules</h3>
-            </div>
-            <p class="settings-card-desc">Configure scanning rules and signal detection patterns</p>
-            <div class="settings-card-footer">
-                <span class="settings-card-link">Manage Rules</span>
-                <i data-lucide="arrow-right" class="settings-card-arrow"></i>
-            </div>
-        </a>
+                <div class="settings-row-body">
+                    <div class="settings-row-title">Scanning Rules</div>
+                    <div class="settings-row-desc">Tune intent score weights, Goldilocks thresholds, and signal keyword patterns</div>
+                </div>
+                <span class="settings-row-meta" id="settingsRulesMeta"></span>
+                <i data-lucide="chevron-right" class="settings-row-chevron"></i>
+            </a>
 
-        <!-- WebScraper -->
-        <a href="{{ url_for('webscraper_accounts') }}" class="settings-card">
-            <div class="settings-card-top">
-                <div class="settings-card-icon settings-card-icon--blue">
-                    <i data-lucide="globe"></i>
-                </div>
-                <div class="settings-card-title-row">
-                    <h3 class="settings-card-title">WebScraper</h3>
-                    <span class="settings-wip-badge">WIP</span>
-                </div>
-            </div>
-            <p class="settings-card-desc">Website analysis and i18n signal detection</p>
-            <div class="settings-card-footer">
-                <span class="settings-card-link">Open WebScraper</span>
-                <i data-lucide="arrow-right" class="settings-card-arrow"></i>
-            </div>
-        </a>
-
-        <!-- Analyzer -->
-        <a href="{{ url_for('experiment') }}" class="settings-card">
-            <div class="settings-card-top">
-                <div class="settings-card-icon settings-card-icon--amber">
-                    <i data-lucide="wrench"></i>
-                </div>
-                <div class="settings-card-title-row">
-                    <h3 class="settings-card-title">Analyzer</h3>
-                    <span class="settings-wip-badge">WIP</span>
-                </div>
-            </div>
-            <p class="settings-card-desc">Experimental analysis tools</p>
-            <div class="settings-card-footer">
-                <span class="settings-card-link">Open Analyzer</span>
-                <i data-lucide="arrow-right" class="settings-card-arrow"></i>
-            </div>
-        </a>
-
+        </div>
     </div>
+
+    <!-- Experimental -->
+    <div class="settings-section">
+        <div class="settings-section-label">Experimental</div>
+        <div class="settings-list settings-list--muted">
+
+            <a href="{{ url_for('webscraper_accounts') }}" class="settings-row">
+                <div class="settings-row-icon settings-row-icon--slate">
+                    <i data-lucide="scan-search"></i>
+                </div>
+                <div class="settings-row-body">
+                    <div class="settings-row-title">WebScraper
+                        <span class="settings-exp-tag">Beta</span>
+                    </div>
+                    <div class="settings-row-desc">Crawl target websites to detect locale selectors, hreflang tags, and translation vendor scripts</div>
+                </div>
+                <span class="settings-row-meta" id="settingsWebMeta"></span>
+                <i data-lucide="chevron-right" class="settings-row-chevron"></i>
+            </a>
+
+            <a href="{{ url_for('experiment') }}" class="settings-row">
+                <div class="settings-row-icon settings-row-icon--slate">
+                    <i data-lucide="flask-conical"></i>
+                </div>
+                <div class="settings-row-body">
+                    <div class="settings-row-title">Analyzer
+                        <span class="settings-exp-tag">Beta</span>
+                    </div>
+                    <div class="settings-row-desc">Run custom scoring models and exploratory queries against scanned repo data</div>
+                </div>
+                <i data-lucide="chevron-right" class="settings-row-chevron"></i>
+            </a>
+
+        </div>
+    </div>
+
 </div>
+
+<script>
+// Populate inline stats for settings rows
+(function() {
+    fetch('/api/history/stats')
+        .then(function(r) { return r.ok ? r.json() : null; })
+        .then(function(d) {
+            if (d && d.total !== undefined) {
+                var el = document.getElementById('settingsScanMeta');
+                if (el) el.textContent = d.total + ' reports';
+            }
+        }).catch(function(){});
+
+    fetch('/api/webscraper/stats')
+        .then(function(r) { return r.ok ? r.json() : null; })
+        .then(function(d) {
+            if (d && d.total !== undefined) {
+                var el = document.getElementById('settingsWebMeta');
+                if (el) el.textContent = d.total + ' accounts';
+            }
+        }).catch(function(){});
+})();
+</script>
 {% endblock %}

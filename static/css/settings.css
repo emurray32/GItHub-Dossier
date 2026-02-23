@@ -1,99 +1,94 @@
 /* =============================================================================
-   settings.css — Settings page card grid
+   settings.css — Settings page: vertical list layout
    ============================================================================= */
 
 .settings-container {
-    max-width: 960px;
+    max-width: 720px;
     margin: 0 auto;
     padding: 32px 24px;
 }
 
 .settings-header {
-    margin-bottom: 32px;
+    margin-bottom: 28px;
 }
 
 .settings-title {
-    font-size: 24px;
+    font-size: 22px;
     font-weight: 700;
     color: var(--color-text);
-    margin: 0 0 6px;
+    margin: 0 0 4px;
     letter-spacing: -0.025em;
 }
 
 .settings-subtitle {
-    font-size: 14px;
+    font-size: 13px;
     color: var(--color-text-secondary);
     margin: 0;
 }
 
 /* ---------------------------------------------------------------------------
-   Card Grid
+   Sections
    --------------------------------------------------------------------------- */
-.settings-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 20px;
+.settings-section {
+    margin-bottom: 24px;
 }
 
-@media (max-width: 640px) {
-    .settings-grid {
-        grid-template-columns: 1fr;
-    }
+.settings-section-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--color-text-secondary);
+    margin-bottom: 8px;
+    padding-left: 2px;
 }
 
 /* ---------------------------------------------------------------------------
-   Settings Card — full clickable link
+   List container
    --------------------------------------------------------------------------- */
-.settings-card {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    padding: 24px;
-    background: var(--color-surface);
+.settings-list {
     border: 1px solid var(--color-border);
-    border-radius: 8px;
-    box-shadow: var(--shadow-card);
+    border-radius: 10px;
+    overflow: hidden;
+    background: var(--color-surface);
+}
+
+.settings-list--muted {
+    opacity: 0.85;
+}
+
+/* ---------------------------------------------------------------------------
+   Row — each settings item
+   --------------------------------------------------------------------------- */
+.settings-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 16px 18px;
     text-decoration: none;
     color: inherit;
-    transition: transform 0.2s var(--ease-smooth), box-shadow 0.2s var(--ease-smooth), border-color 0.2s var(--ease-smooth);
+    transition: background 0.15s ease;
+    border-bottom: 1px solid var(--color-border);
 }
 
-.settings-card:hover {
-    transform: translateY(-2px);
-    box-shadow: var(--shadow-card-hover);
-    border-color: var(--color-primary);
+.settings-row:last-child {
+    border-bottom: none;
+}
+
+.settings-row:hover {
+    background: rgba(99, 102, 241, 0.04);
     color: inherit;
 }
 
-.settings-card:hover .settings-card-arrow {
-    transform: translateX(3px);
+.settings-row:hover .settings-row-chevron {
     color: var(--color-primary);
+    transform: translateX(2px);
 }
 
-/* Card top: icon + title */
-.settings-card-top {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-}
-
-.settings-card-title-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.settings-card-title {
-    font-size: 16px;
-    font-weight: 600;
-    color: var(--color-text);
-    margin: 0;
-}
-
-/* Icon containers — color variants */
-.settings-card-icon {
-    width: 40px;
-    height: 40px;
+/* Icon */
+.settings-row-icon {
+    width: 36px;
+    height: 36px;
     border-radius: 8px;
     display: flex;
     align-items: center;
@@ -101,72 +96,76 @@
     flex-shrink: 0;
 }
 
-.settings-card-icon i,
-.settings-card-icon svg {
-    width: 20px;
-    height: 20px;
+.settings-row-icon i,
+.settings-row-icon svg {
+    width: 18px;
+    height: 18px;
 }
 
-.settings-card-icon--indigo {
-    background: rgba(99, 102, 241, 0.12);
-    color: #818CF8;
+.settings-row-icon--indigo {
+    background: rgba(99, 102, 241, 0.10);
+    color: #6366F1;
 }
 
-.settings-card-icon--emerald {
-    background: rgba(16, 185, 129, 0.12);
-    color: #34D399;
+.settings-row-icon--emerald {
+    background: rgba(16, 185, 129, 0.10);
+    color: #10B981;
 }
 
-.settings-card-icon--blue {
-    background: rgba(59, 130, 246, 0.12);
-    color: #60A5FA;
+.settings-row-icon--slate {
+    background: rgba(100, 116, 139, 0.10);
+    color: #64748B;
 }
 
-.settings-card-icon--amber {
-    background: rgba(249, 115, 22, 0.12);
-    color: #FB923C;
+/* Body: title + desc */
+.settings-row-body {
+    flex: 1;
+    min-width: 0;
 }
 
-/* Description */
-.settings-card-desc {
-    font-size: 13px;
-    color: var(--color-text-secondary);
-    margin: 0;
-    line-height: 1.5;
-}
-
-/* Footer link + arrow */
-.settings-card-footer {
+.settings-row-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--color-text);
     display: flex;
     align-items: center;
-    gap: 4px;
-    margin-top: auto;
-    padding-top: 8px;
+    gap: 8px;
 }
 
-.settings-card-link {
-    font-size: 13px;
-    font-weight: 500;
-    color: var(--color-primary);
+.settings-row-desc {
+    font-size: 12.5px;
+    color: var(--color-text-secondary);
+    margin-top: 2px;
+    line-height: 1.4;
 }
 
-.settings-card-arrow {
-    width: 14px;
-    height: 14px;
-    color: var(--color-primary);
-    transition: transform 0.2s var(--ease-smooth), color 0.2s;
-}
-
-/* WIP Badge */
-.settings-wip-badge {
-    font-size: 11px;
-    font-weight: 600;
-    color: #92400E;
-    background: #FEF3C7;
-    border: 1px solid #FDE68A;
-    padding: 2px 8px;
-    border-radius: 999px;
-    letter-spacing: 0.025em;
+/* Inline meta (right-aligned count) */
+.settings-row-meta {
+    font-size: 12px;
+    color: var(--color-text-secondary);
     white-space: nowrap;
-    line-height: 1;
+    flex-shrink: 0;
+}
+
+/* Chevron */
+.settings-row-chevron {
+    width: 16px;
+    height: 16px;
+    color: var(--color-text-secondary);
+    opacity: 0.5;
+    flex-shrink: 0;
+    transition: transform 0.15s ease, color 0.15s ease;
+}
+
+/* Experimental / Beta tag */
+.settings-exp-tag {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--color-text-secondary);
+    background: var(--color-border);
+    padding: 1px 6px;
+    border-radius: 4px;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    line-height: 1.4;
 }
