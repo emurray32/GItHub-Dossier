@@ -17,7 +17,6 @@
 
   <div class="lp-header">
     <h1>LinkedIn Prospector</h1>
-    <p>Drop in a LinkedIn profile screenshot or paste a profile URL — we find their email in Apollo and generate a personalized sequence email ready to send.</p>
   </div>
 
   <!-- 1. Upload zone -->
@@ -31,16 +30,18 @@
 
       <!-- Empty state -->
       <div class="lp-upload-empty" id="upload-empty">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="56" height="56" class="lp-upload-illustration" aria-hidden="true">
-          <rect x="14" y="8" width="36" height="48" rx="6" fill="currentColor" fill-opacity="0.03" stroke="currentColor" stroke-opacity="0.15" stroke-width="1.5"/>
-          <rect x="14" y="8" width="36" height="16" rx="6" fill="currentColor" fill-opacity="0.02" stroke="currentColor" stroke-opacity="0.15" stroke-width="1.5"/>
-          <circle cx="24" cy="24" r="6" fill="currentColor" fill-opacity="0.08" stroke="currentColor" stroke-opacity="0.2" stroke-width="1.5"/>
-          <path d="M20 40h24M24 46h16" stroke="currentColor" stroke-opacity="0.2" stroke-width="1.5" stroke-linecap="round"/>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="48" height="48" class="lp-upload-illustration" aria-hidden="true">
+          <!-- Down arrow -->
+          <path d="M32 4v16M24 14l8 8 8-8" stroke="currentColor" stroke-opacity="0.35" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+          <!-- Image frame -->
+          <rect x="10" y="28" width="44" height="32" rx="4" fill="currentColor" fill-opacity="0.03" stroke="currentColor" stroke-opacity="0.18" stroke-width="1.5"/>
+          <!-- Sun -->
+          <circle cx="22" cy="38" r="4" fill="currentColor" fill-opacity="0.07" stroke="currentColor" stroke-opacity="0.18" stroke-width="1.5"/>
+          <!-- Mountain -->
+          <path d="M10 56l14-14 8 8 8-10 14 16" stroke="currentColor" stroke-opacity="0.18" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="currentColor" fill-opacity="0.03"/>
         </svg>
-        <button class="lp-upload-btn" id="upload-btn" onclick="document.getElementById('file-input').click()" aria-describedby="upload-instructions">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-          Choose file
-        </button>
+        <span class="lp-upload-hint" id="upload-hint">Drop screenshot</span>
+        <button class="lp-upload-btn" id="upload-btn" onclick="document.getElementById('file-input').click()" aria-describedby="upload-instructions">Browse</button>
       </div>
 
       <!-- Filled state (filename bar) -->
@@ -321,6 +322,8 @@
     $('upload-filled').hidden = true;
     $('upload-filename').textContent = '';
     $('file-input').value = '';
+    var hint = document.getElementById('upload-hint');
+    if (hint) hint.textContent = 'Drop screenshot';
   }
 
   // -- Update profile card display --
@@ -414,11 +417,22 @@
   var zone = $('upload-zone');
   var fileInput = $('file-input');
 
-  zone.addEventListener('dragover', function(e) { e.preventDefault(); zone.classList.add('drag-over'); });
-  zone.addEventListener('dragleave', function() { zone.classList.remove('drag-over'); });
+  zone.addEventListener('dragover', function(e) {
+    e.preventDefault();
+    zone.classList.add('drag-over');
+    var hint = document.getElementById('upload-hint');
+    if (hint) hint.textContent = 'Release to drop';
+  });
+  zone.addEventListener('dragleave', function() {
+    zone.classList.remove('drag-over');
+    var hint = document.getElementById('upload-hint');
+    if (hint) hint.textContent = 'Drop screenshot';
+  });
   zone.addEventListener('drop', function(e) {
     e.preventDefault();
     zone.classList.remove('drag-over');
+    var hint = document.getElementById('upload-hint');
+    if (hint) hint.textContent = 'Drop screenshot';
     var file = e.dataTransfer.files[0];
     if (file && file.type.startsWith('image/')) handleFile(file);
   });
@@ -894,7 +908,7 @@
         });
         var displaySequences = preferred.length > 0 ? preferred : sequences;
         sel.innerHTML = displaySequences.map(function(s) {
-          return '<option value="' + escH(s.id) + '">' + escH(s.name) + (s.active ? '' : ' (inactive)') + '</option>';
+          return '<option value="' + escH(s.id) + '"' + (s.active ? '' : ' title="Paused in Apollo — emails won\'t send until activated"') + '>' + escH(s.name) + (s.active ? '' : ' (paused)') + '</option>';
         }).join('');
       } else {
         sel.innerHTML = '<option value="">No sequences found</option>';
