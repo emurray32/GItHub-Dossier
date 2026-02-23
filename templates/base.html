@@ -43,6 +43,10 @@
                     <i data-lucide="trending-up" class="sidebar-icon"></i>
                     <span class="sidebar-label">Grow</span>
                 </a>
+                <a href="{{ url_for('linkedin_prospector') }}" class="sidebar-item {% if request.endpoint == 'linkedin_prospector' %}active{% endif %}">
+                    <i data-lucide="linkedin" class="sidebar-icon"></i>
+                    <span class="sidebar-label">LinkedIn Prospector</span>
+                </a>
                 <a href="{{ url_for('settings') }}" class="sidebar-item {% if request.endpoint == 'settings' %}active{% endif %}">
                     <i data-lucide="settings" class="sidebar-icon"></i>
                     <span class="sidebar-label">Settings</span>
