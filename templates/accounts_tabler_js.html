@@ -86,7 +86,8 @@
     function openReport(url) {
         const drawer = document.getElementById('report-drawer');
         const frame = document.getElementById('report-frame');
-        frame.src = url;
+        const separator = url.includes('?') ? '&' : '?';
+        frame.src = url + separator + 'embed=1';
         drawer.classList.add('drawer-open');
     }
 
