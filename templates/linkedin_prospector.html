@@ -17,6 +17,7 @@
 
   <div class="lp-header">
     <h1>LinkedIn Prospector</h1>
+    <p>Upload a LinkedIn profile screenshot or paste a URL to generate prospect intelligence.</p>
   </div>
 
   <!-- 1. Upload zone -->
@@ -40,14 +41,14 @@
           <!-- Mountain -->
           <path d="M10 56l14-14 8 8 8-10 14 16" stroke="currentColor" stroke-opacity="0.18" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="currentColor" fill-opacity="0.03"/>
         </svg>
-        <span class="lp-upload-hint" id="upload-hint">Drop screenshot</span>
+        <span class="lp-upload-hint" id="upload-hint">Drop a LinkedIn profile screenshot here</span>
         <button class="lp-upload-btn" id="upload-btn" onclick="document.getElementById('file-input').click()" aria-describedby="upload-instructions">Browse</button>
       </div>
 
       <!-- Filled state (filename bar) -->
       <div class="lp-upload-filled" id="upload-filled" hidden>
         <div class="lp-upload-file-info">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
           <span class="lp-upload-filename" id="upload-filename"></span>
         </div>
         <button type="button" class="lp-upload-clear-btn" id="clear-file-btn" aria-label="Remove selected file">
@@ -323,7 +324,7 @@
     $('upload-filename').textContent = '';
     $('file-input').value = '';
     var hint = document.getElementById('upload-hint');
-    if (hint) hint.textContent = 'Drop screenshot';
+    if (hint) hint.textContent = 'Drop a LinkedIn profile screenshot here';
   }
 
   // -- Update profile card display --
@@ -426,13 +427,13 @@
   zone.addEventListener('dragleave', function() {
     zone.classList.remove('drag-over');
     var hint = document.getElementById('upload-hint');
-    if (hint) hint.textContent = 'Drop screenshot';
+    if (hint) hint.textContent = 'Drop a LinkedIn profile screenshot here';
   });
   zone.addEventListener('drop', function(e) {
     e.preventDefault();
     zone.classList.remove('drag-over');
     var hint = document.getElementById('upload-hint');
-    if (hint) hint.textContent = 'Drop screenshot';
+    if (hint) hint.textContent = 'Drop a LinkedIn profile screenshot here';
     var file = e.dataTransfer.files[0];
     if (file && file.type.startsWith('image/')) handleFile(file);
   });
