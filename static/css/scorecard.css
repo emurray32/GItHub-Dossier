@@ -1,0 +1,1020 @@
+/* ==========================================================================
+   ScoreCard — Account Scoring & Qualification
+   Asymmetric grid: rubric (left 380px) + results (right 1fr)
+   ========================================================================== */
+
+.scorecard-container {
+    display: grid;
+    grid-template-columns: 380px 1fr;
+    gap: 1.25rem;
+    max-width: 1600px;
+    margin: 0 auto;
+    padding: 0 1.25rem 1.25rem;
+    align-items: start;
+}
+
+@media (max-width: 1024px) {
+    .scorecard-container {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* ── Rubric Panel (Left) ────────────────────────────────── */
+
+.sc-rubric {
+    position: sticky;
+    top: 1rem;
+    max-height: calc(100vh - 6rem);
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-border) transparent;
+}
+
+@media (max-width: 1024px) {
+    .sc-rubric {
+        position: static;
+        max-height: none;
+    }
+}
+
+.sc-rubric::-webkit-scrollbar {
+    width: 4px;
+}
+.sc-rubric::-webkit-scrollbar-thumb {
+    background: var(--color-border);
+    border-radius: 4px;
+}
+
+/* Max score summary bar */
+.sc-max-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.6rem 0.75rem;
+    margin-bottom: 1rem;
+    border-radius: 6px;
+    background: var(--color-primary-subtle);
+    border: 1px solid rgba(79, 70, 229, 0.15);
+}
+
+.sc-max-label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--color-primary);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.sc-max-value {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--color-primary);
+    font-variant-numeric: tabular-nums;
+}
+
+/* Category sections */
+.sc-category {
+    margin-bottom: 0.5rem;
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    background: var(--color-surface);
+    overflow: hidden;
+}
+
+.sc-category-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.6rem 0.75rem;
+    cursor: pointer;
+    user-select: none;
+    background: none;
+    border: none;
+    width: 100%;
+    font: inherit;
+    color: var(--color-text);
+    transition: background 0.15s;
+}
+
+.sc-category-header:hover {
+    background: var(--color-bg);
+}
+
+.sc-category-icon {
+    width: 16px;
+    height: 16px;
+    color: var(--color-text-secondary);
+    flex-shrink: 0;
+}
+
+.sc-category-title {
+    font-size: 0.85rem;
+    font-weight: 600;
+    flex: 1;
+    text-align: left;
+}
+
+.sc-category-chevron {
+    width: 14px;
+    height: 14px;
+    color: var(--color-text-tertiary);
+    transition: transform 0.2s;
+    flex-shrink: 0;
+}
+
+.sc-category.collapsed .sc-category-chevron {
+    transform: rotate(-90deg);
+}
+
+.sc-category-body {
+    padding: 0 0.75rem 0.6rem;
+}
+
+.sc-category.collapsed .sc-category-body {
+    display: none;
+}
+
+/* Tier rows */
+.sc-tier-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.3rem 0;
+}
+
+.sc-tier-label {
+    font-size: 0.8rem;
+    color: var(--color-text);
+    flex: 1;
+    min-width: 0;
+}
+
+.sc-tier-examples {
+    display: block;
+    font-size: 0.7rem;
+    color: var(--color-text-tertiary);
+    line-height: 1.3;
+}
+
+.sc-tier-input {
+    width: 48px;
+    padding: 0.25rem 0.35rem;
+    font-size: 0.8rem;
+    text-align: center;
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    background: var(--color-bg);
+    color: var(--color-text);
+    font-family: inherit;
+    font-variant-numeric: tabular-nums;
+    transition: border-color 0.15s;
+    flex-shrink: 0;
+}
+
+.sc-tier-input:focus {
+    outline: none;
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.15);
+}
+
+.sc-tier-pts {
+    font-size: 0.72rem;
+    color: var(--color-text-tertiary);
+    flex-shrink: 0;
+    width: 20px;
+}
+
+/* Signal rows (non-scored) */
+.sc-signal-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.3rem 0;
+    font-size: 0.8rem;
+    color: var(--color-text-secondary);
+}
+
+.sc-signal-badge {
+    display: inline-block;
+    padding: 0.1rem 0.4rem;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    color: var(--color-text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+/* Cohort reference */
+.sc-cohort-ref {
+    margin-top: 0.75rem;
+    padding: 0.6rem 0.75rem;
+    border-radius: 6px;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+}
+
+.sc-cohort-ref-title {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--color-text);
+    margin-bottom: 0.35rem;
+}
+
+.sc-cohort-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.78rem;
+    color: var(--color-text-secondary);
+    padding: 0.15rem 0;
+}
+
+/* Reset button */
+.sc-reset-btn {
+    margin-top: 0.75rem;
+    width: 100%;
+    padding: 0.45rem;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--color-text-secondary);
+    background: none;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s, background 0.15s;
+    font-family: inherit;
+}
+
+.sc-reset-btn:hover {
+    color: var(--color-destructive);
+    border-color: var(--color-destructive);
+    background: rgba(239, 68, 68, 0.04);
+}
+
+/* ── Results Panel (Right) ──────────────────────────────── */
+
+.sc-results-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.sc-results-count {
+    font-size: 0.85rem;
+    color: var(--color-text-secondary);
+    font-variant-numeric: tabular-nums;
+}
+
+.sc-results-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.sc-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.4rem 0.7rem;
+    font-size: 0.8rem;
+    font-weight: 500;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+    color: var(--color-text);
+}
+
+.sc-btn:hover {
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+}
+
+.sc-btn-icon {
+    width: 14px;
+    height: 14px;
+}
+
+.sc-btn-primary {
+    background: var(--color-primary);
+    border-color: var(--color-primary);
+    color: var(--color-text-on-primary);
+}
+
+.sc-btn-primary:hover {
+    background: var(--color-primary-hover);
+    border-color: var(--color-primary-hover);
+    color: var(--color-text-on-primary);
+}
+
+/* Sort/filter controls */
+.sc-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.sc-select {
+    padding: 0.35rem 0.55rem;
+    font-size: 0.8rem;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    background: var(--color-surface);
+    color: var(--color-text);
+    font-family: inherit;
+    cursor: pointer;
+}
+
+.sc-select:focus {
+    outline: none;
+    border-color: var(--color-primary);
+}
+
+/* Results table */
+.sc-table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    background: var(--color-surface);
+}
+
+.sc-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.82rem;
+}
+
+.sc-table th {
+    padding: 0.55rem 0.65rem;
+    text-align: left;
+    font-weight: 600;
+    font-size: 0.75rem;
+    color: var(--color-text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    border-bottom: 1px solid var(--color-border);
+    background: var(--color-bg);
+    white-space: nowrap;
+}
+
+.sc-table td {
+    padding: 0.55rem 0.65rem;
+    border-bottom: 1px solid var(--color-border-subtle);
+    color: var(--color-text);
+    vertical-align: middle;
+}
+
+.sc-table tr:last-child td {
+    border-bottom: none;
+}
+
+.sc-table tr:hover td {
+    background: rgba(79, 70, 229, 0.02);
+}
+
+/* Score bar */
+.sc-score-cell {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-width: 100px;
+}
+
+.sc-score-num {
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    min-width: 24px;
+}
+
+.sc-score-bar-track {
+    flex: 1;
+    height: 6px;
+    background: var(--color-border-subtle);
+    border-radius: 3px;
+    overflow: hidden;
+    min-width: 40px;
+}
+
+.sc-score-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    background: var(--color-primary);
+    transition: width 0.3s;
+}
+
+/* Cohort badges */
+.sc-cohort-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    font-size: 0.72rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.sc-cohort-a {
+    background: rgba(79, 70, 229, 0.12);
+    color: var(--color-primary);
+}
+
+.sc-cohort-b {
+    background: rgba(107, 114, 128, 0.1);
+    color: var(--color-text-secondary);
+}
+
+/* Empty state */
+.sc-empty {
+    text-align: center;
+    padding: 3rem 1.5rem;
+    color: var(--color-text-tertiary);
+}
+
+.sc-empty-icon {
+    width: 48px;
+    height: 48px;
+    margin: 0 auto 1rem;
+    color: var(--color-border);
+}
+
+.sc-empty-title {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--color-text-secondary);
+    margin-bottom: 0.35rem;
+}
+
+.sc-empty-desc {
+    font-size: 0.82rem;
+    max-width: 320px;
+    margin: 0 auto 1rem;
+    line-height: 1.45;
+}
+
+/* Signals cell */
+.sc-signals {
+    display: flex;
+    gap: 0.3rem;
+}
+
+.sc-signal-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--color-border);
+}
+
+.sc-signal-dot.active {
+    background: var(--color-success);
+}
+
+/* ── Table container with loading overlay ─────────────── */
+
+.sc-table-container {
+    position: relative;
+    min-height: 200px;
+}
+
+.sc-loading-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.7);
+    z-index: 10;
+    border-radius: 8px;
+}
+
+[data-theme="dark"] .sc-loading-overlay {
+    background: rgba(15, 15, 20, 0.7);
+}
+
+.sc-loading-overlay .spinner {
+    width: 32px;
+    height: 32px;
+    border: 3px solid var(--color-border);
+    border-top-color: var(--color-primary);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+.sc-loading-overlay.hidden { display: none; }
+
+/* Sortable column headers */
+.sc-table th.sortable {
+    cursor: pointer;
+    user-select: none;
+    transition: color 0.15s;
+}
+
+.sc-table th.sortable:hover {
+    color: var(--color-primary);
+}
+
+.sc-table th.sortable .sort-icon {
+    display: inline-block;
+    width: 10px;
+    margin-left: 3px;
+    font-size: 0.7rem;
+    opacity: 0.4;
+}
+
+.sc-table th.sortable.active .sort-icon {
+    opacity: 1;
+    color: var(--color-primary);
+}
+
+/* Clickable rows */
+.sc-table tbody tr {
+    cursor: pointer;
+    transition: background 0.1s;
+}
+
+.sc-table tbody tr:hover td {
+    background: rgba(79, 70, 229, 0.04);
+}
+
+.sc-table tbody tr.selected td {
+    background: rgba(79, 70, 229, 0.08);
+}
+
+/* Checkbox column */
+.sc-table th.sc-check-col,
+.sc-table td.sc-check-col {
+    width: 36px;
+    text-align: center;
+    padding-left: 0.5rem;
+    padding-right: 0;
+}
+
+.sc-table input[type="checkbox"] {
+    accent-color: var(--color-primary);
+    cursor: pointer;
+}
+
+/* Status badges */
+.sc-status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: 9999px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    white-space: nowrap;
+}
+
+.sc-status-enrolled {
+    background: rgba(16, 185, 129, 0.1);
+    color: var(--color-success);
+}
+
+.sc-status-not-enrolled {
+    background: rgba(107, 114, 128, 0.08);
+    color: var(--color-text-tertiary);
+}
+
+/* ── Header actions (search + cohort + score button) ──── */
+
+.sc-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.sc-search-input {
+    padding: 0.4rem 0.6rem;
+    font-size: 0.8rem;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    background: var(--color-surface);
+    color: var(--color-text);
+    font-family: inherit;
+    min-width: 180px;
+    transition: border-color 0.15s;
+}
+
+.sc-search-input:focus {
+    outline: none;
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.15);
+}
+
+/* ── Pagination ───────────────────────────────────────── */
+
+.sc-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.6rem 0;
+    font-size: 0.8rem;
+    color: var(--color-text-secondary);
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.sc-pagination-info {
+    font-variant-numeric: tabular-nums;
+}
+
+.sc-pagination-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.sc-pagination-controls select {
+    padding: 0.25rem 0.4rem;
+    font-size: 0.78rem;
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    background: var(--color-surface);
+    color: var(--color-text);
+    font-family: inherit;
+}
+
+.sc-page-btn {
+    padding: 0.25rem 0.55rem;
+    font-size: 0.78rem;
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    background: var(--color-surface);
+    color: var(--color-text);
+    cursor: pointer;
+    font-family: inherit;
+    transition: border-color 0.15s, color 0.15s;
+}
+
+.sc-page-btn:hover:not(:disabled) {
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+}
+
+.sc-page-btn:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
+/* ── Detail Sidebar ───────────────────────────────────── */
+
+.sc-sidebar {
+    position: fixed;
+    top: 0;
+    right: 0;
+    width: 420px;
+    height: 100vh;
+    background: var(--color-surface);
+    border-left: 1px solid var(--color-border);
+    z-index: 100;
+    transform: translateX(100%);
+    transition: transform 0.25s ease;
+    display: flex;
+    flex-direction: column;
+    box-shadow: -4px 0 24px rgba(0, 0, 0, 0.08);
+}
+
+.sc-sidebar.open {
+    transform: translateX(0);
+}
+
+.sc-sidebar-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.15);
+    backdrop-filter: blur(2px);
+    z-index: 99;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s;
+}
+
+.sc-sidebar-backdrop.open {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.sc-sidebar-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.85rem 1rem;
+    border-bottom: 1px solid var(--color-border);
+    flex-shrink: 0;
+}
+
+.sc-sidebar-title {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--color-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+    margin-right: 0.5rem;
+}
+
+.sc-sidebar-close {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--color-text-tertiary);
+    padding: 0.25rem;
+    border-radius: 4px;
+    transition: color 0.15s, background 0.15s;
+    flex-shrink: 0;
+}
+
+.sc-sidebar-close:hover {
+    color: var(--color-text);
+    background: var(--color-bg);
+}
+
+.sc-sidebar-close svg {
+    width: 18px;
+    height: 18px;
+}
+
+.sc-sidebar-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1rem;
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-border) transparent;
+}
+
+.sc-sidebar-section {
+    margin-bottom: 1.25rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.sc-sidebar-section:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+}
+
+.sc-sidebar-section-title {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--color-text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.6rem;
+}
+
+/* Sidebar summary rows */
+.sc-summary-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.25rem 0;
+    font-size: 0.82rem;
+}
+
+.sc-summary-label {
+    color: var(--color-text-secondary);
+}
+
+.sc-summary-value {
+    font-weight: 500;
+    color: var(--color-text);
+    font-variant-numeric: tabular-nums;
+}
+
+/* Systems checkbox grid */
+.sc-systems-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.35rem;
+}
+
+.sc-systems-grid label {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.8rem;
+    color: var(--color-text);
+    cursor: pointer;
+    padding: 0.2rem 0;
+}
+
+.sc-systems-grid input[type="checkbox"] {
+    accent-color: var(--color-primary);
+}
+
+.sc-sidebar-save-btn {
+    margin-top: 0.5rem;
+    width: 100%;
+    padding: 0.4rem;
+    font-size: 0.78rem;
+    font-weight: 500;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    color: var(--color-text);
+    cursor: pointer;
+    font-family: inherit;
+    transition: border-color 0.15s, color 0.15s;
+}
+
+.sc-sidebar-save-btn:hover {
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+}
+
+/* ── Outreach fields ──────────────────────────────────── */
+
+.sc-outreach-field {
+    margin-bottom: 0.6rem;
+}
+
+.sc-outreach-field label {
+    display: block;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--color-text-secondary);
+    margin-bottom: 0.2rem;
+}
+
+.sc-outreach-field .var-name {
+    font-size: 0.68rem;
+    color: var(--color-text-tertiary);
+    font-family: monospace;
+}
+
+.sc-outreach-field input,
+.sc-outreach-field textarea {
+    width: 100%;
+    padding: 0.4rem 0.5rem;
+    font-size: 0.8rem;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    background: var(--color-bg);
+    color: var(--color-text);
+    font-family: inherit;
+    transition: border-color 0.15s;
+    box-sizing: border-box;
+}
+
+.sc-outreach-field textarea {
+    min-height: 80px;
+    resize: vertical;
+    line-height: 1.45;
+}
+
+.sc-outreach-field input:focus,
+.sc-outreach-field textarea:focus {
+    outline: none;
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.15);
+}
+
+/* Sequence thread blocks */
+.sc-thread-block {
+    border: 1px solid var(--color-border-subtle);
+    border-radius: 6px;
+    padding: 0.6rem;
+    margin-bottom: 0.5rem;
+}
+
+.sc-thread-label {
+    font-size: 0.68rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-primary);
+    margin-bottom: 0.4rem;
+}
+
+/* Enroll button */
+.sc-enroll-btn {
+    width: 100%;
+    padding: 0.55rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    background: var(--color-primary);
+    border: none;
+    border-radius: 8px;
+    color: var(--color-text-on-primary);
+    cursor: pointer;
+    font-family: inherit;
+    transition: background 0.15s;
+}
+
+.sc-enroll-btn:hover {
+    background: var(--color-primary-hover);
+}
+
+.sc-enroll-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+/* ── Bulk Command Bar ─────────────────────────────────── */
+
+.sc-bulk-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    padding: 0.65rem 1.5rem;
+    background: var(--color-surface);
+    border-top: 1px solid var(--color-border);
+    box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.08);
+    z-index: 1200;
+    transition: transform 0.2s;
+}
+
+.sc-bulk-bar.hidden {
+    transform: translateY(100%);
+    pointer-events: none;
+}
+
+.sc-bulk-count {
+    font-size: 0.82rem;
+    font-weight: 500;
+    color: var(--color-text);
+    font-variant-numeric: tabular-nums;
+}
+
+/* ── Toast Notification ───────────────────────────────── */
+
+.sc-toast {
+    position: fixed;
+    bottom: 1.5rem;
+    left: 50%;
+    transform: translateX(-50%) translateY(120%);
+    padding: 0.6rem 1.25rem;
+    border-radius: 8px;
+    font-size: 0.82rem;
+    font-weight: 500;
+    z-index: 2000;
+    opacity: 0;
+    transition: transform 0.3s, opacity 0.3s;
+    pointer-events: none;
+    white-space: nowrap;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+}
+
+.sc-toast.show {
+    transform: translateX(-50%) translateY(0);
+    opacity: 1;
+}
+
+.sc-toast.success {
+    background: var(--color-success);
+    color: #fff;
+}
+
+.sc-toast.error {
+    background: var(--color-destructive);
+    color: #fff;
+}
+
+.sc-toast.info {
+    background: var(--color-primary);
+    color: var(--color-text-on-primary);
+}
+
+/* Responsive: compact table on small screens */
+@media (max-width: 768px) {
+    .sc-table th,
+    .sc-table td {
+        padding: 0.4rem 0.45rem;
+        font-size: 0.78rem;
+    }
+
+    .sc-sidebar {
+        width: 100vw;
+    }
+
+    .sc-bulk-bar {
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}

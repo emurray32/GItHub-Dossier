@@ -1,0 +1,1148 @@
+{% extends "base.html" %}
+
+{% block title %}ScoreCard - Lead Machine{% endblock %}
+{% block page_title %}ScoreCard{% endblock %}
+
+{% block breadcrumb %}
+<nav class="breadcrumb-container" aria-label="Breadcrumb">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item">
+            <a href="{{ url_for('accounts') }}">
+                <svg class="breadcrumb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                    <polyline points="9 22 9 12 15 12 15 22"></polyline>
+                </svg>
+                RepoRadar
+            </a>
+        </li>
+        <li class="breadcrumb-separator">/</li>
+        <li class="breadcrumb-item active" aria-current="page">ScoreCard</li>
+    </ol>
+</nav>
+{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/scorecard.css') }}?v={{ cache_bust }}">
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="container">
+        <h1 class="page-title">ScoreCard</h1>
+        <p class="page-subtitle">Score and qualify accounts based on languages, systems, revenue, and bonus signals</p>
+    </div>
+</div>
+
+<div class="scorecard-container">
+
+    <!-- ─── Left Panel: Scoring Rubric ─── -->
+    <div class="panel sc-rubric">
+        <h2 class="panel-title">Scoring Rubric</h2>
+
+        <!-- Max Possible Score -->
+        <div class="sc-max-bar">
+            <span class="sc-max-label">Max Possible Score</span>
+            <span class="sc-max-value" id="scMaxScore">0</span>
+        </div>
+
+        <!-- Languages Detected -->
+        <div class="sc-category" data-cat="lang">
+            <button class="sc-category-header" type="button" aria-expanded="true">
+                <i data-lucide="globe" class="sc-category-icon"></i>
+                <span class="sc-category-title">Languages Detected</span>
+                <i data-lucide="chevron-down" class="sc-category-chevron"></i>
+            </button>
+            <div class="sc-category-body">
+                <div class="sc-tier-row">
+                    <span class="sc-tier-label">1 language</span>
+                    <input type="number" class="sc-tier-input" data-key="lang_1" min="0" max="99">
+                    <span class="sc-tier-pts">pts</span>
+                </div>
+                <div class="sc-tier-row">
+                    <span class="sc-tier-label">2–4 languages</span>
+                    <input type="number" class="sc-tier-input" data-key="lang_2_4" min="0" max="99">
+                    <span class="sc-tier-pts">pts</span>
+                </div>
+                <div class="sc-tier-row">
+                    <span class="sc-tier-label">5–9 languages</span>
+                    <input type="number" class="sc-tier-input" data-key="lang_5_9" min="0" max="99">
+                    <span class="sc-tier-pts">pts</span>
+                </div>
+                <div class="sc-tier-row">
+                    <span class="sc-tier-label">10+ languages</span>
+                    <input type="number" class="sc-tier-input" data-key="lang_10_plus" min="0" max="99">
+                    <span class="sc-tier-pts">pts</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Systems in Use -->
+        <div class="sc-category" data-cat="sys">
+            <button class="sc-category-header" type="button" aria-expanded="true">
+                <i data-lucide="puzzle" class="sc-category-icon"></i>
+                <span class="sc-category-title">Systems in Use</span>
+                <i data-lucide="chevron-down" class="sc-category-chevron"></i>
+            </button>
+            <div class="sc-category-body">
+                <div class="sc-tier-row">
+                    <span class="sc-tier-label">VCS<span class="sc-tier-examples">GitHub, GitLab, Bitbucket</span></span>
+                    <input type="number" class="sc-tier-input" data-key="sys_vcs" min="0" max="99">
+                    <span class="sc-tier-pts">pts</span>
+                </div>
+                <div class="sc-tier-row">
+                    <span class="sc-tier-label">UI Design<span class="sc-tier-examples">Figma, Sketch, Adobe XD</span></span>
+                    <input type="number" class="sc-tier-input" data-key="sys_design" min="0" max="99">
+                    <span class="sc-tier-pts">pts</span>
+                </div>
+                <div class="sc-tier-row">
+                    <span class="sc-tier-label">OSS CMS<span class="sc-tier-examples">WordPress, Drupal, Contentful</span></span>
+                    <input type="number" class="sc-tier-input" data-key="sys_oss_cms" min="0" max="99">
+                    <span class="sc-tier-pts">pts</span>
+                </div>
+                <div class="sc-tier-row">
+                    <span class="sc-tier-label">Enterprise CMS<span class="sc-tier-examples">Adobe AEM, Sitecore, Optimizely</span></span>
+                    <input type="number" class="sc-tier-input" data-key="sys_enterprise_cms" min="0" max="99">
+                    <span class="sc-tier-pts">pts</span>
+                </div>
+                <div class="sc-tier-row">
+                    <span class="sc-tier-label">Customer Service<span class="sc-tier-examples">Zendesk, Intercom, Freshdesk</span></span>
+                    <input type="number" class="sc-tier-input" data-key="sys_customer_svc" min="0" max="99">
+                    <span class="sc-tier-pts">pts</span>
+                </div>
+                <div class="sc-tier-row">
+                    <span class="sc-tier-label">Ecommerce<span class="sc-tier-examples">Shopify, BigCommerce, Magento</span></span>
+                    <input type="number" class="sc-tier-input" data-key="sys_ecommerce" min="0" max="99">
+                    <span class="sc-tier-pts">pts</span>
+                </div>
+                <div class="sc-tier-row">
+                    <span class="sc-tier-label">Marketing Automation<span class="sc-tier-examples">HubSpot, Marketo, Pardot</span></span>
+                    <input type="number" class="sc-tier-input" data-key="sys_marketing" min="0" max="99">
+                    <span class="sc-tier-pts">pts</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Revenue -->
+        <div class="sc-category" data-cat="rev">
+            <button class="sc-category-header" type="button" aria-expanded="true">
+                <i data-lucide="dollar-sign" class="sc-category-icon"></i>
+                <span class="sc-category-title">Revenue</span>
+                <i data-lucide="chevron-down" class="sc-category-chevron"></i>
+            </button>
+            <div class="sc-category-body">
+                <div class="sc-tier-row">
+                    <span class="sc-tier-label">$100M – $499M</span>
+                    <input type="number" class="sc-tier-input" data-key="rev_100_499" min="0" max="99">
+                    <span class="sc-tier-pts">pts</span>
+                </div>
+                <div class="sc-tier-row">
+                    <span class="sc-tier-label">$500M – $1B</span>
+                    <input type="number" class="sc-tier-input" data-key="rev_500_1b" min="0" max="99">
+                    <span class="sc-tier-pts">pts</span>
+                </div>
+                <div class="sc-tier-row">
+                    <span class="sc-tier-label">$1B – $1.5B</span>
+                    <input type="number" class="sc-tier-input" data-key="rev_1b_1_5b" min="0" max="99">
+                    <span class="sc-tier-pts">pts</span>
+                </div>
+                <div class="sc-tier-row">
+                    <span class="sc-tier-label">$1.5B – $3B</span>
+                    <input type="number" class="sc-tier-input" data-key="rev_1_5b_3b" min="0" max="99">
+                    <span class="sc-tier-pts">pts</span>
+                </div>
+                <div class="sc-tier-row">
+                    <span class="sc-tier-label">$3B – $5B</span>
+                    <input type="number" class="sc-tier-input" data-key="rev_3b_5b" min="0" max="99">
+                    <span class="sc-tier-pts">pts</span>
+                </div>
+                <div class="sc-tier-row">
+                    <span class="sc-tier-label">$5B+</span>
+                    <input type="number" class="sc-tier-input" data-key="rev_5b_plus" min="0" max="99">
+                    <span class="sc-tier-pts">pts</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Other Signals -->
+        <div class="sc-category" data-cat="signals">
+            <button class="sc-category-header" type="button" aria-expanded="true">
+                <i data-lucide="sparkles" class="sc-category-icon"></i>
+                <span class="sc-category-title">Other Signals</span>
+                <i data-lucide="chevron-down" class="sc-category-chevron"></i>
+            </button>
+            <div class="sc-category-body">
+                <div class="sc-signal-row">
+                    <span class="sc-signal-badge">Bool</span>
+                    <span>LinkedIn localization titles detected</span>
+                </div>
+                <div class="sc-signal-row">
+                    <span class="sc-signal-badge">Bool</span>
+                    <span>App Store / Play Store localization</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Cohort Classification Reference -->
+        <div class="sc-cohort-ref">
+            <div class="sc-cohort-ref-title">Cohort Classification</div>
+            <div class="sc-cohort-row">
+                <span class="sc-cohort-badge sc-cohort-a">A</span>
+                <span>Revenue ≥ $1.5B</span>
+            </div>
+            <div class="sc-cohort-row">
+                <span class="sc-cohort-badge sc-cohort-b">B</span>
+                <span>Revenue &lt; $1.5B</span>
+            </div>
+        </div>
+
+        <button class="sc-reset-btn" id="scResetBtn" type="button">Reset to Defaults</button>
+    </div>
+
+    <!-- ─── Right Panel: Scored Accounts (Server-Side DataTable) ─── -->
+    <div class="panel">
+        <div class="sc-results-header">
+            <h2 class="panel-title" style="margin:0">Scored Accounts</h2>
+            <div class="sc-header-actions">
+                <input type="text" class="sc-search-input" id="scSearch" placeholder="Search companies…">
+                <select class="sc-select" id="scCohortFilter">
+                    <option value="">All Cohorts</option>
+                    <option value="A">Cohort A</option>
+                    <option value="B">Cohort B</option>
+                </select>
+                <button class="sc-btn sc-btn-primary" id="scScoreAllBtn" type="button">
+                    <i data-lucide="zap" class="sc-btn-icon"></i>
+                    Score All
+                </button>
+            </div>
+        </div>
+
+        <div class="sc-table-container" id="scTableContainer">
+            <div class="sc-loading-overlay hidden" id="scLoading">
+                <div class="spinner"></div>
+            </div>
+            <div id="scResultsBody">
+                <div class="sc-empty">
+                    <i data-lucide="award" class="sc-empty-icon"></i>
+                    <div class="sc-empty-title">No scores yet</div>
+                    <div class="sc-empty-desc">Click "Score All" to score all accounts using the rubric and save to the database.</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="sc-pagination" id="scPagination" style="display:none">
+            <span class="sc-pagination-info" id="scPageInfo"></span>
+            <div class="sc-pagination-controls">
+                <select id="scPageSize">
+                    <option value="25">25</option>
+                    <option value="50">50</option>
+                    <option value="100">100</option>
+                </select>
+                <span style="font-size:0.78rem">per page</span>
+                <button class="sc-page-btn" id="scPrevBtn" disabled>&laquo; Prev</button>
+                <button class="sc-page-btn" id="scNextBtn" disabled>Next &raquo;</button>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<!-- ─── Bulk Action Bar ─── -->
+<div class="sc-bulk-bar hidden" id="scBulkBar">
+    <span class="sc-bulk-count" id="scBulkCount">0 selected</span>
+    <button class="sc-btn sc-btn-primary" id="scBulkEnrollBtn" type="button">
+        <i data-lucide="send" class="sc-btn-icon"></i>
+        Enroll Selected
+    </button>
+    <button class="sc-btn" id="scExportCsvBtn" type="button">
+        <i data-lucide="download" class="sc-btn-icon"></i>
+        Export CSV
+    </button>
+</div>
+
+<!-- ─── Detail Sidebar ─── -->
+<div class="sc-sidebar-backdrop" id="scBackdrop"></div>
+<div class="sc-sidebar" id="scSidebar">
+    <div class="sc-sidebar-header">
+        <span class="sc-sidebar-title" id="scSidebarTitle"></span>
+        <button class="sc-sidebar-close" id="scSidebarClose" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+    </div>
+    <div class="sc-sidebar-body" id="scSidebarBody"></div>
+</div>
+
+<!-- ─── Toast ─── -->
+<div class="sc-toast" id="scToast"></div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    'use strict';
+
+    var RUBRIC_KEY = 'scorecard_rubric_v1';
+
+    var DEFAULTS = {
+        lang_1: 1, lang_2_4: 3, lang_5_9: 4, lang_10_plus: 5,
+        sys_vcs: 1, sys_design: 2, sys_oss_cms: 3, sys_enterprise_cms: 5,
+        sys_customer_svc: 5, sys_ecommerce: 5, sys_marketing: 5,
+        rev_100_499: 1, rev_500_1b: 2, rev_1b_1_5b: 3,
+        rev_1_5b_3b: 4, rev_3b_5b: 5, rev_5b_plus: 6
+    };
+
+    // ── Helpers (unchanged) ───────────────────────────────
+    function escHtml(s) {
+        return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function parseRevenue(str) {
+        if (!str) return 0;
+        str = String(str).trim().replace(/,/g, '');
+        var match = str.match(/\$?\s*([\d.]+)\s*(T|B|M|K)?/i);
+        if (match) {
+            var num = parseFloat(match[1]);
+            var suffix = (match[2] || '').toUpperCase();
+            if (suffix === 'T') return num * 1e12;
+            if (suffix === 'B') return num * 1e9;
+            if (suffix === 'M') return num * 1e6;
+            if (suffix === 'K') return num * 1e3;
+            return num;
+        }
+        var parsed = parseFloat(str.replace(/[^0-9.]/g, ''));
+        return isNaN(parsed) ? 0 : parsed;
+    }
+
+    function formatRevenue(raw) {
+        if (!raw || raw === 0) return '\u2014';
+        if (raw >= 1e12) return '$' + (raw / 1e12).toFixed(1) + 'T';
+        if (raw >= 1e9) return '$' + (raw / 1e9).toFixed(1) + 'B';
+        if (raw >= 1e6) return '$' + (raw / 1e6).toFixed(0) + 'M';
+        if (raw >= 1e3) return '$' + (raw / 1e3).toFixed(0) + 'K';
+        return '$' + raw;
+    }
+
+    // ── Rubric persistence (unchanged) ────────────────────
+    function loadRubric() {
+        try {
+            var stored = JSON.parse(localStorage.getItem(RUBRIC_KEY));
+            if (stored && typeof stored === 'object') {
+                var merged = {};
+                for (var k in DEFAULTS) merged[k] = (k in stored) ? stored[k] : DEFAULTS[k];
+                return merged;
+            }
+        } catch (e) {}
+        return Object.assign({}, DEFAULTS);
+    }
+
+    function saveRubric(rubric) { localStorage.setItem(RUBRIC_KEY, JSON.stringify(rubric)); }
+
+    function applyRubricToInputs(rubric) {
+        document.querySelectorAll('.sc-tier-input').forEach(function (input) {
+            var key = input.dataset.key;
+            if (key in rubric) input.value = rubric[key];
+        });
+    }
+
+    function readRubricFromInputs() {
+        var rubric = {};
+        document.querySelectorAll('.sc-tier-input').forEach(function (input) {
+            rubric[input.dataset.key] = parseInt(input.value, 10) || 0;
+        });
+        return rubric;
+    }
+
+    function calcMaxScore(rubric) {
+        var langMax = Math.max(rubric.lang_1 || 0, rubric.lang_2_4 || 0, rubric.lang_5_9 || 0, rubric.lang_10_plus || 0);
+        var sysMax = (rubric.sys_vcs || 0) + (rubric.sys_design || 0) + (rubric.sys_oss_cms || 0) +
+                     (rubric.sys_enterprise_cms || 0) + (rubric.sys_customer_svc || 0) +
+                     (rubric.sys_ecommerce || 0) + (rubric.sys_marketing || 0);
+        var revMax = Math.max(rubric.rev_100_499 || 0, rubric.rev_500_1b || 0, rubric.rev_1b_1_5b || 0,
+                              rubric.rev_1_5b_3b || 0, rubric.rev_3b_5b || 0, rubric.rev_5b_plus || 0);
+        return langMax + sysMax + revMax;
+    }
+
+    function updateMaxScore() {
+        var rubric = readRubricFromInputs();
+        saveRubric(rubric);
+        document.getElementById('scMaxScore').textContent = calcMaxScore(rubric);
+    }
+
+    // ── State ─────────────────────────────────────────────
+    var currentPage = 0;
+    var pageSize = 25;
+    var totalRecords = 0;
+    var totalPages = 0;
+    var searchQuery = '';
+    var sortColumn = 1; // total_score
+    var sortDir = 'desc';
+    var cohortFilter = '';
+    var selectedIds = new Set();
+    var selectedAccountId = null;
+    var cachedSequences = null;
+    var cachedRows = {};
+
+    // ── DOM refs ──────────────────────────────────────────
+    var $body = document.getElementById('scResultsBody');
+    var $loading = document.getElementById('scLoading');
+    var $pagination = document.getElementById('scPagination');
+    var $pageInfo = document.getElementById('scPageInfo');
+    var $prevBtn = document.getElementById('scPrevBtn');
+    var $nextBtn = document.getElementById('scNextBtn');
+    var $pageSize = document.getElementById('scPageSize');
+    var $search = document.getElementById('scSearch');
+    var $cohort = document.getElementById('scCohortFilter');
+    var $bulkBar = document.getElementById('scBulkBar');
+    var $bulkCount = document.getElementById('scBulkCount');
+    var $sidebar = document.getElementById('scSidebar');
+    var $backdrop = document.getElementById('scBackdrop');
+    var $sidebarTitle = document.getElementById('scSidebarTitle');
+    var $sidebarBody = document.getElementById('scSidebarBody');
+    var $toast = document.getElementById('scToast');
+
+    // ── Toast ─────────────────────────────────────────────
+    var toastTimer;
+    function showToast(msg, type) {
+        clearTimeout(toastTimer);
+        $toast.textContent = msg;
+        $toast.className = 'sc-toast ' + (type || 'info') + ' show';
+        toastTimer = setTimeout(function () { $toast.classList.remove('show'); }, 3000);
+    }
+
+    // ── Load accounts (DataTable) ─────────────────────────
+    function loadAccounts() {
+        $loading.classList.remove('hidden');
+
+        var params = new URLSearchParams({
+            draw: 1,
+            start: currentPage * pageSize,
+            length: pageSize,
+            'search[value]': searchQuery,
+            'order[0][column]': sortColumn,
+            'order[0][dir]': sortDir,
+            cohort: cohortFilter
+        });
+
+        fetch('/api/scorecard/datatable?' + params)
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                totalRecords = data.recordsFiltered;
+                totalPages = Math.ceil(totalRecords / pageSize);
+                renderTable(data.data);
+                updatePagination();
+                $loading.classList.add('hidden');
+            })
+            .catch(function (err) {
+                console.error('Failed to load scorecard:', err);
+                $loading.classList.add('hidden');
+                showToast('Failed to load accounts', 'error');
+            });
+    }
+
+    // ── Render table ──────────────────────────────────────
+    function renderTable(data) {
+        if (!data || !data.length) {
+            $body.innerHTML =
+                '<div class="sc-empty">' +
+                '<i data-lucide="award" class="sc-empty-icon"></i>' +
+                '<div class="sc-empty-title">No scores yet' + (cohortFilter ? ' in Cohort ' + escHtml(cohortFilter) : '') + '</div>' +
+                '<div class="sc-empty-desc">Click "Score All" to score all accounts using the rubric and save to the database.</div>' +
+                '</div>';
+            $pagination.style.display = 'none';
+            if (typeof lucide !== 'undefined') lucide.createIcons();
+            return;
+        }
+
+        $pagination.style.display = '';
+        var maxScore = calcMaxScore(readRubricFromInputs()) || 1;
+
+        // Cache rows for sidebar
+        data.forEach(function (r) { cachedRows[r.account_id] = r; });
+
+        // Column headers with sort
+        var cols = [
+            {idx: -1, label: '<input type="checkbox" id="scSelectAll">', cls: 'sc-check-col'},
+            {idx: 0, label: 'Company', sortable: true},
+            {idx: 1, label: 'Score', sortable: true},
+            {idx: 2, label: 'Cohort', sortable: true},
+            {idx: 3, label: 'Lang', sortable: true},
+            {idx: 4, label: 'Systems', sortable: true},
+            {idx: 5, label: 'Revenue', sortable: true},
+            {idx: 6, label: 'Status', sortable: true}
+        ];
+
+        var thead = '<tr>' + cols.map(function (c) {
+            if (c.idx === -1) return '<th class="sc-check-col">' + c.label + '</th>';
+            var active = c.sortable && sortColumn === c.idx;
+            var arrow = active ? (sortDir === 'asc' ? '\u25B2' : '\u25BC') : '\u25BC';
+            var cls = c.sortable ? ' class="sortable' + (active ? ' active' : '') + '"' : '';
+            var data_attr = c.sortable ? ' data-column="' + c.idx + '"' : '';
+            return '<th' + cls + data_attr + '>' + c.label + (c.sortable ? ' <span class="sort-icon">' + arrow + '</span>' : '') + '</th>';
+        }).join('') + '</tr>';
+
+        var rows = data.map(function (r) {
+            var pct = Math.round((r.total_score / maxScore) * 100);
+            var cohortCls = r.cohort === 'A' ? 'sc-cohort-a' : 'sc-cohort-b';
+            var revDisplay = formatRevenue(r.revenue_raw);
+            var statusCls = r.apollo_status === 'enrolled' ? 'sc-status-enrolled' : 'sc-status-not-enrolled';
+            var statusLabel = r.apollo_status === 'enrolled' ? 'Enrolled' : 'Not Enrolled';
+            var checked = selectedIds.has(r.account_id) ? ' checked' : '';
+            var selectedCls = selectedAccountId === r.account_id ? ' selected' : '';
+
+            return '<tr data-id="' + r.account_id + '"' + selectedCls + '>' +
+                '<td class="sc-check-col"><input type="checkbox" class="sc-row-check" data-id="' + r.account_id + '"' + checked + '></td>' +
+                '<td>' + escHtml(r.company_name) + '</td>' +
+                '<td><div class="sc-score-cell"><span class="sc-score-num">' + r.total_score + '</span>' +
+                '<div class="sc-score-bar-track"><div class="sc-score-bar-fill" style="width:' + pct + '%"></div></div></div></td>' +
+                '<td><span class="sc-cohort-badge ' + cohortCls + '">' + escHtml(r.cohort) + '</span></td>' +
+                '<td>' + (r.locale_count || 0) + ' <span style="color:var(--color-text-tertiary);font-size:0.72rem">(' + r.lang_score + 'pts)</span></td>' +
+                '<td>' + (r.systems_score || 0) + ' <span style="color:var(--color-text-tertiary);font-size:0.72rem">pts</span></td>' +
+                '<td>' + escHtml(revDisplay) + ' <span style="color:var(--color-text-tertiary);font-size:0.72rem">(' + r.revenue_score + 'pts)</span></td>' +
+                '<td><span class="sc-status-badge ' + statusCls + '">' + statusLabel + '</span></td>' +
+                '</tr>';
+        }).join('');
+
+        $body.innerHTML =
+            '<div class="sc-table-wrap"><table class="sc-table">' +
+            '<thead>' + thead + '</thead>' +
+            '<tbody>' + rows + '</tbody>' +
+            '</table></div>';
+
+        // Attach row click → sidebar
+        $body.querySelectorAll('tbody tr').forEach(function (tr) {
+            tr.addEventListener('click', function (e) {
+                if (e.target.type === 'checkbox') return;
+                var id = parseInt(tr.dataset.id, 10);
+                openSidebar(id);
+            });
+        });
+
+        // Checkbox handlers
+        $body.querySelectorAll('.sc-row-check').forEach(function (cb) {
+            cb.addEventListener('change', function (e) {
+                e.stopPropagation();
+                var id = parseInt(cb.dataset.id, 10);
+                if (cb.checked) selectedIds.add(id);
+                else selectedIds.delete(id);
+                updateBulkBar();
+            });
+        });
+
+        // Select-all
+        var selectAllEl = document.getElementById('scSelectAll');
+        if (selectAllEl) {
+            selectAllEl.addEventListener('change', function () {
+                var checked = selectAllEl.checked;
+                $body.querySelectorAll('.sc-row-check').forEach(function (cb) {
+                    cb.checked = checked;
+                    var id = parseInt(cb.dataset.id, 10);
+                    if (checked) selectedIds.add(id);
+                    else selectedIds.delete(id);
+                });
+                updateBulkBar();
+            });
+        }
+
+        // Sort column clicks
+        $body.querySelectorAll('th.sortable').forEach(function (th) {
+            th.addEventListener('click', function () {
+                var col = parseInt(th.dataset.column, 10);
+                if (sortColumn === col) sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+                else { sortColumn = col; sortDir = 'desc'; }
+                currentPage = 0;
+                loadAccounts();
+            });
+        });
+    }
+
+    // ── Pagination ────────────────────────────────────────
+    function updatePagination() {
+        var start = currentPage * pageSize + 1;
+        var end = Math.min((currentPage + 1) * pageSize, totalRecords);
+        if (totalRecords === 0) { start = 0; end = 0; }
+        $pageInfo.textContent = 'Showing ' + start + ' to ' + end + ' of ' + totalRecords;
+        $prevBtn.disabled = currentPage === 0;
+        $nextBtn.disabled = currentPage >= totalPages - 1;
+    }
+
+    function updateBulkBar() {
+        var n = selectedIds.size;
+        if (n > 0) {
+            $bulkBar.classList.remove('hidden');
+            $bulkCount.textContent = n + ' account' + (n !== 1 ? 's' : '') + ' selected';
+        } else {
+            $bulkBar.classList.add('hidden');
+        }
+    }
+
+    // ── Score All ─────────────────────────────────────────
+    function scoreAll() {
+        var btn = document.getElementById('scScoreAllBtn');
+        btn.disabled = true;
+        btn.innerHTML = '<i data-lucide="loader-2" class="sc-btn-icon" style="animation:spin 0.8s linear infinite"></i> Scoring…';
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+        $loading.classList.remove('hidden');
+
+        var rubric = readRubricFromInputs();
+        fetch('/api/scorecard/rescore', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({rubric: rubric})
+        })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            btn.disabled = false;
+            btn.innerHTML = '<i data-lucide="zap" class="sc-btn-icon"></i> Score All';
+            if (typeof lucide !== 'undefined') lucide.createIcons();
+            if (data.status === 'success') {
+                showToast('Scored ' + data.scored + ' accounts', 'success');
+                currentPage = 0;
+                loadAccounts();
+            } else {
+                showToast(data.message || 'Scoring failed', 'error');
+                $loading.classList.add('hidden');
+            }
+        })
+        .catch(function (err) {
+            btn.disabled = false;
+            btn.innerHTML = '<i data-lucide="zap" class="sc-btn-icon"></i> Score All';
+            if (typeof lucide !== 'undefined') lucide.createIcons();
+            $loading.classList.add('hidden');
+            showToast('Scoring failed', 'error');
+        });
+    }
+
+    // ── Sidebar ───────────────────────────────────────────
+    function openSidebar(accountId) {
+        selectedAccountId = accountId;
+        var r = cachedRows[accountId];
+        if (!r) return;
+
+        // Highlight selected row
+        $body.querySelectorAll('tbody tr').forEach(function (tr) {
+            tr.classList.toggle('selected', parseInt(tr.dataset.id, 10) === accountId);
+        });
+
+        $sidebarTitle.textContent = r.company_name;
+
+        var systems = {};
+        try { systems = r.systems_json ? JSON.parse(r.systems_json) : {}; } catch (e) {}
+
+        var sysKeys = [
+            {key: 'vcs', label: 'VCS (GitHub, GitLab)'},
+            {key: 'design', label: 'UI Design (Figma)'},
+            {key: 'oss_cms', label: 'OSS CMS (WordPress)'},
+            {key: 'enterprise_cms', label: 'Enterprise CMS (AEM)'},
+            {key: 'customer_svc', label: 'Customer Service'},
+            {key: 'ecommerce', label: 'Ecommerce'},
+            {key: 'marketing', label: 'Marketing Automation'}
+        ];
+
+        var html = '';
+
+        // Section 1: Account Summary
+        html += '<div class="sc-sidebar-section">' +
+            '<div class="sc-sidebar-section-title">Account Summary</div>' +
+            '<div class="sc-summary-row"><span class="sc-summary-label">Company</span><span class="sc-summary-value">' + escHtml(r.company_name) + '</span></div>' +
+            '<div class="sc-summary-row"><span class="sc-summary-label">Revenue</span><span class="sc-summary-value">' + escHtml(r.annual_revenue || '\u2014') + '</span></div>' +
+            '<div class="sc-summary-row"><span class="sc-summary-label">Cohort</span><span class="sc-summary-value"><span class="sc-cohort-badge ' + (r.cohort === 'A' ? 'sc-cohort-a' : 'sc-cohort-b') + '">' + escHtml(r.cohort) + '</span></span></div>' +
+            '<div class="sc-summary-row"><span class="sc-summary-label">Total Score</span><span class="sc-summary-value">' + r.total_score + '</span></div>' +
+            '<div class="sc-summary-row"><span class="sc-summary-label">Lang Score</span><span class="sc-summary-value">' + r.lang_score + '</span></div>' +
+            '<div class="sc-summary-row"><span class="sc-summary-label">Systems Score</span><span class="sc-summary-value">' + (r.systems_score || 0) + '</span></div>' +
+            '<div class="sc-summary-row"><span class="sc-summary-label">Revenue Score</span><span class="sc-summary-value">' + r.revenue_score + '</span></div>' +
+            '<div class="sc-summary-row"><span class="sc-summary-label">Languages</span><span class="sc-summary-value">' + (r.locale_count || 0) + '</span></div>' +
+            '</div>';
+
+        // Section 2: Systems in Use
+        html += '<div class="sc-sidebar-section">' +
+            '<div class="sc-sidebar-section-title">Systems in Use</div>' +
+            '<div class="sc-systems-grid">' +
+            sysKeys.map(function (s) {
+                return '<label><input type="checkbox" class="sc-sys-check" data-key="' + s.key + '"' +
+                    (systems[s.key] ? ' checked' : '') + '> ' + escHtml(s.label) + '</label>';
+            }).join('') +
+            '</div>' +
+            '<button class="sc-sidebar-save-btn" id="scSaveSystems" type="button">Save Systems</button>' +
+            '</div>';
+
+        // Section 3: Outreach
+        html += '<div class="sc-sidebar-section">' +
+            '<div class="sc-sidebar-section-title">Outreach</div>' +
+            '<div class="sc-outreach-field"><label>Sequence</label>' +
+            '<select class="sc-select" id="scSequencePicker" style="width:100%"><option value="">Loading sequences…</option></select></div>' +
+            '<button class="sc-btn" id="scGenerateSeqBtn" type="button" style="width:100%;margin-bottom:0.6rem">' +
+            '<i data-lucide="sparkles" class="sc-btn-icon"></i> Generate Sequence</button>' +
+            '<div id="scEmailFields"></div>' +
+            '</div>';
+
+        // Section 4: Enrollment
+        html += '<div class="sc-sidebar-section">' +
+            '<div class="sc-outreach-field"><label>Contact Email</label><input type="email" id="scEnrollEmail" placeholder="name@company.com"></div>' +
+            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.4rem">' +
+            '<div class="sc-outreach-field"><label>First Name</label><input type="text" id="scEnrollFirst" placeholder="First"></div>' +
+            '<div class="sc-outreach-field"><label>Last Name</label><input type="text" id="scEnrollLast" placeholder="Last"></div>' +
+            '</div>' +
+            '<button class="sc-enroll-btn" id="scEnrollBtn" type="button">Approve & Enroll</button>' +
+            '</div>';
+
+        $sidebarBody.innerHTML = html;
+        $sidebar.classList.add('open');
+        $backdrop.classList.add('open');
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+
+        // Bind sidebar events
+        document.getElementById('scSaveSystems').addEventListener('click', function () { saveSystems(accountId); });
+        document.getElementById('scGenerateSeqBtn').addEventListener('click', function () { generateEmail(accountId); });
+        document.getElementById('scEnrollBtn').addEventListener('click', function () { enrollAccount(accountId); });
+
+        // Load sequences
+        loadSidebarSequences(accountId);
+    }
+
+    function closeSidebar() {
+        $sidebar.classList.remove('open');
+        $backdrop.classList.remove('open');
+        selectedAccountId = null;
+        $body.querySelectorAll('tbody tr.selected').forEach(function (tr) { tr.classList.remove('selected'); });
+    }
+
+    // ── Sidebar: Sequences ────────────────────────────────
+    function loadSidebarSequences(accountId) {
+        var picker = document.getElementById('scSequencePicker');
+        if (!picker) return;
+
+        if (cachedSequences) {
+            populateSequencePicker(picker, accountId);
+            return;
+        }
+
+        fetch('/api/apollo/sequences')
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                cachedSequences = data.sequences || [];
+                populateSequencePicker(picker, accountId);
+            })
+            .catch(function () {
+                picker.innerHTML = '<option value="">Failed to load sequences</option>';
+            });
+    }
+
+    function populateSequencePicker(picker, accountId) {
+        var r = cachedRows[accountId];
+        var html = '<option value="">Select a sequence…</option>';
+        cachedSequences.forEach(function (s) {
+            html += '<option value="' + escHtml(s.id) + '" data-name="' + escHtml(s.name) + '" data-steps="' + (s.num_steps || 4) + '">' + escHtml(s.name) + '</option>';
+        });
+        picker.innerHTML = html;
+
+        picker.addEventListener('change', function () {
+            onSequenceChanged(accountId);
+        });
+    }
+
+    function onSequenceChanged(accountId) {
+        var picker = document.getElementById('scSequencePicker');
+        var opt = picker.options[picker.selectedIndex];
+        if (!opt || !opt.value) {
+            document.getElementById('scEmailFields').innerHTML = '';
+            return;
+        }
+        var numSteps = parseInt(opt.dataset.steps, 10) || 4;
+        buildEmailFields(accountId, numSteps);
+    }
+
+    function buildEmailFields(accountId, numEmails) {
+        var container = document.getElementById('scEmailFields');
+        var html = '';
+
+        if (numEmails >= 1) {
+            html += '<div class="sc-thread-block"><div class="sc-thread-label">Thread 1</div>' +
+                '<div class="sc-outreach-field"><label>Subject <span class="var-name">personalized_subject_1</span></label>' +
+                '<input type="text" id="scSubject1" placeholder="Subject line"></div>' +
+                '<div class="sc-outreach-field"><label>Email 1 <span class="var-name">personalized_email_1</span></label>' +
+                '<textarea id="scEmail1" placeholder="Cold outreach…"></textarea></div>';
+            if (numEmails >= 2) {
+                html += '<div class="sc-outreach-field"><label>Email 2 <span class="var-name">personalized_email_2</span></label>' +
+                    '<textarea id="scEmail2" placeholder="Follow-up bump…"></textarea></div>';
+            }
+            html += '</div>';
+        }
+
+        if (numEmails >= 3) {
+            html += '<div class="sc-thread-block"><div class="sc-thread-label">Thread 2</div>' +
+                '<div class="sc-outreach-field"><label>Subject 2 <span class="var-name">personalized_subject_2</span></label>' +
+                '<input type="text" id="scSubject2" placeholder="New angle subject"></div>' +
+                '<div class="sc-outreach-field"><label>Email 3 <span class="var-name">personalized_email_3</span></label>' +
+                '<textarea id="scEmail3" placeholder="New thread…"></textarea></div>';
+            if (numEmails >= 4) {
+                html += '<div class="sc-outreach-field"><label>Email 4 <span class="var-name">personalized_email_4</span></label>' +
+                    '<textarea id="scEmail4" placeholder="Breakup email…"></textarea></div>';
+            }
+            html += '</div>';
+        }
+
+        container.innerHTML = html;
+    }
+
+    // ── Sidebar: Generate Email ───────────────────────────
+    function generateEmail(accountId) {
+        var r = cachedRows[accountId];
+        if (!r) return;
+
+        var picker = document.getElementById('scSequencePicker');
+        var opt = picker ? picker.options[picker.selectedIndex] : null;
+        var numEmails = (opt && opt.dataset.steps) ? parseInt(opt.dataset.steps, 10) : 4;
+
+        // Get BDR prompt from Campaigns localStorage if available
+        var bdrPrompt = '';
+        try {
+            var campaigns = JSON.parse(localStorage.getItem('campaigns_config') || '{}');
+            bdrPrompt = campaigns.bdr_prompt || '';
+        } catch (e) {}
+
+        var btn = document.getElementById('scGenerateSeqBtn');
+        btn.disabled = true;
+        btn.innerHTML = '<i data-lucide="loader-2" class="sc-btn-icon" style="animation:spin 0.8s linear infinite"></i> Generating…';
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+
+        fetch('/api/scorecard/generate-email', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                account_id: accountId,
+                company_name: r.company_name,
+                annual_revenue: r.annual_revenue || '',
+                cohort: r.cohort,
+                locale_count: r.locale_count || 0,
+                systems_json: r.systems_json || '{}',
+                num_emails: numEmails,
+                bdr_prompt: bdrPrompt
+            })
+        })
+        .then(function (resp) { return resp.json(); })
+        .then(function (data) {
+            btn.disabled = false;
+            btn.innerHTML = '<i data-lucide="sparkles" class="sc-btn-icon"></i> Generate Sequence';
+            if (typeof lucide !== 'undefined') lucide.createIcons();
+
+            if (data.status === 'error') {
+                showToast(data.message || 'Generation failed', 'error');
+                return;
+            }
+
+            // Build email fields if not already present
+            if (!document.getElementById('scEmail1')) {
+                buildEmailFields(accountId, numEmails);
+            }
+
+            // Fill fields
+            var s1 = document.getElementById('scSubject1');
+            var s2 = document.getElementById('scSubject2');
+            if (s1) s1.value = data.subject_1 || '';
+            if (s2) s2.value = data.subject_2 || '';
+
+            for (var i = 1; i <= 4; i++) {
+                var el = document.getElementById('scEmail' + i);
+                if (el && data['email_' + i]) {
+                    el.value = data['email_' + i].replace(/<br\s*\/?>/gi, '\n');
+                }
+            }
+
+            showToast('Emails generated', 'success');
+        })
+        .catch(function () {
+            btn.disabled = false;
+            btn.innerHTML = '<i data-lucide="sparkles" class="sc-btn-icon"></i> Generate Sequence';
+            if (typeof lucide !== 'undefined') lucide.createIcons();
+            showToast('Generation failed', 'error');
+        });
+    }
+
+    // ── Sidebar: Save Systems ─────────────────────────────
+    function saveSystems(accountId) {
+        var systems = {};
+        document.querySelectorAll('.sc-sys-check').forEach(function (cb) {
+            systems[cb.dataset.key] = cb.checked;
+        });
+
+        var rubric = readRubricFromInputs();
+
+        fetch('/api/scorecard/systems', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({account_id: accountId, systems: systems, rubric: rubric})
+        })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            if (data.status === 'success') {
+                showToast('Systems saved (score: ' + data.total_score + ')', 'success');
+                // Update cached row
+                if (cachedRows[accountId]) {
+                    cachedRows[accountId].systems_score = data.systems_score;
+                    cachedRows[accountId].total_score = data.total_score;
+                    cachedRows[accountId].systems_json = JSON.stringify(systems);
+                }
+                loadAccounts();
+            } else {
+                showToast(data.message || 'Save failed', 'error');
+            }
+        })
+        .catch(function () { showToast('Save failed', 'error'); });
+    }
+
+    // ── Sidebar: Enroll ───────────────────────────────────
+    function enrollAccount(accountId) {
+        var r = cachedRows[accountId];
+        if (!r) return;
+
+        var email = (document.getElementById('scEnrollEmail') || {}).value || '';
+        var firstName = (document.getElementById('scEnrollFirst') || {}).value || '';
+        var lastName = (document.getElementById('scEnrollLast') || {}).value || '';
+        var picker = document.getElementById('scSequencePicker');
+        var opt = picker ? picker.options[picker.selectedIndex] : null;
+        var sequenceId = opt ? opt.value : '';
+        var sequenceName = opt ? (opt.dataset.name || '') : '';
+
+        if (!email || !sequenceId) {
+            showToast('Email and sequence are required', 'error');
+            return;
+        }
+
+        var payload = {
+            account_id: accountId,
+            email: email,
+            first_name: firstName,
+            last_name: lastName,
+            sequence_id: sequenceId,
+            sequence_name: sequenceName,
+            company_name: r.company_name
+        };
+
+        // Add personalized fields from email inputs
+        var s1 = document.getElementById('scSubject1');
+        var s2 = document.getElementById('scSubject2');
+        if (s1 && s1.value) payload.personalized_subject_1 = s1.value;
+        if (s2 && s2.value) payload.personalized_subject_2 = s2.value;
+        for (var i = 1; i <= 4; i++) {
+            var el = document.getElementById('scEmail' + i);
+            if (el && el.value) payload['personalized_email_' + i] = el.value;
+        }
+
+        var btn = document.getElementById('scEnrollBtn');
+        btn.disabled = true;
+        btn.textContent = 'Enrolling…';
+
+        fetch('/api/scorecard/enroll', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+        })
+        .then(function (resp) { return resp.json(); })
+        .then(function (data) {
+            btn.disabled = false;
+            btn.textContent = 'Approve & Enroll';
+            if (data.status === 'success') {
+                showToast('Enrolled in Apollo', 'success');
+                if (cachedRows[accountId]) cachedRows[accountId].apollo_status = 'enrolled';
+                loadAccounts();
+            } else {
+                showToast(data.message || 'Enrollment failed', 'error');
+            }
+        })
+        .catch(function () {
+            btn.disabled = false;
+            btn.textContent = 'Approve & Enroll';
+            showToast('Enrollment failed', 'error');
+        });
+    }
+
+    // ── Bulk Enroll ───────────────────────────────────────
+    function bulkEnroll() {
+        if (!selectedIds.size) return;
+
+        // Require a default sequence to be selected in sidebar (or prompt)
+        var picker = document.getElementById('scSequencePicker');
+        var opt = picker ? picker.options[picker.selectedIndex] : null;
+        var sequenceId = opt ? opt.value : '';
+        var sequenceName = opt ? (opt.dataset.name || '') : '';
+        var enrollEmail = (document.getElementById('scEnrollEmail') || {}).value || '';
+        var enrollFirst = (document.getElementById('scEnrollFirst') || {}).value || '';
+        var enrollLast = (document.getElementById('scEnrollLast') || {}).value || '';
+
+        if (!sequenceId || !enrollEmail) {
+            showToast('Open sidebar first: set sequence + contact email before bulk enroll', 'error');
+            return;
+        }
+
+        var ids = Array.from(selectedIds);
+        var total = ids.length;
+        var done = 0;
+        var failed = 0;
+
+        showToast('Enrolling ' + total + ' accounts…', 'info');
+
+        function next() {
+            if (done >= total) {
+                var msg = 'Bulk enrollment complete: ' + (done - failed) + ' succeeded';
+                if (failed > 0) msg += ', ' + failed + ' failed';
+                showToast(msg, failed > 0 ? 'error' : 'success');
+                selectedIds.clear();
+                updateBulkBar();
+                loadAccounts();
+                return;
+            }
+            var id = ids[done];
+            var r = cachedRows[id];
+            if (!r) { done++; next(); return; }
+
+            // Collect personalized fields if present
+            var payload = {
+                account_id: id,
+                email: enrollEmail,
+                first_name: enrollFirst,
+                last_name: enrollLast,
+                sequence_id: sequenceId,
+                sequence_name: sequenceName,
+                company_name: r.company_name
+            };
+            var s1 = document.getElementById('scSubject1');
+            var s2 = document.getElementById('scSubject2');
+            if (s1 && s1.value) payload.personalized_subject_1 = s1.value;
+            if (s2 && s2.value) payload.personalized_subject_2 = s2.value;
+            for (var i = 1; i <= 4; i++) {
+                var el = document.getElementById('scEmail' + i);
+                if (el && el.value) payload['personalized_email_' + i] = el.value;
+            }
+
+            fetch('/api/scorecard/enroll', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload)
+            })
+            .then(function (resp) { return resp.json(); })
+            .then(function (data) {
+                done++;
+                if (data.status !== 'success') failed++;
+                showToast('Enrolling ' + done + '/' + total + '…', 'info');
+                next();
+            })
+            .catch(function () {
+                done++;
+                failed++;
+                showToast('Enrolling ' + done + '/' + total + '…', 'info');
+                next();
+            });
+        }
+        next();
+    }
+
+    // ── Export CSV ─────────────────────────────────────────
+    function exportCSV() {
+        var headers = ['Company', 'Total Score', 'Cohort', 'Lang Score', 'Systems Score', 'Revenue Score', 'Locale Count', 'Revenue', 'Status'];
+        var rows = [headers.join(',')];
+
+        Object.values(cachedRows).forEach(function (r) {
+            rows.push([
+                '"' + (r.company_name || '').replace(/"/g, '""') + '"',
+                r.total_score || 0,
+                r.cohort || 'B',
+                r.lang_score || 0,
+                r.systems_score || 0,
+                r.revenue_score || 0,
+                r.locale_count || 0,
+                '"' + (r.annual_revenue || '').replace(/"/g, '""') + '"',
+                r.apollo_status || 'not_enrolled'
+            ].join(','));
+        });
+
+        var blob = new Blob([rows.join('\n')], {type: 'text/csv'});
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = 'scorecard_export_' + new Date().toISOString().slice(0, 10) + '.csv';
+        a.click();
+        URL.revokeObjectURL(url);
+        showToast('CSV exported', 'success');
+    }
+
+    // ── Init ──────────────────────────────────────────────
+    document.addEventListener('DOMContentLoaded', function () {
+        // Load rubric
+        var rubric = loadRubric();
+        applyRubricToInputs(rubric);
+        document.getElementById('scMaxScore').textContent = calcMaxScore(rubric);
+
+        // Input change → update max score (no longer auto-rescores — use "Score All")
+        document.querySelectorAll('.sc-tier-input').forEach(function (input) {
+            input.addEventListener('input', updateMaxScore);
+        });
+
+        // Category collapse/expand
+        document.querySelectorAll('.sc-category-header').forEach(function (header) {
+            header.addEventListener('click', function () {
+                var cat = header.closest('.sc-category');
+                cat.classList.toggle('collapsed');
+                header.setAttribute('aria-expanded', !cat.classList.contains('collapsed'));
+            });
+        });
+
+        // Reset rubric
+        document.getElementById('scResetBtn').addEventListener('click', function () {
+            applyRubricToInputs(DEFAULTS);
+            saveRubric(DEFAULTS);
+            document.getElementById('scMaxScore').textContent = calcMaxScore(DEFAULTS);
+        });
+
+        // Score All
+        document.getElementById('scScoreAllBtn').addEventListener('click', scoreAll);
+
+        // Search with debounce
+        var searchTimer;
+        $search.addEventListener('input', function () {
+            clearTimeout(searchTimer);
+            searchTimer = setTimeout(function () {
+                searchQuery = $search.value.trim();
+                currentPage = 0;
+                loadAccounts();
+            }, 300);
+        });
+
+        // Cohort filter
+        $cohort.addEventListener('change', function () {
+            cohortFilter = $cohort.value;
+            currentPage = 0;
+            loadAccounts();
+        });
+
+        // Page size
+        $pageSize.addEventListener('change', function () {
+            pageSize = parseInt($pageSize.value, 10);
+            currentPage = 0;
+            loadAccounts();
+        });
+
+        // Prev/Next
+        $prevBtn.addEventListener('click', function () {
+            if (currentPage > 0) { currentPage--; loadAccounts(); }
+        });
+        $nextBtn.addEventListener('click', function () {
+            if (currentPage < totalPages - 1) { currentPage++; loadAccounts(); }
+        });
+
+        // Sidebar close
+        document.getElementById('scSidebarClose').addEventListener('click', closeSidebar);
+        $backdrop.addEventListener('click', closeSidebar);
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') closeSidebar();
+        });
+
+        // Bulk actions
+        document.getElementById('scBulkEnrollBtn').addEventListener('click', bulkEnroll);
+        document.getElementById('scExportCsvBtn').addEventListener('click', exportCSV);
+
+        // Initial load
+        loadAccounts();
+    });
+}());
+</script>
+{% endblock %}

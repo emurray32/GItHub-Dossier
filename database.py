@@ -454,6 +454,49 @@ def init_db() -> None:
         ON contributors(is_org_member)
     ''')
 
+    # ScoreCard Scores table - persists account scores for team pipeline
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS scorecard_scores (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            account_id INTEGER NOT NULL UNIQUE,
+            company_name TEXT NOT NULL,
+            annual_revenue TEXT,
+            revenue_raw REAL DEFAULT 0,
+            locale_count INTEGER DEFAULT 0,
+            total_score INTEGER DEFAULT 0,
+            lang_score INTEGER DEFAULT 0,
+            systems_score INTEGER DEFAULT 0,
+            revenue_score INTEGER DEFAULT 0,
+            cohort TEXT DEFAULT 'B',
+            systems_json TEXT,
+            has_loc_titles INTEGER DEFAULT 0,
+            has_app_loc INTEGER DEFAULT 0,
+            apollo_status TEXT DEFAULT 'not_enrolled',
+            sequence_name TEXT,
+            enrolled_at TIMESTAMP,
+            scored_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (account_id) REFERENCES monitored_accounts(id)
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_scorecard_account_id
+        ON scorecard_scores(account_id)
+    ''')
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_scorecard_total_score
+        ON scorecard_scores(total_score DESC)
+    ''')
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_scorecard_cohort
+        ON scorecard_scores(cohort)
+    ''')
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_scorecard_apollo_status
+        ON scorecard_scores(apollo_status)
+    ''')
+
     conn.commit()
     conn.close()
 
@@ -4678,3 +4721,196 @@ def delete_contributor(contributor_id: int) -> bool:
     conn.commit()
     conn.close()
     return deleted
+
+
+# =============================================================================
+# SCORECARD SCORES - Account Scoring Pipeline
+# =============================================================================
+
+def get_scorecard_datatable(
+    draw: int,
+    start: int,
+    length: int,
+    search_value: str = '',
+    cohort_filter: str = '',
+    order_column: int = 1,
+    order_dir: str = 'desc'
+) -> dict:
+    """
+    Get scorecard scores in DataTables format for server-side processing.
+
+    Column map: 0=company_name, 1=total_score, 2=cohort, 3=locale_count,
+                4=systems_score, 5=revenue_raw, 6=apollo_status.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    column_map = {
+        0: 'ss.company_name',
+        1: 'ss.total_score',
+        2: 'ss.cohort',
+        3: 'ss.locale_count',
+        4: 'ss.systems_score',
+        5: 'ss.revenue_raw',
+        6: 'ss.apollo_status',
+    }
+
+    # Total count (all scored accounts)
+    cursor.execute('SELECT COUNT(*) as total FROM scorecard_scores')
+    total_records = cursor.fetchone()['total']
+
+    # Build WHERE clause
+    where_clauses = []
+    params = []
+
+    if cohort_filter and cohort_filter in ('A', 'B'):
+        where_clauses.append('ss.cohort = ?')
+        params.append(cohort_filter)
+
+    if search_value:
+        where_clauses.append('(LOWER(ss.company_name) LIKE ? OR LOWER(ma.website) LIKE ?)')
+        search_param = f'%{search_value.lower()}%'
+        params.extend([search_param, search_param])
+
+    where_sql = (' WHERE ' + ' AND '.join(where_clauses)) if where_clauses else ''
+
+    # Filtered count
+    count_query = 'SELECT COUNT(*) as total FROM scorecard_scores ss LEFT JOIN monitored_accounts ma ON ma.id = ss.account_id' + where_sql
+    cursor.execute(count_query, params)
+    filtered_records = cursor.fetchone()['total']
+
+    # Whitelist-validated sort column
+    sort_column = column_map.get(order_column, 'ss.total_score')
+    assert sort_column in column_map.values(), f"sort_column must be in whitelist, got {sort_column!r}"
+    sort_order = 'DESC' if order_dir.lower() == 'desc' else 'ASC'
+
+    # Paginated query with JOIN for website/github_org
+    select_query = '''
+        SELECT ss.*, ma.website, ma.github_org
+        FROM scorecard_scores ss
+        LEFT JOIN monitored_accounts ma ON ma.id = ss.account_id
+    ''' + where_sql + f' ORDER BY {sort_column} {sort_order} LIMIT ? OFFSET ?'
+
+    select_params = list(params) + [length, start]
+    cursor.execute(select_query, select_params)
+    rows = cursor.fetchall()
+    conn.close()
+
+    data = [dict(row) for row in rows]
+
+    return {
+        'draw': draw,
+        'recordsTotal': total_records,
+        'recordsFiltered': filtered_records,
+        'data': data
+    }
+
+
+def upsert_scorecard_scores(scores: list) -> int:
+    """
+    Insert or update scorecard scores. On conflict (account_id), updates
+    lang/rev/total/cohort fields but preserves systems_json/systems_score/apollo_status.
+
+    Args:
+        scores: List of dicts with keys matching scorecard_scores columns.
+
+    Returns:
+        Number of rows upserted.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    count = 0
+
+    for s in scores:
+        cursor.execute('''
+            INSERT INTO scorecard_scores (
+                account_id, company_name, annual_revenue, revenue_raw,
+                locale_count, total_score, lang_score, revenue_score,
+                cohort, has_loc_titles, has_app_loc, scored_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ON CONFLICT(account_id) DO UPDATE SET
+                company_name = excluded.company_name,
+                annual_revenue = excluded.annual_revenue,
+                revenue_raw = excluded.revenue_raw,
+                locale_count = excluded.locale_count,
+                lang_score = excluded.lang_score,
+                revenue_score = excluded.revenue_score,
+                total_score = excluded.lang_score + scorecard_scores.systems_score + excluded.revenue_score,
+                cohort = excluded.cohort,
+                has_loc_titles = excluded.has_loc_titles,
+                has_app_loc = excluded.has_app_loc,
+                scored_at = CURRENT_TIMESTAMP,
+                updated_at = CURRENT_TIMESTAMP
+        ''', (
+            s['account_id'], s['company_name'], s.get('annual_revenue', ''),
+            s.get('revenue_raw', 0), s.get('locale_count', 0),
+            s.get('total_score', 0), s.get('lang_score', 0),
+            s.get('revenue_score', 0), s.get('cohort', 'B'),
+            s.get('has_loc_titles', 0), s.get('has_app_loc', 0)
+        ))
+        count += 1
+
+    conn.commit()
+    conn.close()
+    return count
+
+
+def update_scorecard_systems(account_id: int, systems_json: str, systems_score: int) -> bool:
+    """
+    Update systems checkboxes + recalculate total_score.
+
+    total_score = lang_score + systems_score + revenue_score
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        UPDATE scorecard_scores
+        SET systems_json = ?,
+            systems_score = ?,
+            total_score = lang_score + ? + revenue_score,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE account_id = ?
+    ''', (systems_json, systems_score, systems_score, account_id))
+
+    updated = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return updated
+
+
+def update_scorecard_enrollment(account_id: int, apollo_status: str, sequence_name: str) -> bool:
+    """Set Apollo enrollment status + enrolled_at timestamp."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        UPDATE scorecard_scores
+        SET apollo_status = ?,
+            sequence_name = ?,
+            enrolled_at = CURRENT_TIMESTAMP,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE account_id = ?
+    ''', (apollo_status, sequence_name, account_id))
+
+    updated = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return updated
+
+
+def get_scorecard_score(account_id: int) -> Optional[dict]:
+    """Get a single scorecard score row for sidebar detail view."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT ss.*, ma.website, ma.github_org
+        FROM scorecard_scores ss
+        LEFT JOIN monitored_accounts ma ON ma.id = ss.account_id
+        WHERE ss.account_id = ?
+    ''', (account_id,))
+
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None

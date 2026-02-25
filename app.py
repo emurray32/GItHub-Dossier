@@ -42,7 +42,10 @@ from database import (
     # Contributors
     save_contributor, save_contributors_batch, get_contributors_datatable,
     get_contributor_stats, update_contributor_apollo_status, update_contributor_email,
-    increment_contributor_emails, get_contributor_by_id, delete_contributor
+    increment_contributor_emails, get_contributor_by_id, delete_contributor,
+    # ScoreCard
+    get_scorecard_datatable, upsert_scorecard_scores, update_scorecard_systems,
+    update_scorecard_enrollment, get_scorecard_score
 )
 from monitors.webscraper_utils import (
     detect_expansion_signals, calculate_webscraper_tier, extract_tier_from_scan_results,
@@ -1460,10 +1463,420 @@ def history():
     return render_template('history.html', reports=reports)
 
 
+@app.route('/campaigns')
+def campaigns():
+    """Campaigns & Map Sequences landing page."""
+    return render_template('campaigns.html')
+
+
+@app.route('/scorecard')
+def scorecard():
+    """ScoreCard - Account scoring & qualification page."""
+    return render_template('scorecard.html')
+
+
+def _parse_revenue(s):
+    """Parse revenue string like '$4.6B', '$500M', raw numbers → float."""
+    import re
+    if not s:
+        return 0.0
+    s = str(s).strip().replace(',', '')
+    m = re.match(r'\$?\s*([\d.]+)\s*(T|B|M|K)?', s, re.IGNORECASE)
+    if m:
+        num = float(m.group(1))
+        suffix = (m.group(2) or '').upper()
+        if suffix == 'T': return num * 1e12
+        if suffix == 'B': return num * 1e9
+        if suffix == 'M': return num * 1e6
+        if suffix == 'K': return num * 1e3
+        return num
+    cleaned = re.sub(r'[^0-9.]', '', s)
+    try:
+        return float(cleaned)
+    except ValueError:
+        return 0.0
+
+
+@app.route('/api/scorecard/datatable')
+def api_scorecard_datatable():
+    """DataTable endpoint for scorecard scores with server-side pagination."""
+    draw = request.args.get('draw', 1, type=int)
+    start = request.args.get('start', 0, type=int)
+    length = request.args.get('length', 25, type=int)
+    search_value = request.args.get('search[value]', '').strip()
+    order_column = request.args.get('order[0][column]', 1, type=int)
+    order_dir = request.args.get('order[0][dir]', 'desc')
+    cohort = request.args.get('cohort', '').strip()
+
+    result = get_scorecard_datatable(
+        draw=draw, start=start, length=length,
+        search_value=search_value, cohort_filter=cohort,
+        order_column=order_column, order_dir=order_dir
+    )
+    return jsonify(result)
+
+
+@app.route('/api/scorecard/rescore', methods=['POST'])
+def api_scorecard_rescore():
+    """Score all non-archived accounts using the provided rubric and save to DB."""
+    data = request.get_json()
+    if not data or 'rubric' not in data:
+        return jsonify({'status': 'error', 'message': 'Missing rubric'}), 400
+
+    rubric = data['rubric']
+
+    # Fetch all non-archived accounts with locale data
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT
+            ma.id,
+            ma.company_name,
+            ma.annual_revenue,
+            ws.locale_count
+        FROM monitored_accounts ma
+        LEFT JOIN webscraper_accounts ws ON ws.monitored_account_id = ma.id
+        WHERE ma.archived_at IS NULL
+        GROUP BY ma.id
+    ''')
+    rows = cursor.fetchall()
+    conn.close()
+
+    scores = []
+    for row in rows:
+        acct = dict(row)
+        lc = acct.get('locale_count') or 0
+
+        # Language score
+        lang_score = 0
+        if lc >= 10: lang_score = rubric.get('lang_10_plus', 0)
+        elif lc >= 5: lang_score = rubric.get('lang_5_9', 0)
+        elif lc >= 2: lang_score = rubric.get('lang_2_4', 0)
+        elif lc >= 1: lang_score = rubric.get('lang_1', 0)
+
+        # Revenue score
+        rev_raw = _parse_revenue(acct.get('annual_revenue'))
+        rev_score = 0
+        if rev_raw >= 5e9: rev_score = rubric.get('rev_5b_plus', 0)
+        elif rev_raw >= 3e9: rev_score = rubric.get('rev_3b_5b', 0)
+        elif rev_raw >= 1.5e9: rev_score = rubric.get('rev_1_5b_3b', 0)
+        elif rev_raw >= 1e9: rev_score = rubric.get('rev_1b_1_5b', 0)
+        elif rev_raw >= 5e8: rev_score = rubric.get('rev_500_1b', 0)
+        elif rev_raw >= 1e8: rev_score = rubric.get('rev_100_499', 0)
+
+        cohort = 'A' if rev_raw >= 1.5e9 else 'B'
+        total = lang_score + rev_score  # systems_score preserved by upsert
+
+        scores.append({
+            'account_id': acct['id'],
+            'company_name': acct['company_name'],
+            'annual_revenue': acct.get('annual_revenue', ''),
+            'revenue_raw': rev_raw,
+            'locale_count': lc,
+            'total_score': total,
+            'lang_score': lang_score,
+            'revenue_score': rev_score,
+            'cohort': cohort,
+        })
+
+    count = upsert_scorecard_scores(scores) if scores else 0
+    return jsonify({'status': 'success', 'scored': count})
+
+
+@app.route('/api/scorecard/systems', methods=['POST'])
+def api_scorecard_systems():
+    """Update systems checkboxes for an account and recalculate score."""
+    data = request.get_json()
+    if not data:
+        return jsonify({'status': 'error', 'message': 'No data'}), 400
+
+    account_id = data.get('account_id')
+    systems = data.get('systems', {})
+    rubric = data.get('rubric', {})
+
+    if not account_id:
+        return jsonify({'status': 'error', 'message': 'Missing account_id'}), 400
+
+    # Calculate systems_score from checkboxes x rubric weights
+    sys_keys = {
+        'vcs': 'sys_vcs', 'design': 'sys_design', 'oss_cms': 'sys_oss_cms',
+        'enterprise_cms': 'sys_enterprise_cms', 'customer_svc': 'sys_customer_svc',
+        'ecommerce': 'sys_ecommerce', 'marketing': 'sys_marketing'
+    }
+    sys_score = 0
+    for sys_key, rubric_key in sys_keys.items():
+        if systems.get(sys_key):
+            sys_score += int(rubric.get(rubric_key, 0))
+
+    systems_json = json.dumps(systems)
+    ok = update_scorecard_systems(account_id, systems_json, sys_score)
+
+    if ok:
+        row = get_scorecard_score(account_id)
+        return jsonify({'status': 'success', 'systems_score': sys_score, 'total_score': row['total_score'] if row else sys_score})
+    return jsonify({'status': 'error', 'message': 'Account not found'}), 404
+
+
+@app.route('/api/scorecard/enroll', methods=['POST'])
+def api_scorecard_enroll():
+    """Enroll a scorecard account into an Apollo sequence, then persist status."""
+    import requests as req
+
+    apollo_key = os.environ.get('APOLLO_API_KEY', '')
+    if not apollo_key:
+        return jsonify({'status': 'error', 'message': 'Apollo API key not configured'}), 400
+
+    data = request.get_json()
+    if not data:
+        return jsonify({'status': 'error', 'message': 'No data'}), 400
+
+    account_id = data.get('account_id')
+    email = data.get('email', '').strip()
+    first_name = data.get('first_name', '').strip()
+    last_name = data.get('last_name', '').strip()
+    sequence_id = data.get('sequence_id', '').strip()
+    company_name = data.get('company_name', '').strip()
+    sequence_name = data.get('sequence_name', '').strip()
+
+    if not email or not sequence_id or not account_id:
+        return jsonify({'status': 'error', 'message': 'Missing required: email, sequence_id, account_id'}), 400
+
+    # Convert plain newlines to HTML for Apollo
+    def to_html(text):
+        if not text: return ''
+        return text.strip().replace('\n\n', '<br><br>').replace('\n', '<br>')
+
+    # Collect personalized fields
+    personalized_subject_1 = data.get('personalized_subject_1', '').strip()
+    personalized_subject_2 = data.get('personalized_subject_2', '').strip()
+    personalized_email_1 = to_html(data.get('personalized_email_1', ''))
+    personalized_email_2 = to_html(data.get('personalized_email_2', ''))
+    personalized_email_3 = to_html(data.get('personalized_email_3', ''))
+    personalized_email_4 = to_html(data.get('personalized_email_4', ''))
+
+    try:
+        apollo_headers = {'X-Api-Key': apollo_key, 'Content-Type': 'application/json'}
+
+        # Resolve custom field IDs
+        FIELD_ENV_OVERRIDES = {
+            'personalized_subject_1': os.environ.get('APOLLO_FIELD_PERSONALIZED_SUBJECT_1', ''),
+            'personalized_subject_2': os.environ.get('APOLLO_FIELD_PERSONALIZED_SUBJECT_2', ''),
+            'personalized_email_1': os.environ.get('APOLLO_FIELD_PERSONALIZED_EMAIL_1', ''),
+            'personalized_email_2': os.environ.get('APOLLO_FIELD_PERSONALIZED_EMAIL_2', ''),
+            'personalized_email_3': os.environ.get('APOLLO_FIELD_PERSONALIZED_EMAIL_3', ''),
+            'personalized_email_4': os.environ.get('APOLLO_FIELD_PERSONALIZED_EMAIL_4', ''),
+        }
+
+        field_values = {}
+        if personalized_subject_1: field_values['personalized_subject_1'] = personalized_subject_1
+        if personalized_subject_2: field_values['personalized_subject_2'] = personalized_subject_2
+        if personalized_email_1: field_values['personalized_email_1'] = personalized_email_1
+        if personalized_email_2: field_values['personalized_email_2'] = personalized_email_2
+        if personalized_email_3: field_values['personalized_email_3'] = personalized_email_3
+        if personalized_email_4: field_values['personalized_email_4'] = personalized_email_4
+
+        typed_custom_fields = {}
+        if field_values:
+            try:
+                cf_resp = req.get('https://api.apollo.io/v1/typed_custom_fields',
+                                  headers=apollo_headers, timeout=15)
+                if cf_resp.status_code == 200:
+                    field_id_map = {}
+                    for f in cf_resp.json().get('typed_custom_fields', []):
+                        fid = f.get('id')
+                        name = (f.get('name') or '').lower().replace(' ', '_')
+                        if fid and name:
+                            field_id_map[name] = fid
+                    for k, v in FIELD_ENV_OVERRIDES.items():
+                        if v and k not in field_id_map:
+                            field_id_map[k] = v
+                else:
+                    field_id_map = {k: v for k, v in FIELD_ENV_OVERRIDES.items() if v}
+
+                for field_key, field_val in field_values.items():
+                    if field_key in field_id_map:
+                        typed_custom_fields[field_id_map[field_key]] = field_val
+            except Exception as cf_err:
+                print(f"[SCORECARD ENROLL] Warning: custom field lookup failed: {cf_err}")
+                for field_key, field_val in field_values.items():
+                    env_id = FIELD_ENV_OVERRIDES.get(field_key, '')
+                    if env_id:
+                        typed_custom_fields[env_id] = field_val
+
+        # Search for existing contact
+        contact_id = None
+        search_resp = req.post('https://api.apollo.io/api/v1/contacts/search',
+                               json={'q_keywords': email, 'per_page': 1},
+                               headers=apollo_headers, timeout=15)
+        if search_resp.status_code == 200:
+            contacts = search_resp.json().get('contacts', [])
+            if contacts:
+                contact_id = contacts[0].get('id')
+
+        # Create or update contact
+        if not contact_id:
+            create_payload = {
+                'first_name': first_name or email.split('@')[0],
+                'last_name': last_name or '',
+                'email': email,
+                'organization_name': company_name,
+            }
+            if typed_custom_fields:
+                create_payload['typed_custom_fields'] = typed_custom_fields
+            create_resp = req.post('https://api.apollo.io/v1/contacts',
+                                   json=create_payload, headers=apollo_headers, timeout=15)
+            if create_resp.status_code in (200, 201):
+                contact_id = create_resp.json().get('contact', {}).get('id')
+            else:
+                return jsonify({'status': 'error', 'message': 'Failed to create Apollo contact'}), 502
+        elif typed_custom_fields:
+            req.put(f'https://api.apollo.io/v1/contacts/{contact_id}',
+                    json={'typed_custom_fields': typed_custom_fields},
+                    headers=apollo_headers, timeout=15)
+
+        if not contact_id:
+            return jsonify({'status': 'error', 'message': 'Could not find or create contact'}), 500
+
+        # Resolve email account
+        email_account_id = None
+        preferred_sender = os.environ.get('APOLLO_SENDER_EMAIL', '').strip().lower()
+        try:
+            ea_resp = req.get('https://api.apollo.io/api/v1/email_accounts',
+                              headers=apollo_headers, timeout=15)
+            if ea_resp.status_code == 200:
+                accounts = ea_resp.json().get('email_accounts', [])
+                active = [a for a in accounts if a.get('active')]
+                if preferred_sender:
+                    match = next((a for a in active if a.get('email', '').lower() == preferred_sender), None)
+                    email_account_id = match['id'] if match else (active[0]['id'] if active else None)
+                elif active:
+                    email_account_id = active[0]['id']
+        except Exception:
+            pass
+
+        if not email_account_id:
+            return jsonify({'status': 'error', 'message': 'No active Apollo email account found'}), 500
+
+        # Enroll in sequence
+        enroll_resp = req.post(
+            f'https://api.apollo.io/api/v1/emailer_campaigns/{sequence_id}/add_contact_ids',
+            json={'emailer_campaign_id': sequence_id, 'contact_ids': [contact_id],
+                  'send_email_from_email_account_id': email_account_id},
+            headers=apollo_headers, timeout=15
+        )
+
+        if enroll_resp.status_code in (200, 201):
+            update_scorecard_enrollment(account_id, 'enrolled', sequence_name)
+            return jsonify({'status': 'success', 'message': f'Enrolled {email} in sequence', 'contact_id': contact_id})
+        else:
+            error_msg = enroll_resp.json().get('message', enroll_resp.text[:200]) if enroll_resp.text else 'Unknown error'
+            return jsonify({'status': 'error', 'message': f'Failed to enroll: {error_msg}'}), 502
+
+    except Exception as e:
+        print(f"[SCORECARD ENROLL ERROR] {e}")
+        return jsonify({'status': 'error', 'message': 'Failed to enroll in Apollo sequence'}), 500
+
+
+@app.route('/api/scorecard/generate-email', methods=['POST'])
+def api_scorecard_generate_email():
+    """Generate personalized outreach emails for a scored account."""
+    from openai import OpenAI
+
+    data = request.get_json()
+    if not data:
+        return jsonify({'status': 'error', 'message': 'No data provided'}), 400
+
+    api_key = os.environ.get('AI_INTEGRATIONS_OPENAI_API_KEY', '')
+    base_url = os.environ.get('AI_INTEGRATIONS_OPENAI_BASE_URL', '')
+    if not api_key or not base_url:
+        return jsonify({'status': 'error', 'message': 'AI API not configured'}), 400
+
+    company_name = data.get('company_name', '')
+    annual_revenue = data.get('annual_revenue', '')
+    cohort = data.get('cohort', 'B')
+    locale_count = data.get('locale_count', 0)
+    systems_json = data.get('systems_json', '{}')
+    num_emails = data.get('num_emails', 4)
+    bdr_prompt = data.get('bdr_prompt', '').strip()
+
+    # Build structure guidance based on num_emails
+    if num_emails == 1:
+        structure_guidance = "Structure: subject_1 + email_1 (cold outreach, 3-4 sentences)"
+        json_structure = '{"subject_1": "...", "email_1": "..."}'
+    elif num_emails == 2:
+        structure_guidance = "Structure: subject_1 + email_1 (cold outreach) + email_2 (follow-up bump)"
+        json_structure = '{"subject_1": "...", "email_1": "...", "email_2": "..."}'
+    elif num_emails == 3:
+        structure_guidance = "Structure: subject_1 + email_1 (cold) + email_2 (follow-up) + email_3 (breakup)"
+        json_structure = '{"subject_1": "...", "email_1": "...", "email_2": "...", "email_3": "..."}'
+    else:
+        structure_guidance = "Structure: subject_1 (thread 1) + subject_2 (thread 2) + email_1 + email_2 + email_3 + email_4"
+        json_structure = '{"subject_1": "...", "subject_2": "...", "email_1": "...", "email_2": "...", "email_3": "...", "email_4": "..."}'
+
+    # Parse systems for context
+    try:
+        systems = json.loads(systems_json) if systems_json else {}
+    except (json.JSONDecodeError, TypeError):
+        systems = {}
+    active_systems = [k for k, v in systems.items() if v]
+
+    prompt = f"""You are a BDR at Phrase, a localization/internationalization platform. Write a personalized cold outreach ACCOUNT-BASED sequence.
+
+Account info:
+- Company: {company_name}
+- Annual Revenue: {annual_revenue}
+- Cohort: {cohort} ({'Enterprise $1.5B+' if cohort == 'A' else 'Mid-Market'})
+- Languages/Locales detected: {locale_count}
+- Systems in use: {', '.join(active_systems) if active_systems else 'unknown'}
+
+{('BDR Instructions: ' + bdr_prompt) if bdr_prompt else ''}
+
+Write a {num_emails}-email cold outreach sequence targeting a VP/Director of Engineering or Localization at this company. The goal is to start a conversation about their internationalization workflow and how Phrase can help.
+
+{structure_guidance}
+
+Rules:
+- Reference the company by name and real signals (revenue tier, locale count, systems)
+- Each email body: concise, value-driven, references something real
+- End each email with a simple CTA
+- No fluff. Sound like a human.
+- Use \\n for line breaks in email bodies
+
+Return ONLY valid JSON: {json_structure}"""
+
+    try:
+        client = OpenAI(api_key=api_key, base_url=base_url)
+        response = client.chat.completions.create(
+            model="gpt-5-mini",
+            messages=[
+                {"role": "system", "content": "You are a BDR at Phrase. Write diverse, natural emails. Return ONLY valid JSON."},
+                {"role": "user", "content": prompt}
+            ],
+            response_format={"type": "json_object"},
+            max_completion_tokens=4096
+        )
+
+        response_text = response.choices[0].message.content
+        if not response_text:
+            return jsonify({'status': 'error', 'message': 'AI returned empty response'}), 500
+        response_text = response_text.strip()
+        if response_text.startswith('```'):
+            lines = response_text.split('\n')
+            lines = [l for l in lines if not l.startswith('```')]
+            response_text = '\n'.join(lines)
+
+        email_data = json.loads(response_text)
+        return jsonify({'status': 'success', **email_data})
+
+    except Exception as e:
+        print(f"[SCORECARD EMAIL GEN ERROR] {e}")
+        return jsonify({'status': 'error', 'message': f'Email generation failed: {str(e)}'}), 500
+
+
 @app.route('/sequence')
 def sequence_redirect():
-    """Redirect /sequence to accounts page with auto-open sequence modal."""
-    return redirect(url_for('accounts', open_sequence=1))
+    """Redirect /sequence to the campaigns page."""
+    return redirect(url_for('campaigns'))
 
 
 @app.route('/accounts')
