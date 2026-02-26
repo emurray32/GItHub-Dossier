@@ -1159,6 +1159,42 @@ def update_account_status(scan_data: dict, report_id: Optional[int] = None) -> d
     # Guard against None tier values to prevent comparison errors
     new_tier = new_tier if new_tier is not None else 0
 
+    # Build scan metadata from all available fields so nothing is lost
+    scan_metadata = {}
+    for key in ('org_name', 'org_url', 'org_description', 'org_public_repos',
+                'total_stars', 'scan_timestamp', 'org_public_members'):
+        val = scan_data.get(key)
+        if val is not None:
+            scan_metadata[key] = val
+    # Store top-level language breakdown if present
+    if scan_data.get('repos_scanned'):
+        langs = {}
+        for r in scan_data['repos_scanned']:
+            lang = r.get('language')
+            if lang:
+                langs[lang] = langs.get(lang, 0) + 1
+        if langs:
+            scan_metadata['languages'] = langs
+        scan_metadata['repos_scanned_count'] = len(scan_data['repos_scanned'])
+    # Store contributors summary count
+    contributors = scan_data.get('contributors')
+    if contributors and isinstance(contributors, dict):
+        scan_metadata['contributor_count'] = len(contributors)
+    # Store scoring_v2 summary if present
+    scoring_v2 = scan_data.get('scoring_v2')
+    if scoring_v2 and isinstance(scoring_v2, dict):
+        for skey in ('org_intent_score', 'org_maturity_label', 'readiness_index',
+                     'p_intent', 'recommended_outreach_angle', 'risk_level_label',
+                     'confidence_percent', 'primary_repo_of_concern'):
+            sval = scoring_v2.get(skey)
+            if sval is not None:
+                scan_metadata[skey] = sval
+    # Goldilocks status
+    for gkey in ('goldilocks_status', 'intent_score', 'lead_status'):
+        gval = scan_data.get(gkey)
+        if gval is not None:
+            scan_metadata[gkey] = gval
+
     conn = get_db_connection()
     cursor = conn.cursor()
 
@@ -1181,6 +1217,16 @@ def update_account_status(scan_data: dict, report_id: Optional[int] = None) -> d
         existing_tier = existing_tier if existing_tier is not None else 0
         tier_changed = existing_tier != new_tier
 
+        # Merge scan metadata with any existing metadata (preserving CSV/Sheets fields)
+        merged_metadata = {}
+        if existing['metadata']:
+            try:
+                merged_metadata = json.loads(existing['metadata'])
+            except (json.JSONDecodeError, TypeError):
+                pass
+        merged_metadata.update(scan_metadata)
+        metadata_json = json.dumps(merged_metadata) if merged_metadata else None
+
         if tier_changed:
             # Tier changed - update status_changed_at
             cursor.execute('''
@@ -1190,9 +1236,10 @@ def update_account_status(scan_data: dict, report_id: Optional[int] = None) -> d
                     last_scanned_at = ?,
                     status_changed_at = ?,
                     evidence_summary = ?,
-                    next_scan_due = ?
+                    next_scan_due = ?,
+                    metadata = ?
                 WHERE LOWER(company_name) = ?
-            ''', (github_org, new_tier, now, now, evidence_summary, next_scan_iso, company_name_normalized))
+            ''', (github_org, new_tier, now, now, evidence_summary, next_scan_iso, metadata_json, company_name_normalized))
         else:
             # Same tier - only update scan timestamp, NOT status_changed_at
             cursor.execute('''
@@ -1200,19 +1247,21 @@ def update_account_status(scan_data: dict, report_id: Optional[int] = None) -> d
                 SET github_org = ?,
                     last_scanned_at = ?,
                     evidence_summary = ?,
-                    next_scan_due = ?
+                    next_scan_due = ?,
+                    metadata = ?
                 WHERE LOWER(company_name) = ?
-            ''', (github_org, now, evidence_summary, next_scan_iso, company_name_normalized))
+            ''', (github_org, now, evidence_summary, next_scan_iso, metadata_json, company_name_normalized))
 
         account_id = existing['id']
     else:
         # New account - create record (use normalized name)
+        metadata_json = json.dumps(scan_metadata) if scan_metadata else None
         cursor.execute('''
             INSERT INTO monitored_accounts (
                 company_name, github_org, current_tier, last_scanned_at,
-                status_changed_at, evidence_summary, next_scan_due
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
-        ''', (company_name_normalized, github_org, new_tier, now, now, evidence_summary, next_scan_iso))
+                status_changed_at, evidence_summary, next_scan_due, metadata
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (company_name_normalized, github_org, new_tier, now, now, evidence_summary, next_scan_iso, metadata_json))
         account_id = cursor.lastrowid
         tier_changed = True  # New account is considered a "change"
 

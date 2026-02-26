@@ -32,6 +32,7 @@ from sheets_client import (
 from database import (
     get_account_by_company_case_insensitive,
     add_account_to_tier_0,
+    update_account_metadata,
     get_setting,
     set_setting,
     increment_daily_stat,
@@ -234,9 +235,20 @@ def _perform_sync(
             org = resolve_org_fast(company_name)
             if org:
                 github_org = org.get('login', '')
-                add_account_to_tier_0(company_name, github_org)
+                # Build metadata dict from all sheet fields so they attach to the account
+                sheets_fields = {}
+                for mf in ('domain', 'industry', 'employees', 'salesforce_id',
+                           'city', 'state', 'country'):
+                    mv = account.get(mf, '')
+                    if mv:
+                        sheets_fields[mf] = mv
+                if sheets_fields:
+                    sheets_fields['source'] = 'google_sheets'
+                add_account_to_tier_0(company_name, github_org,
+                                      website=account.get('domain'),
+                                      metadata=sheets_fields if sheets_fields else None)
 
-                # Store additional metadata (domain, industry) if available
+                # Also store in system_settings for backward compatibility
                 _store_account_metadata(company_name, account)
 
                 sync_result['added'].append({
@@ -331,18 +343,19 @@ def _store_account_metadata(company_name: str, account: dict) -> None:
     """
     Store additional account metadata (domain, industry, etc.) in the database.
 
-    Uses the system_settings table with a prefixed key pattern.
-    This keeps the schema simple and doesn't require ALTER TABLE.
+    Stores metadata in two places for compatibility:
+    1. system_settings table (legacy key-value store)
+    2. monitored_accounts.metadata JSON column (primary, queryable)
     """
+    metadata_fields = ['domain', 'industry', 'employees', 'salesforce_id',
+                       'city', 'state', 'country']
+
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # Store metadata fields
+        # Legacy: store in system_settings for backward compatibility
         key_prefix = f'account_meta:{company_name.lower().strip()}'
-        metadata_fields = ['domain', 'industry', 'employees', 'salesforce_id',
-                           'city', 'state', 'country']
-
         for field in metadata_fields:
             value = account.get(field, '')
             if value:
@@ -354,7 +367,20 @@ def _store_account_metadata(company_name: str, account: dict) -> None:
         conn.commit()
         conn.close()
     except Exception as e:
-        print(f"[SHEETS-SYNC] Error storing metadata for {company_name}: {e}")
+        print(f"[SHEETS-SYNC] Error storing metadata to system_settings for {company_name}: {e}")
+
+    # Primary: store in account metadata column so fields stay attached to the account
+    try:
+        sheets_meta = {}
+        for field in metadata_fields:
+            value = account.get(field, '')
+            if value:
+                sheets_meta[field] = value
+        if sheets_meta:
+            sheets_meta['source'] = 'google_sheets'
+            update_account_metadata(company_name, sheets_meta)
+    except Exception as e:
+        print(f"[SHEETS-SYNC] Error storing metadata to account for {company_name}: {e}")
 
 
 def get_account_metadata(company_name: str) -> dict:
