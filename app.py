@@ -45,7 +45,9 @@ from database import (
     increment_contributor_emails, get_contributor_by_id, delete_contributor,
     # ScoreCard
     get_scorecard_datatable, upsert_scorecard_scores, update_scorecard_systems,
-    update_scorecard_enrollment, get_scorecard_score
+    update_scorecard_enrollment, get_scorecard_score,
+    # Scheduled Rescans
+    TIER_SCAN_INTERVALS, get_scheduled_rescan_summary,
 )
 from monitors.webscraper_utils import (
     detect_expansion_signals, calculate_webscraper_tier, extract_tier_from_scan_results,
@@ -4127,6 +4129,104 @@ def api_batch_rescan_cancel():
     return jsonify({'status': 'cancelled', 'message': 'Batch rescan will stop after the current batch completes'})
 
 
+# =============================================================================
+# SCHEDULED RESCAN API — View & control the tier-aware auto-rescan scheduler
+# =============================================================================
+
+@app.route('/api/scheduled-rescan/status')
+def api_scheduled_rescan_status():
+    """
+    Get the current state of the scheduled rescan scheduler.
+
+    Returns scheduler state, tier intervals, and per-tier due counts.
+    """
+    summary = get_scheduled_rescan_summary()
+    return jsonify({
+        'scheduler': _scheduled_rescan_state,
+        'intervals': {str(k): v for k, v in TIER_SCAN_INTERVALS.items()},
+        'tiers': {str(k): v for k, v in summary.items()},
+    })
+
+
+@app.route('/api/scheduled-rescan/toggle', methods=['POST'])
+def api_scheduled_rescan_toggle():
+    """Enable or disable the scheduled rescan scheduler."""
+    data = request.get_json() or {}
+    enabled = data.get('enabled')
+    if enabled is None:
+        # Toggle
+        _scheduled_rescan_state['enabled'] = not _scheduled_rescan_state['enabled']
+    else:
+        _scheduled_rescan_state['enabled'] = bool(enabled)
+
+    state = 'enabled' if _scheduled_rescan_state['enabled'] else 'paused'
+    print(f"[SCHEDULED RESCAN] Scheduler {state} via API")
+    return jsonify({'status': 'success', 'enabled': _scheduled_rescan_state['enabled']})
+
+
+@app.route('/api/scheduled-rescan/config', methods=['POST'])
+def api_scheduled_rescan_config():
+    """
+    Update scheduler configuration.
+
+    Accepts JSON:
+        check_interval_hours: int (1-48, how often the scheduler checks)
+        max_per_cycle: int (1-500, max accounts to queue per check)
+    """
+    data = request.get_json() or {}
+
+    if 'check_interval_hours' in data:
+        try:
+            hours = max(1, min(48, int(data['check_interval_hours'])))
+            _scheduled_rescan_state['check_interval_hours'] = hours
+        except (ValueError, TypeError):
+            return jsonify({'status': 'error', 'message': 'check_interval_hours must be an integer'}), 400
+
+    if 'max_per_cycle' in data:
+        try:
+            max_per = max(1, min(500, int(data['max_per_cycle'])))
+            _scheduled_rescan_state['max_per_cycle'] = max_per
+        except (ValueError, TypeError):
+            return jsonify({'status': 'error', 'message': 'max_per_cycle must be an integer'}), 400
+
+    print(f"[SCHEDULED RESCAN] Config updated: interval={_scheduled_rescan_state['check_interval_hours']}h, "
+          f"max_per_cycle={_scheduled_rescan_state['max_per_cycle']}")
+    return jsonify({'status': 'success', 'scheduler': _scheduled_rescan_state})
+
+
+@app.route('/api/scheduled-rescan/run-now', methods=['POST'])
+def api_scheduled_rescan_run_now():
+    """
+    Trigger an immediate scheduled rescan cycle (doesn't wait for the timer).
+
+    Queues up to max_per_cycle accounts that are past their tier interval.
+    """
+    accounts_due = get_refreshable_accounts()
+    max_per_cycle = _scheduled_rescan_state['max_per_cycle']
+    batch = accounts_due[:max_per_cycle]
+
+    queued_count = 0
+    for account in batch:
+        company_name = account.get('company_name')
+        scan_status = account.get('scan_status')
+        if company_name and scan_status not in (SCAN_STATUS_QUEUED, SCAN_STATUS_PROCESSING):
+            spawn_background_scan(company_name)
+            queued_count += 1
+
+    _scheduled_rescan_state['last_check_at'] = datetime.now().isoformat()
+    _scheduled_rescan_state['last_queued_count'] = queued_count
+    _scheduled_rescan_state['total_queued_lifetime'] += queued_count
+
+    print(f"[SCHEDULED RESCAN] Manual run: queued {queued_count}/{len(accounts_due)} due accounts")
+
+    return jsonify({
+        'status': 'success',
+        'queued': queued_count,
+        'total_due': len(accounts_due),
+        'capped_at': max_per_cycle,
+    })
+
+
 @app.route('/api/queue-status')
 def api_queue_status():
     """
@@ -5745,53 +5845,82 @@ def start_watchdog():
     thread.start()
 
 
-def _archived_accounts_rescan_worker():
+# =============================================================================
+# SCHEDULED RESCAN — Tier-aware automatic re-scan scheduler
+# =============================================================================
+
+# In-memory state for the scheduler (visible via API)
+_scheduled_rescan_state = {
+    'enabled': True,
+    'last_check_at': None,
+    'last_queued_count': 0,
+    'total_queued_lifetime': 0,
+    'check_interval_hours': 6,
+    'max_per_cycle': 100,
+}
+
+def _scheduled_rescan_worker():
     """
-    Background worker that runs every 4 weeks to re-scan archived accounts.
+    Background worker that periodically queues stale accounts for re-scan.
 
-    Archived accounts (primarily Tier 4 - Invalid/Disqualified) are checked
-    periodically to see if they've become valid (e.g., org now exists, has public repos).
+    Uses TIER_SCAN_INTERVALS so hot leads (Tier 2) are scanned every 3 days
+    while cold/not-found accounts (Tier 0/4) are scanned monthly/quarterly.
 
-    If a re-scan shows the account is now valid (Tier 0-3), it will be automatically
-    unarchived by update_account_status.
+    Runs every N hours (default 6). Each cycle:
+    1. Calls get_refreshable_accounts() which returns accounts past their
+       tier-specific interval, ordered by priority (hot first).
+    2. Queues up to max_per_cycle accounts to avoid flooding the executor.
+    3. Updates in-memory state for the status API.
     """
-    from datetime import timedelta
+    check_interval = _scheduled_rescan_state['check_interval_hours'] * 3600
 
-    # Run every 4 weeks (28 days) - check daily but only process accounts due for rescan
-    RESCAN_CHECK_INTERVAL = 86400  # Check once per day (in seconds)
-
-    print("[ARCHIVE RESCAN] Background thread started - will check for accounts to rescan daily")
+    print(f"[SCHEDULED RESCAN] Background thread started — checking every {_scheduled_rescan_state['check_interval_hours']}h, "
+          f"max {_scheduled_rescan_state['max_per_cycle']} per cycle")
+    print(f"[SCHEDULED RESCAN] Tier intervals: {dict(TIER_SCAN_INTERVALS)}")
 
     while True:
         try:
-            # Get archived accounts that haven't been scanned in 28+ days
-            accounts_to_rescan = get_archived_accounts_for_rescan()
+            if not _scheduled_rescan_state['enabled']:
+                time.sleep(60)
+                continue
 
-            if accounts_to_rescan:
-                print(f"[ARCHIVE RESCAN] Found {len(accounts_to_rescan)} archived accounts due for re-scan")
+            accounts_due = get_refreshable_accounts()
+            max_per_cycle = _scheduled_rescan_state['max_per_cycle']
+            batch = accounts_due[:max_per_cycle]
 
-                for account in accounts_to_rescan:
-                    company_name = account.get('company_name')
-                    if company_name:
-                        try:
-                            # Queue the account for re-scan
-                            spawn_background_scan(company_name)
-                            print(f"[ARCHIVE RESCAN] Queued re-scan for archived account: {company_name}")
-                            # Small delay between queueing to avoid overwhelming the system
-                            time.sleep(2)
-                        except Exception as e:
-                            print(f"[ARCHIVE RESCAN] Failed to queue {company_name}: {e}")
+            queued_count = 0
+            for account in batch:
+                company_name = account.get('company_name')
+                if company_name:
+                    try:
+                        spawn_background_scan(company_name)
+                        queued_count += 1
+                        # Small delay between queueing to spread the load
+                        time.sleep(1)
+                    except Exception as e:
+                        print(f"[SCHEDULED RESCAN] Failed to queue {company_name}: {e}")
+
+            now_iso = datetime.now().isoformat()
+            _scheduled_rescan_state['last_check_at'] = now_iso
+            _scheduled_rescan_state['last_queued_count'] = queued_count
+            _scheduled_rescan_state['total_queued_lifetime'] += queued_count
+
+            if queued_count > 0:
+                remaining = len(accounts_due) - queued_count
+                print(f"[SCHEDULED RESCAN] Queued {queued_count} accounts for rescan "
+                      f"({remaining} more still due)")
+            else:
+                print(f"[SCHEDULED RESCAN] No accounts due for rescan")
 
         except Exception as e:
-            print(f"[ARCHIVE RESCAN] Error in rescan worker: {e}")
+            print(f"[SCHEDULED RESCAN] Error in worker: {e}")
 
-        # Sleep for 24 hours before checking again
-        time.sleep(RESCAN_CHECK_INTERVAL)
+        time.sleep(check_interval)
 
 
-def start_archived_rescan_scheduler():
-    """Start the archived accounts rescan scheduler in a background daemon thread."""
-    thread = threading.Thread(target=_archived_accounts_rescan_worker, daemon=True, name="ArchivedRescanScheduler")
+def start_scheduled_rescan_scheduler():
+    """Start the tier-aware scheduled rescan scheduler in a background daemon thread."""
+    thread = threading.Thread(target=_scheduled_rescan_worker, daemon=True, name="ScheduledRescanScheduler")
     thread.start()
 
 
@@ -6766,8 +6895,10 @@ if __name__ == '__main__':
     # Start the rules scheduler for 7am EST daily updates
     start_rules_scheduler()
 
-    # Start the archived accounts rescan scheduler (re-scans every 4 weeks)
-    start_archived_rescan_scheduler()
+    # Start the tier-aware scheduled rescan scheduler
+    start_scheduled_rescan_scheduler()
+    print("[APP] Tier-aware scheduled rescan started (intervals: " +
+          ", ".join(f"T{t}={d}d" for t, d in sorted(TIER_SCAN_INTERVALS.items())) + ")")
 
     # Start the deduplication scheduler (runs daily to clean up duplicates)
     start_deduplication_scheduler()
