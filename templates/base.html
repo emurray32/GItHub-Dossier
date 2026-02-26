@@ -35,6 +35,10 @@
                     <i data-lucide="radar" class="sidebar-icon"></i>
                     <span class="sidebar-label">RepoRadar</span>
                 </a>
+                <a href="{{ url_for('campaigns') }}" class="sidebar-item {% if request.endpoint == 'campaigns' %}active{% endif %}">
+                    <i data-lucide="send" class="sidebar-icon"></i>
+                    <span class="sidebar-label">Campaigns</span>
+                </a>
                 <a href="{{ url_for('contributors') }}" class="sidebar-item {% if request.endpoint == 'contributors' %}active{% endif %}">
                     <i data-lucide="users" class="sidebar-icon"></i>
                     <span class="sidebar-label">Contributors</span>
@@ -53,13 +57,10 @@
                 </a>
             </nav>
 
-            <!-- Outbound Portal -->
+            <!-- Map Sequence (quick action) -->
             <div class="sidebar-section">
-                <div class="sidebar-section-header">
-                    <span class="sidebar-section-label">Outbound Portal</span>
-                </div>
-                <button class="sidebar-item sidebar-item-btn" id="mapSequenceBtn" aria-haspopup="dialog" aria-label="Map New Sequence">
-                    <i data-lucide="send" class="sidebar-icon"></i>
+                <button class="sidebar-item sidebar-item-btn" id="mapSequenceBtn" aria-haspopup="dialog" aria-label="Map New Sequence" style="font-size:0.8rem;opacity:0.7">
+                    <i data-lucide="link" class="sidebar-icon"></i>
                     <span class="sidebar-label">Map Sequence</span>
                 </button>
             </div>

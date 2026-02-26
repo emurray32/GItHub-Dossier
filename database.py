@@ -497,6 +497,27 @@ def init_db() -> None:
         ON scorecard_scores(apollo_status)
     ''')
 
+    # Campaigns table - links a custom prompt + assets to a mapped Apollo sequence
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS campaigns (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            prompt TEXT NOT NULL DEFAULT '',
+            assets TEXT DEFAULT '[]',
+            sequence_id TEXT,
+            sequence_name TEXT,
+            sequence_config TEXT,
+            status TEXT DEFAULT 'draft',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_campaigns_status
+        ON campaigns(status)
+    ''')
+
     conn.commit()
     conn.close()
 
@@ -903,6 +924,16 @@ TIER_CONFIG = {
     TIER_INVALID: {'name': 'Not Found', 'status': 'Disqualified', 'color': 'dark-grey', 'emoji': ''},
 }
 
+# Tier-based automatic rescan intervals (in days)
+# Hot leads get scanned most frequently, cold/invalid much less
+TIER_SCAN_INTERVALS = {
+    TIER_PREPARING: 3,     # Hot leads: every 3 days (catch momentum fast)
+    TIER_THINKING:  7,     # Warm leads: weekly (watch for progression)
+    TIER_LAUNCHED:  14,    # Already launched: biweekly (monitor for growth pain)
+    TIER_TRACKING:  30,    # No signals: monthly (check-in for new activity)
+    TIER_INVALID:   90,    # Not found: quarterly (maybe they created a GitHub org)
+}
+
 
 def _convert_library_to_sales_name(lib_name: str) -> str:
     """
@@ -1206,8 +1237,9 @@ def update_account_status(scan_data: dict, report_id: Optional[int] = None) -> d
     existing = cursor.fetchone()
 
     now = datetime.now().isoformat()
-    # Set next scan due to 7 days from now
-    next_scan = datetime.now() + timedelta(days=7)
+    # Set next scan due based on the tier-specific interval
+    scan_interval_days = TIER_SCAN_INTERVALS.get(new_tier, 7)
+    next_scan = datetime.now() + timedelta(days=scan_interval_days)
     next_scan_iso = next_scan.isoformat()
 
     tier_changed = False
@@ -1337,8 +1369,9 @@ def add_account_to_tier_0(company_name: str, github_org: str, annual_revenue: Op
     cursor = conn.cursor()
 
     now = datetime.now().isoformat()
-    # Set next scan due to 7 days from now
-    next_scan = datetime.now() + timedelta(days=7)
+    # New accounts start at Tier 0, use that interval for next scan
+    scan_interval_days = TIER_SCAN_INTERVALS.get(TIER_TRACKING, 30)
+    next_scan = datetime.now() + timedelta(days=scan_interval_days)
     next_scan_iso = next_scan.isoformat()
 
     # Check if account exists by COMPANY NAME (case-insensitive)
@@ -2556,43 +2589,60 @@ def get_archived_count() -> int:
 
 def get_refreshable_accounts() -> list:
     """
-    Get accounts eligible for the weekly refresh pipeline.
+    Get accounts eligible for refresh based on tier-specific intervals.
 
-    Selection criteria:
-    - current_tier IN (0, 1, 2) - Tracking, Thinking, or Preparing
-    - last_scanned_at < 7 days ago OR last_scanned_at IS NULL
-    - archived_at IS NULL (not archived)
+    Each tier has its own rescan cadence (see TIER_SCAN_INTERVALS):
+    - Tier 2 (Preparing/Hot):  every 3 days
+    - Tier 1 (Thinking/Warm):  every 7 days
+    - Tier 3 (Launched):       every 14 days
+    - Tier 0 (Tracking/Cold):  every 30 days
+    - Tier 4 (Not Found):      every 90 days
 
-    Excludes:
-    - Tier 3 (Launched) - Already localized, no need to monitor
-    - Tier 4 (Invalid) - GitHub org not found or no public repos
-    - Archived accounts (handled separately with 4-week rescan cycle)
+    Selection: accounts whose last_scanned_at exceeds their tier's interval,
+    or have never been scanned. Archived accounts are included only for Tier 4.
 
     Returns:
-        List of account dictionaries eligible for refresh.
+        List of account dictionaries eligible for refresh, ordered by priority.
     """
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Select non-archived accounts in Tiers 0, 1, 2 that haven't been scanned in 7+ days
-    # Use the cached latest_report_id column (no expensive JOIN needed)
+    # Build a CASE expression for tier-specific staleness thresholds
+    # Each tier gets its own interval from TIER_SCAN_INTERVALS
     cursor.execute('''
         SELECT ma.*
         FROM monitored_accounts ma
-        WHERE ma.archived_at IS NULL
-          AND ma.current_tier IN (0, 1, 2)
+        WHERE (
+              ma.archived_at IS NULL
+              OR ma.current_tier = 4
+          )
           AND (
               ma.last_scanned_at IS NULL
-              OR ma.last_scanned_at < datetime('now', '-7 days')
+              OR (ma.current_tier = 2 AND ma.last_scanned_at < datetime('now', ?))
+              OR (ma.current_tier = 1 AND ma.last_scanned_at < datetime('now', ?))
+              OR (ma.current_tier = 3 AND ma.last_scanned_at < datetime('now', ?))
+              OR (ma.current_tier = 0 AND ma.last_scanned_at < datetime('now', ?))
+              OR (ma.current_tier = 4 AND ma.last_scanned_at < datetime('now', ?))
           )
+          AND (ma.scan_status IS NULL OR ma.scan_status = 'idle')
+          AND ma.github_org IS NOT NULL
+          AND ma.github_org != ''
         ORDER BY
             CASE ma.current_tier
                 WHEN 2 THEN 1  -- Hot leads first
                 WHEN 1 THEN 2  -- Then warm
-                WHEN 0 THEN 3  -- Then tracking
+                WHEN 3 THEN 3  -- Then launched
+                WHEN 0 THEN 4  -- Then tracking
+                WHEN 4 THEN 5  -- Not found last
             END,
-            ma.last_scanned_at ASC  -- Oldest scans first
-    ''')
+            ma.last_scanned_at ASC  -- Oldest scans first within each tier
+    ''', (
+        f'-{TIER_SCAN_INTERVALS[TIER_PREPARING]} days',
+        f'-{TIER_SCAN_INTERVALS[TIER_THINKING]} days',
+        f'-{TIER_SCAN_INTERVALS[TIER_LAUNCHED]} days',
+        f'-{TIER_SCAN_INTERVALS[TIER_TRACKING]} days',
+        f'-{TIER_SCAN_INTERVALS[TIER_INVALID]} days',
+    ))
 
     rows = cursor.fetchall()
     conn.close()
@@ -2605,6 +2655,87 @@ def get_refreshable_accounts() -> list:
         accounts.append(account)
 
     return accounts
+
+
+def get_scheduled_rescan_summary() -> dict:
+    """
+    Get a summary of the scheduled rescan state for each tier.
+
+    Returns a dict keyed by tier with:
+    - total: number of non-archived accounts in this tier (archived included for tier 4)
+    - due_now: number currently past their rescan interval
+    - interval_days: the configured interval for this tier
+    - next_due_at: ISO timestamp of the soonest next_scan_due in this tier (or None)
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    summary = {}
+    for tier, interval_days in TIER_SCAN_INTERVALS.items():
+        tier_config = TIER_CONFIG.get(tier, TIER_CONFIG[TIER_TRACKING])
+
+        # Total accounts in this tier (include archived for tier 4)
+        if tier == TIER_INVALID:
+            cursor.execute(
+                'SELECT COUNT(*) as cnt FROM monitored_accounts WHERE current_tier = ?',
+                (tier,)
+            )
+        else:
+            cursor.execute(
+                'SELECT COUNT(*) as cnt FROM monitored_accounts WHERE current_tier = ? AND archived_at IS NULL',
+                (tier,)
+            )
+        total = cursor.fetchone()['cnt']
+
+        # How many are overdue (past their interval)
+        threshold = f'-{interval_days} days'
+        if tier == TIER_INVALID:
+            cursor.execute('''
+                SELECT COUNT(*) as cnt FROM monitored_accounts
+                WHERE current_tier = ?
+                  AND github_org IS NOT NULL AND github_org != ''
+                  AND (last_scanned_at IS NULL OR last_scanned_at < datetime('now', ?))
+                  AND (scan_status IS NULL OR scan_status = 'idle')
+            ''', (tier, threshold))
+        else:
+            cursor.execute('''
+                SELECT COUNT(*) as cnt FROM monitored_accounts
+                WHERE current_tier = ? AND archived_at IS NULL
+                  AND github_org IS NOT NULL AND github_org != ''
+                  AND (last_scanned_at IS NULL OR last_scanned_at < datetime('now', ?))
+                  AND (scan_status IS NULL OR scan_status = 'idle')
+            ''', (tier, threshold))
+        due_now = cursor.fetchone()['cnt']
+
+        # Soonest upcoming scan in this tier
+        if tier == TIER_INVALID:
+            cursor.execute('''
+                SELECT MIN(next_scan_due) as soonest FROM monitored_accounts
+                WHERE current_tier = ?
+                  AND github_org IS NOT NULL AND github_org != ''
+                  AND next_scan_due IS NOT NULL
+            ''', (tier,))
+        else:
+            cursor.execute('''
+                SELECT MIN(next_scan_due) as soonest FROM monitored_accounts
+                WHERE current_tier = ? AND archived_at IS NULL
+                  AND github_org IS NOT NULL AND github_org != ''
+                  AND next_scan_due IS NOT NULL
+            ''', (tier,))
+        soonest_row = cursor.fetchone()
+        next_due_at = soonest_row['soonest'] if soonest_row else None
+
+        summary[tier] = {
+            'tier_name': tier_config['name'],
+            'tier_status': tier_config['status'],
+            'total': total,
+            'due_now': due_now,
+            'interval_days': interval_days,
+            'next_due_at': next_due_at,
+        }
+
+    conn.close()
+    return summary
 
 
 # =============================================================================
@@ -4963,3 +5094,91 @@ def get_scorecard_score(account_id: int) -> Optional[dict]:
     row = cursor.fetchone()
     conn.close()
     return dict(row) if row else None
+
+
+# =============================================================================
+# CAMPAIGNS CRUD
+# =============================================================================
+
+def create_campaign(name: str, prompt: str, assets: list, sequence_id: str = None,
+                    sequence_name: str = None, sequence_config: str = None) -> dict:
+    """Create a new campaign."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO campaigns (name, prompt, assets, sequence_id, sequence_name, sequence_config, status)
+        VALUES (?, ?, ?, ?, ?, ?, 'draft')
+    ''', (name, prompt, json.dumps(assets), sequence_id, sequence_name, sequence_config))
+    campaign_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return {'id': campaign_id, 'name': name}
+
+
+def update_campaign(campaign_id: int, **kwargs) -> bool:
+    """Update a campaign's fields. Only provided kwargs are updated."""
+    allowed = {'name', 'prompt', 'assets', 'sequence_id', 'sequence_name', 'sequence_config', 'status'}
+    updates = {k: v for k, v in kwargs.items() if k in allowed}
+    if not updates:
+        return False
+    if 'assets' in updates and isinstance(updates['assets'], list):
+        updates['assets'] = json.dumps(updates['assets'])
+    set_clause = ', '.join(f'{k} = ?' for k in updates)
+    values = list(updates.values())
+    values.append(campaign_id)
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(f'''
+        UPDATE campaigns SET {set_clause}, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+    ''', values)
+    updated = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return updated
+
+
+def delete_campaign(campaign_id: int) -> bool:
+    """Delete a campaign by ID."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM campaigns WHERE id = ?', (campaign_id,))
+    deleted = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return deleted
+
+
+def get_campaign(campaign_id: int) -> Optional[dict]:
+    """Get a single campaign by ID."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM campaigns WHERE id = ?', (campaign_id,))
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        return None
+    campaign = dict(row)
+    try:
+        campaign['assets'] = json.loads(campaign.get('assets') or '[]')
+    except (json.JSONDecodeError, TypeError):
+        campaign['assets'] = []
+    return campaign
+
+
+def get_all_campaigns() -> list:
+    """Get all campaigns ordered by most recently updated."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM campaigns ORDER BY updated_at DESC')
+    rows = cursor.fetchall()
+    conn.close()
+    campaigns = []
+    for row in rows:
+        c = dict(row)
+        try:
+            c['assets'] = json.loads(c.get('assets') or '[]')
+        except (json.JSONDecodeError, TypeError):
+            c['assets'] = []
+        campaigns.append(c)
+    return campaigns
