@@ -65,6 +65,8 @@ from sheets_sync import (
     start_cron_scheduler as sheets_start_cron,
     is_sync_in_progress as sheets_sync_in_progress
 )
+import logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 
 app = Flask(__name__)
@@ -154,7 +156,7 @@ def get_top_contributors(org_login: str, repo_name: str, limit: int = 5) -> list
                             user_data['blog'] = user_info.get('blog') or ''
                             user_data['github_profile_company'] = user_info.get('company') or ''
                     except Exception as e:
-                        print(f"[CONTRIBUTORS] Failed to fetch user profile for {login}: {e}")
+                        logging.error(f"[CONTRIBUTORS] Failed to fetch user profile for {login}: {e}")
 
                     contributors.append(user_data)
 
@@ -163,7 +165,7 @@ def get_top_contributors(org_login: str, repo_name: str, limit: int = 5) -> list
 
             return contributors
     except Exception as e:
-        print(f"[CONTRIBUTORS] Contributor fetch failed for {org_login}/{repo_name}: {e}")
+        logging.error(f"[CONTRIBUTORS] Contributor fetch failed for {org_login}/{repo_name}: {e}")
     return []
 
 
@@ -463,7 +465,7 @@ def enrich_webhook_data(company_data: dict, report_id: Optional[int] = None) -> 
             finally:
                 conn.close()
     except Exception as e:
-        print(f"[WEBHOOK] Error enriching webhook data: {str(e)}")
+        logging.error(f"[WEBHOOK] Error enriching webhook data: {str(e)}")
         # Continue with non-enriched data if error occurs
 
     return enriched
@@ -487,12 +489,12 @@ def trigger_webhook(event_type: str, company_data: dict) -> None:
     # Check if webhooks are enabled
     webhook_enabled = get_setting('webhook_enabled')
     if webhook_enabled != 'true':
-        print("[WEBHOOK] Webhooks are paused, skipping notification")
+        logging.warning("[WEBHOOK] Webhooks are paused, skipping notification")
         return
 
     webhook_url = get_setting('webhook_url')
     if not webhook_url:
-        print("[WEBHOOK] No webhook_url configured in settings, skipping notification")
+        logging.warning("[WEBHOOK] No webhook_url configured in settings, skipping notification")
         return
 
     def send_webhook():
@@ -507,7 +509,7 @@ def trigger_webhook(event_type: str, company_data: dict) -> None:
             try:
                 payload = format_slack_message(event_type, company_data)
             except Exception as e:
-                print(f"[WEBHOOK] Error formatting Slack message: {str(e)}, falling back to simple Slack payload")
+                logging.error(f"[WEBHOOK] Error formatting Slack message: {str(e)}, falling back to simple Slack payload")
                 # Slack requires 'text' field as fallback
                 tier_name = company_data.get('tier_name', 'Unknown')
                 evidence = company_data.get('evidence', '')
@@ -534,26 +536,26 @@ def trigger_webhook(event_type: str, company_data: dict) -> None:
             )
             if response.status_code >= 200 and response.status_code < 300:
                 webhook_type = "Slack" if is_slack_webhook else "Generic"
-                print(f"[WEBHOOK] Success ({webhook_type}): {company_name} -> {webhook_url} (status: {response.status_code})")
+                logging.info(f"[WEBHOOK] Success ({webhook_type}): {company_name} -> {webhook_url} (status: {response.status_code})")
                 try:
                     log_webhook(event_type, company_name, 'success')
                     increment_daily_stat('webhooks_fired')
                 except Exception as db_err:
-                    print(f"[WEBHOOK] DB logging error: {db_err}")
+                    logging.error(f"[WEBHOOK] DB logging error: {db_err}")
             else:
-                print(f"[WEBHOOK] Failed: {company_name} -> {webhook_url} (status: {response.status_code})")
+                logging.error(f"[WEBHOOK] Failed: {company_name} -> {webhook_url} (status: {response.status_code})")
                 try:
                     log_webhook(event_type, company_name, 'fail')
                 except Exception as db_err:
-                    print(f"[WEBHOOK] DB logging error: {db_err}")
+                    logging.error(f"[WEBHOOK] DB logging error: {db_err}")
         except requests.exceptions.Timeout:
-            print(f"[WEBHOOK] Timeout: {company_name} -> {webhook_url}")
+            logging.error(f"[WEBHOOK] Timeout: {company_name} -> {webhook_url}")
             try:
                 log_webhook(event_type, company_name, 'fail')
             except Exception:
                 pass
         except requests.exceptions.RequestException as e:
-            print(f"[WEBHOOK] Error: {company_name} -> {str(e)}")
+            logging.error(f"[WEBHOOK] Error: {company_name} -> {str(e)}")
             try:
                 log_webhook(event_type, company_name, 'fail')
             except Exception:
@@ -643,18 +645,18 @@ def trigger_gsheet_webhook(event_type: str, company_data: dict) -> None:
     # Check if Google Sheets webhook is enabled
     gsheet_enabled = get_setting('gsheet_webhook_enabled')
     if gsheet_enabled != 'true':
-        print("[GSHEET WEBHOOK] Google Sheets webhook is disabled, skipping")
+        logging.warning("[GSHEET WEBHOOK] Google Sheets webhook is disabled, skipping")
         return
 
     gsheet_url = get_setting('gsheet_webhook_url')
     if not gsheet_url:
-        print("[GSHEET WEBHOOK] No gsheet_webhook_url configured, skipping")
+        logging.warning("[GSHEET WEBHOOK] No gsheet_webhook_url configured, skipping")
         return
 
     # Only send Tier 1 and Tier 2 accounts
     tier = company_data.get('tier', 0)
     if tier not in [1, 2]:
-        print(f"[GSHEET WEBHOOK] Skipping tier {tier} - only Tier 1 and 2 are exported")
+        logging.warning(f"[GSHEET WEBHOOK] Skipping tier {tier} - only Tier 1 and 2 are exported")
         return
 
     def send_gsheet_webhook():
@@ -672,26 +674,26 @@ def trigger_gsheet_webhook(event_type: str, company_data: dict) -> None:
             )
 
             if response.status_code >= 200 and response.status_code < 300:
-                print(f"[GSHEET WEBHOOK] Success: {company_name} exported to Google Sheets (status: {response.status_code})")
+                logging.info(f"[GSHEET WEBHOOK] Success: {company_name} exported to Google Sheets (status: {response.status_code})")
                 try:
                     log_webhook(f'gsheet_{event_type}', company_name, 'success')
                 except Exception as db_err:
-                    print(f"[GSHEET WEBHOOK] DB logging error: {db_err}")
+                    logging.error(f"[GSHEET WEBHOOK] DB logging error: {db_err}")
             else:
-                print(f"[GSHEET WEBHOOK] Failed: {company_name} (status: {response.status_code}, response: {response.text[:200]})")
+                logging.error(f"[GSHEET WEBHOOK] Failed: {company_name} (status: {response.status_code}, response: {response.text[:200]})")
                 try:
                     log_webhook(f'gsheet_{event_type}', company_name, 'fail')
                 except Exception as db_err:
-                    print(f"[GSHEET WEBHOOK] DB logging error: {db_err}")
+                    logging.error(f"[GSHEET WEBHOOK] DB logging error: {db_err}")
 
         except requests.exceptions.Timeout:
-            print(f"[GSHEET WEBHOOK] Timeout: {company_name} -> {gsheet_url}")
+            logging.error(f"[GSHEET WEBHOOK] Timeout: {company_name} -> {gsheet_url}")
             try:
                 log_webhook(f'gsheet_{event_type}', company_name, 'fail')
             except Exception:
                 pass
         except requests.exceptions.RequestException as e:
-            print(f"[GSHEET WEBHOOK] Error: {company_name} -> {str(e)}")
+            logging.error(f"[GSHEET WEBHOOK] Error: {company_name} -> {str(e)}")
             try:
                 log_webhook(f'gsheet_{event_type}', company_name, 'fail')
             except Exception:
@@ -745,7 +747,7 @@ def get_executor() -> ThreadPoolExecutor:
                 max_workers=MAX_SCAN_WORKERS,
                 thread_name_prefix="ScanWorker"
             )
-            print(f"[EXECUTOR] Created ThreadPoolExecutor with {MAX_SCAN_WORKERS} workers")
+            logging.info(f"[EXECUTOR] Created ThreadPoolExecutor with {MAX_SCAN_WORKERS} workers")
         return _executor
 
 
@@ -760,7 +762,7 @@ def perform_background_scan(company_name: str):
     Handles all exceptions to ensure status is always reset.
     Stores any errors in last_scan_error for user visibility.
     """
-    print(f"[WORKER] Starting background scan for: {company_name}")
+    logging.info(f"[WORKER] Starting background scan for: {company_name}")
     scan_error = None  # Track errors for user visibility
 
     try:
@@ -792,7 +794,7 @@ def perform_background_scan(company_name: str):
             if 'data: ERROR:' in message:
                 error_msg = message.split('data: ERROR:', 1)[1].strip()
                 error_msg = error_msg.replace('\n', '').strip()
-                print(f"[WORKER] Scan error for {company_name}: {error_msg}")
+                logging.error(f"[WORKER] Scan error for {company_name}: {error_msg}")
                 mark_account_as_invalid(company_name, error_msg)
                 return
 
@@ -803,11 +805,11 @@ def perform_background_scan(company_name: str):
                 scan_data = json.loads(json_str)
 
         if not scan_data:
-            print(f"[WORKER] No scan data generated for: {company_name}")
+            logging.error(f"[WORKER] No scan data generated for: {company_name}")
             mark_account_as_invalid(company_name, 'No scan data generated')
             return
 
-        print(f"[WORKER] Scan complete for {company_name}, generating AI analysis...")
+        logging.info(f"[WORKER] Scan complete for {company_name}, generating AI analysis...")
         set_scan_status(company_name, SCAN_STATUS_PROCESSING, 'Generating AI analysis...')
 
         # Phase 2: Generate AI analysis (silent)
@@ -819,7 +821,7 @@ def perform_background_scan(company_name: str):
                         json_str = json_str[6:]
                     analysis_data = json.loads(json_str)
         except Exception as e:
-            print(f"[WORKER] AI analysis failed for {company_name}: {str(e)}")
+            logging.error(f"[WORKER] AI analysis failed for {company_name}: {str(e)}")
             analysis_data = {'error': 'Analysis failed'}
 
         # Phase 3: Save report to database (uses fresh connection internally)
@@ -833,10 +835,10 @@ def perform_background_scan(company_name: str):
                 ai_analysis=analysis_data or {},
                 scan_duration=duration
             )
-            print(f"[WORKER] Report saved for {company_name} (ID: {report_id})")
+            logging.info(f"[WORKER] Report saved for {company_name} (ID: {report_id})")
         except Exception as e:
             scan_error = f"Failed to save report: {str(e)}"
-            print(f"[WORKER] {scan_error}")
+            logging.error(f"[WORKER] {scan_error}")
             return
 
         # Phase 3b: Save signals detected during the scan
@@ -844,17 +846,17 @@ def perform_background_scan(company_name: str):
             signals = scan_data.get('signals', [])
             if signals:
                 signals_count = save_signals(report_id, company_name, signals)
-                print(f"[WORKER] Saved {signals_count} signals for {company_name}")
+                logging.info(f"[WORKER] Saved {signals_count} signals for {company_name}")
         except Exception as e:
             # Non-fatal error - continue but record for visibility
             scan_error = f"Warning: Failed to save signals: {str(e)}"
-            print(f"[WORKER] {scan_error}")
+            logging.error(f"[WORKER] {scan_error}")
 
         # Phase 4: Update monitored account status and tier
         try:
             result = update_account_status(scan_data, report_id)
             tier_name = result.get('tier_name', 'Unknown')
-            print(f"[WORKER] Account status updated for {company_name}: Tier {result.get('tier')} ({tier_name})")
+            logging.info(f"[WORKER] Account status updated for {company_name}: Tier {result.get('tier')} ({tier_name})")
 
             # Phase 5: Trigger webhook if tier changed to Thinking or Preparing
             if result.get('webhook_event'):
@@ -872,18 +874,18 @@ def perform_background_scan(company_name: str):
                 trigger_webhook('tier_change', webhook_data)
                 # Also trigger Google Sheets export for Tier 1/2 accounts
                 trigger_gsheet_webhook('tier_change', webhook_data)
-                print(f"[WORKER] Webhook triggered for {company_name} (Tier {result.get('tier')})")
+                logging.info(f"[WORKER] Webhook triggered for {company_name} (Tier {result.get('tier')})")
         except Exception as e:
             # Store the error for user visibility instead of silently failing
             scan_error = f"Tier classification failed: {str(e)}"
-            print(f"[WORKER] {scan_error}")
+            logging.error(f"[WORKER] {scan_error}")
             import traceback; traceback.print_exc()
 
-        print(f"[WORKER] Completed scan for {company_name} in {duration:.1f}s")
+        logging.info(f"[WORKER] Completed scan for {company_name} in {duration:.1f}s")
 
     except Exception as e:
         scan_error = f"Scan failed: {str(e)}"
-        print(f"[WORKER] Background scan failed for {company_name}: {str(e)}")
+        logging.error(f"[WORKER] Background scan failed for {company_name}: {str(e)}")
     finally:
         # ALWAYS reset scan status to idle when done (success or failure)
         # Pass any error that occurred so it's stored for user visibility
@@ -904,7 +906,7 @@ def spawn_background_scan(company_name: str):
     # Submit to thread pool
     executor = get_executor()
     future = executor.submit(perform_background_scan, company_name)
-    print(f"[EXECUTOR] Submitted scan for {company_name}")
+    logging.info(f"[EXECUTOR] Submitted scan for {company_name}")
 
 
 def validate_revenue_value(value):
@@ -948,20 +950,20 @@ def process_import_batch_worker(batch_id: int):
 
     This is resilient to restarts - progress is persisted and can be resumed.
     """
-    print(f"[BATCH-WORKER] Starting batch {batch_id}")
+    logging.info(f"[BATCH-WORKER] Starting batch {batch_id}")
 
     try:
         # Fetch batch data from DB
         batch = get_import_batch(batch_id)
         if not batch:
-            print(f"[BATCH-WORKER] Batch {batch_id} not found")
+            logging.error(f"[BATCH-WORKER] Batch {batch_id} not found")
             return
 
         companies = batch.get('companies', [])
         processed_count = batch.get('processed_count', 0)
         total_count = batch.get('total_count', len(companies))
 
-        print(f"[BATCH-WORKER] Batch {batch_id}: {total_count} companies, resuming from {processed_count}")
+        logging.info(f"[BATCH-WORKER] Batch {batch_id}: {total_count} companies, resuming from {processed_count}")
 
         # Update status to 'processing'
         update_batch_progress(batch_id, processed_count, status='processing')
@@ -1005,7 +1007,7 @@ def process_import_batch_worker(batch_id: int):
                     # Update progress every 10 items
                     if processed_count % 10 == 0:
                         update_batch_progress(batch_id, processed_count)
-                        print(f"[BATCH-WORKER] Batch {batch_id}: processed {processed_count}/{total_count}")
+                        logging.debug(f"[BATCH-WORKER] Batch {batch_id}: processed {processed_count}/{total_count}")
                     continue
 
                 # Add to monitored_accounts at Tier 0 without GitHub org
@@ -1014,27 +1016,27 @@ def process_import_batch_worker(batch_id: int):
                 added.append(company_name)
 
             except Exception as e:
-                print(f"[BATCH-WORKER] Error processing {company_name}: {str(e)}")
+                logging.error(f"[BATCH-WORKER] Error processing {company_name}: {str(e)}")
 
             processed_count = i + 1
 
             # Update progress every 10 items
             if processed_count % 10 == 0:
                 update_batch_progress(batch_id, processed_count)
-                print(f"[BATCH-WORKER] Batch {batch_id}: processed {processed_count}/{total_count}")
+                logging.debug(f"[BATCH-WORKER] Batch {batch_id}: processed {processed_count}/{total_count}")
 
         # Mark batch as completed
         update_batch_progress(batch_id, processed_count, status='completed')
-        print(f"[BATCH-WORKER] Batch {batch_id} completed: {len(added)} added, {len(skipped)} skipped")
+        logging.info(f"[BATCH-WORKER] Batch {batch_id} completed: {len(added)} added, {len(skipped)} skipped")
 
         # Run deduplication after import to clean up any duplicates that slipped through
         try:
             dedup_result = cleanup_duplicate_accounts()
             dedup_removed = dedup_result.get('deleted', 0)
             if dedup_removed > 0:
-                print(f"[BATCH-WORKER] Post-import deduplication removed {dedup_removed} duplicate accounts")
+                logging.info(f"[BATCH-WORKER] Post-import deduplication removed {dedup_removed} duplicate accounts")
         except Exception as e:
-            print(f"[BATCH-WORKER] Post-import deduplication error: {e}")
+            logging.error(f"[BATCH-WORKER] Post-import deduplication error: {e}")
 
         # Auto-queue newly imported accounts for scanning (with throttling)
         # Limit initial queue to prevent overwhelming the executor
@@ -1047,16 +1049,16 @@ def process_import_batch_worker(batch_id: int):
                     spawn_background_scan(company_name)
                     queued_for_scan += 1
                 except Exception as e:
-                    print(f"[BATCH-WORKER] Error queuing {company_name} for scan: {e}")
+                    logging.error(f"[BATCH-WORKER] Error queuing {company_name} for scan: {e}")
             
             remaining = len(added) - queued_for_scan
             if remaining > 0:
-                print(f"[BATCH-WORKER] Auto-queued {queued_for_scan} accounts for scanning ({remaining} more will be queued by watchdog)")
+                logging.info(f"[BATCH-WORKER] Auto-queued {queued_for_scan} accounts for scanning ({remaining} more will be queued by watchdog)")
             else:
-                print(f"[BATCH-WORKER] Auto-queued {queued_for_scan} new accounts for scanning")
+                logging.info(f"[BATCH-WORKER] Auto-queued {queued_for_scan} new accounts for scanning")
 
     except Exception as e:
-        print(f"[BATCH-WORKER] Batch {batch_id} failed with error: {str(e)}")
+        logging.error(f"[BATCH-WORKER] Batch {batch_id} failed with error: {str(e)}")
         # Mark as failed but preserve progress
         try:
             update_batch_progress(batch_id, processed_count, status='failed')
@@ -1243,7 +1245,7 @@ def download_pdf(report_id: int):
             mimetype='application/pdf',
         )
     except Exception as e:
-        print(f"[ERROR] PDF generation failed for report {report_id}: {e}")
+        logging.error(f"[ERROR] PDF generation failed for report {report_id}: {e}")
         return render_template('error.html', message='PDF generation failed. Please try again later.'), 500
     finally:
         # Clean up temp file after response is sent
@@ -1452,7 +1454,7 @@ def api_deep_dive(report_id: int):
             'goldilocks_status': goldilocks_status
         })
     except Exception as e:
-        print(f"[API] Deep Dive error for report {report_id}: {str(e)}")
+        logging.error(f"[API] Deep Dive error for report {report_id}: {str(e)}")
         return jsonify({'error': 'Failed to generate Deep Dive'}), 500
 
 
@@ -1697,7 +1699,7 @@ def api_scorecard_enroll():
                     if field_key in field_id_map:
                         typed_custom_fields[field_id_map[field_key]] = field_val
             except Exception as cf_err:
-                print(f"[SCORECARD ENROLL] Warning: custom field lookup failed: {cf_err}")
+                logging.warning(f"[SCORECARD ENROLL] Warning: custom field lookup failed: {cf_err}")
                 for field_key, field_val in field_values.items():
                     env_id = FIELD_ENV_OVERRIDES.get(field_key, '')
                     if env_id:
@@ -1773,7 +1775,7 @@ def api_scorecard_enroll():
             return jsonify({'status': 'error', 'message': f'Failed to enroll: {error_msg}'}), 502
 
     except Exception as e:
-        print(f"[SCORECARD ENROLL ERROR] {e}")
+        logging.error(f"[SCORECARD ENROLL ERROR] {e}")
         return jsonify({'status': 'error', 'message': 'Failed to enroll in Apollo sequence'}), 500
 
 
@@ -1869,7 +1871,7 @@ Return ONLY valid JSON: {json_structure}"""
         return jsonify({'status': 'success', **email_data})
 
     except Exception as e:
-        print(f"[SCORECARD EMAIL GEN ERROR] {e}")
+        logging.error(f"[SCORECARD EMAIL GEN ERROR] {e}")
         return jsonify({'status': 'error', 'message': f'Email generation failed: {str(e)}'}), 500
 
 
@@ -2358,7 +2360,7 @@ def api_fetch_contributors():
                     for m in members_resp.json():
                         org_members.add(m.get('login', '').lower())
             except Exception as e:
-                print(f"[CONTRIBUTORS] Could not fetch members for {org}: {e}")
+                logging.warning(f"[CONTRIBUTORS] Could not fetch members for {org}: {e}")
 
             url = f"{Config.GITHUB_API_BASE}/orgs/{org}/repos"
             response = make_github_request(url, params={'per_page': 5, 'sort': 'pushed'}, timeout=15)
@@ -2526,7 +2528,7 @@ Return ONLY valid JSON with no markdown formatting:
 
         response_text = response.choices[0].message.content
         if not response_text:
-            print(f"[CONTRIBUTOR EMAIL GEN] Empty response from AI. Finish reason: {response.choices[0].finish_reason}")
+            logging.warning(f"[CONTRIBUTOR EMAIL GEN] Empty response from AI. Finish reason: {response.choices[0].finish_reason}")
             return jsonify({'status': 'error', 'message': 'AI returned empty response. Please try again.'}), 500
         response_text = response_text.strip()
         if response_text.startswith('```'):
@@ -2549,7 +2551,7 @@ Return ONLY valid JSON with no markdown formatting:
         return jsonify({'status': 'success', 'email': email_data})
 
     except Exception as e:
-        print(f"[CONTRIBUTOR EMAIL GEN] Error ({type(e).__name__}): {e}")
+        logging.error(f"[CONTRIBUTOR EMAIL GEN] Error ({type(e).__name__}): {e}")
         return jsonify({'status': 'error', 'message': sanitize_ai_error(e)}), 500
 
 
@@ -2601,7 +2603,7 @@ def api_webscraper_analyze():
         return jsonify(result), 200
 
     except Exception as e:
-        print(f"[ERROR] Website analysis failed: {e}")
+        logging.error(f"[ERROR] Website analysis failed: {e}")
         return jsonify({'error': 'Analysis failed'}), 500
 
 
@@ -2626,7 +2628,7 @@ def api_webscraper_accounts():
         }), 200
 
     except Exception as e:
-        print(f"[ERROR] Failed to fetch accounts with websites: {e}")
+        logging.error(f"[ERROR] Failed to fetch accounts with websites: {e}")
         return jsonify({'error': 'Failed to fetch accounts'}), 500
 
 
@@ -2717,7 +2719,7 @@ def api_webscraper_analyze_batch():
         }), 200
 
     except Exception as e:
-        print(f"[ERROR] Batch analysis failed: {e}")
+        logging.error(f"[ERROR] Batch analysis failed: {e}")
         return jsonify({'error': 'Batch analysis failed'}), 500
 
 
@@ -2745,7 +2747,7 @@ def api_webscraper_analyses():
         }), 200
 
     except Exception as e:
-        print(f"[ERROR] Failed to fetch analyses: {e}")
+        logging.error(f"[ERROR] Failed to fetch analyses: {e}")
         return jsonify({'error': 'Failed to fetch analyses'}), 500
 
 
@@ -2768,7 +2770,7 @@ def api_webscraper_analysis_detail(analysis_id):
         }), 200
 
     except Exception as e:
-        print(f"[ERROR] Failed to fetch analysis {analysis_id}: {e}")
+        logging.error(f"[ERROR] Failed to fetch analysis {analysis_id}: {e}")
         return jsonify({'error': 'Failed to fetch analysis'}), 500
 
 
@@ -2791,7 +2793,7 @@ def api_webscraper_analysis_delete(analysis_id):
         }), 200
 
     except Exception as e:
-        print(f"[ERROR] Failed to delete analysis: {e}")
+        logging.error(f"[ERROR] Failed to delete analysis: {e}")
         return jsonify({'error': 'Failed to delete analysis'}), 500
 
 
@@ -2878,7 +2880,7 @@ def api_webscraper_populate():
             **result
         })
     except Exception as e:
-        print(f"[ERROR] Failed to create webscraper accounts: {e}")
+        logging.error(f"[ERROR] Failed to create webscraper accounts: {e}")
         return jsonify({'error': 'Failed to create accounts'}), 500
 
 
@@ -2895,7 +2897,7 @@ def api_webscraper_populate_from_reporadar():
             'skipped': result.get('skipped', 0)
         })
     except Exception as e:
-        print(f"[ERROR] Failed to populate from RepoRadar: {e}")
+        logging.error(f"[ERROR] Failed to populate from RepoRadar: {e}")
         return jsonify({'error': 'Failed to populate accounts'}), 500
 
 
@@ -3247,7 +3249,7 @@ def api_webscraper_bulk_action():
             return jsonify({'error': f'Unknown action: {action}'}), 400
 
     except Exception as e:
-        print(f"[ERROR] Bulk action failed: {e}")
+        logging.error(f"[ERROR] Bulk action failed: {e}")
         return jsonify({'error': 'Bulk action failed'}), 500
 
 
@@ -3454,7 +3456,7 @@ def api_lead_stream():
         })
 
     except Exception as e:
-        print(f"[ERROR] Lead stream failed: {e}")
+        logging.error(f"[ERROR] Lead stream failed: {e}")
         return jsonify({'error': 'Failed to generate lead stream'}), 500
 
 
@@ -3558,12 +3560,12 @@ def api_import():
 
     # Create persistent batch in database with filtered companies
     batch_id = create_import_batch(filtered_companies)
-    print(f"[IMPORT] Created batch {batch_id} with {len(filtered_companies)} companies")
+    logging.info(f"[IMPORT] Created batch {batch_id} with {len(filtered_companies)} companies")
 
     # Submit batch to thread pool for background processing
     executor = get_executor()
     executor.submit(process_import_batch_worker, batch_id)
-    print(f"[EXECUTOR] Submitted batch {batch_id} for processing")
+    logging.info(f"[EXECUTOR] Submitted batch {batch_id} for processing")
 
     response = {
         'batch_id': batch_id,
@@ -3655,7 +3657,7 @@ def api_check_import_duplicates():
         results = get_import_duplicates_summary(companies)
         return jsonify(results)
     except Exception as e:
-        print(f"[ERROR] Failed to check duplicates: {e}")
+        logging.error(f"[ERROR] Failed to check duplicates: {e}")
         return jsonify({'error': 'Failed to check duplicates'}), 500
 
 
@@ -3695,7 +3697,7 @@ def api_track():
 
         return jsonify(result)
     except Exception as e:
-        print(f"[ERROR] Failed to track organization {org_login}: {e}")
+        logging.error(f"[ERROR] Failed to track organization {org_login}: {e}")
         return jsonify({'error': 'Failed to track organization'}), 500
 
 
@@ -3741,7 +3743,7 @@ def api_update_org():
         })
 
     except Exception as e:
-        print(f"[ERROR] Failed to update org for {company_name}: {e}")
+        logging.error(f"[ERROR] Failed to update org for {company_name}: {e}")
         return jsonify({'status': 'error', 'message': 'Failed to update organization'}), 500
     finally:
         conn.close()
@@ -3794,7 +3796,7 @@ def api_rescan(company_name: str):
 
     # Submit to thread pool (this also sets status to 'queued' in DB)
     spawn_background_scan(company_name)
-    print(f"[EXECUTOR] Rescan submitted for {company_name}")
+    logging.info(f"[EXECUTOR] Rescan submitted for {company_name}")
 
     # Get current account info for response
     account = get_account_by_company(company_name)
@@ -3857,7 +3859,7 @@ def api_scan_pending():
         spawn_background_scan(company_name)
         queued_count += 1
 
-    print(f"[EXECUTOR] Submitted {queued_count} pending accounts for scanning")
+    logging.info(f"[EXECUTOR] Submitted {queued_count} pending accounts for scanning")
 
     # Get current active job count
     active_jobs = get_queued_and_processing_accounts()
@@ -3906,7 +3908,7 @@ def api_refresh_pipeline():
             queued_count += 1
             queued_companies.append(company_name)
 
-    print(f"[EXECUTOR] Submitted {queued_count} accounts for refresh")
+    logging.info(f"[EXECUTOR] Submitted {queued_count} accounts for refresh")
 
     # Get current active job count
     active_jobs = get_queued_and_processing_accounts()
@@ -3940,7 +3942,7 @@ def _batch_rescan_worker(accounts, batch_size, delay_seconds):
     try:
         for batch_idx in range(total_batches):
             if state['cancelled']:
-                print(f"[BATCH-RESCAN] Cancelled after batch {batch_idx}/{total_batches}")
+                logging.info(f"[BATCH-RESCAN] Cancelled after batch {batch_idx}/{total_batches}")
                 break
 
             batch_start = batch_idx * batch_size
@@ -3948,7 +3950,7 @@ def _batch_rescan_worker(accounts, batch_size, delay_seconds):
             state['current_batch'] = batch_idx + 1
             batch_names = [a['company_name'] for a in batch if a.get('company_name')]
 
-            print(f"[BATCH-RESCAN] Starting batch {batch_idx + 1}/{total_batches} ({len(batch_names)} accounts)")
+            logging.info(f"[BATCH-RESCAN] Starting batch {batch_idx + 1}/{total_batches} ({len(batch_names)} accounts)")
 
             # Queue the batch in a single DB transaction
             batch_set_scan_status_queued(batch_names)
@@ -3964,7 +3966,7 @@ def _batch_rescan_worker(accounts, batch_size, delay_seconds):
                 if state['cancelled']:
                     break
                 if time.time() - poll_start > max_poll_seconds:
-                    print(f"[BATCH-RESCAN] Batch {batch_idx + 1} timed out after {max_poll_seconds}s, moving on")
+                    logging.warning(f"[BATCH-RESCAN] Batch {batch_idx + 1} timed out after {max_poll_seconds}s, moving on")
                     break
                 active = get_queued_and_processing_accounts()
                 active_names = set(active.get('queued', []))
@@ -3984,11 +3986,11 @@ def _batch_rescan_worker(accounts, batch_size, delay_seconds):
             # Update progress (skip if cancelled mid-batch to avoid over-counting)
             if not state['cancelled']:
                 state['completed'] += len(batch_names)
-                print(f"[BATCH-RESCAN] Batch {batch_idx + 1}/{total_batches} complete. Progress: {state['completed']}/{state['total']}")
+                logging.info(f"[BATCH-RESCAN] Batch {batch_idx + 1}/{total_batches} complete. Progress: {state['completed']}/{state['total']}")
 
             # Delay between batches (skip delay after last batch)
             if batch_idx < total_batches - 1 and not state['cancelled']:
-                print(f"[BATCH-RESCAN] Waiting {delay_seconds}s before next batch...")
+                logging.info(f"[BATCH-RESCAN] Waiting {delay_seconds}s before next batch...")
                 # Sleep in small increments so cancel is responsive
                 for _ in range(delay_seconds):
                     if state['cancelled']:
@@ -3996,11 +3998,11 @@ def _batch_rescan_worker(accounts, batch_size, delay_seconds):
                     time.sleep(1)
 
     except Exception as e:
-        print(f"[BATCH-RESCAN] Worker error: {e}")
+        logging.error(f"[BATCH-RESCAN] Worker error: {e}")
         import traceback; traceback.print_exc()
     finally:
         state['active'] = False
-        print(f"[BATCH-RESCAN] Finished. Completed: {state['completed']}/{state['total']}")
+        logging.info(f"[BATCH-RESCAN] Finished. Completed: {state['completed']}/{state['total']}")
 
 
 @app.route('/api/batch-rescan', methods=['POST'])
@@ -4098,7 +4100,7 @@ def api_batch_rescan():
     )
     worker.start()
 
-    print(f"[BATCH-RESCAN] Started: scope={scope}, total={total}, batches={total_batches}, batch_size={batch_size}, delay={delay_seconds}s")
+    logging.info(f"[BATCH-RESCAN] Started: scope={scope}, total={total}, batches={total_batches}, batch_size={batch_size}, delay={delay_seconds}s")
 
     return jsonify({
         'status': 'started',
@@ -4314,7 +4316,7 @@ def internal_error(e):
     """Handle 500 errors."""
     # Log full error server-side, return generic message to client
     original = e.original_exception if hasattr(e, 'original_exception') else e
-    print(f"[ERROR] 500 Internal Server Error: {original}")
+    logging.error(f"[ERROR] 500 Internal Server Error: {original}")
     return render_template('error.html', message='Internal server error. Please try again later.'), 500
 
 
@@ -4338,7 +4340,7 @@ def initialize_on_first_request():
     """
     global _app_initialized
     if not _app_initialized:
-        print("[APP] First request - initializing executor and cleaning up...")
+        logging.info("[APP] First request - initializing executor and cleaning up...")
 
         # Initialize the executor FIRST
         get_executor()
@@ -4349,12 +4351,12 @@ def initialize_on_first_request():
         # Reset any remaining stale scan statuses (processing accounts)
         reset_count = reset_all_scan_statuses()
         if reset_count > 0:
-            print(f"[APP] Reset {reset_count} stale processing statuses from previous run")
+            logging.info(f"[APP] Reset {reset_count} stale processing statuses from previous run")
 
         # Clear any misclassified errors (tier evidence stored as errors)
         cleared_errors = clear_misclassified_errors()
         if cleared_errors > 0:
-            print(f"[APP] Cleared {cleared_errors} misclassified error messages")
+            logging.info(f"[APP] Cleared {cleared_errors} misclassified error messages")
 
         # Resume any interrupted import batches
         _resume_interrupted_import_batches()
@@ -4378,7 +4380,7 @@ def _recover_stuck_queued_accounts():
         stuck_accounts = reset_all_queued_to_idle()
 
         if stuck_accounts:
-            print(f"[APP] Found {len(stuck_accounts)} accounts stuck in queue from previous run")
+            logging.info(f"[APP] Found {len(stuck_accounts)} accounts stuck in queue from previous run")
 
             # Re-queue them using batch method
             batch_set_scan_status_queued(stuck_accounts)
@@ -4388,12 +4390,12 @@ def _recover_stuck_queued_accounts():
             for company_name in stuck_accounts:
                 executor.submit(perform_background_scan, company_name)
 
-            print(f"[APP] Re-queued {len(stuck_accounts)} stuck accounts for scanning")
+            logging.info(f"[APP] Re-queued {len(stuck_accounts)} stuck accounts for scanning")
         else:
-            print("[APP] No stuck queued accounts to recover")
+            logging.info("[APP] No stuck queued accounts to recover")
 
     except Exception as e:
-        print(f"[APP] Error recovering stuck queued accounts: {str(e)}")
+        logging.error(f"[APP] Error recovering stuck queued accounts: {str(e)}")
 
 
 def _resume_interrupted_import_batches():
@@ -4407,7 +4409,7 @@ def _resume_interrupted_import_batches():
         pending_batches = get_pending_import_batches()
 
         if pending_batches:
-            print(f"[APP] Found {len(pending_batches)} interrupted import batches to resume")
+            logging.info(f"[APP] Found {len(pending_batches)} interrupted import batches to resume")
 
             executor = get_executor()
             for batch in pending_batches:
@@ -4416,15 +4418,15 @@ def _resume_interrupted_import_batches():
                 total = batch.get('total_count', 0)
                 status = batch.get('status', 'unknown')
 
-                print(f"[APP] Resuming batch {batch_id}: {processed}/{total} processed (was {status})")
+                logging.info(f"[APP] Resuming batch {batch_id}: {processed}/{total} processed (was {status})")
                 executor.submit(process_import_batch_worker, batch_id)
 
-            print(f"[APP] Submitted {len(pending_batches)} batches for resumption")
+            logging.info(f"[APP] Submitted {len(pending_batches)} batches for resumption")
         else:
-            print("[APP] No interrupted import batches to resume")
+            logging.info("[APP] No interrupted import batches to resume")
 
     except Exception as e:
-        print(f"[APP] Error resuming interrupted import batches: {str(e)}")
+        logging.error(f"[APP] Error resuming interrupted import batches: {str(e)}")
 
 
 def _auto_scan_pending_accounts():
@@ -4454,23 +4456,23 @@ def _auto_scan_pending_accounts():
         conn = None  # Mark as closed
 
         if pending_accounts:
-            print(f"[APP] Found {len(pending_accounts)} accounts pending initial scan")
+            logging.info(f"[APP] Found {len(pending_accounts)} accounts pending initial scan")
 
             # Step 1: Batch set ALL pending accounts to 'queued' status immediately
             # This makes the queue visible right away in the UI
             batch_set_scan_status_queued(pending_accounts)
-            print(f"[APP] Batch queued {len(pending_accounts)} pending accounts")
+            logging.info(f"[APP] Batch queued {len(pending_accounts)} pending accounts")
 
             # Step 2: Submit all to executor for background scanning
             executor = get_executor()
             for company_name in pending_accounts:
                 executor.submit(perform_background_scan, company_name)
-            print(f"[APP] Auto-submitted {len(pending_accounts)} pending accounts for scan")
+            logging.info(f"[APP] Auto-submitted {len(pending_accounts)} pending accounts for scan")
         else:
-            print("[APP] No pending accounts to scan")
+            logging.info("[APP] No pending accounts to scan")
 
     except Exception as e:
-        print(f"[APP] Error auto-scanning pending accounts: {str(e)}")
+        logging.error(f"[APP] Error auto-scanning pending accounts: {str(e)}")
     finally:
         if conn is not None:
             conn.close()
@@ -4585,7 +4587,7 @@ def api_settings_gsheet():
     to a Google Sheet via a Google Apps Script web app.
 
     POST payload: {
-        "gsheet_webhook_url": "https://script.google.com/macros/s/XXXXX/exec",
+        "gsheet_webhook_url": "https://script.google.com/macros/s/<your-script-id>/exec",
         "gsheet_webhook_enabled": true
     }
 
@@ -4871,7 +4873,7 @@ def api_zapier_trigger():
         )
 
         if response.status_code >= 200 and response.status_code < 300:
-            print(f"[ZAPIER] Successfully triggered enrollment for {company_name}")
+            logging.info(f"[ZAPIER] Successfully triggered enrollment for {company_name}")
             return jsonify({
                 'status': 'success',
                 'message': f'Successfully enrolled {company_name}',
@@ -4879,7 +4881,7 @@ def api_zapier_trigger():
                 'zapier_response_status': response.status_code
             })
         else:
-            print(f"[ZAPIER] Failed to trigger for {company_name}: HTTP {response.status_code}")
+            logging.error(f"[ZAPIER] Failed to trigger for {company_name}: HTTP {response.status_code}")
             return jsonify({
                 'status': 'error',
                 'message': f'Zapier webhook returned status {response.status_code}',
@@ -5475,7 +5477,7 @@ def api_rules_explain():
                 _cache_rule_explanation(rule_name, explanation)
                 explanations[rule_name] = explanation
         except Exception as e:
-            print(f"[RULES] Error generating explanations: {e}")
+            logging.error(f"[RULES] Error generating explanations: {e}")
             # Return what we have from cache, mark others as error
             for rule_name in rules_to_generate:
                 if rule_name not in explanations:
@@ -5525,7 +5527,7 @@ IMPORTANT: Return ONLY valid JSON, no markdown formatting or code blocks."""
             response_text = response.choices[0].message.content.strip()
             return json.loads(response_text)
         except Exception as e:
-            print(f"[RULES] GPT-5 mini error: {e}")
+            logging.error(f"[RULES] GPT-5 mini error: {e}")
 
     return {}
 
@@ -5609,7 +5611,7 @@ def api_rules_explain_all():
                 _cache_rule_explanation(rule_name, explanation)
                 explanations[rule_name] = explanation
         except Exception as e:
-            print(f"[RULES] Error generating batch explanations: {e}")
+            logging.error(f"[RULES] Error generating batch explanations: {e}")
             for rule_name in batch:
                 if rule_name not in explanations:
                     explanations[rule_name] = "Unable to generate explanation at this time."
@@ -5661,7 +5663,7 @@ def _scheduled_rules_update():
 
     # Initialize with current file hashes
     last_hashes = _get_file_hashes()
-    print(f"[RULES] File watcher initialized, monitoring {len(WATCHED_FILES)} files for changes")
+    logging.info(f"[RULES] File watcher initialized, monitoring {len(WATCHED_FILES)} files for changes")
 
     CHECK_INTERVAL = 5  # Check for file changes every 5 seconds
     
@@ -5677,7 +5679,7 @@ def _scheduled_rules_update():
             if changed_files:
                 last_hashes = current_hashes
                 _update_rules_timestamp()
-                print(f"[RULES] Detected changes in: {', '.join(changed_files)} — rules timestamp updated at {datetime.now(est).isoformat()}")
+                logging.info(f"[RULES] Detected changes in: {', '.join(changed_files)} — rules timestamp updated at {datetime.now(est).isoformat()}")
             
             # Also do the daily 7am EST update as a fallback
             now_est = datetime.now(est)
@@ -5686,7 +5688,7 @@ def _scheduled_rules_update():
             diff = abs((now_est - target_7am).total_seconds())
             if diff < CHECK_INTERVAL:
                 _update_rules_timestamp()
-                print(f"[RULES] Daily 7am EST rules timestamp updated: {now_est.isoformat()}")
+                logging.info(f"[RULES] Daily 7am EST rules timestamp updated: {now_est.isoformat()}")
                 # Sleep past the 7am window to avoid duplicate daily updates
                 time.sleep(CHECK_INTERVAL + 1)
                 last_hashes = _get_file_hashes()  # Refresh hashes after sleep
@@ -5695,7 +5697,7 @@ def _scheduled_rules_update():
             time.sleep(CHECK_INTERVAL)
 
         except Exception as e:
-            print(f"[RULES] Error in rules watcher: {e}")
+            logging.error(f"[RULES] Error in rules watcher: {e}")
             # Sleep briefly on error and retry
             time.sleep(30)
 
@@ -5711,29 +5713,29 @@ def _watchdog_worker():
     and recover stuck queued accounts.
     Runs every 2 minutes.
     """
-    print("[WATCHDOG] Background thread started")
+    logging.info("[WATCHDOG] Background thread started")
     while True:
         try:
             # Clear any account stuck in 'processing' for more than 15 minutes
             recovered_processing = clear_stale_scan_statuses(timeout_minutes=15)
             if recovered_processing > 0:
-                print(f"[WATCHDOG] Recovered {recovered_processing} stale processing scans")
+                logging.info(f"[WATCHDOG] Recovered {recovered_processing} stale processing scans")
 
             # Recover accounts stuck in 'queued' for more than 30 minutes
             # These are accounts that were queued but never picked up by a worker
             stale_queued = reset_stale_queued_accounts(timeout_minutes=30)
             if stale_queued:
-                print(f"[WATCHDOG] Found {len(stale_queued)} stale queued accounts, re-queueing...")
+                logging.info(f"[WATCHDOG] Found {len(stale_queued)} stale queued accounts, re-queueing...")
                 # Re-queue these accounts by submitting them to the executor
                 for company_name in stale_queued:
                     try:
                         spawn_background_scan(company_name)
-                        print(f"[WATCHDOG] Re-queued: {company_name}")
+                        logging.debug(f"[WATCHDOG] Re-queued: {company_name}")
                     except Exception as e:
-                        print(f"[WATCHDOG] Failed to re-queue {company_name}: {e}")
+                        logging.error(f"[WATCHDOG] Failed to re-queue {company_name}: {e}")
 
         except Exception as e:
-            print(f"[WATCHDOG] Error in watchdog: {e}")
+            logging.error(f"[WATCHDOG] Error in watchdog: {e}")
 
         # Sleep for 2 minutes
         time.sleep(120)
@@ -5760,7 +5762,7 @@ def _archived_accounts_rescan_worker():
     # Run every 4 weeks (28 days) - check daily but only process accounts due for rescan
     RESCAN_CHECK_INTERVAL = 86400  # Check once per day (in seconds)
 
-    print("[ARCHIVE RESCAN] Background thread started - will check for accounts to rescan daily")
+    logging.info("[ARCHIVE RESCAN] Background thread started - will check for accounts to rescan daily")
 
     while True:
         try:
@@ -5768,7 +5770,7 @@ def _archived_accounts_rescan_worker():
             accounts_to_rescan = get_archived_accounts_for_rescan()
 
             if accounts_to_rescan:
-                print(f"[ARCHIVE RESCAN] Found {len(accounts_to_rescan)} archived accounts due for re-scan")
+                logging.info(f"[ARCHIVE RESCAN] Found {len(accounts_to_rescan)} archived accounts due for re-scan")
 
                 for account in accounts_to_rescan:
                     company_name = account.get('company_name')
@@ -5776,14 +5778,14 @@ def _archived_accounts_rescan_worker():
                         try:
                             # Queue the account for re-scan
                             spawn_background_scan(company_name)
-                            print(f"[ARCHIVE RESCAN] Queued re-scan for archived account: {company_name}")
+                            logging.info(f"[ARCHIVE RESCAN] Queued re-scan for archived account: {company_name}")
                             # Small delay between queueing to avoid overwhelming the system
                             time.sleep(2)
                         except Exception as e:
-                            print(f"[ARCHIVE RESCAN] Failed to queue {company_name}: {e}")
+                            logging.error(f"[ARCHIVE RESCAN] Failed to queue {company_name}: {e}")
 
         except Exception as e:
-            print(f"[ARCHIVE RESCAN] Error in rescan worker: {e}")
+            logging.error(f"[ARCHIVE RESCAN] Error in rescan worker: {e}")
 
         # Sleep for 24 hours before checking again
         time.sleep(RESCAN_CHECK_INTERVAL)
@@ -5808,7 +5810,7 @@ def _deduplication_worker():
     """
     DEDUP_CHECK_INTERVAL = 86400  # Check once per day (in seconds)
 
-    print("[DEDUPLICATION] Background thread started - will run daily cleanup")
+    logging.info("[DEDUPLICATION] Background thread started - will run daily cleanup")
 
     while True:
         try:
@@ -5817,17 +5819,17 @@ def _deduplication_worker():
             deleted = result.get('deleted', 0)
 
             if deleted > 0:
-                print(f"[DEDUPLICATION] Removed {deleted} duplicate accounts")
+                logging.info(f"[DEDUPLICATION] Removed {deleted} duplicate accounts")
                 for group in result.get('groups', []):
                     if group.get('type') == 'name':
-                        print(f"[DEDUPLICATION]   - Consolidated '{group.get('name')}' ({group.get('removed_count')} duplicates)")
+                        logging.info(f"[DEDUPLICATION]   - Consolidated '{group.get('name')}' ({group.get('removed_count')} duplicates)")
                     else:
-                        print(f"[DEDUPLICATION]   - Consolidated org '{group.get('org')}' ({group.get('removed_count')} duplicates)")
+                        logging.info(f"[DEDUPLICATION]   - Consolidated org '{group.get('org')}' ({group.get('removed_count')} duplicates)")
             else:
-                print("[DEDUPLICATION] No duplicates found")
+                logging.info("[DEDUPLICATION] No duplicates found")
 
         except Exception as e:
-            print(f"[DEDUPLICATION] Error in deduplication worker: {e}")
+            logging.error(f"[DEDUPLICATION] Error in deduplication worker: {e}")
 
         # Sleep for 24 hours before checking again
         time.sleep(DEDUP_CHECK_INTERVAL)
@@ -5913,7 +5915,7 @@ def apollo_lookup():
 
                 if email and not _check_apollo_match(email, org_name, domain, company):
                     email_domain = email.split('@')[-1] if '@' in email else ''
-                    print(f"[APOLLO LOOKUP] Domain mismatch: {email} (org: {org_name}) does not match target {company} ({domain})")
+                    logging.warning(f"[APOLLO LOOKUP] Domain mismatch: {email} (org: {org_name}) does not match target {company} ({domain})")
                     return jsonify({
                         'status': 'domain_mismatch',
                         'message': f'Email found ({email_domain}) belongs to {org_name or email_domain}, not {company}',
@@ -5950,7 +5952,7 @@ def apollo_lookup():
 
                 if email and not _check_apollo_match(email, org_name, domain, company):
                     email_domain = email.split('@')[-1] if '@' in email else ''
-                    print(f"[APOLLO LOOKUP] Domain mismatch: {email} (org: {org_name}) does not match target {company} ({domain})")
+                    logging.warning(f"[APOLLO LOOKUP] Domain mismatch: {email} (org: {org_name}) does not match target {company} ({domain})")
                     return jsonify({
                         'status': 'domain_mismatch',
                         'message': f'Email found ({email_domain}) belongs to {org_name or email_domain}, not {company}',
@@ -5970,7 +5972,7 @@ def apollo_lookup():
 
         return jsonify({'status': 'not_found', 'message': 'No matching contact found in Apollo'})
     except Exception as e:
-        print(f"[APOLLO LOOKUP ERROR] {e}")
+        logging.error(f"[APOLLO LOOKUP ERROR] {e}")
         return jsonify({'status': 'error', 'message': 'Apollo lookup failed'}), 500
 
 
@@ -6008,7 +6010,7 @@ def send_outreach_email():
         else:
             return jsonify({'status': 'error', 'message': result.get('error', 'Failed to send email')}), 500
     except Exception as e:
-        print(f"[SEND EMAIL ERROR] {e}")
+        logging.error(f"[SEND EMAIL ERROR] {e}")
         return jsonify({'status': 'error', 'message': 'Failed to send email'}), 500
 
 
@@ -6046,7 +6048,7 @@ def api_apollo_sequences():
         
         return jsonify({'status': 'success', 'sequences': sequences})
     except Exception as e:
-        print(f"[APOLLO SEQUENCES ERROR] {e}")
+        logging.error(f"[APOLLO SEQUENCES ERROR] {e}")
         return jsonify({'status': 'error', 'message': 'Failed to fetch Apollo sequences'}), 500
 
 
@@ -6135,7 +6137,7 @@ def api_apollo_sequence_detect():
         })
 
     except Exception as e:
-        print(f"[APOLLO DETECT ERROR] {e}")
+        logging.error(f"[APOLLO DETECT ERROR] {e}")
         return jsonify({'status': 'error'}), 200
 
 
@@ -6232,9 +6234,9 @@ def api_apollo_enroll_sequence():
                     if field_key in field_id_map:
                         typed_custom_fields[field_id_map[field_key]] = field_val
 
-                print(f"[APOLLO ENROLL] Will inject {len(typed_custom_fields)} custom field(s): {list(field_values.keys())}")
+                logging.info(f"[APOLLO ENROLL] Will inject {len(typed_custom_fields)} custom field(s): {list(field_values.keys())}")
             except Exception as cf_err:
-                print(f"[APOLLO ENROLL] Warning: could not fetch custom field definitions: {cf_err}")
+                logging.warning(f"[APOLLO ENROLL] Warning: could not fetch custom field definitions: {cf_err}")
                 # Fall back to env override IDs
                 for field_key, field_val in field_values.items():
                     env_id = FIELD_ENV_OVERRIDES.get(field_key, '')
@@ -6252,7 +6254,7 @@ def api_apollo_enroll_sequence():
             contacts = search_resp.json().get('contacts', [])
             if contacts:
                 contact_id = contacts[0].get('id')
-                print(f"[APOLLO ENROLL] Found existing contact {contact_id} for {email}")
+                logging.info(f"[APOLLO ENROLL] Found existing contact {contact_id} for {email}")
 
         # Step 2a: Create new contact (with typed_custom_fields)
         if not contact_id:
@@ -6273,7 +6275,7 @@ def api_apollo_enroll_sequence():
             if create_resp.status_code in (200, 201):
                 contact_data = create_resp.json().get('contact', {})
                 contact_id = contact_data.get('id')
-                print(f"[APOLLO ENROLL] Created new contact {contact_id} for {email}")
+                logging.info(f"[APOLLO ENROLL] Created new contact {contact_id} for {email}")
             else:
                 error_msg = create_resp.json().get('message', create_resp.text[:200])
                 return jsonify({'status': 'error', 'message': f'Failed to create Apollo contact: {error_msg}'}), 502
@@ -6288,9 +6290,9 @@ def api_apollo_enroll_sequence():
                 timeout=15
             )
             if update_resp.status_code in (200, 201):
-                print(f"[APOLLO ENROLL] Injected custom fields into existing contact {contact_id}")
+                logging.info(f"[APOLLO ENROLL] Injected custom fields into existing contact {contact_id}")
             else:
-                print(f"[APOLLO ENROLL] Warning: custom field injection failed: {update_resp.text[:200]}")
+                logging.warning(f"[APOLLO ENROLL] Warning: custom field injection failed: {update_resp.text[:200]}")
 
         if not contact_id:
             return jsonify({'status': 'error', 'message': 'Could not find or create contact in Apollo'}), 500
@@ -6311,12 +6313,12 @@ def api_apollo_enroll_sequence():
                 elif active:
                     email_account_id = active[0]['id']
         except Exception as ea_err:
-            print(f"[APOLLO ENROLL] Warning: could not fetch email accounts: {ea_err}")
+            logging.warning(f"[APOLLO ENROLL] Warning: could not fetch email accounts: {ea_err}")
 
         if not email_account_id:
             return jsonify({'status': 'error', 'message': 'No active Apollo email account found to send from. Set APOLLO_SENDER_EMAIL in .env.'}), 500
 
-        print(f"[APOLLO ENROLL] Sending from email account {email_account_id}")
+        logging.info(f"[APOLLO ENROLL] Sending from email account {email_account_id}")
 
         # Step 3: Add contact to sequence (merge tags will resolve from injected fields)
         enroll_resp = req.post(
@@ -6331,7 +6333,7 @@ def api_apollo_enroll_sequence():
         )
 
         if enroll_resp.status_code in (200, 201):
-            print(f"[APOLLO ENROLL] Enrolled {email} (contact {contact_id}) in sequence {sequence_id}")
+            logging.info(f"[APOLLO ENROLL] Enrolled {email} (contact {contact_id}) in sequence {sequence_id}")
             return jsonify({
                 'status': 'success',
                 'message': f'Successfully enrolled {email} in sequence',
@@ -6342,7 +6344,7 @@ def api_apollo_enroll_sequence():
             return jsonify({'status': 'error', 'message': f'Failed to enroll in sequence: {error_msg}'}), 502
 
     except Exception as e:
-        print(f"[APOLLO ENROLL ERROR] {e}")
+        logging.error(f"[APOLLO ENROLL ERROR] {e}")
         return jsonify({'status': 'error', 'message': 'Failed to enroll in Apollo sequence'}), 500
 
 
@@ -6466,7 +6468,7 @@ Return ONLY the JSON object, nothing else."""
                 )
                 response_text = response.choices[0].message.content.strip()
             except Exception as e:
-                print(f"[LINKEDIN] GPT-5 mini error: {e}")
+                logging.error(f"[LINKEDIN] GPT-5 mini error: {e}")
 
         if response_text is None:
             return jsonify({'status': 'error', 'message': 'No AI API key configured (OpenAI).'}), 400
@@ -6567,7 +6569,7 @@ def api_linkedin_find_contact():
             match_data = match_resp.json()
             person = match_data.get('person')
             if person:
-                print(f"[LINKEDIN] people/match found person: email={person.get('email')}, id={person.get('id')}, has_photo={bool(person.get('photo_url'))}")
+                logging.debug(f"[LINKEDIN] people/match found person: email={person.get('email')}, id={person.get('id')}, has_photo={bool(person.get('photo_url'))}")
                 apollo_first = person.get('first_name') or ''
                 apollo_last = person.get('last_name') or ''
                 apollo_name = f"{apollo_first} {apollo_last}".strip() or (person.get('name') or '')
@@ -6592,7 +6594,7 @@ def api_linkedin_find_contact():
                     return jsonify({'status': 'success', 'source': 'people/match', 'contact': match_person})
 
     except Exception as e:
-        print(f"[LINKEDIN] people/match error: {e}")
+        logging.error(f"[LINKEDIN] people/match error: {e}")
 
     # Step 2: Try contacts/search in CRM (catches emails added via Chrome extension)
     search_query = f"{first_name} {last_name}".strip()
@@ -6618,7 +6620,7 @@ def api_linkedin_find_contact():
                 contacts = search_data.get('contacts', [])
                 if contacts:
                     person = contacts[0]
-                    print(f"[LINKEDIN] contacts/search found: email={person.get('email')}")
+                    logging.debug(f"[LINKEDIN] contacts/search found: email={person.get('email')}")
                     s_first = person.get('first_name') or ''
                     s_last = person.get('last_name') or ''
                     s_name = f"{s_first} {s_last}".strip() or (person.get('name') or '')
@@ -6646,7 +6648,7 @@ def api_linkedin_find_contact():
                         return jsonify({'status': 'success', 'source': 'contacts/search', 'contact': search_contact})
 
         except Exception as e:
-            print(f"[LINKEDIN] contacts/search error: {e}")
+            logging.error(f"[LINKEDIN] contacts/search error: {e}")
 
     # Step 3: Return match_person without email if we found them, else not_found
     if match_person:
@@ -6744,14 +6746,14 @@ Return ONLY valid JSON with no markdown:
 
 if __name__ == '__main__':
     # Initialize when running directly
-    print("[APP] Starting application...")
-    print(f"[APP] ThreadPoolExecutor configured with {MAX_SCAN_WORKERS} workers")
+    logging.info("[APP] Starting application...")
+    logging.info(f"[APP] ThreadPoolExecutor configured with {MAX_SCAN_WORKERS} workers")
 
     # Cleanup any duplicate accounts
     cleanup_result = cleanup_duplicate_accounts()
     removed_count = cleanup_result.get('deleted', 0)
     if removed_count > 0:
-        print(f"[APP] Removed {removed_count} duplicate accounts")
+        logging.info(f"[APP] Removed {removed_count} duplicate accounts")
 
     # Initialize the executor BEFORE recovery functions need it
     get_executor()
@@ -6761,7 +6763,7 @@ if __name__ == '__main__':
 
     # Start Google Sheets cron scheduler
     sheets_start_cron()
-    print("[APP] Google Sheets cron scheduler started")
+    logging.info("[APP] Google Sheets cron scheduler started")
 
     # Start the rules scheduler for 7am EST daily updates
     start_rules_scheduler()
@@ -6779,12 +6781,12 @@ if __name__ == '__main__':
     # Reset any remaining stale scan statuses (processing accounts)
     reset_count = reset_all_scan_statuses()
     if reset_count > 0:
-        print(f"[APP] Reset {reset_count} stale processing statuses from previous run")
+        logging.info(f"[APP] Reset {reset_count} stale processing statuses from previous run")
 
     # Clear any misclassified errors (tier evidence stored as errors)
     cleared_errors = clear_misclassified_errors()
     if cleared_errors > 0:
-        print(f"[APP] Cleared {cleared_errors} misclassified error messages")
+        logging.info(f"[APP] Cleared {cleared_errors} misclassified error messages")
 
     # Resume any interrupted import batches
     _resume_interrupted_import_batches()
