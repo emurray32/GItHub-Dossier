@@ -48,6 +48,8 @@ from database import (
     update_scorecard_enrollment, get_scorecard_score,
     # Scheduled Rescans
     TIER_SCAN_INTERVALS, get_scheduled_rescan_summary,
+    # Campaigns
+    create_campaign, update_campaign, delete_campaign, get_campaign, get_all_campaigns,
 )
 from monitors.webscraper_utils import (
     detect_expansion_signals, calculate_webscraper_tier, extract_tier_from_scan_results,
@@ -1467,8 +1469,144 @@ def history():
 
 @app.route('/campaigns')
 def campaigns():
-    """Campaigns & Map Sequences landing page."""
-    return render_template('campaigns.html')
+    """Campaigns dashboard — create/manage campaigns with prompts and mapped sequences."""
+    all_campaigns = get_all_campaigns()
+    return render_template('campaigns.html', campaigns=all_campaigns)
+
+
+# =============================================================================
+# CAMPAIGNS API — CRUD + Sequence Steps Preview
+# =============================================================================
+
+@app.route('/api/campaigns', methods=['GET'])
+def api_campaigns_list():
+    """List all campaigns."""
+    return jsonify({'status': 'success', 'campaigns': get_all_campaigns()})
+
+
+@app.route('/api/campaigns', methods=['POST'])
+def api_campaigns_create():
+    """Create a new campaign."""
+    data = request.get_json() or {}
+    name = (data.get('name') or '').strip()
+    if not name:
+        return jsonify({'status': 'error', 'message': 'Campaign name is required'}), 400
+
+    prompt = (data.get('prompt') or '').strip()
+    assets = data.get('assets', [])
+    if isinstance(assets, str):
+        assets = [a.strip() for a in assets.split('\n') if a.strip()]
+    sequence_id = (data.get('sequence_id') or '').strip() or None
+    sequence_name = (data.get('sequence_name') or '').strip() or None
+    sequence_config = (data.get('sequence_config') or '').strip() or None
+
+    result = create_campaign(name, prompt, assets, sequence_id, sequence_name, sequence_config)
+    return jsonify({'status': 'success', 'campaign': result})
+
+
+@app.route('/api/campaigns/<int:campaign_id>', methods=['GET'])
+def api_campaigns_get(campaign_id):
+    """Get a single campaign."""
+    campaign = get_campaign(campaign_id)
+    if not campaign:
+        return jsonify({'status': 'error', 'message': 'Campaign not found'}), 404
+    return jsonify({'status': 'success', 'campaign': campaign})
+
+
+@app.route('/api/campaigns/<int:campaign_id>', methods=['PUT'])
+def api_campaigns_update(campaign_id):
+    """Update a campaign."""
+    data = request.get_json() or {}
+    updated = update_campaign(campaign_id, **data)
+    if not updated:
+        return jsonify({'status': 'error', 'message': 'Campaign not found or no changes'}), 404
+    return jsonify({'status': 'success', 'updated': True})
+
+
+@app.route('/api/campaigns/<int:campaign_id>', methods=['DELETE'])
+def api_campaigns_delete(campaign_id):
+    """Delete a campaign."""
+    deleted = delete_campaign(campaign_id)
+    if not deleted:
+        return jsonify({'status': 'error', 'message': 'Campaign not found'}), 404
+    return jsonify({'status': 'success', 'deleted': True})
+
+
+@app.route('/api/campaigns/<int:campaign_id>/activate', methods=['POST'])
+def api_campaigns_activate(campaign_id):
+    """Toggle campaign status between draft and active."""
+    campaign = get_campaign(campaign_id)
+    if not campaign:
+        return jsonify({'status': 'error', 'message': 'Campaign not found'}), 404
+    new_status = 'active' if campaign['status'] == 'draft' else 'draft'
+    update_campaign(campaign_id, status=new_status)
+    return jsonify({'status': 'success', 'new_status': new_status})
+
+
+@app.route('/api/apollo/sequence-steps/<sequence_id>')
+def api_apollo_sequence_steps(sequence_id):
+    """Fetch the individual steps of an Apollo sequence for preview.
+
+    Returns step details: type, subject, delay, position.
+    """
+    import requests as req
+
+    apollo_key = os.environ.get('APOLLO_API_KEY', '')
+    if not apollo_key:
+        return jsonify({'status': 'no_key', 'steps': []}), 200
+
+    try:
+        apollo_headers = {'X-Api-Key': apollo_key, 'Content-Type': 'application/json'}
+        resp = req.post(
+            'https://api.apollo.io/api/v1/emailer_campaigns/search',
+            json={'per_page': 200},
+            headers=apollo_headers,
+            timeout=15
+        )
+
+        if resp.status_code != 200:
+            return jsonify({'status': 'api_error', 'steps': []}), 200
+
+        campaigns_data = resp.json().get('emailer_campaigns', [])
+        campaign = next((c for c in campaigns_data if c.get('id') == sequence_id), None)
+        if not campaign:
+            return jsonify({'status': 'not_found', 'steps': []}), 200
+
+        steps = []
+        for i, s in enumerate(campaign.get('emailer_steps', [])):
+            step_type = s.get('type', 'email')
+            subject = s.get('subject', '')
+            # Clean type name for display
+            type_label = step_type.replace('_', ' ').title()
+            if step_type in ('auto_email', 'manual_email', 'email'):
+                type_label = 'Email'
+            elif step_type == 'linkedin_step_message':
+                type_label = 'LinkedIn Message'
+            elif step_type == 'linkedin_step_connect':
+                type_label = 'LinkedIn Connect'
+            elif step_type == 'call_task':
+                type_label = 'Call Task'
+            elif step_type == 'action_item':
+                type_label = 'Task'
+
+            steps.append({
+                'position': i + 1,
+                'type': step_type,
+                'type_label': type_label,
+                'subject': subject or '(threaded reply)',
+                'wait_time': s.get('wait_time', 0),
+                'wait_mode': s.get('wait_mode', 'delay'),
+            })
+
+        return jsonify({
+            'status': 'success',
+            'sequence_name': campaign.get('name', 'Unknown'),
+            'steps': steps,
+        })
+
+    except Exception as e:
+        print(f"[APOLLO STEPS ERROR] {e}")
+        return jsonify({'status': 'error', 'steps': []}), 200
 
 
 @app.route('/scorecard')

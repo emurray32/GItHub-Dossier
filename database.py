@@ -497,6 +497,27 @@ def init_db() -> None:
         ON scorecard_scores(apollo_status)
     ''')
 
+    # Campaigns table - links a custom prompt + assets to a mapped Apollo sequence
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS campaigns (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            prompt TEXT NOT NULL DEFAULT '',
+            assets TEXT DEFAULT '[]',
+            sequence_id TEXT,
+            sequence_name TEXT,
+            sequence_config TEXT,
+            status TEXT DEFAULT 'draft',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_campaigns_status
+        ON campaigns(status)
+    ''')
+
     conn.commit()
     conn.close()
 
@@ -5024,3 +5045,91 @@ def get_scorecard_score(account_id: int) -> Optional[dict]:
     row = cursor.fetchone()
     conn.close()
     return dict(row) if row else None
+
+
+# =============================================================================
+# CAMPAIGNS CRUD
+# =============================================================================
+
+def create_campaign(name: str, prompt: str, assets: list, sequence_id: str = None,
+                    sequence_name: str = None, sequence_config: str = None) -> dict:
+    """Create a new campaign."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO campaigns (name, prompt, assets, sequence_id, sequence_name, sequence_config, status)
+        VALUES (?, ?, ?, ?, ?, ?, 'draft')
+    ''', (name, prompt, json.dumps(assets), sequence_id, sequence_name, sequence_config))
+    campaign_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return {'id': campaign_id, 'name': name}
+
+
+def update_campaign(campaign_id: int, **kwargs) -> bool:
+    """Update a campaign's fields. Only provided kwargs are updated."""
+    allowed = {'name', 'prompt', 'assets', 'sequence_id', 'sequence_name', 'sequence_config', 'status'}
+    updates = {k: v for k, v in kwargs.items() if k in allowed}
+    if not updates:
+        return False
+    if 'assets' in updates and isinstance(updates['assets'], list):
+        updates['assets'] = json.dumps(updates['assets'])
+    set_clause = ', '.join(f'{k} = ?' for k in updates)
+    values = list(updates.values())
+    values.append(campaign_id)
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(f'''
+        UPDATE campaigns SET {set_clause}, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+    ''', values)
+    updated = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return updated
+
+
+def delete_campaign(campaign_id: int) -> bool:
+    """Delete a campaign by ID."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM campaigns WHERE id = ?', (campaign_id,))
+    deleted = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return deleted
+
+
+def get_campaign(campaign_id: int) -> Optional[dict]:
+    """Get a single campaign by ID."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM campaigns WHERE id = ?', (campaign_id,))
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        return None
+    campaign = dict(row)
+    try:
+        campaign['assets'] = json.loads(campaign.get('assets') or '[]')
+    except (json.JSONDecodeError, TypeError):
+        campaign['assets'] = []
+    return campaign
+
+
+def get_all_campaigns() -> list:
+    """Get all campaigns ordered by most recently updated."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM campaigns ORDER BY updated_at DESC')
+    rows = cursor.fetchall()
+    conn.close()
+    campaigns = []
+    for row in rows:
+        c = dict(row)
+        try:
+            c['assets'] = json.loads(c.get('assets') or '[]')
+        except (json.JSONDecodeError, TypeError):
+            c['assets'] = []
+        campaigns.append(c)
+    return campaigns
