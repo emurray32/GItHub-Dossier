@@ -62,10 +62,6 @@
                 <div class="sidebar-section-header">
                     <span class="sidebar-section-label">Outbound Portal</span>
                 </div>
-                <a href="{{ url_for('campaigns') }}" class="sidebar-item {% if request.endpoint == 'campaigns' %}active{% endif %}">
-                    <i data-lucide="zap" class="sidebar-icon"></i>
-                    <span class="sidebar-label">Campaigns</span>
-                </a>
                 <a href="{{ url_for('scorecard') }}" class="sidebar-item {% if request.endpoint == 'scorecard' %}active{% endif %}">
                     <i data-lucide="award" class="sidebar-icon"></i>
                     <span class="sidebar-label">ScoreCard</span>
