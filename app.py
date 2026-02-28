@@ -3,7 +3,9 @@ GitHub Dossier - AI-Powered Sales Intelligence for Localization Opportunities
 
 A Flask application for analyzing GitHub organizations for localization signals.
 """
+import atexit
 import json
+import re
 import time
 import os
 import threading
@@ -18,7 +20,7 @@ from database import (
     update_account_status, get_all_accounts, get_all_accounts_datatable, get_tier_counts, add_account_to_tier_0, TIER_CONFIG,
     get_account_by_company, get_account_by_company_case_insensitive,
     mark_account_as_invalid, get_refreshable_accounts, delete_account,
-    get_db_connection, get_setting, set_setting, increment_daily_stat,
+    get_db_connection, db_connection, get_setting, set_setting, increment_daily_stat,
     get_stats_last_n_days, log_webhook, get_recent_webhook_logs,
     set_scan_status, get_scan_status, get_queued_and_processing_accounts,
     clear_stale_scan_statuses, reset_all_scan_statuses, batch_set_scan_status_queued,
@@ -62,6 +64,7 @@ from ai_summary import generate_analysis
 from pdf_generator import generate_report_pdf
 from agentmail_client import is_agentmail_configured, send_email_draft
 from sheets_client import is_sheets_configured, get_sheet_info
+from utils import make_github_request
 from sheets_sync import (
     run_sync as sheets_run_sync,
     get_sync_config as sheets_get_sync_config,
@@ -75,6 +78,113 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 app = Flask(__name__)
 app.config.from_object(Config)
+
+# Limit file upload size to 16 MB to prevent memory exhaustion (Bug #7)
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
+
+
+# =============================================================================
+# SECURITY MIDDLEWARE — API Key Authentication + CSRF Protection
+# =============================================================================
+
+# Routes that serve HTML pages (no auth required — they load the UI)
+_PUBLIC_PREFIXES = ('/static/',)
+_PUBLIC_ENDPOINTS = {
+    'index', 'dashboard', 'reports_page', 'linkedin_prospector',
+    'scorecard_page', 'webscraper_page', 'contributors_page',
+    'settings_page', 'website_analyzer_page', 'serve_favicon',
+    'inject_cache_buster', 'add_no_cache_headers',
+}
+
+
+@app.before_request
+def enforce_authentication():
+    """
+    API key authentication middleware (opt-in).
+
+    If DOSSIER_API_KEY is set, all API endpoints require the key via:
+      - X-API-Key header, OR
+      - ?api_key= query parameter
+
+    HTML page routes and static files are exempt so the UI still loads.
+    When DOSSIER_API_KEY is not set, auth is disabled for backward compatibility.
+    """
+    api_key = Config.API_KEY
+    if not api_key:
+        return  # Auth disabled — no key configured
+
+    # Allow static files and assets
+    for prefix in _PUBLIC_PREFIXES:
+        if request.path.startswith(prefix):
+            return
+
+    # Allow HTML page routes (non-API endpoints that serve templates)
+    if request.endpoint in _PUBLIC_ENDPOINTS:
+        return
+
+    # Allow any non-API GET requests (HTML pages rendered by Flask)
+    # API routes all start with /api/
+    if not request.path.startswith('/api/') and request.method == 'GET':
+        return
+
+    # Check for API key in header or query param
+    provided_key = request.headers.get('X-API-Key') or request.args.get('api_key')
+    if not provided_key or provided_key != api_key:
+        return jsonify({'status': 'error', 'message': 'Unauthorized: invalid or missing API key'}), 401
+
+
+@app.before_request
+def enforce_csrf_protection():
+    """
+    CSRF protection via Origin/Referer validation for state-mutating requests.
+
+    For POST/PUT/DELETE/PATCH requests, verifies that the Origin or Referer header
+    matches the app's host. This prevents cross-site request forgery without
+    requiring CSRF tokens in API calls (which are JSON-based).
+
+    Requests without an Origin/Referer header are allowed only if they come
+    from non-browser clients (e.g., curl, Postman) — browsers always send these
+    headers on cross-origin requests.
+    """
+    if request.method in ('GET', 'HEAD', 'OPTIONS'):
+        return  # Safe methods don't need CSRF protection
+
+    origin = request.headers.get('Origin')
+    referer = request.headers.get('Referer')
+
+    # If neither header is present, this is likely a non-browser client (curl, etc.)
+    # which is not vulnerable to CSRF — allow it through
+    if not origin and not referer:
+        return
+
+    # Validate Origin or Referer matches our host
+    trusted_host = request.host  # e.g., "localhost:5000" or "dossier.example.com"
+    if origin:
+        from urllib.parse import urlparse
+        parsed = urlparse(origin)
+        if parsed.netloc == trusted_host:
+            return
+    if referer:
+        from urllib.parse import urlparse
+        parsed = urlparse(referer)
+        if parsed.netloc == trusted_host:
+            return
+
+    return jsonify({'status': 'error', 'message': 'CSRF validation failed: request origin mismatch'}), 403
+
+
+def strip_code_fences(text: str) -> str:
+    """Remove markdown code fences from AI responses without corrupting content.
+
+    Only strips the opening fence (```json, ```python, etc.) and closing fence (```).
+    Does not remove lines that happen to start with ``` inside the content body.
+    """
+    text = text.strip()
+    # Remove opening fence: ```<optional-language-tag> followed by newline
+    text = re.sub(r'^```\w*\n?', '', text)
+    # Remove closing fence: ``` at end of string, optionally preceded by newline
+    text = re.sub(r'\n?```\s*$', '', text)
+    return text
 
 
 def sanitize_ai_error(exception):
@@ -127,8 +237,6 @@ def get_top_contributors(org_login: str, repo_name: str, limit: int = 5) -> list
     Returns:
         List of contributor dicts with: login, name, email, blog, github_url
     """
-    from utils import make_github_request
-
     try:
         url = f"{Config.GITHUB_API_BASE}/repos/{org_login}/{repo_name}/contributors"
         response = make_github_request(url, params={'per_page': limit + 5}, timeout=10)
@@ -423,8 +531,7 @@ def enrich_webhook_data(company_data: dict, report_id: Optional[int] = None) -> 
 
         # If report_id not provided, fetch most recent report
         if report_id is None:
-            conn = get_db_connection()
-            try:
+            with db_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     SELECT id, github_org FROM reports
@@ -437,16 +544,12 @@ def enrich_webhook_data(company_data: dict, report_id: Optional[int] = None) -> 
                     report_id = row['id']
                     if not enriched.get('github_org'):
                         enriched['github_org'] = row['github_org']
-            finally:
-                conn.close()
 
         # If we have a report_id, fetch signals
         if report_id:
             enriched['report_id'] = report_id
 
-            # Fetch signals for this report
-            conn = get_db_connection()
-            try:
+            with db_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
                     SELECT signal_type, description, file_path
@@ -466,8 +569,6 @@ def enrich_webhook_data(company_data: dict, report_id: Optional[int] = None) -> 
                             'file_path': sig_row['file_path']
                         })
                     enriched['signals_summary'] = signals_summary
-            finally:
-                conn.close()
     except Exception as e:
         logging.error(f"[WEBHOOK] Error enriching webhook data: {str(e)}")
         # Continue with non-enriched data if error occurs
@@ -556,14 +657,14 @@ def trigger_webhook(event_type: str, company_data: dict) -> None:
             logging.error(f"[WEBHOOK] Timeout: {company_name} -> {webhook_url}")
             try:
                 log_webhook(event_type, company_name, 'fail')
-            except Exception:
-                pass
+            except Exception as log_err:
+                print(f"[WEBHOOK] DB logging error after timeout: {log_err}")
         except requests.exceptions.RequestException as e:
             logging.error(f"[WEBHOOK] Error: {company_name} -> {str(e)}")
             try:
                 log_webhook(event_type, company_name, 'fail')
-            except Exception:
-                pass
+            except Exception as log_err:
+                print(f"[WEBHOOK] DB logging error after request failure: {log_err}")
 
     # Run in background thread to avoid blocking
     webhook_thread = threading.Thread(target=send_webhook, daemon=True, name="WebhookSender")
@@ -694,14 +795,14 @@ def trigger_gsheet_webhook(event_type: str, company_data: dict) -> None:
             logging.error(f"[GSHEET WEBHOOK] Timeout: {company_name} -> {gsheet_url}")
             try:
                 log_webhook(f'gsheet_{event_type}', company_name, 'fail')
-            except Exception:
-                pass
+            except Exception as log_err:
+                print(f"[GSHEET WEBHOOK] DB logging error after timeout: {log_err}")
         except requests.exceptions.RequestException as e:
             logging.error(f"[GSHEET WEBHOOK] Error: {company_name} -> {str(e)}")
             try:
                 log_webhook(f'gsheet_{event_type}', company_name, 'fail')
-            except Exception:
-                pass
+            except Exception as log_err:
+                print(f"[GSHEET WEBHOOK] DB logging error after request failure: {log_err}")
 
     # Run in background thread to avoid blocking
     gsheet_thread = threading.Thread(target=send_gsheet_webhook, daemon=True, name="GSheetWebhookSender")
@@ -717,6 +818,10 @@ def trigger_gsheet_webhook(event_type: str, company_data: dict) -> None:
 # With 4000+ items in queue, 5 workers would take ~33 days
 # With 20 workers, we can process ~4x faster (assuming sufficient API tokens)
 MAX_SCAN_WORKERS = int(os.environ.get('SCAN_WORKERS', 20))
+
+# Maximum number of accounts to queue in a single batch to prevent
+# overwhelming the thread pool and exhausting its internal queue memory
+MAX_PENDING_BATCH = int(os.environ.get('MAX_PENDING_BATCH', 100))
 
 # Batch rescan orchestrator state
 _batch_rescan_lock = threading.Lock()
@@ -737,12 +842,24 @@ _batch_rescan_state = {
 _executor = None
 _executor_lock = threading.Lock()
 
+# Initialization lock to prevent race condition on first request
+_init_lock = threading.Lock()
+
+
+def _shutdown_executor():
+    """Shut down the thread pool executor on app exit, allowing in-flight scans to finish."""
+    if _executor is not None:
+        print("[EXECUTOR] Shutting down thread pool executor (waiting for in-flight scans)...")
+        _executor.shutdown(wait=True)
+        print("[EXECUTOR] Thread pool executor shut down cleanly")
+
 
 def get_executor() -> ThreadPoolExecutor:
     """
     Get or create the thread pool executor.
 
     The executor is created lazily and reused across requests.
+    Registers an atexit handler to shut down cleanly on app termination.
     """
     global _executor
     with _executor_lock:
@@ -751,7 +868,12 @@ def get_executor() -> ThreadPoolExecutor:
                 max_workers=MAX_SCAN_WORKERS,
                 thread_name_prefix="ScanWorker"
             )
+<<<<<<< Updated upstream
             logging.info(f"[EXECUTOR] Created ThreadPoolExecutor with {MAX_SCAN_WORKERS} workers")
+=======
+            atexit.register(_shutdown_executor)
+            print(f"[EXECUTOR] Created ThreadPoolExecutor with {MAX_SCAN_WORKERS} workers")
+>>>>>>> Stashed changes
         return _executor
 
 
@@ -806,7 +928,12 @@ def perform_background_scan(company_name: str):
                 json_str = message.split('SCAN_COMPLETE:', 1)[1].strip()
                 if json_str.startswith('data: '):
                     json_str = json_str[6:]
-                scan_data = json.loads(json_str)
+                try:
+                    scan_data = json.loads(json_str)
+                except json.JSONDecodeError as parse_err:
+                    print(f"[WORKER] Failed to parse SCAN_COMPLETE JSON for {company_name}: {parse_err}")
+                    mark_account_as_invalid(company_name, f'Malformed scan result: {parse_err}')
+                    return
 
         if not scan_data:
             logging.error(f"[WORKER] No scan data generated for: {company_name}")
@@ -903,7 +1030,17 @@ def spawn_background_scan(company_name: str):
     The scan will run asynchronously without blocking the API response.
     The account tier is automatically updated with the scan results.
     Scan status is tracked in the database, not in memory.
+
+    Includes deduplication: skips submission if the account is already
+    queued or being processed to prevent race conditions from double writes.
     """
+    # Deduplication: check if already queued or processing
+    status_info = get_scan_status(company_name)
+    current_status = status_info.get('scan_status') if status_info else None
+    if current_status in (SCAN_STATUS_QUEUED, SCAN_STATUS_PROCESSING):
+        print(f"[EXECUTOR] Skipping duplicate scan for {company_name} (status: {current_status})")
+        return
+
     # Mark as queued in database before submitting to executor
     set_scan_status(company_name, SCAN_STATUS_QUEUED)
 
@@ -1120,7 +1257,11 @@ def stream_scan(company: str):
                     # Remove the SSE data prefix formatting
                     if json_str.startswith('data: '):
                         json_str = json_str[6:]
-                    scan_data = json.loads(json_str)
+                    try:
+                        scan_data = json.loads(json_str)
+                    except json.JSONDecodeError as parse_err:
+                        yield f"data: ERROR:Failed to parse scan results: {parse_err}\n\n"
+                        return
 
         except Exception as e:
             yield f"data: ERROR:Scan failed: {str(e)}\n\n"
@@ -2002,10 +2143,7 @@ Return ONLY valid JSON: {json_structure}"""
         if not response_text:
             return jsonify({'status': 'error', 'message': 'AI returned empty response'}), 500
         response_text = response_text.strip()
-        if response_text.startswith('```'):
-            lines = response_text.split('\n')
-            lines = [l for l in lines if not l.startswith('```')]
-            response_text = '\n'.join(lines)
+        response_text = strip_code_fences(response_text)
 
         email_data = json.loads(response_text)
         return jsonify({'status': 'success', **email_data})
@@ -2671,10 +2809,7 @@ Return ONLY valid JSON with no markdown formatting:
             logging.warning(f"[CONTRIBUTOR EMAIL GEN] Empty response from AI. Finish reason: {response.choices[0].finish_reason}")
             return jsonify({'status': 'error', 'message': 'AI returned empty response. Please try again.'}), 500
         response_text = response_text.strip()
-        if response_text.startswith('```'):
-            lines = response_text.split('\n')
-            lines = [l for l in lines if not l.startswith('```')]
-            response_text = '\n'.join(lines)
+        response_text = strip_code_fences(response_text)
 
         email_data = json.loads(response_text)
 
@@ -3993,9 +4128,18 @@ def api_scan_pending():
     finally:
         conn.close()
 
-    # Submit scans for each pending account
+    # Throttle: only queue up to MAX_PENDING_BATCH at a time to prevent
+    # overwhelming the thread pool and exhausting internal queue memory
+    total_pending = len(pending_accounts)
+    batch = pending_accounts[:MAX_PENDING_BATCH]
+    remaining = total_pending - len(batch)
+
+    if remaining > 0:
+        print(f"[EXECUTOR] Throttling: queueing {len(batch)} of {total_pending} pending accounts (MAX_PENDING_BATCH={MAX_PENDING_BATCH})")
+
+    # Submit scans for each pending account in this batch
     queued_count = 0
-    for company_name in pending_accounts:
+    for company_name in batch:
         spawn_background_scan(company_name)
         queued_count += 1
 
@@ -4008,7 +4152,8 @@ def api_scan_pending():
     return jsonify({
         'status': 'success',
         'queued': queued_count,
-        'accounts': pending_accounts,
+        'remaining': remaining,
+        'accounts': batch,
         'active_jobs': total_active,
         'max_workers': MAX_SCAN_WORKERS
     })
@@ -4073,21 +4218,32 @@ def _batch_rescan_worker(accounts, batch_size, delay_seconds):
 
     Chunks accounts into groups of batch_size, submits each batch to the
     thread pool, waits for the batch to drain, then sleeps before the next.
+
+    All mutations to _batch_rescan_state are protected by _batch_rescan_lock
+    to prevent inconsistent reads from Flask request threads.
     """
     import math
     state = _batch_rescan_state
     total_batches = math.ceil(len(accounts) / batch_size)
-    state['total_batches'] = total_batches
+    with _batch_rescan_lock:
+        state['total_batches'] = total_batches
 
     try:
         for batch_idx in range(total_batches):
+<<<<<<< Updated upstream
             if state['cancelled']:
                 logging.info(f"[BATCH-RESCAN] Cancelled after batch {batch_idx}/{total_batches}")
                 break
+=======
+            with _batch_rescan_lock:
+                if state['cancelled']:
+                    print(f"[BATCH-RESCAN] Cancelled after batch {batch_idx}/{total_batches}")
+                    break
+                state['current_batch'] = batch_idx + 1
+>>>>>>> Stashed changes
 
             batch_start = batch_idx * batch_size
             batch = accounts[batch_start:batch_start + batch_size]
-            state['current_batch'] = batch_idx + 1
             batch_names = [a['company_name'] for a in batch if a.get('company_name')]
 
             logging.info(f"[BATCH-RESCAN] Starting batch {batch_idx + 1}/{total_batches} ({len(batch_names)} accounts)")
@@ -4103,7 +4259,9 @@ def _batch_rescan_worker(accounts, batch_size, delay_seconds):
             poll_start = time.time()
             max_poll_seconds = 30 * 60
             while True:
-                if state['cancelled']:
+                with _batch_rescan_lock:
+                    cancelled = state['cancelled']
+                if cancelled:
                     break
                 if time.time() - poll_start > max_poll_seconds:
                     logging.warning(f"[BATCH-RESCAN] Batch {batch_idx + 1} timed out after {max_poll_seconds}s, moving on")
@@ -4124,6 +4282,7 @@ def _batch_rescan_worker(accounts, batch_size, delay_seconds):
                 time.sleep(5)
 
             # Update progress (skip if cancelled mid-batch to avoid over-counting)
+<<<<<<< Updated upstream
             if not state['cancelled']:
                 state['completed'] += len(batch_names)
                 logging.info(f"[BATCH-RESCAN] Batch {batch_idx + 1}/{total_batches} complete. Progress: {state['completed']}/{state['total']}")
@@ -4131,18 +4290,37 @@ def _batch_rescan_worker(accounts, batch_size, delay_seconds):
             # Delay between batches (skip delay after last batch)
             if batch_idx < total_batches - 1 and not state['cancelled']:
                 logging.info(f"[BATCH-RESCAN] Waiting {delay_seconds}s before next batch...")
+=======
+            with _batch_rescan_lock:
+                if not state['cancelled']:
+                    state['completed'] += len(batch_names)
+                    print(f"[BATCH-RESCAN] Batch {batch_idx + 1}/{total_batches} complete. Progress: {state['completed']}/{state['total']}")
+
+            # Delay between batches (skip delay after last batch)
+            with _batch_rescan_lock:
+                should_delay = batch_idx < total_batches - 1 and not state['cancelled']
+            if should_delay:
+                print(f"[BATCH-RESCAN] Waiting {delay_seconds}s before next batch...")
+>>>>>>> Stashed changes
                 # Sleep in small increments so cancel is responsive
                 for _ in range(delay_seconds):
-                    if state['cancelled']:
-                        break
+                    with _batch_rescan_lock:
+                        if state['cancelled']:
+                            break
                     time.sleep(1)
 
     except Exception as e:
         logging.error(f"[BATCH-RESCAN] Worker error: {e}")
         import traceback; traceback.print_exc()
     finally:
+<<<<<<< Updated upstream
         state['active'] = False
         logging.info(f"[BATCH-RESCAN] Finished. Completed: {state['completed']}/{state['total']}")
+=======
+        with _batch_rescan_lock:
+            state['active'] = False
+            print(f"[BATCH-RESCAN] Finished. Completed: {state['completed']}/{state['total']}")
+>>>>>>> Stashed changes
 
 
 @app.route('/api/batch-rescan', methods=['POST'])
@@ -4255,17 +4433,19 @@ def api_batch_rescan():
 
 @app.route('/api/batch-rescan/status')
 def api_batch_rescan_status():
-    """Return current batch rescan progress."""
-    return jsonify(_batch_rescan_state)
+    """Return current batch rescan progress (thread-safe snapshot)."""
+    with _batch_rescan_lock:
+        state_snapshot = dict(_batch_rescan_state)
+    return jsonify(state_snapshot)
 
 
 @app.route('/api/batch-rescan/cancel', methods=['POST'])
 def api_batch_rescan_cancel():
     """Cancel the running batch rescan after the current batch finishes."""
-    if not _batch_rescan_state['active']:
-        return jsonify({'status': 'error', 'message': 'No batch rescan is currently running'}), 404
-
-    _batch_rescan_state['cancelled'] = True
+    with _batch_rescan_lock:
+        if not _batch_rescan_state['active']:
+            return jsonify({'status': 'error', 'message': 'No batch rescan is currently running'}), 404
+        _batch_rescan_state['cancelled'] = True
     return jsonify({'status': 'cancelled', 'message': 'Batch rescan will stop after the current batch completes'})
 
 
@@ -4575,10 +4755,22 @@ def initialize_on_first_request():
     - Resets any scan statuses that were stuck in 'processing'
     - Resumes interrupted import batches
     - Auto-scans any accounts that were imported but never scanned
+
+    Uses double-checked locking to prevent concurrent initialization
+    when multiple requests arrive simultaneously at startup.
     """
     global _app_initialized
+<<<<<<< Updated upstream
     if not _app_initialized:
         logging.info("[APP] First request - initializing executor and cleaning up...")
+=======
+    if _app_initialized:
+        return
+    with _init_lock:
+        if _app_initialized:
+            return
+        print("[APP] First request - initializing executor and cleaning up...")
+>>>>>>> Stashed changes
 
         # Initialize the executor FIRST
         get_executor()
@@ -4694,18 +4886,39 @@ def _auto_scan_pending_accounts():
         conn = None  # Mark as closed
 
         if pending_accounts:
+<<<<<<< Updated upstream
             logging.info(f"[APP] Found {len(pending_accounts)} accounts pending initial scan")
+=======
+            total = len(pending_accounts)
+            # Throttle: only queue up to MAX_PENDING_BATCH at startup to prevent
+            # overwhelming the thread pool
+            batch = pending_accounts[:MAX_PENDING_BATCH]
+            remaining = total - len(batch)
+>>>>>>> Stashed changes
 
-            # Step 1: Batch set ALL pending accounts to 'queued' status immediately
+            print(f"[APP] Found {total} accounts pending initial scan (queueing {len(batch)})")
+            if remaining > 0:
+                print(f"[APP] Throttled: {remaining} accounts deferred (use /api/scan-pending to queue more)")
+
+            # Step 1: Batch set queued accounts to 'queued' status immediately
             # This makes the queue visible right away in the UI
+<<<<<<< Updated upstream
             batch_set_scan_status_queued(pending_accounts)
             logging.info(f"[APP] Batch queued {len(pending_accounts)} pending accounts")
+=======
+            batch_set_scan_status_queued(batch)
+            print(f"[APP] Batch queued {len(batch)} pending accounts")
+>>>>>>> Stashed changes
 
-            # Step 2: Submit all to executor for background scanning
+            # Step 2: Submit batch to executor for background scanning
             executor = get_executor()
-            for company_name in pending_accounts:
+            for company_name in batch:
                 executor.submit(perform_background_scan, company_name)
+<<<<<<< Updated upstream
             logging.info(f"[APP] Auto-submitted {len(pending_accounts)} pending accounts for scan")
+=======
+            print(f"[APP] Auto-submitted {len(batch)} pending accounts for scan")
+>>>>>>> Stashed changes
         else:
             logging.info("[APP] No pending accounts to scan")
 
@@ -6740,10 +6953,7 @@ Return ONLY the JSON object, nothing else."""
         if response_text is None:
             return jsonify({'status': 'error', 'message': 'No AI API key configured (OpenAI).'}), 400
 
-        if response_text.startswith('```'):
-            lines = response_text.split('\n')
-            lines = [l for l in lines if not l.startswith('```')]
-            response_text = '\n'.join(lines)
+        response_text = strip_code_fences(response_text)
 
         extracted = json.loads(response_text)
         return jsonify({'status': 'success', 'data': extracted})
@@ -7000,10 +7210,7 @@ Return ONLY valid JSON with no markdown:
         )
 
         response_text = response.choices[0].message.content.strip()
-        if response_text.startswith('```'):
-            lines = response_text.split('\n')
-            lines = [l for l in lines if not l.startswith('```')]
-            response_text = '\n'.join(lines)
+        response_text = strip_code_fences(response_text)
 
         email_data = json.loads(response_text)
         return jsonify({'status': 'success', 'email': email_data})
@@ -7067,4 +7274,17 @@ if __name__ == '__main__':
     _app_initialized = True
 
     port = int(os.environ.get('PORT', 5000))
-    app.run(debug=Config.DEBUG, host='0.0.0.0', port=port, threaded=True)
+
+    # Safety guard: warn if debug mode is enabled without authentication
+    debug_mode = Config.DEBUG
+    if debug_mode and not Config.API_KEY:
+        print("[WARNING] Debug mode is ON without DOSSIER_API_KEY set!")
+        print("[WARNING] The Werkzeug debugger exposes a Python REPL on the server.")
+        print("[WARNING] Set DOSSIER_API_KEY or disable FLASK_DEBUG in production.")
+    # Force debug off if PRODUCTION env var is set, regardless of FLASK_DEBUG
+    if os.environ.get('PRODUCTION', '').lower() in ('true', '1', 'yes'):
+        if debug_mode:
+            print("[APP] PRODUCTION=true detected, forcing debug mode OFF")
+        debug_mode = False
+
+    app.run(debug=debug_mode, host='0.0.0.0', port=port, threaded=True)

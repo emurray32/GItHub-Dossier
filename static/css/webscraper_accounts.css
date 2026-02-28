@@ -606,6 +606,21 @@
     font-size: 12px;
     line-height: 1.4;
     max-height: 2.8em;
+    cursor: help;
+    transition: all 0.15s ease;
+}
+
+.evidence-text:hover {
+    -webkit-line-clamp: unset;
+    max-height: none;
+    overflow: visible;
+    position: relative;
+    z-index: 10;
+    background: var(--color-surface, #fff);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+    border-radius: 4px;
+    padding: 4px 6px;
+    margin: -4px -6px;
 }
 
 /* Actions cell */

@@ -26,6 +26,9 @@ class Config:
         )
     DEBUG = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
 
+    # API Key for endpoint authentication (opt-in: if not set, auth is disabled)
+    API_KEY = os.getenv('DOSSIER_API_KEY', '')
+
     # ============================================================
     # GITHUB TOKEN POOL - Crowdsourced Rate Limit Evasion
     # ============================================================

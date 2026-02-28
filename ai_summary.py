@@ -550,11 +550,12 @@ def _generate_fallback_analysis(scan_data: dict) -> dict:
         executive_summary = f"Cold lead — No significant i18n signals detected for {company}. Consider for future outreach."
 
     # Build email draft based on Goldilocks status (following Cold Outreach Skill rules)
-    # Uses Apollo.io dynamic variables: {{first_name}}, {{company}}, {{sender_first_name}}
+    # Subjects use actual company name; bodies use {{first_name}} and {{sender_first_name}} merge tags
+    # (resolved client-side when a contributor is selected, or by Apollo on enrollment)
     # Best practices: <100 words, no {{first_name}} in subject, personalized hook + value + soft CTA
     if goldilocks_status == 'preparing':
         lib = dep_hits[0].get('libraries_found', ['i18n library'])[0] if dep_hits else 'i18n library'
-        email_subject = f"{lib} in {org_name} / {{{{company}}}}"
+        email_subject = f"{lib} in {org_name} / {company}"
         email_body = (
             "Hey {{first_name}},\n\n"
             f"Noticed you added `{lib}` but no locale files yet.\n\n"
@@ -563,7 +564,7 @@ def _generate_fallback_analysis(scan_data: dict) -> dict:
             "{{sender_first_name}}"
         )
     elif goldilocks_status == 'launched':
-        email_subject = f"Localization at {{{{company}}}}"
+        email_subject = f"Localization at {company}"
         email_body = (
             "Hey {{first_name}},\n\n"
             f"Did some recon on {org_name}'s GitHub—saw you have a mature localization setup.\n\n"
@@ -583,7 +584,7 @@ def _generate_fallback_analysis(scan_data: dict) -> dict:
         )
     elif dominant_phase == 'Thinking':
         keyword = rfc_hits[0].get('keywords_matched', ['i18n'])[0] if rfc_hits else 'internationalization'
-        email_subject = f"Re: {keyword} at {{{{company}}}}"
+        email_subject = f"Re: {keyword} at {company}"
         email_body = (
             "Hey {{first_name}},\n\n"
             f"Came across your team's `{keyword}` discussion.\n\n"
@@ -592,7 +593,7 @@ def _generate_fallback_analysis(scan_data: dict) -> dict:
             "{{sender_first_name}}"
         )
     else:
-        email_subject = f"Localization at {{{{company}}}}"
+        email_subject = f"Localization at {company}"
         email_body = (
             "Hey {{first_name}},\n\n"
             f"Been researching {org_name}'s tech stack—you're at a good stage for localization automation.\n\n"

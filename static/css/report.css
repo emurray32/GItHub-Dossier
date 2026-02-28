@@ -2788,9 +2788,17 @@
 .contacts-list .contact-bio,
 .contacts-list .prospect-bio {
     display: -webkit-box;
-    -webkit-line-clamp: 2;
+    -webkit-line-clamp: 3;
     -webkit-box-orient: vertical;
     overflow: hidden;
+    cursor: help;
+    transition: all 0.15s ease;
+}
+
+.contacts-list .contact-bio:hover,
+.contacts-list .prospect-bio:hover {
+    -webkit-line-clamp: unset;
+    overflow: visible;
 }
 
 .contacts-list .contact-actions {

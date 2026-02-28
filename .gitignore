@@ -1,6 +1,7 @@
 # Environment
 .env
 .venv/
+.venv-mcp/
 venv/
 env/
 ENV/

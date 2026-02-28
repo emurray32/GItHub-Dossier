@@ -5,6 +5,7 @@ import sqlite3
 import json
 import os
 import time
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 from typing import Optional
 from config import Config
@@ -21,6 +22,16 @@ def get_db_connection() -> sqlite3.Connection:
     conn.execute("PRAGMA foreign_keys=ON")
     conn.execute("PRAGMA busy_timeout=5000")
     return conn
+
+
+@contextmanager
+def db_connection():
+    """Context manager for database connections. Ensures connection is always closed."""
+    conn = get_db_connection()
+    try:
+        yield conn
+    finally:
+        conn.close()
 
 
 def init_db() -> None:

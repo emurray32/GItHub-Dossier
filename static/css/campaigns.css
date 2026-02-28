@@ -1,0 +1,167 @@
+/* ==========================================================================
+   Campaigns & Map Sequences
+   Two-column layout: sequences (left) + campaigns (right), stacks on mobile
+   ========================================================================== */
+
+.campaigns-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.25rem;
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 0 1.25rem 1.25rem;
+}
+
+@media (max-width: 900px) {
+    .campaigns-container {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Campaign cards list
+   ========================================================================== */
+
+.camp-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+}
+
+.camp-empty {
+    text-align: center;
+    color: var(--color-text-tertiary);
+    font-size: 0.85rem;
+    padding: 1.5rem 0;
+}
+
+.camp-card {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    background: var(--color-surface);
+    transition: border-color 0.15s;
+}
+
+.camp-card:hover {
+    border-color: var(--color-primary);
+}
+
+.camp-card-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    min-width: 0;
+    flex: 1;
+}
+
+.camp-card-name {
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: var(--color-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.camp-card-seq {
+    font-size: 0.8rem;
+    color: var(--color-text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.camp-card-prompt {
+    font-size: 0.78rem;
+    color: var(--color-text-tertiary);
+    line-height: 1.35;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.camp-card-date {
+    font-size: 0.72rem;
+    color: var(--color-text-tertiary);
+    margin-top: 0.15rem;
+}
+
+.camp-card-delete {
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--color-text-tertiary);
+    padding: 4px;
+    border-radius: 4px;
+    transition: color 0.15s, background 0.15s;
+}
+
+.camp-card-delete:hover {
+    color: var(--color-destructive);
+    background: rgba(239, 68, 68, 0.08);
+}
+
+/* Form sections inside panels
+   ========================================================================== */
+
+.camp-field-group {
+    margin-bottom: 1rem;
+}
+
+.camp-field-label {
+    display: block;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--color-text);
+    margin-bottom: 0.35rem;
+}
+
+.camp-input,
+.camp-select,
+.camp-textarea {
+    width: 100%;
+    padding: 0.5rem 0.65rem;
+    font-size: 0.875rem;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    background: var(--color-bg);
+    color: var(--color-text);
+    font-family: inherit;
+    transition: border-color 0.15s, box-shadow 0.15s;
+    box-sizing: border-box;
+}
+
+.camp-input:focus,
+.camp-select:focus,
+.camp-textarea:focus {
+    outline: none;
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.15);
+}
+
+.camp-input::placeholder,
+.camp-textarea::placeholder {
+    color: var(--color-text-tertiary);
+}
+
+.camp-textarea {
+    min-height: 80px;
+    resize: vertical;
+}
+
+.camp-section-title {
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: var(--color-text);
+    margin-top: 1.25rem;
+    margin-bottom: 0.5rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--color-border);
+}
