@@ -152,6 +152,18 @@
     }
     .seq-step-subject { flex: 1; color: var(--color-text); font-weight: 500; }
     .seq-step-delay { font-size: 0.75rem; color: var(--color-text-tertiary); flex-shrink: 0; }
+
+    /* Persona rows */
+    .persona-row { display:flex; gap:0.5rem; align-items:flex-start; padding:0.6rem; background:var(--color-bg); border-radius:8px; margin-bottom:0.4rem; }
+    .persona-row input[type="text"] { padding:0.4rem 0.6rem; border:1px solid var(--color-border); border-radius:6px; font-size:0.8rem; }
+    .persona-row .p-name { width:140px; }
+    .persona-row .p-titles { flex:1; min-width:200px; }
+    .persona-row select { padding:0.4rem 0.6rem; border:1px solid var(--color-border); border-radius:6px; font-size:0.8rem; flex:1; min-width:160px; }
+    .persona-row .p-remove { background:none; border:none; color:#DC2626; cursor:pointer; font-size:1.1rem; padding:0.3rem; line-height:1; }
+    .persona-row .p-remove:hover { background:#FEF2F2; border-radius:4px; }
+    .seniority-checks { display:flex; gap:0.5rem; flex-wrap:wrap; margin-top:0.25rem; }
+    .seniority-checks label { font-size:0.7rem; display:flex; align-items:center; gap:0.2rem; color:var(--color-text-secondary); cursor:pointer; }
+    .seniority-checks input { width:13px; height:13px; }
     .seq-steps-empty { padding: 1rem; text-align: center; color: var(--color-text-tertiary); font-size: 0.85rem; }
     .seq-steps-loading { padding: 0.75rem; text-align: center; color: var(--color-text-tertiary); font-size: 0.85rem; }
 
@@ -214,6 +226,12 @@
                 <span class="meta-item">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
                     {{ c.sequence_config | replace('_', ' ') | title }}
+                </span>
+                {% endif %}
+                {% if c.persona_count %}
+                <span class="meta-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+                    {{ c.persona_count }} persona{{ 's' if c.persona_count != 1 else '' }}
                 </span>
                 {% endif %}
                 {% if c.assets %}
@@ -289,6 +307,9 @@
                     <button type="button" class="btn-detect" onclick="loadApolloSequences()">Refresh</button>
                 </div>
                 <p class="form-help">Choose the Apollo sequence contacts will be enrolled in. Steps are shown below.</p>
+                <div id="seq-shared-info" style="display:none; margin-top:0.5rem; padding:0.4rem 0.75rem; background:#fef3c7; border-radius:6px; font-size:0.8rem; color:#92400e;">
+                    ⚡ Also used by: <span id="seq-shared-campaigns" style="font-weight:600;"></span>
+                </div>
 
                 <!-- Sequence Steps Preview -->
                 <div class="seq-steps-preview" id="seq-steps-preview" style="display:none">
@@ -296,6 +317,14 @@
                         <div class="seq-steps-loading">Loading steps...</div>
                     </div>
                 </div>
+            </div>
+
+            <!-- Personas Configuration -->
+            <div class="form-group">
+                <label>Personas <span style="font-weight:400;color:var(--color-text-secondary);font-size:0.8rem;">(optional — for batch enrollment)</span></label>
+                <p class="form-help" style="margin-bottom:0.5rem;">Define target personas with title/seniority filters and assign each to an Apollo sequence. Used by the Enrollment page.</p>
+                <div id="personas-list"></div>
+                <button type="button" class="btn-detect" style="margin-top:0.5rem;" onclick="addPersonaRow()">+ Add Persona</button>
             </div>
         </div>
         <div class="campaign-modal-footer">
@@ -317,6 +346,13 @@
 
     let editingId = null;
     let sequencesCache = [];
+    const SENIORITY_OPTIONS = [
+        {value: 'c_suite', label: 'C-Suite'},
+        {value: 'vp', label: 'VP'},
+        {value: 'director', label: 'Director'},
+        {value: 'manager', label: 'Manager'},
+        {value: 'senior', label: 'Senior'},
+    ];
 
     // ── Toast ──
     function showToast(msg, type) {
@@ -338,6 +374,8 @@
         document.getElementById('campaign-assets').value = '';
         document.getElementById('campaign-sequence').value = '';
         document.getElementById('seq-steps-preview').style.display = 'none';
+        document.getElementById('seq-shared-info').style.display = 'none';
+        document.getElementById('personas-list').innerHTML = '';
         document.getElementById('campaign-modal').classList.add('open');
         loadApolloSequences();
         setTimeout(() => document.getElementById('campaign-name').focus(), 100);
@@ -392,20 +430,23 @@
         }
     };
 
-    // ── Show sequence steps when selection changes ──
+    // ── Show sequence steps + shared-campaign indicator when selection changes ──
     document.getElementById('campaign-sequence').addEventListener('change', async function() {
         const seqId = this.value;
         const preview = document.getElementById('seq-steps-preview');
         const list = document.getElementById('seq-steps-list');
+        const sharedInfo = document.getElementById('seq-shared-info');
 
         if (!seqId) {
             preview.style.display = 'none';
+            sharedInfo.style.display = 'none';
             return;
         }
 
         preview.style.display = 'block';
         list.innerHTML = '<div class="seq-steps-loading">Loading steps...</div>';
 
+        // Fetch steps
         try {
             const resp = await fetch(`/api/apollo/sequence-steps/${seqId}`);
             const data = await resp.json();
@@ -432,12 +473,106 @@
         } catch(e) {
             list.innerHTML = '<div class="seq-steps-empty">Failed to load steps</div>';
         }
+
+        // Fetch shared campaigns for this sequence
+        try {
+            const cResp = await fetch(`/api/campaigns/by-sequence/${seqId}`);
+            const cData = await cResp.json();
+            if (cData.status === 'success' && cData.campaigns && cData.campaigns.length > 0) {
+                const others = cData.campaigns.filter(c => c.id !== editingId);
+                if (others.length > 0) {
+                    document.getElementById('seq-shared-campaigns').textContent = others.map(c => c.name).join(', ');
+                    sharedInfo.style.display = 'block';
+                } else {
+                    sharedInfo.style.display = 'none';
+                }
+            } else {
+                sharedInfo.style.display = 'none';
+            }
+        } catch(e) {
+            sharedInfo.style.display = 'none';
+        }
     });
 
     function escHtml(s) {
         const d = document.createElement('div');
         d.textContent = s;
         return d.innerHTML;
+    }
+
+    // ── Persona helpers ──
+    function buildSequenceOptions(selectedId) {
+        let html = '<option value="">Select sequence...</option>';
+        for (const seq of sequencesCache) {
+            const sel = seq.id === selectedId ? ' selected' : '';
+            html += `<option value="${seq.id}" data-name="${escHtml(seq.name)}"${sel}>${escHtml(seq.name)} (${seq.num_steps} steps)</option>`;
+        }
+        return html;
+    }
+
+    function buildSeniorityChecks(selected) {
+        const set = new Set(selected || []);
+        return SENIORITY_OPTIONS.map(s =>
+            `<label><input type="checkbox" value="${s.value}"${set.has(s.value) ? ' checked' : ''}> ${s.label}</label>`
+        ).join('');
+    }
+
+    window.addPersonaRow = function(data) {
+        const list = document.getElementById('personas-list');
+        const row = document.createElement('div');
+        row.className = 'persona-row';
+        row.innerHTML = `
+            <div style="display:flex;flex-direction:column;gap:0.35rem;flex:1;">
+                <div style="display:flex;gap:0.5rem;align-items:center;">
+                    <input type="text" class="p-name" placeholder="Persona name" value="${escHtml((data && data.persona_name) || '')}">
+                    <input type="text" class="p-titles" placeholder="Titles (comma-separated)" value="${escHtml((data && data.titles || []).join(', '))}">
+                    <select class="p-sequence">${buildSequenceOptions(data && data.sequence_id)}</select>
+                    <button type="button" class="p-remove" title="Remove" onclick="this.closest('.persona-row').remove()">&times;</button>
+                </div>
+                <div class="seniority-checks">${buildSeniorityChecks(data && data.seniorities)}</div>
+            </div>`;
+        list.appendChild(row);
+    };
+
+    function renderPersonaRows(personas) {
+        document.getElementById('personas-list').innerHTML = '';
+        if (!personas || !personas.length) return;
+        for (const p of personas) {
+            addPersonaRow({
+                persona_name: p.persona_name,
+                titles: typeof p.titles_json === 'string' ? JSON.parse(p.titles_json || '[]') : (p.titles || []),
+                seniorities: typeof p.seniorities_json === 'string' ? JSON.parse(p.seniorities_json || '[]') : (p.seniorities || []),
+                sequence_id: p.sequence_id,
+            });
+        }
+    }
+
+    function getPersonasFromForm() {
+        const rows = document.querySelectorAll('#personas-list .persona-row');
+        const personas = [];
+        rows.forEach((row, idx) => {
+            const name = row.querySelector('.p-name').value.trim();
+            if (!name) return;
+            const titlesRaw = row.querySelector('.p-titles').value.trim();
+            const titles = titlesRaw ? titlesRaw.split(',').map(t => t.trim()).filter(Boolean) : [];
+            const seniorities = [];
+            row.querySelectorAll('.seniority-checks input:checked').forEach(cb => seniorities.push(cb.value));
+            const seqSelect = row.querySelector('.p-sequence');
+            const seqId = seqSelect.value || null;
+            const seqOpt = seqSelect.selectedOptions[0];
+            const seqName = (seqOpt && seqOpt.dataset.name) || null;
+            if (seqId) {
+                personas.push({
+                    persona_name: name,
+                    titles_json: JSON.stringify(titles),
+                    seniorities_json: JSON.stringify(seniorities),
+                    sequence_id: seqId,
+                    sequence_name: seqName,
+                    priority: idx,
+                });
+            }
+        });
+        return personas;
     }
 
     // ── Save campaign (create or update) ──
@@ -472,11 +607,14 @@
             } catch(e) {}
         }
 
+        const personas = getPersonasFromForm();
+
         const payload = {
             name, prompt, assets,
             sequence_id: seqId,
             sequence_name: seqName,
-            sequence_config: seqConfig
+            sequence_config: seqConfig,
+            personas: personas
         };
 
         try {
@@ -534,6 +672,9 @@
                 // Trigger step preview
                 document.getElementById('campaign-sequence').dispatchEvent(new Event('change'));
             }
+
+            // Load personas
+            renderPersonaRows(c.personas || []);
         } catch(e) {
             showToast('Failed to load campaign', 'error');
         }

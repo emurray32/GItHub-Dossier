@@ -39,6 +39,10 @@
                     <i data-lucide="send" class="sidebar-icon"></i>
                     <span class="sidebar-label">Campaigns</span>
                 </a>
+                <a href="{{ url_for('enrollment_page') }}" class="sidebar-item {% if request.endpoint == 'enrollment_page' %}active{% endif %}">
+                    <i data-lucide="play-circle" class="sidebar-icon"></i>
+                    <span class="sidebar-label">Enrollment</span>
+                </a>
                 <a href="{{ url_for('mapping_sequences') }}" class="sidebar-item {% if request.endpoint == 'mapping_sequences' %}active{% endif %}">
                     <i data-lucide="link" class="sidebar-icon"></i>
                     <span class="sidebar-label">Mapping Sequences</span>
