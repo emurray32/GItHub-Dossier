@@ -868,12 +868,8 @@ def get_executor() -> ThreadPoolExecutor:
                 max_workers=MAX_SCAN_WORKERS,
                 thread_name_prefix="ScanWorker"
             )
-<<<<<<< Updated upstream
-            logging.info(f"[EXECUTOR] Created ThreadPoolExecutor with {MAX_SCAN_WORKERS} workers")
-=======
             atexit.register(_shutdown_executor)
-            print(f"[EXECUTOR] Created ThreadPoolExecutor with {MAX_SCAN_WORKERS} workers")
->>>>>>> Stashed changes
+            logging.info(f"[EXECUTOR] Created ThreadPoolExecutor with {MAX_SCAN_WORKERS} workers")
         return _executor
 
 
@@ -4230,17 +4226,11 @@ def _batch_rescan_worker(accounts, batch_size, delay_seconds):
 
     try:
         for batch_idx in range(total_batches):
-<<<<<<< Updated upstream
-            if state['cancelled']:
-                logging.info(f"[BATCH-RESCAN] Cancelled after batch {batch_idx}/{total_batches}")
-                break
-=======
             with _batch_rescan_lock:
                 if state['cancelled']:
-                    print(f"[BATCH-RESCAN] Cancelled after batch {batch_idx}/{total_batches}")
+                    logging.info(f"[BATCH-RESCAN] Cancelled after batch {batch_idx}/{total_batches}")
                     break
                 state['current_batch'] = batch_idx + 1
->>>>>>> Stashed changes
 
             batch_start = batch_idx * batch_size
             batch = accounts[batch_start:batch_start + batch_size]
@@ -4282,26 +4272,16 @@ def _batch_rescan_worker(accounts, batch_size, delay_seconds):
                 time.sleep(5)
 
             # Update progress (skip if cancelled mid-batch to avoid over-counting)
-<<<<<<< Updated upstream
-            if not state['cancelled']:
-                state['completed'] += len(batch_names)
-                logging.info(f"[BATCH-RESCAN] Batch {batch_idx + 1}/{total_batches} complete. Progress: {state['completed']}/{state['total']}")
-
-            # Delay between batches (skip delay after last batch)
-            if batch_idx < total_batches - 1 and not state['cancelled']:
-                logging.info(f"[BATCH-RESCAN] Waiting {delay_seconds}s before next batch...")
-=======
             with _batch_rescan_lock:
                 if not state['cancelled']:
                     state['completed'] += len(batch_names)
-                    print(f"[BATCH-RESCAN] Batch {batch_idx + 1}/{total_batches} complete. Progress: {state['completed']}/{state['total']}")
+                    logging.info(f"[BATCH-RESCAN] Batch {batch_idx + 1}/{total_batches} complete. Progress: {state['completed']}/{state['total']}")
 
             # Delay between batches (skip delay after last batch)
             with _batch_rescan_lock:
                 should_delay = batch_idx < total_batches - 1 and not state['cancelled']
             if should_delay:
-                print(f"[BATCH-RESCAN] Waiting {delay_seconds}s before next batch...")
->>>>>>> Stashed changes
+                logging.info(f"[BATCH-RESCAN] Waiting {delay_seconds}s before next batch...")
                 # Sleep in small increments so cancel is responsive
                 for _ in range(delay_seconds):
                     with _batch_rescan_lock:
@@ -4313,14 +4293,9 @@ def _batch_rescan_worker(accounts, batch_size, delay_seconds):
         logging.error(f"[BATCH-RESCAN] Worker error: {e}")
         import traceback; traceback.print_exc()
     finally:
-<<<<<<< Updated upstream
-        state['active'] = False
-        logging.info(f"[BATCH-RESCAN] Finished. Completed: {state['completed']}/{state['total']}")
-=======
         with _batch_rescan_lock:
             state['active'] = False
-            print(f"[BATCH-RESCAN] Finished. Completed: {state['completed']}/{state['total']}")
->>>>>>> Stashed changes
+            logging.info(f"[BATCH-RESCAN] Finished. Completed: {state['completed']}/{state['total']}")
 
 
 @app.route('/api/batch-rescan', methods=['POST'])
@@ -4760,17 +4735,12 @@ def initialize_on_first_request():
     when multiple requests arrive simultaneously at startup.
     """
     global _app_initialized
-<<<<<<< Updated upstream
-    if not _app_initialized:
-        logging.info("[APP] First request - initializing executor and cleaning up...")
-=======
     if _app_initialized:
         return
     with _init_lock:
         if _app_initialized:
             return
-        print("[APP] First request - initializing executor and cleaning up...")
->>>>>>> Stashed changes
+        logging.info("[APP] First request - initializing executor and cleaning up...")
 
         # Initialize the executor FIRST
         get_executor()
@@ -4886,15 +4856,11 @@ def _auto_scan_pending_accounts():
         conn = None  # Mark as closed
 
         if pending_accounts:
-<<<<<<< Updated upstream
-            logging.info(f"[APP] Found {len(pending_accounts)} accounts pending initial scan")
-=======
             total = len(pending_accounts)
             # Throttle: only queue up to MAX_PENDING_BATCH at startup to prevent
             # overwhelming the thread pool
             batch = pending_accounts[:MAX_PENDING_BATCH]
             remaining = total - len(batch)
->>>>>>> Stashed changes
 
             print(f"[APP] Found {total} accounts pending initial scan (queueing {len(batch)})")
             if remaining > 0:
@@ -4902,23 +4868,14 @@ def _auto_scan_pending_accounts():
 
             # Step 1: Batch set queued accounts to 'queued' status immediately
             # This makes the queue visible right away in the UI
-<<<<<<< Updated upstream
-            batch_set_scan_status_queued(pending_accounts)
-            logging.info(f"[APP] Batch queued {len(pending_accounts)} pending accounts")
-=======
             batch_set_scan_status_queued(batch)
-            print(f"[APP] Batch queued {len(batch)} pending accounts")
->>>>>>> Stashed changes
+            logging.info(f"[APP] Batch queued {len(batch)} pending accounts")
 
             # Step 2: Submit batch to executor for background scanning
             executor = get_executor()
             for company_name in batch:
                 executor.submit(perform_background_scan, company_name)
-<<<<<<< Updated upstream
-            logging.info(f"[APP] Auto-submitted {len(pending_accounts)} pending accounts for scan")
-=======
-            print(f"[APP] Auto-submitted {len(batch)} pending accounts for scan")
->>>>>>> Stashed changes
+            logging.info(f"[APP] Auto-submitted {len(batch)} pending accounts for scan")
         else:
             logging.info("[APP] No pending accounts to scan")
 
