@@ -529,6 +529,35 @@ def init_db() -> None:
         ON campaigns(status)
     ''')
 
+    # Sequence mappings table - central view of Apollo sequences and their campaign assignments
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS sequence_mappings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sequence_id TEXT NOT NULL UNIQUE,
+            sequence_name TEXT NOT NULL,
+            sequence_config TEXT,
+            num_steps INTEGER DEFAULT 0,
+            active BOOLEAN DEFAULT 1,
+            enabled INTEGER DEFAULT 0,
+            campaign_id INTEGER,
+            owner_name TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE SET NULL
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_sequence_mappings_campaign
+        ON sequence_mappings(campaign_id)
+    ''')
+
+    # Migration: add enabled column if missing (existing DBs)
+    cursor.execute("PRAGMA table_info(sequence_mappings)")
+    cols = [row[1] for row in cursor.fetchall()]
+    if 'enabled' not in cols:
+        cursor.execute('ALTER TABLE sequence_mappings ADD COLUMN enabled INTEGER DEFAULT 0')
+
     conn.commit()
     conn.close()
 
@@ -5193,3 +5222,112 @@ def get_all_campaigns() -> list:
             c['assets'] = []
         campaigns.append(c)
     return campaigns
+
+
+# ---------------------------------------------------------------------------
+# Sequence Mappings
+# ---------------------------------------------------------------------------
+
+def upsert_sequence_mapping(sequence_id: str, sequence_name: str,
+                            sequence_config: str = None, num_steps: int = 0,
+                            active: bool = True, owner_name: str = None) -> dict:
+    """Insert or update a sequence mapping. Returns the mapping dict."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO sequence_mappings (sequence_id, sequence_name, sequence_config, num_steps, active, owner_name, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(sequence_id) DO UPDATE SET
+            sequence_name = excluded.sequence_name,
+            sequence_config = excluded.sequence_config,
+            num_steps = excluded.num_steps,
+            active = excluded.active,
+            owner_name = COALESCE(sequence_mappings.owner_name, excluded.owner_name),
+            updated_at = CURRENT_TIMESTAMP
+    ''', (sequence_id, sequence_name, sequence_config, num_steps, int(active), owner_name))
+    conn.commit()
+    mapping_id = cursor.lastrowid or cursor.execute(
+        'SELECT id FROM sequence_mappings WHERE sequence_id = ?', (sequence_id,)
+    ).fetchone()['id']
+    conn.close()
+    return {'id': mapping_id, 'sequence_id': sequence_id, 'sequence_name': sequence_name}
+
+
+def get_all_sequence_mappings(enabled_only: bool = False) -> list:
+    """Get sequence mappings with joined campaign names. Optionally filter to enabled only."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    query = '''
+        SELECT sm.*, c.name AS campaign_name
+        FROM sequence_mappings sm
+        LEFT JOIN campaigns c ON sm.campaign_id = c.id
+    '''
+    if enabled_only:
+        query += ' WHERE sm.enabled = 1'
+    query += ' ORDER BY sm.sequence_name ASC'
+    cursor.execute(query)
+    rows = [dict(r) for r in cursor.fetchall()]
+    conn.close()
+    return rows
+
+
+def update_sequence_mapping(mapping_id: int, **kwargs) -> bool:
+    """Update a sequence mapping's campaign_id, owner_name, and/or enabled status."""
+    allowed = {'campaign_id', 'owner_name', 'enabled'}
+    updates = {k: v for k, v in kwargs.items() if k in allowed}
+    if not updates:
+        return False
+    updates['updated_at'] = datetime.now().isoformat()
+    set_clause = ', '.join(f'{k} = ?' for k in updates)
+    values = list(updates.values()) + [mapping_id]
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(f'UPDATE sequence_mappings SET {set_clause} WHERE id = ?', values)
+    conn.commit()
+    changed = cursor.rowcount > 0
+    conn.close()
+    return changed
+
+
+def delete_sequence_mapping(mapping_id: int) -> bool:
+    """Delete a sequence mapping."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM sequence_mappings WHERE id = ?', (mapping_id,))
+    conn.commit()
+    deleted = cursor.rowcount > 0
+    conn.close()
+    return deleted
+
+
+def search_sequence_mappings(query: str, enabled_only: bool = False) -> list:
+    """Search sequence mappings by name. Optionally filter to enabled or disabled."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    sql = '''
+        SELECT sm.*, c.name AS campaign_name
+        FROM sequence_mappings sm
+        LEFT JOIN campaigns c ON sm.campaign_id = c.id
+        WHERE sm.sequence_name LIKE ?
+    '''
+    if enabled_only:
+        sql += ' AND sm.enabled = 1'
+    sql += ' ORDER BY sm.sequence_name ASC'
+    cursor.execute(sql, (f'%{query}%',))
+    rows = [dict(r) for r in cursor.fetchall()]
+    conn.close()
+    return rows
+
+
+def toggle_sequence_mapping_enabled(mapping_id: int, enabled: bool) -> bool:
+    """Toggle a sequence mapping's enabled status."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        'UPDATE sequence_mappings SET enabled = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+        (int(enabled), mapping_id)
+    )
+    conn.commit()
+    changed = cursor.rowcount > 0
+    conn.close()
+    return changed

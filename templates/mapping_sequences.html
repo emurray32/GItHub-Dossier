@@ -1,0 +1,453 @@
+{% extends "base.html" %}
+
+{% block title %}Mapping Sequences - Lead Machine{% endblock %}
+{% block page_title %}Mapping Sequences{% endblock %}
+
+{% block head %}
+<style>
+    .ms-page { max-width: 1200px; margin: 0 auto; padding: 1.5rem; }
+
+    /* Page header */
+    .ms-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem; }
+    .ms-header h1 { font-size: 1.5rem; font-weight: 700; margin: 0; color: var(--color-text); }
+    .ms-header .subtitle { font-size: 0.9rem; color: var(--color-text-secondary); margin-top: 0.25rem; }
+    .btn-sync {
+        display: inline-flex; align-items: center; gap: 0.5rem;
+        padding: 0.6rem 1.25rem; background: var(--color-primary); color: #fff;
+        border: none; border-radius: 8px; font-size: 0.9rem; font-weight: 600;
+        cursor: pointer; transition: background 0.15s;
+    }
+    .btn-sync:hover { background: var(--color-primary-hover); }
+    .btn-sync:disabled { opacity: 0.6; cursor: not-allowed; }
+    .btn-sync .spin { animation: spin 1s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Section headers */
+    .ms-section-header {
+        display: flex; align-items: center; justify-content: space-between;
+        margin-bottom: 0.75rem; margin-top: 1.5rem;
+    }
+    .ms-section-header:first-of-type { margin-top: 0; }
+    .ms-section-header h2 {
+        font-size: 1.1rem; font-weight: 600; margin: 0; color: var(--color-text);
+        display: flex; align-items: center; gap: 0.5rem;
+    }
+    .ms-section-header .count-badge {
+        font-size: 0.8rem; font-weight: 600; padding: 2px 8px; border-radius: 10px;
+        background: var(--color-primary-subtle); color: var(--color-primary);
+    }
+
+    /* Table */
+    .ms-table-wrap {
+        background: var(--color-surface); border: 1px solid var(--color-border);
+        border-radius: 12px; overflow-x: auto;
+    }
+    .ms-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; min-width: 900px; }
+    .ms-table thead th {
+        text-align: left; padding: 0.75rem 1rem; font-size: 0.8rem; font-weight: 600;
+        color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.5px;
+        background: var(--color-bg); border-bottom: 1px solid var(--color-border);
+    }
+    .ms-table tbody tr { border-bottom: 1px solid var(--color-border-subtle); }
+    .ms-table tbody tr:last-child { border-bottom: none; }
+    .ms-table tbody tr:hover { background: var(--color-bg); }
+    .ms-table td { padding: 0.75rem 1rem; vertical-align: middle; }
+
+    .seq-name { font-weight: 600; color: var(--color-text); }
+    .seq-steps-badge {
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 28px; height: 28px; border-radius: 6px; font-size: 0.8rem; font-weight: 700;
+        background: var(--color-primary-subtle); color: var(--color-primary);
+    }
+    .seq-status-badge {
+        font-size: 0.75rem; font-weight: 600; padding: 2px 10px; border-radius: 20px;
+        text-transform: uppercase; letter-spacing: 0.3px;
+    }
+    .seq-status-badge.active { background: #d1fae5; color: #065f46; }
+    .seq-status-badge.inactive { background: #f3f4f6; color: #6b7280; }
+
+    /* Inline editing */
+    .ms-table .cell-select {
+        padding: 0.4rem 0.5rem; border: 1px solid var(--color-border); border-radius: 6px;
+        font-size: 0.85rem; background: var(--color-surface); color: var(--color-text);
+        max-width: 200px; width: 100%;
+    }
+    .ms-table .cell-select:focus {
+        outline: none; border-color: var(--color-primary); box-shadow: 0 0 0 3px rgba(79,70,229,0.1);
+    }
+    .ms-table .cell-input {
+        padding: 0.4rem 0.5rem; border: 1px solid var(--color-border); border-radius: 6px;
+        font-size: 0.85rem; background: var(--color-surface); color: var(--color-text);
+        width: 140px;
+    }
+    .ms-table .cell-input:focus {
+        outline: none; border-color: var(--color-primary); box-shadow: 0 0 0 3px rgba(79,70,229,0.1);
+    }
+
+    /* Row actions */
+    .row-actions { display: flex; gap: 0.35rem; }
+    .row-actions button {
+        padding: 0.35rem 0.6rem; font-size: 0.8rem; font-weight: 500;
+        border-radius: 6px; cursor: pointer; border: 1px solid var(--color-border);
+        background: transparent; color: var(--color-text-secondary); transition: all 0.15s;
+    }
+    .row-actions button:hover { background: var(--color-bg); color: var(--color-text); }
+    .row-actions .btn-save { border-color: var(--color-primary); color: var(--color-primary); display: none; }
+    .row-actions .btn-save.visible { display: inline-flex; }
+    .row-actions .btn-save:hover { background: var(--color-primary); color: #fff; }
+    .row-actions .btn-disable:hover { background: #fef2f2; color: var(--color-destructive); border-color: var(--color-destructive); }
+
+    /* Search panel */
+    .ms-search-panel {
+        background: var(--color-surface); border: 1px solid var(--color-border);
+        border-radius: 12px; padding: 1.25rem; margin-top: 0.75rem;
+    }
+    .ms-search-bar {
+        display: flex; gap: 0.5rem; margin-bottom: 1rem;
+    }
+    .ms-search-bar input {
+        flex: 1; padding: 0.6rem 1rem; border: 1px solid var(--color-border); border-radius: 8px;
+        font-size: 0.9rem; background: var(--color-bg); color: var(--color-text);
+    }
+    .ms-search-bar input:focus {
+        outline: none; border-color: var(--color-primary); box-shadow: 0 0 0 3px rgba(79,70,229,0.1);
+    }
+    .ms-search-bar input::placeholder { color: var(--color-text-tertiary); }
+    .ms-search-results { max-height: 400px; overflow-y: auto; }
+    .ms-search-results .sr-item {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 0.6rem 0.75rem; border-bottom: 1px solid var(--color-border-subtle);
+        transition: background 0.1s;
+    }
+    .ms-search-results .sr-item:last-child { border-bottom: none; }
+    .ms-search-results .sr-item:hover { background: var(--color-bg); }
+    .ms-search-results .sr-item .sr-info { display: flex; align-items: center; gap: 0.75rem; flex: 1; min-width: 0; }
+    .ms-search-results .sr-item .sr-name { font-weight: 600; font-size: 0.9rem; color: var(--color-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ms-search-results .sr-item .sr-meta { font-size: 0.8rem; color: var(--color-text-tertiary); white-space: nowrap; }
+    .btn-enable {
+        padding: 0.35rem 0.75rem; font-size: 0.8rem; font-weight: 600;
+        border-radius: 6px; cursor: pointer; border: 1px solid var(--color-primary);
+        background: transparent; color: var(--color-primary); transition: all 0.15s;
+        white-space: nowrap;
+    }
+    .btn-enable:hover { background: var(--color-primary); color: #fff; }
+    .btn-enable:disabled { opacity: 0.5; cursor: not-allowed; }
+    .ms-search-hint {
+        text-align: center; padding: 1.5rem; color: var(--color-text-tertiary); font-size: 0.9rem;
+    }
+
+    /* Empty state */
+    .ms-empty {
+        text-align: center; padding: 3rem 1.5rem;
+        background: var(--color-surface); border: 2px dashed var(--color-border);
+        border-radius: 12px;
+    }
+    .ms-empty svg { width: 48px; height: 48px; color: var(--color-text-tertiary); margin-bottom: 1rem; }
+    .ms-empty h3 { font-size: 1.1rem; font-weight: 600; margin: 0 0 0.5rem; color: var(--color-text); }
+    .ms-empty p { font-size: 0.9rem; color: var(--color-text-secondary); margin: 0 0 1rem; }
+
+    /* Toast */
+    .ms-toast {
+        position: fixed; bottom: 1.5rem; right: 1.5rem; z-index: 2000;
+        padding: 0.75rem 1.25rem; border-radius: 8px; font-size: 0.9rem; font-weight: 500;
+        color: #fff; box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+        transform: translateY(100px); opacity: 0; transition: all 0.3s;
+    }
+    .ms-toast.show { transform: translateY(0); opacity: 1; }
+    .ms-toast.success { background: var(--color-success); }
+    .ms-toast.error { background: var(--color-destructive); }
+    .ms-toast.info { background: var(--color-info); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="ms-page">
+    <div class="ms-header">
+        <div>
+            <h1>Mapping Sequences</h1>
+            <p class="subtitle">Enable sequences from Apollo and assign them to campaigns</p>
+        </div>
+        <button class="btn-sync" id="btn-sync" onclick="syncFromApollo()">
+            <svg id="sync-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+            Sync from Apollo
+        </button>
+    </div>
+
+    <!-- ── Enabled Sequences ── -->
+    <div class="ms-section-header">
+        <h2>
+            Enabled Sequences
+            <span class="count-badge" id="enabled-count">{{ mappings|length }}</span>
+        </h2>
+    </div>
+
+    {% if mappings %}
+    <div class="ms-table-wrap">
+        <table class="ms-table">
+            <thead>
+                <tr>
+                    <th>Sequence Name</th>
+                    <th>Steps</th>
+                    <th>Status</th>
+                    <th>Campaign</th>
+                    <th>Owner</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="ms-tbody">
+                {% for m in mappings %}
+                <tr id="row-{{ m.id }}" data-id="{{ m.id }}">
+                    <td><span class="seq-name">{{ m.sequence_name }}</span></td>
+                    <td><span class="seq-steps-badge">{{ m.num_steps }}</span></td>
+                    <td><span class="seq-status-badge {{ 'active' if m.active else 'inactive' }}">{{ 'Active' if m.active else 'Inactive' }}</span></td>
+                    <td>
+                        <select class="cell-select" data-field="campaign" onchange="markDirty(this)">
+                            <option value="">-- None --</option>
+                            {% for c in campaigns %}
+                            <option value="{{ c.id }}" {% if m.campaign_id == c.id %}selected{% endif %}>{{ c.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </td>
+                    <td>
+                        <input class="cell-input" type="text" data-field="owner" value="{{ m.owner_name or '' }}" placeholder="Owner name" oninput="markDirty(this)">
+                    </td>
+                    <td>
+                        <div class="row-actions">
+                            <button class="btn-save" onclick="saveRow({{ m.id }})">Save</button>
+                            <button class="btn-disable" onclick="toggleEnabled({{ m.id }}, false, '{{ m.sequence_name | e }}')" title="Disable">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path><line x1="12" y1="2" x2="12" y2="12"></line></svg>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="ms-empty" id="ms-empty-enabled">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+        </svg>
+        <h3>No sequences enabled yet</h3>
+        <p>Search below to find and enable sequences. Enabled sequences can be assigned to campaigns.</p>
+    </div>
+    {% endif %}
+
+    <!-- ── Search & Enable Panel ── -->
+    <div class="ms-section-header" style="margin-top: 2rem;">
+        <h2>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+            Find & Enable Sequences
+        </h2>
+    </div>
+    <div class="ms-search-panel">
+        <div class="ms-search-bar">
+            <input type="text" id="search-input" placeholder="Search sequences by name..." oninput="debounceSearch()">
+        </div>
+        <div class="ms-search-results" id="search-results">
+            <div class="ms-search-hint" id="search-hint">
+                Type at least 2 characters to search across all synced Apollo sequences
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Toast -->
+<div class="ms-toast" id="ms-toast"></div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+    'use strict';
+
+    let searchTimer = null;
+
+    // ── Toast ──
+    function showToast(msg, type) {
+        const toast = document.getElementById('ms-toast');
+        toast.textContent = msg;
+        toast.className = 'ms-toast ' + (type || 'info');
+        setTimeout(() => toast.classList.add('show'), 10);
+        setTimeout(() => toast.classList.remove('show'), 3000);
+    }
+
+    // ── Mark row as dirty (show Save button) ──
+    window.markDirty = function(el) {
+        const row = el.closest('tr');
+        const saveBtn = row.querySelector('.btn-save');
+        if (saveBtn) saveBtn.classList.add('visible');
+    };
+
+    // ── Sync from Apollo ──
+    window.syncFromApollo = async function() {
+        const btn = document.getElementById('btn-sync');
+        const icon = document.getElementById('sync-icon');
+        btn.disabled = true;
+        icon.classList.add('spin');
+
+        try {
+            const resp = await fetch('/api/sequence-mappings/sync', { method: 'POST' });
+            const data = await resp.json();
+            if (data.status === 'success') {
+                showToast(`Synced ${data.synced} sequences from Apollo`, 'success');
+                setTimeout(() => window.location.reload(), 600);
+            } else {
+                showToast(data.message || 'Sync failed', 'error');
+                btn.disabled = false;
+                icon.classList.remove('spin');
+            }
+        } catch(e) {
+            showToast('Network error during sync', 'error');
+            btn.disabled = false;
+            icon.classList.remove('spin');
+        }
+    };
+
+    // ── Save row changes ──
+    window.saveRow = async function(id) {
+        const row = document.getElementById('row-' + id);
+        if (!row) return;
+
+        const campaignSelect = row.querySelector('[data-field="campaign"]');
+        const ownerInput = row.querySelector('[data-field="owner"]');
+
+        const payload = {
+            campaign_id: campaignSelect.value || null,
+            owner_name: ownerInput.value.trim() || null,
+        };
+
+        try {
+            const resp = await fetch(`/api/sequence-mappings/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            const data = await resp.json();
+            if (data.status === 'success') {
+                showToast('Mapping updated', 'success');
+                const saveBtn = row.querySelector('.btn-save');
+                if (saveBtn) saveBtn.classList.remove('visible');
+            } else {
+                showToast(data.message || 'Failed to save', 'error');
+            }
+        } catch(e) {
+            showToast('Network error', 'error');
+        }
+    };
+
+    // ── Toggle enabled/disabled ──
+    window.toggleEnabled = async function(id, enable, name) {
+        if (!enable) {
+            if (!confirm(`Disable "${name}"? It will be removed from campaigns and this list.`)) return;
+        }
+        try {
+            const resp = await fetch(`/api/sequence-mappings/${id}/toggle`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ enabled: enable }),
+            });
+            const data = await resp.json();
+            if (data.status === 'success') {
+                if (enable) {
+                    showToast(`"${name}" enabled`, 'success');
+                    setTimeout(() => window.location.reload(), 400);
+                } else {
+                    showToast(`"${name}" disabled`, 'info');
+                    const row = document.getElementById('row-' + id);
+                    if (row) {
+                        row.style.opacity = '0';
+                        row.style.transition = 'opacity 0.2s';
+                        setTimeout(() => {
+                            row.remove();
+                            updateEnabledCount();
+                        }, 200);
+                    }
+                }
+                // Refresh search results if open
+                const input = document.getElementById('search-input');
+                if (input.value.trim().length >= 2) {
+                    doSearch(input.value.trim());
+                }
+            } else {
+                showToast(data.message || 'Failed to toggle', 'error');
+            }
+        } catch(e) {
+            showToast('Network error', 'error');
+        }
+    };
+
+    function updateEnabledCount() {
+        const tbody = document.getElementById('ms-tbody');
+        const count = tbody ? tbody.children.length : 0;
+        document.getElementById('enabled-count').textContent = count;
+        if (count === 0) {
+            window.location.reload();
+        }
+    }
+
+    // ── Search sequences ──
+    window.debounceSearch = function() {
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(() => {
+            const q = document.getElementById('search-input').value.trim();
+            if (q.length < 2) {
+                document.getElementById('search-results').innerHTML =
+                    '<div class="ms-search-hint" id="search-hint">Type at least 2 characters to search across all synced Apollo sequences</div>';
+                return;
+            }
+            doSearch(q);
+        }, 300);
+    };
+
+    async function doSearch(q) {
+        const container = document.getElementById('search-results');
+        container.innerHTML = '<div class="ms-search-hint">Searching...</div>';
+
+        try {
+            const resp = await fetch(`/api/sequence-mappings/search?q=${encodeURIComponent(q)}`);
+            const data = await resp.json();
+            if (data.status !== 'success') {
+                container.innerHTML = '<div class="ms-search-hint">Search failed</div>';
+                return;
+            }
+
+            const results = data.results || [];
+            if (results.length === 0) {
+                container.innerHTML = '<div class="ms-search-hint">No sequences found matching "' + q.replace(/</g, '&lt;') + '"</div>';
+                return;
+            }
+
+            let html = '';
+            for (const r of results) {
+                const isEnabled = r.enabled === 1;
+                html += `
+                <div class="sr-item">
+                    <div class="sr-info">
+                        <span class="sr-name">${escapeHtml(r.sequence_name)}</span>
+                        <span class="sr-meta">${r.num_steps} steps &middot; ${r.active ? 'Active' : 'Inactive'}</span>
+                    </div>
+                    ${isEnabled
+                        ? '<button class="btn-enable" disabled style="background:#d1fae5;color:#065f46;border-color:#d1fae5;">Enabled</button>'
+                        : `<button class="btn-enable" onclick="toggleEnabled(${r.id}, true, '${escapeHtml(r.sequence_name).replace(/'/g, "\\'")}')">Enable</button>`
+                    }
+                </div>`;
+            }
+            container.innerHTML = html;
+        } catch(e) {
+            container.innerHTML = '<div class="ms-search-hint">Network error</div>';
+        }
+    }
+
+    function escapeHtml(str) {
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    }
+
+})();
+</script>
+{% endblock %}

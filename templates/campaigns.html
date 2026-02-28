@@ -357,19 +357,24 @@
         }
     });
 
-    // ── Load Apollo sequences into dropdown ──
+    // ── Load enabled sequences into dropdown ──
     window.loadApolloSequences = async function() {
         const sel = document.getElementById('campaign-sequence');
         const currentVal = sel.value;
         sel.innerHTML = '<option value="">Loading sequences...</option>';
 
         try {
-            const resp = await fetch('/api/apollo/sequences');
+            const resp = await fetch('/api/sequence-mappings/enabled');
             const data = await resp.json();
             if (data.status === 'success' && data.sequences) {
-                sequencesCache = data.sequences;
+                sequencesCache = data.sequences.map(s => ({
+                    id: s.sequence_id,
+                    name: s.sequence_name,
+                    num_steps: s.num_steps,
+                    active: s.active,
+                }));
                 sel.innerHTML = '<option value="">Select a sequence...</option>';
-                for (const seq of data.sequences) {
+                for (const seq of sequencesCache) {
                     const opt = document.createElement('option');
                     opt.value = seq.id;
                     opt.textContent = `${seq.name} (${seq.num_steps} steps${seq.active ? '' : ', inactive'})`;
@@ -380,7 +385,7 @@
                 // Restore previous selection if exists
                 if (currentVal) sel.value = currentVal;
             } else {
-                sel.innerHTML = '<option value="">No sequences found (check Apollo API key)</option>';
+                sel.innerHTML = '<option value="">No enabled sequences — enable them in Mapping Sequences</option>';
             }
         } catch(e) {
             sel.innerHTML = '<option value="">Failed to load sequences</option>';
