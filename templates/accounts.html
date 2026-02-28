@@ -129,6 +129,14 @@
             <button type="button" class="btn-action-smart" id="batch-rescan-btn" onclick="showBatchRescanModal()" title="Rescan accounts in controlled batches to avoid rate limits">
                 Batch Rescan
             </button>
+            <button type="button" class="btn-action-smart" id="scheduler-btn" onclick="showSchedulerModal()" title="View and configure the automatic tier-based rescan scheduler" style="background:var(--color-surface-alt,#1e293b)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <polyline points="12 6 12 12 16 14"></polyline>
+                </svg>
+                Auto-Rescan
+                <span id="scheduler-status-dot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#10b981;margin-left:6px;vertical-align:middle" title="Scheduler running"></span>
+            </button>
         </div>
     </div>
     <div class="accounts-table-container">
@@ -427,13 +435,67 @@
                 <label style="display:block;font-size:0.85rem;margin-bottom:0.35rem;font-weight:500">Scope</label>
                 <select id="batch-rescan-scope" class="filter-select" style="width:100%">
                     <option value="all">All accounts with GitHub org</option>
-                    <option value="refreshable">Refreshable (Tiers 0-2, stale)</option>
+                    <option value="refreshable">Refreshable (all tiers, past their interval)</option>
                     <option value="never_scanned">Never scanned</option>
                 </select>
             </div>
             <div style="display:flex;gap:0.75rem;justify-content:flex-end">
                 <button type="button" class="btn-clear-filters" onclick="hideBatchRescanModal()">Cancel</button>
                 <button type="button" class="btn-action-smart" id="batch-rescan-start-btn" onclick="startBatchRescan()">Start Batch Rescan</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Auto-Rescan Scheduler Modal -->
+    <div class="modal-overlay" id="scheduler-modal" style="display:none">
+        <div class="modal-content" style="max-width:560px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
+                <h3 style="margin:0">Auto-Rescan Scheduler</h3>
+                <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;font-size:0.85rem">
+                    <input type="checkbox" id="scheduler-enabled-toggle" checked onchange="toggleScheduler(this.checked)">
+                    <span id="scheduler-enabled-label">Enabled</span>
+                </label>
+            </div>
+            <p style="color:var(--text-muted,#888);font-size:0.85rem;margin:0 0 1rem">
+                Automatically rescans accounts at tier-specific intervals. Hot leads are checked more often; cold leads and not-found accounts less frequently.
+            </p>
+
+            <!-- Tier Intervals Table -->
+            <table style="width:100%;border-collapse:collapse;font-size:0.85rem;margin-bottom:1rem">
+                <thead>
+                    <tr style="border-bottom:1px solid var(--color-border,#333)">
+                        <th style="text-align:left;padding:0.5rem 0.75rem;font-weight:600">Tier</th>
+                        <th style="text-align:center;padding:0.5rem 0.75rem;font-weight:600">Interval</th>
+                        <th style="text-align:center;padding:0.5rem 0.75rem;font-weight:600">Total</th>
+                        <th style="text-align:center;padding:0.5rem 0.75rem;font-weight:600">Due Now</th>
+                    </tr>
+                </thead>
+                <tbody id="scheduler-tiers-tbody">
+                    <tr><td colspan="4" style="padding:1rem;text-align:center;color:var(--text-muted,#888)">Loading...</td></tr>
+                </tbody>
+            </table>
+
+            <!-- Scheduler Config -->
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-bottom:1rem">
+                <div>
+                    <label style="display:block;font-size:0.8rem;margin-bottom:0.25rem;font-weight:500;color:var(--text-muted,#888)">Check every (hours)</label>
+                    <input type="number" id="scheduler-interval-hours" class="filter-select" style="width:100%" value="6" min="1" max="48">
+                </div>
+                <div>
+                    <label style="display:block;font-size:0.8rem;margin-bottom:0.25rem;font-weight:500;color:var(--text-muted,#888)">Max per cycle</label>
+                    <input type="number" id="scheduler-max-per-cycle" class="filter-select" style="width:100%" value="100" min="1" max="500">
+                </div>
+            </div>
+
+            <!-- Status Line -->
+            <div id="scheduler-status-line" style="font-size:0.8rem;color:var(--text-muted,#888);margin-bottom:1rem;padding:0.5rem 0.75rem;background:var(--color-surface-alt,#1e293b);border-radius:6px">
+                Last check: never &mdash; Total queued: 0
+            </div>
+
+            <div style="display:flex;gap:0.75rem;justify-content:flex-end">
+                <button type="button" class="btn-clear-filters" onclick="hideSchedulerModal()">Close</button>
+                <button type="button" class="btn-clear-filters" onclick="saveSchedulerConfig()">Save Config</button>
+                <button type="button" class="btn-action-smart" onclick="runSchedulerNow()">Run Now</button>
             </div>
         </div>
     </div>
@@ -2784,6 +2846,142 @@
                 document.getElementById('batch-rescan-title').textContent = 'Batch Rescan';
                 document.getElementById('batch-rescan-bar').style.background = 'var(--color-primary,#3b82f6)';
                 startBatchRescanPolling();
+            }
+        } catch(e) {}
+    })();
+
+    // =========================================================================
+    // Auto-Rescan Scheduler UI
+    // =========================================================================
+
+    const TIER_COLORS = {0: '#6b7280', 1: '#eab308', 2: '#10b981', 3: '#ef4444', 4: '#374151'};
+
+    function showSchedulerModal() {
+        document.getElementById('scheduler-modal').style.display = 'flex';
+        loadSchedulerStatus();
+    }
+    function hideSchedulerModal() {
+        document.getElementById('scheduler-modal').style.display = 'none';
+    }
+    document.getElementById('scheduler-modal')?.addEventListener('click', function(e) {
+        if (e.target === this) hideSchedulerModal();
+    });
+
+    async function loadSchedulerStatus() {
+        try {
+            const resp = await fetch('/api/scheduled-rescan/status');
+            const data = await resp.json();
+            const sched = data.scheduler;
+            const tiers = data.tiers;
+
+            // Update toggle
+            const toggle = document.getElementById('scheduler-enabled-toggle');
+            toggle.checked = sched.enabled;
+            document.getElementById('scheduler-enabled-label').textContent = sched.enabled ? 'Enabled' : 'Paused';
+
+            // Update status dot in header button
+            const dot = document.getElementById('scheduler-status-dot');
+            dot.style.background = sched.enabled ? '#10b981' : '#ef4444';
+            dot.title = sched.enabled ? 'Scheduler running' : 'Scheduler paused';
+
+            // Config fields
+            document.getElementById('scheduler-interval-hours').value = sched.check_interval_hours;
+            document.getElementById('scheduler-max-per-cycle').value = sched.max_per_cycle;
+
+            // Status line
+            const lastCheck = sched.last_check_at ? new Date(sched.last_check_at).toLocaleString() : 'never';
+            document.getElementById('scheduler-status-line').innerHTML =
+                `Last check: <strong>${lastCheck}</strong> &mdash; ` +
+                `Queued last cycle: <strong>${sched.last_queued_count}</strong> &mdash; ` +
+                `Total lifetime: <strong>${sched.total_queued_lifetime}</strong>`;
+
+            // Tier rows
+            const tbody = document.getElementById('scheduler-tiers-tbody');
+            // Sort tiers by priority: 2, 1, 3, 0, 4
+            const tierOrder = [2, 1, 3, 0, 4];
+            let html = '';
+            for (const t of tierOrder) {
+                const info = tiers[String(t)];
+                if (!info) continue;
+                const color = TIER_COLORS[t] || '#888';
+                const dueBadge = info.due_now > 0
+                    ? `<span style="background:${t === 2 ? '#10b981' : '#3b82f6'};color:#fff;padding:2px 8px;border-radius:10px;font-weight:600">${info.due_now}</span>`
+                    : `<span style="color:var(--text-muted,#666)">0</span>`;
+                html += `<tr style="border-bottom:1px solid var(--color-border,#222)">
+                    <td style="padding:0.5rem 0.75rem">
+                        <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${color};margin-right:6px;vertical-align:middle"></span>
+                        ${info.tier_name} <span style="color:var(--text-muted,#888);font-size:0.8rem">(${info.tier_status})</span>
+                    </td>
+                    <td style="text-align:center;padding:0.5rem 0.75rem">${info.interval_days}d</td>
+                    <td style="text-align:center;padding:0.5rem 0.75rem">${info.total}</td>
+                    <td style="text-align:center;padding:0.5rem 0.75rem">${dueBadge}</td>
+                </tr>`;
+            }
+            tbody.innerHTML = html;
+
+        } catch(e) {
+            console.error('Failed to load scheduler status:', e);
+        }
+    }
+
+    async function toggleScheduler(enabled) {
+        try {
+            await fetch('/api/scheduled-rescan/toggle', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({enabled})
+            });
+            document.getElementById('scheduler-enabled-label').textContent = enabled ? 'Enabled' : 'Paused';
+            const dot = document.getElementById('scheduler-status-dot');
+            dot.style.background = enabled ? '#10b981' : '#ef4444';
+            dot.title = enabled ? 'Scheduler running' : 'Scheduler paused';
+            showNotification(enabled ? 'Auto-rescan scheduler enabled' : 'Auto-rescan scheduler paused', 'info');
+        } catch(e) {
+            showNotification('Failed to toggle scheduler', 'warning');
+        }
+    }
+
+    async function saveSchedulerConfig() {
+        const hours = parseInt(document.getElementById('scheduler-interval-hours').value) || 6;
+        const maxPer = parseInt(document.getElementById('scheduler-max-per-cycle').value) || 100;
+        try {
+            const resp = await fetch('/api/scheduled-rescan/config', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({check_interval_hours: hours, max_per_cycle: maxPer})
+            });
+            if (resp.ok) {
+                showNotification(`Scheduler config saved: check every ${hours}h, max ${maxPer}/cycle`, 'success');
+            } else {
+                const data = await resp.json();
+                showNotification(data.message || 'Failed to save config', 'warning');
+            }
+        } catch(e) {
+            showNotification('Failed to save scheduler config', 'warning');
+        }
+    }
+
+    async function runSchedulerNow() {
+        try {
+            const resp = await fetch('/api/scheduled-rescan/run-now', {method: 'POST'});
+            const data = await resp.json();
+            showNotification(`Queued ${data.queued} of ${data.total_due} due accounts for rescan`, 'info');
+            // Refresh the modal data
+            setTimeout(loadSchedulerStatus, 1000);
+        } catch(e) {
+            showNotification('Failed to trigger rescan', 'warning');
+        }
+    }
+
+    // Load scheduler status dot on page load
+    (async function checkSchedulerOnLoad() {
+        try {
+            const resp = await fetch('/api/scheduled-rescan/status');
+            const data = await resp.json();
+            const dot = document.getElementById('scheduler-status-dot');
+            if (dot) {
+                dot.style.background = data.scheduler.enabled ? '#10b981' : '#ef4444';
+                dot.title = data.scheduler.enabled ? 'Scheduler running' : 'Scheduler paused';
             }
         } catch(e) {}
     })();
