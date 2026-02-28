@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "github-dossier": {
+      "command": "/Users/ericmurray/GItHub-Dossier/.venv-mcp/bin/python",
+      "args": ["mcp_server.py"],
+      "cwd": "/Users/ericmurray/GItHub-Dossier"
+    }
+  }
+}
