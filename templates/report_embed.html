@@ -299,8 +299,6 @@
 </div>
 
 <script>
-    const contributorsData = {{ (report.scan_data.contributors or {})|tojson }};
-    let selectedContributor = null;
 
     function copyEmailDraft(button) {
         const subject = document.getElementById('emailSubject').value;
