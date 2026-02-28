@@ -52,6 +52,9 @@ from database import (
     TIER_SCAN_INTERVALS, get_scheduled_rescan_summary,
     # Campaigns
     create_campaign, update_campaign, delete_campaign, get_campaign, get_all_campaigns,
+    # Sequence Mappings
+    upsert_sequence_mapping, get_all_sequence_mappings, update_sequence_mapping, delete_sequence_mapping,
+    search_sequence_mappings, toggle_sequence_mapping_enabled,
 )
 from monitors.webscraper_utils import (
     detect_expansion_signals, calculate_webscraper_tier, extract_tier_from_scan_results,
@@ -1613,6 +1616,144 @@ def campaigns():
     return render_template('campaigns.html', campaigns=all_campaigns)
 
 
+@app.route('/mapping-sequences')
+def mapping_sequences():
+    """Mapping Sequences — browse enabled Apollo sequences and assign them to campaigns."""
+    mappings = get_all_sequence_mappings(enabled_only=True)
+    all_campaigns = get_all_campaigns()
+    return render_template('mapping_sequences.html', mappings=mappings, campaigns=all_campaigns)
+
+
+# =============================================================================
+# SEQUENCE MAPPINGS API
+# =============================================================================
+
+@app.route('/api/sequence-mappings/sync', methods=['POST'])
+def api_sequence_mappings_sync():
+    """Pull sequences from Apollo and upsert into sequence_mappings table."""
+    import requests as req
+
+    apollo_key = os.environ.get('APOLLO_API_KEY', '')
+    if not apollo_key:
+        return jsonify({'status': 'error', 'message': 'Apollo API key not configured. Add APOLLO_API_KEY in Settings.'}), 400
+
+    try:
+        apollo_headers = {'X-Api-Key': apollo_key, 'Content-Type': 'application/json'}
+
+        # Paginate through all sequences (Apollo returns 25 per page by default)
+        all_sequences = []
+        page = 1
+        while True:
+            resp = req.post('https://api.apollo.io/api/v1/emailer_campaigns/search',
+                           json={'page': page},
+                           headers=apollo_headers,
+                           timeout=15)
+
+            if resp.status_code == 403:
+                return jsonify({'status': 'error', 'message': 'API key lacks permission. Ensure you are using a Master API key.'}), 502
+            if resp.status_code != 200:
+                logging.error(f"[SEQUENCE SYNC] Apollo returned {resp.status_code}: {resp.text[:500]}")
+                return jsonify({'status': 'error', 'message': f'Apollo API returned {resp.status_code}'}), 502
+
+            data = resp.json()
+            batch = data.get('emailer_campaigns', [])
+            all_sequences.extend(batch)
+
+            pagination = data.get('pagination', {})
+            if page >= pagination.get('total_pages', 1):
+                break
+            page += 1
+
+        apollo_sequences = all_sequences
+        synced = 0
+        for seq in apollo_sequences:
+            seq_id = seq.get('id')
+            if not seq_id:
+                continue
+            # Use num_steps from top-level (emailer_steps not returned in list)
+            num_steps = seq.get('num_steps', 0)
+            # Config type detection is deferred — list API doesn't include step details
+            config_type = None
+
+            # Try to get owner/creator name from Apollo response
+            owner_name = None
+            creator = seq.get('user') or seq.get('creator') or {}
+            if isinstance(creator, dict):
+                first = (creator.get('first_name') or '').strip()
+                last = (creator.get('last_name') or '').strip()
+                if first or last:
+                    owner_name = f"{first} {last}".strip()
+
+            upsert_sequence_mapping(
+                sequence_id=seq_id,
+                sequence_name=seq.get('name', 'Unnamed Sequence'),
+                sequence_config=config_type,
+                num_steps=num_steps,
+                active=seq.get('active', False),
+                owner_name=owner_name,
+            )
+            synced += 1
+
+        mappings = get_all_sequence_mappings()
+        return jsonify({'status': 'success', 'synced': synced, 'mappings': mappings})
+    except Exception as e:
+        logging.error(f"[SEQUENCE MAPPINGS SYNC ERROR] {e}")
+        return jsonify({'status': 'error', 'message': 'Failed to sync sequences from Apollo'}), 500
+
+
+@app.route('/api/sequence-mappings/<int:mapping_id>', methods=['PUT'])
+def api_sequence_mapping_update(mapping_id):
+    """Update a sequence mapping (campaign assignment and/or owner)."""
+    data = request.get_json() or {}
+    updates = {}
+    if 'campaign_id' in data:
+        val = data['campaign_id']
+        updates['campaign_id'] = int(val) if val else None
+    if 'owner_name' in data:
+        updates['owner_name'] = (data['owner_name'] or '').strip() or None
+
+    if not updates:
+        return jsonify({'status': 'error', 'message': 'No fields to update'}), 400
+
+    update_sequence_mapping(mapping_id, **updates)
+    return jsonify({'status': 'success'})
+
+
+@app.route('/api/sequence-mappings/<int:mapping_id>', methods=['DELETE'])
+def api_sequence_mapping_delete(mapping_id):
+    """Remove a sequence mapping."""
+    delete_sequence_mapping(mapping_id)
+    return jsonify({'status': 'success'})
+
+
+@app.route('/api/sequence-mappings/search', methods=['GET'])
+def api_sequence_mappings_search():
+    """Search disabled sequences by name for BDRs to enable."""
+    q = request.args.get('q', '').strip()
+    if not q or len(q) < 2:
+        return jsonify({'status': 'success', 'results': []})
+    results = search_sequence_mappings(q, enabled_only=False)
+    return jsonify({'status': 'success', 'results': results})
+
+
+@app.route('/api/sequence-mappings/<int:mapping_id>/toggle', methods=['POST'])
+def api_sequence_mapping_toggle(mapping_id):
+    """Toggle a sequence mapping's enabled/disabled status."""
+    data = request.get_json() or {}
+    enabled = bool(data.get('enabled', False))
+    changed = toggle_sequence_mapping_enabled(mapping_id, enabled)
+    if not changed:
+        return jsonify({'status': 'error', 'message': 'Mapping not found'}), 404
+    return jsonify({'status': 'success', 'enabled': enabled})
+
+
+@app.route('/api/sequence-mappings/enabled', methods=['GET'])
+def api_sequence_mappings_enabled():
+    """Return only enabled sequences — used by campaign sequence picker."""
+    mappings = get_all_sequence_mappings(enabled_only=True)
+    return jsonify({'status': 'success', 'sequences': mappings})
+
+
 # =============================================================================
 # CAMPAIGNS API — CRUD + Sequence Steps Preview
 # =============================================================================
@@ -1696,18 +1837,32 @@ def api_apollo_sequence_steps(sequence_id):
 
     try:
         apollo_headers = {'X-Api-Key': apollo_key, 'Content-Type': 'application/json'}
-        resp = req.post(
-            'https://api.apollo.io/api/v1/emailer_campaigns/search',
-            json={'per_page': 200},
-            headers=apollo_headers,
-            timeout=15
-        )
 
-        if resp.status_code != 200:
-            return jsonify({'status': 'api_error', 'steps': []}), 200
+        # Paginate to find the specific sequence by ID
+        campaign = None
+        page = 1
+        while True:
+            resp = req.post(
+                'https://api.apollo.io/api/v1/emailer_campaigns/search',
+                json={'page': page},
+                headers=apollo_headers,
+                timeout=15
+            )
 
-        campaigns_data = resp.json().get('emailer_campaigns', [])
-        campaign = next((c for c in campaigns_data if c.get('id') == sequence_id), None)
+            if resp.status_code != 200:
+                return jsonify({'status': 'api_error', 'steps': []}), 200
+
+            data = resp.json()
+            campaigns_data = data.get('emailer_campaigns', [])
+            campaign = next((c for c in campaigns_data if c.get('id') == sequence_id), None)
+            if campaign:
+                break
+
+            pagination = data.get('pagination', {})
+            if page >= pagination.get('total_pages', 1):
+                break
+            page += 1
+
         if not campaign:
             return jsonify({'status': 'not_found', 'steps': []}), 200
 
@@ -6462,27 +6617,36 @@ def api_apollo_sequences():
     
     try:
         apollo_headers = {'X-Api-Key': apollo_key, 'Content-Type': 'application/json'}
-        resp = req.post('https://api.apollo.io/api/v1/emailer_campaigns/search',
-                       json={'per_page': 200},
-                       headers=apollo_headers,
-                       timeout=15)
 
-        if resp.status_code == 403:
-            return jsonify({'status': 'error', 'message': 'API key lacks permission. Ensure you are using a Master API key in Apollo.'}), 502
-        if resp.status_code != 200:
-            return jsonify({'status': 'error', 'message': f'Apollo API returned {resp.status_code}'}), 502
-        
-        campaigns = resp.json().get('emailer_campaigns', [])
+        # Paginate through all sequences (Apollo returns 25 per page)
         sequences = []
-        for c in campaigns:
-            sequences.append({
-                'id': c.get('id'),
-                'name': c.get('name', 'Unnamed Sequence'),
-                'active': c.get('active', False),
-                'num_steps': len(c.get('emailer_steps', [])),
-                'created_at': c.get('created_at', ''),
-            })
-        
+        page = 1
+        while True:
+            resp = req.post('https://api.apollo.io/api/v1/emailer_campaigns/search',
+                           json={'page': page},
+                           headers=apollo_headers,
+                           timeout=15)
+
+            if resp.status_code == 403:
+                return jsonify({'status': 'error', 'message': 'API key lacks permission. Ensure you are using a Master API key in Apollo.'}), 502
+            if resp.status_code != 200:
+                return jsonify({'status': 'error', 'message': f'Apollo API returned {resp.status_code}'}), 502
+
+            data = resp.json()
+            for c in data.get('emailer_campaigns', []):
+                sequences.append({
+                    'id': c.get('id'),
+                    'name': c.get('name', 'Unnamed Sequence'),
+                    'active': c.get('active', False),
+                    'num_steps': c.get('num_steps', 0),
+                    'created_at': c.get('created_at', ''),
+                })
+
+            pagination = data.get('pagination', {})
+            if page >= pagination.get('total_pages', 1):
+                break
+            page += 1
+
         return jsonify({'status': 'success', 'sequences': sequences})
     except Exception as e:
         logging.error(f"[APOLLO SEQUENCES ERROR] {e}")
@@ -6514,22 +6678,34 @@ def api_apollo_sequence_detect():
 
     try:
         apollo_headers = {'X-Api-Key': apollo_key, 'Content-Type': 'application/json'}
-        resp = req.post(
-            'https://api.apollo.io/api/v1/emailer_campaigns/search',
-            json={'per_page': 200},
-            headers=apollo_headers,
-            timeout=15
-        )
 
-        if resp.status_code == 403:
-            return jsonify({'status': 'auth_error'}), 200
-        if resp.status_code != 200:
-            return jsonify({'status': 'api_error'}), 200
+        # Paginate to find the specific sequence by ID
+        campaign = None
+        page = 1
+        while True:
+            resp = req.post(
+                'https://api.apollo.io/api/v1/emailer_campaigns/search',
+                json={'page': page},
+                headers=apollo_headers,
+                timeout=15
+            )
 
-        campaigns = resp.json().get('emailer_campaigns', [])
+            if resp.status_code == 403:
+                return jsonify({'status': 'auth_error'}), 200
+            if resp.status_code != 200:
+                return jsonify({'status': 'api_error'}), 200
 
-        # Find the specific sequence by ID
-        campaign = next((c for c in campaigns if c.get('id') == sequence_id), None)
+            data = resp.json()
+            campaigns = data.get('emailer_campaigns', [])
+            campaign = next((c for c in campaigns if c.get('id') == sequence_id), None)
+            if campaign:
+                break
+
+            pagination = data.get('pagination', {})
+            if page >= pagination.get('total_pages', 1):
+                break
+            page += 1
+
         if not campaign:
             return jsonify({'status': 'not_found'}), 200
 

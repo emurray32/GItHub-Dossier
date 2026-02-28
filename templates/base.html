@@ -39,6 +39,10 @@
                     <i data-lucide="send" class="sidebar-icon"></i>
                     <span class="sidebar-label">Campaigns</span>
                 </a>
+                <a href="{{ url_for('mapping_sequences') }}" class="sidebar-item {% if request.endpoint == 'mapping_sequences' %}active{% endif %}">
+                    <i data-lucide="link" class="sidebar-icon"></i>
+                    <span class="sidebar-label">Mapping Sequences</span>
+                </a>
                 <a href="{{ url_for('contributors') }}" class="sidebar-item {% if request.endpoint == 'contributors' %}active{% endif %}">
                     <i data-lucide="users" class="sidebar-icon"></i>
                     <span class="sidebar-label">Contributors</span>
