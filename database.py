@@ -558,6 +558,116 @@ def init_db() -> None:
     if 'enabled' not in cols:
         cursor.execute('ALTER TABLE sequence_mappings ADD COLUMN enabled INTEGER DEFAULT 0')
 
+    # Campaign personas table - maps campaigns to persona groups with sequence assignments
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS campaign_personas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            campaign_id INTEGER NOT NULL,
+            persona_name TEXT NOT NULL,
+            titles_json TEXT DEFAULT '[]',
+            seniorities_json TEXT DEFAULT '[]',
+            sequence_id TEXT NOT NULL,
+            sequence_name TEXT,
+            priority INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_campaign_personas_campaign
+        ON campaign_personas(campaign_id)
+    ''')
+
+    cursor.execute('''
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_campaign_personas_unique
+        ON campaign_personas(campaign_id, persona_name)
+    ''')
+
+    # Enrollment batches table - tracks batch enrollment runs
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS enrollment_batches (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            campaign_id INTEGER NOT NULL,
+            status TEXT DEFAULT 'pending',
+            total_accounts INTEGER DEFAULT 0,
+            total_contacts INTEGER DEFAULT 0,
+            discovered INTEGER DEFAULT 0,
+            generated INTEGER DEFAULT 0,
+            enrolled INTEGER DEFAULT 0,
+            failed INTEGER DEFAULT 0,
+            skipped INTEGER DEFAULT 0,
+            current_phase TEXT DEFAULT 'idle',
+            error_message TEXT,
+            account_ids_json TEXT DEFAULT '[]',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            started_at TIMESTAMP,
+            completed_at TIMESTAMP,
+            FOREIGN KEY (campaign_id) REFERENCES campaigns(id)
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_enrollment_batches_campaign
+        ON enrollment_batches(campaign_id)
+    ''')
+
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_enrollment_batches_status
+        ON enrollment_batches(status)
+    ''')
+
+    # Enrollment contacts table - per-contact audit trail
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS enrollment_contacts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            batch_id INTEGER NOT NULL,
+            account_id INTEGER,
+            company_name TEXT NOT NULL,
+            company_domain TEXT,
+            persona_name TEXT,
+            sequence_id TEXT,
+            sequence_name TEXT,
+            apollo_person_id TEXT,
+            first_name TEXT,
+            last_name TEXT,
+            email TEXT,
+            title TEXT,
+            seniority TEXT,
+            linkedin_url TEXT,
+            generated_emails_json TEXT,
+            status TEXT DEFAULT 'discovered',
+            apollo_contact_id TEXT,
+            error_message TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            enrolled_at TIMESTAMP,
+            FOREIGN KEY (batch_id) REFERENCES enrollment_batches(id) ON DELETE CASCADE
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_enrollment_contacts_batch
+        ON enrollment_contacts(batch_id)
+    ''')
+
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_enrollment_contacts_status
+        ON enrollment_contacts(status)
+    ''')
+
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_enrollment_contacts_email
+        ON enrollment_contacts(email)
+    ''')
+
+    # Migration: backfill campaign_personas from existing campaigns.sequence_id
+    cursor.execute('''
+        INSERT OR IGNORE INTO campaign_personas (campaign_id, persona_name, titles_json, seniorities_json, sequence_id, sequence_name)
+        SELECT id, 'Default', '[]', '[]', sequence_id, sequence_name
+        FROM campaigns
+        WHERE sequence_id IS NOT NULL AND sequence_id != ''
+    ''')
+
     conn.commit()
     conn.close()
 
@@ -5190,28 +5300,52 @@ def delete_campaign(campaign_id: int) -> bool:
 
 
 def get_campaign(campaign_id: int) -> Optional[dict]:
-    """Get a single campaign by ID."""
+    """Get a single campaign by ID, including its personas."""
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute('SELECT * FROM campaigns WHERE id = ?', (campaign_id,))
     row = cursor.fetchone()
-    conn.close()
     if not row:
+        conn.close()
         return None
     campaign = dict(row)
     try:
         campaign['assets'] = json.loads(campaign.get('assets') or '[]')
     except (json.JSONDecodeError, TypeError):
         campaign['assets'] = []
+    # Attach personas
+    cursor.execute(
+        'SELECT * FROM campaign_personas WHERE campaign_id = ? ORDER BY priority ASC, id ASC',
+        (campaign_id,)
+    )
+    personas = []
+    for p in cursor.fetchall():
+        persona = dict(p)
+        try:
+            persona['titles'] = json.loads(persona.get('titles_json') or '[]')
+        except (json.JSONDecodeError, TypeError):
+            persona['titles'] = []
+        try:
+            persona['seniorities'] = json.loads(persona.get('seniorities_json') or '[]')
+        except (json.JSONDecodeError, TypeError):
+            persona['seniorities'] = []
+        personas.append(persona)
+    campaign['personas'] = personas
+    conn.close()
     return campaign
 
 
 def get_all_campaigns() -> list:
-    """Get all campaigns ordered by most recently updated."""
+    """Get all campaigns ordered by most recently updated, with persona counts."""
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute('SELECT * FROM campaigns ORDER BY updated_at DESC')
     rows = cursor.fetchall()
+    # Batch-fetch persona counts
+    cursor.execute('''
+        SELECT campaign_id, COUNT(*) as cnt FROM campaign_personas GROUP BY campaign_id
+    ''')
+    persona_counts = {r['campaign_id']: r['cnt'] for r in cursor.fetchall()}
     conn.close()
     campaigns = []
     for row in rows:
@@ -5220,6 +5354,7 @@ def get_all_campaigns() -> list:
             c['assets'] = json.loads(c.get('assets') or '[]')
         except (json.JSONDecodeError, TypeError):
             c['assets'] = []
+        c['persona_count'] = persona_counts.get(c['id'], 0)
         campaigns.append(c)
     return campaigns
 
@@ -5254,26 +5389,39 @@ def upsert_sequence_mapping(sequence_id: str, sequence_name: str,
 
 
 def get_all_sequence_mappings(enabled_only: bool = False) -> list:
-    """Get sequence mappings with joined campaign names. Optionally filter to enabled only."""
+    """Get sequence mappings with campaigns derived from campaigns.sequence_id (many-to-many)."""
     conn = get_db_connection()
     cursor = conn.cursor()
-    query = '''
-        SELECT sm.*, c.name AS campaign_name
-        FROM sequence_mappings sm
-        LEFT JOIN campaigns c ON sm.campaign_id = c.id
-    '''
+    query = 'SELECT * FROM sequence_mappings'
     if enabled_only:
-        query += ' WHERE sm.enabled = 1'
-    query += ' ORDER BY sm.sequence_name ASC'
+        query += ' WHERE enabled = 1'
+    query += ' ORDER BY sequence_name ASC'
     cursor.execute(query)
-    rows = [dict(r) for r in cursor.fetchall()]
+    mappings = [dict(r) for r in cursor.fetchall()]
+
+    # Batch-fetch campaigns grouped by sequence_id
+    if mappings:
+        seq_ids = [m['sequence_id'] for m in mappings]
+        placeholders = ','.join('?' * len(seq_ids))
+        cursor.execute(
+            f'SELECT id, name, status, sequence_id FROM campaigns WHERE sequence_id IN ({placeholders})',
+            seq_ids
+        )
+        campaign_rows = [dict(r) for r in cursor.fetchall()]
+        campaigns_by_seq = {}
+        for c in campaign_rows:
+            campaigns_by_seq.setdefault(c['sequence_id'], []).append(c)
+        for m in mappings:
+            m['campaigns'] = campaigns_by_seq.get(m['sequence_id'], [])
+            m['campaign_name'] = ', '.join(c['name'] for c in m['campaigns']) or None
+
     conn.close()
-    return rows
+    return mappings
 
 
 def update_sequence_mapping(mapping_id: int, **kwargs) -> bool:
-    """Update a sequence mapping's campaign_id, owner_name, and/or enabled status."""
-    allowed = {'campaign_id', 'owner_name', 'enabled'}
+    """Update a sequence mapping's owner_name and/or enabled status."""
+    allowed = {'owner_name', 'enabled'}
     updates = {k: v for k, v in kwargs.items() if k in allowed}
     if not updates:
         return False
@@ -5301,19 +5449,43 @@ def delete_sequence_mapping(mapping_id: int) -> bool:
 
 
 def search_sequence_mappings(query: str, enabled_only: bool = False) -> list:
-    """Search sequence mappings by name. Optionally filter to enabled or disabled."""
+    """Search sequence mappings by name with campaigns derived from campaigns.sequence_id."""
     conn = get_db_connection()
     cursor = conn.cursor()
-    sql = '''
-        SELECT sm.*, c.name AS campaign_name
-        FROM sequence_mappings sm
-        LEFT JOIN campaigns c ON sm.campaign_id = c.id
-        WHERE sm.sequence_name LIKE ?
-    '''
+    sql = 'SELECT * FROM sequence_mappings WHERE sequence_name LIKE ?'
     if enabled_only:
-        sql += ' AND sm.enabled = 1'
-    sql += ' ORDER BY sm.sequence_name ASC'
+        sql += ' AND enabled = 1'
+    sql += ' ORDER BY sequence_name ASC'
     cursor.execute(sql, (f'%{query}%',))
+    mappings = [dict(r) for r in cursor.fetchall()]
+
+    if mappings:
+        seq_ids = [m['sequence_id'] for m in mappings]
+        placeholders = ','.join('?' * len(seq_ids))
+        cursor.execute(
+            f'SELECT id, name, status, sequence_id FROM campaigns WHERE sequence_id IN ({placeholders})',
+            seq_ids
+        )
+        campaign_rows = [dict(r) for r in cursor.fetchall()]
+        campaigns_by_seq = {}
+        for c in campaign_rows:
+            campaigns_by_seq.setdefault(c['sequence_id'], []).append(c)
+        for m in mappings:
+            m['campaigns'] = campaigns_by_seq.get(m['sequence_id'], [])
+            m['campaign_name'] = ', '.join(c['name'] for c in m['campaigns']) or None
+
+    conn.close()
+    return mappings
+
+
+def get_campaigns_for_sequence(sequence_id: str) -> list:
+    """Get all campaigns that reference a given Apollo sequence ID."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        'SELECT id, name, status FROM campaigns WHERE sequence_id = ? ORDER BY updated_at DESC',
+        (sequence_id,)
+    )
     rows = [dict(r) for r in cursor.fetchall()]
     conn.close()
     return rows
@@ -5331,3 +5503,291 @@ def toggle_sequence_mapping_enabled(mapping_id: int, enabled: bool) -> bool:
     changed = cursor.rowcount > 0
     conn.close()
     return changed
+
+
+# ---------------------------------------------------------------------------
+# Campaign Personas
+# ---------------------------------------------------------------------------
+
+def create_campaign_persona(campaign_id: int, persona_name: str, titles: list,
+                            seniorities: list, sequence_id: str,
+                            sequence_name: str = None, priority: int = 0) -> dict:
+    """Create a persona-sequence mapping for a campaign."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO campaign_personas (campaign_id, persona_name, titles_json, seniorities_json,
+                                       sequence_id, sequence_name, priority)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    ''', (campaign_id, persona_name, json.dumps(titles), json.dumps(seniorities),
+          sequence_id, sequence_name, priority))
+    pid = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return {'id': pid, 'campaign_id': campaign_id, 'persona_name': persona_name}
+
+
+def update_campaign_persona(persona_id: int, **kwargs) -> bool:
+    """Update a campaign persona's fields."""
+    allowed = {'persona_name', 'titles_json', 'seniorities_json', 'sequence_id',
+               'sequence_name', 'priority'}
+    updates = {}
+    for k, v in kwargs.items():
+        if k == 'titles' and isinstance(v, list):
+            updates['titles_json'] = json.dumps(v)
+        elif k == 'seniorities' and isinstance(v, list):
+            updates['seniorities_json'] = json.dumps(v)
+        elif k in allowed:
+            updates[k] = v
+    if not updates:
+        return False
+    set_clause = ', '.join(f'{k} = ?' for k in updates)
+    values = list(updates.values()) + [persona_id]
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(f'UPDATE campaign_personas SET {set_clause} WHERE id = ?', values)
+    conn.commit()
+    changed = cursor.rowcount > 0
+    conn.close()
+    return changed
+
+
+def delete_campaign_persona(persona_id: int) -> bool:
+    """Delete a campaign persona."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM campaign_personas WHERE id = ?', (persona_id,))
+    conn.commit()
+    deleted = cursor.rowcount > 0
+    conn.close()
+    return deleted
+
+
+def get_campaign_personas(campaign_id: int) -> list:
+    """Get all personas for a campaign, ordered by priority."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        'SELECT * FROM campaign_personas WHERE campaign_id = ? ORDER BY priority ASC, id ASC',
+        (campaign_id,)
+    )
+    personas = []
+    for r in cursor.fetchall():
+        p = dict(r)
+        try:
+            p['titles'] = json.loads(p.get('titles_json') or '[]')
+        except (json.JSONDecodeError, TypeError):
+            p['titles'] = []
+        try:
+            p['seniorities'] = json.loads(p.get('seniorities_json') or '[]')
+        except (json.JSONDecodeError, TypeError):
+            p['seniorities'] = []
+        personas.append(p)
+    conn.close()
+    return personas
+
+
+def replace_campaign_personas(campaign_id: int, personas: list) -> int:
+    """Replace all personas for a campaign. Each persona dict should have:
+    persona_name, titles, seniorities, sequence_id, sequence_name, priority."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM campaign_personas WHERE campaign_id = ?', (campaign_id,))
+    count = 0
+    for i, p in enumerate(personas):
+        cursor.execute('''
+            INSERT INTO campaign_personas (campaign_id, persona_name, titles_json,
+                                           seniorities_json, sequence_id, sequence_name, priority)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (campaign_id, p.get('persona_name', f'Persona {i+1}'),
+              json.dumps(p.get('titles', [])), json.dumps(p.get('seniorities', [])),
+              p.get('sequence_id', ''), p.get('sequence_name', ''),
+              p.get('priority', i)))
+        count += 1
+    conn.commit()
+    conn.close()
+    return count
+
+
+# ---------------------------------------------------------------------------
+# Enrollment Batches
+# ---------------------------------------------------------------------------
+
+def create_enrollment_batch(campaign_id: int, account_ids: list) -> int:
+    """Create an enrollment batch and return its ID."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO enrollment_batches (campaign_id, total_accounts, account_ids_json)
+        VALUES (?, ?, ?)
+    ''', (campaign_id, len(account_ids), json.dumps(account_ids)))
+    batch_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return batch_id
+
+
+def get_enrollment_batch(batch_id: int) -> Optional[dict]:
+    """Get an enrollment batch by ID."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM enrollment_batches WHERE id = ?', (batch_id,))
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        return None
+    batch = dict(row)
+    try:
+        batch['account_ids'] = json.loads(batch.get('account_ids_json') or '[]')
+    except (json.JSONDecodeError, TypeError):
+        batch['account_ids'] = []
+    return batch
+
+
+def update_enrollment_batch(batch_id: int, **kwargs) -> bool:
+    """Update an enrollment batch's fields."""
+    allowed = {'status', 'total_contacts', 'discovered', 'generated', 'enrolled',
+               'failed', 'skipped', 'current_phase', 'error_message',
+               'started_at', 'completed_at'}
+    updates = {k: v for k, v in kwargs.items() if k in allowed}
+    if not updates:
+        return False
+    set_clause = ', '.join(f'{k} = ?' for k in updates)
+    values = list(updates.values()) + [batch_id]
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(f'UPDATE enrollment_batches SET {set_clause} WHERE id = ?', values)
+    conn.commit()
+    changed = cursor.rowcount > 0
+    conn.close()
+    return changed
+
+
+def get_enrollment_batches_for_campaign(campaign_id: int) -> list:
+    """Get all enrollment batches for a campaign, newest first."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        'SELECT * FROM enrollment_batches WHERE campaign_id = ? ORDER BY created_at DESC',
+        (campaign_id,)
+    )
+    batches = [dict(r) for r in cursor.fetchall()]
+    conn.close()
+    return batches
+
+
+# ---------------------------------------------------------------------------
+# Enrollment Contacts
+# ---------------------------------------------------------------------------
+
+def create_enrollment_contact(batch_id: int, company_name: str, **kwargs) -> int:
+    """Create a single enrollment contact record."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cols = ['batch_id', 'company_name']
+    vals = [batch_id, company_name]
+    allowed = {'account_id', 'company_domain', 'persona_name', 'sequence_id',
+               'sequence_name', 'apollo_person_id', 'first_name', 'last_name',
+               'email', 'title', 'seniority', 'linkedin_url', 'status'}
+    for k, v in kwargs.items():
+        if k in allowed:
+            cols.append(k)
+            vals.append(v)
+    placeholders = ', '.join('?' * len(cols))
+    col_names = ', '.join(cols)
+    cursor.execute(f'INSERT INTO enrollment_contacts ({col_names}) VALUES ({placeholders})', vals)
+    cid = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return cid
+
+
+def bulk_create_enrollment_contacts(contacts: list) -> int:
+    """Batch-insert enrollment contacts. Each dict must have batch_id and company_name."""
+    if not contacts:
+        return 0
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    count = 0
+    for c in contacts:
+        cols = ['batch_id', 'company_name']
+        vals = [c['batch_id'], c['company_name']]
+        optional = {'account_id', 'company_domain', 'persona_name', 'sequence_id',
+                     'sequence_name', 'apollo_person_id', 'first_name', 'last_name',
+                     'email', 'title', 'seniority', 'linkedin_url', 'status'}
+        for k in optional:
+            if k in c and c[k] is not None:
+                cols.append(k)
+                vals.append(c[k])
+        placeholders = ', '.join('?' * len(cols))
+        col_names = ', '.join(cols)
+        cursor.execute(f'INSERT INTO enrollment_contacts ({col_names}) VALUES ({placeholders})', vals)
+        count += 1
+    conn.commit()
+    conn.close()
+    return count
+
+
+def update_enrollment_contact(contact_id: int, **kwargs) -> bool:
+    """Update an enrollment contact's fields."""
+    allowed = {'status', 'apollo_contact_id', 'error_message', 'generated_emails_json',
+               'enrolled_at', 'persona_name', 'sequence_id', 'sequence_name', 'email'}
+    updates = {k: v for k, v in kwargs.items() if k in allowed}
+    if not updates:
+        return False
+    set_clause = ', '.join(f'{k} = ?' for k in updates)
+    values = list(updates.values()) + [contact_id]
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(f'UPDATE enrollment_contacts SET {set_clause} WHERE id = ?', values)
+    conn.commit()
+    changed = cursor.rowcount > 0
+    conn.close()
+    return changed
+
+
+def get_enrollment_contacts(batch_id: int, status: str = None,
+                            limit: int = 500, offset: int = 0) -> list:
+    """Get contacts for a batch, optionally filtered by status."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    sql = 'SELECT * FROM enrollment_contacts WHERE batch_id = ?'
+    params = [batch_id]
+    if status:
+        sql += ' AND status = ?'
+        params.append(status)
+    sql += ' ORDER BY persona_name ASC, company_name ASC, id ASC LIMIT ? OFFSET ?'
+    params.extend([limit, offset])
+    cursor.execute(sql, params)
+    contacts = [dict(r) for r in cursor.fetchall()]
+    conn.close()
+    return contacts
+
+
+def get_enrollment_batch_summary(batch_id: int) -> dict:
+    """Get aggregated contact counts by status for a batch."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT status, COUNT(*) as cnt FROM enrollment_contacts
+        WHERE batch_id = ? GROUP BY status
+    ''', (batch_id,))
+    summary = {r['status']: r['cnt'] for r in cursor.fetchall()}
+    cursor.execute('SELECT COUNT(*) as total FROM enrollment_contacts WHERE batch_id = ?', (batch_id,))
+    summary['total'] = cursor.fetchone()['total']
+    conn.close()
+    return summary
+
+
+def get_next_contacts_for_phase(batch_id: int, current_status: str, limit: int = 10) -> list:
+    """Get the next N contacts with a given status for batch processing."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT * FROM enrollment_contacts
+        WHERE batch_id = ? AND status = ?
+        ORDER BY id ASC LIMIT ?
+    ''', (batch_id, current_status, limit))
+    contacts = [dict(r) for r in cursor.fetchall()]
+    conn.close()
+    return contacts

@@ -54,7 +54,15 @@ from database import (
     create_campaign, update_campaign, delete_campaign, get_campaign, get_all_campaigns,
     # Sequence Mappings
     upsert_sequence_mapping, get_all_sequence_mappings, update_sequence_mapping, delete_sequence_mapping,
-    search_sequence_mappings, toggle_sequence_mapping_enabled,
+    search_sequence_mappings, toggle_sequence_mapping_enabled, get_campaigns_for_sequence,
+    # Campaign Personas
+    create_campaign_persona, update_campaign_persona, delete_campaign_persona,
+    get_campaign_personas, replace_campaign_personas,
+    # Enrollment
+    create_enrollment_batch, get_enrollment_batch, update_enrollment_batch,
+    get_enrollment_batches_for_campaign,
+    create_enrollment_contact, bulk_create_enrollment_contacts, update_enrollment_contact,
+    get_enrollment_contacts, get_enrollment_batch_summary, get_next_contacts_for_phase,
 )
 from monitors.webscraper_utils import (
     detect_expansion_signals, calculate_webscraper_tier, extract_tier_from_scan_results,
@@ -1620,8 +1628,7 @@ def campaigns():
 def mapping_sequences():
     """Mapping Sequences — browse enabled Apollo sequences and assign them to campaigns."""
     mappings = get_all_sequence_mappings(enabled_only=True)
-    all_campaigns = get_all_campaigns()
-    return render_template('mapping_sequences.html', mappings=mappings, campaigns=all_campaigns)
+    return render_template('mapping_sequences.html', mappings=mappings)
 
 
 # =============================================================================
@@ -1703,12 +1710,9 @@ def api_sequence_mappings_sync():
 
 @app.route('/api/sequence-mappings/<int:mapping_id>', methods=['PUT'])
 def api_sequence_mapping_update(mapping_id):
-    """Update a sequence mapping (campaign assignment and/or owner)."""
+    """Update a sequence mapping (owner name only; campaigns are assigned on the Campaigns page)."""
     data = request.get_json() or {}
     updates = {}
-    if 'campaign_id' in data:
-        val = data['campaign_id']
-        updates['campaign_id'] = int(val) if val else None
     if 'owner_name' in data:
         updates['owner_name'] = (data['owner_name'] or '').strip() or None
 
@@ -1758,6 +1762,13 @@ def api_sequence_mappings_enabled():
 # CAMPAIGNS API — CRUD + Sequence Steps Preview
 # =============================================================================
 
+@app.route('/api/campaigns/by-sequence/<sequence_id>')
+def api_campaigns_by_sequence(sequence_id):
+    """Get all campaigns that reference a given Apollo sequence ID."""
+    campaigns = get_campaigns_for_sequence(sequence_id)
+    return jsonify({'status': 'success', 'campaigns': campaigns})
+
+
 @app.route('/api/campaigns', methods=['GET'])
 def api_campaigns_list():
     """List all campaigns."""
@@ -1781,6 +1792,12 @@ def api_campaigns_create():
     sequence_config = (data.get('sequence_config') or '').strip() or None
 
     result = create_campaign(name, prompt, assets, sequence_id, sequence_name, sequence_config)
+
+    # If personas provided, save them
+    personas_data = data.get('personas', [])
+    if personas_data and result.get('id'):
+        replace_campaign_personas(result['id'], personas_data)
+
     return jsonify({'status': 'success', 'campaign': result})
 
 
@@ -1795,9 +1812,15 @@ def api_campaigns_get(campaign_id):
 
 @app.route('/api/campaigns/<int:campaign_id>', methods=['PUT'])
 def api_campaigns_update(campaign_id):
-    """Update a campaign."""
+    """Update a campaign. If 'personas' array is included, replaces all personas."""
     data = request.get_json() or {}
+    # Extract personas before passing to update_campaign (which only handles campaign fields)
+    personas_data = data.pop('personas', None)
     updated = update_campaign(campaign_id, **data)
+    # Replace personas if provided
+    if personas_data is not None:
+        replace_campaign_personas(campaign_id, personas_data)
+        updated = True
     if not updated:
         return jsonify({'status': 'error', 'message': 'Campaign not found or no changes'}), 404
     return jsonify({'status': 'success', 'updated': True})
@@ -1821,6 +1844,683 @@ def api_campaigns_activate(campaign_id):
     new_status = 'active' if campaign['status'] == 'draft' else 'draft'
     update_campaign(campaign_id, status=new_status)
     return jsonify({'status': 'success', 'new_status': new_status})
+
+
+# ---------------------------------------------------------------------------
+# Campaign Personas API
+# ---------------------------------------------------------------------------
+
+@app.route('/api/campaigns/<int:campaign_id>/personas', methods=['GET'])
+def api_campaign_personas_list(campaign_id):
+    """List all personas for a campaign."""
+    personas = get_campaign_personas(campaign_id)
+    return jsonify({'status': 'success', 'personas': personas})
+
+
+@app.route('/api/campaigns/<int:campaign_id>/personas', methods=['POST'])
+def api_campaign_personas_create(campaign_id):
+    """Create a new persona for a campaign."""
+    data = request.get_json() or {}
+    persona_name = (data.get('persona_name') or '').strip()
+    if not persona_name:
+        return jsonify({'status': 'error', 'message': 'Persona name is required'}), 400
+    sequence_id = (data.get('sequence_id') or '').strip()
+    if not sequence_id:
+        return jsonify({'status': 'error', 'message': 'Sequence is required'}), 400
+    titles = data.get('titles', [])
+    seniorities = data.get('seniorities', [])
+    sequence_name = data.get('sequence_name', '')
+    priority = data.get('priority', 0)
+    result = create_campaign_persona(campaign_id, persona_name, titles, seniorities,
+                                      sequence_id, sequence_name, priority)
+    return jsonify({'status': 'success', 'persona': result})
+
+
+@app.route('/api/campaigns/<int:campaign_id>/personas/<int:persona_id>', methods=['PUT'])
+def api_campaign_personas_update(campaign_id, persona_id):
+    """Update a campaign persona."""
+    data = request.get_json() or {}
+    updated = update_campaign_persona(persona_id, **data)
+    if not updated:
+        return jsonify({'status': 'error', 'message': 'Persona not found or no changes'}), 404
+    return jsonify({'status': 'success', 'updated': True})
+
+
+@app.route('/api/campaigns/<int:campaign_id>/personas/<int:persona_id>', methods=['DELETE'])
+def api_campaign_personas_delete(campaign_id, persona_id):
+    """Delete a campaign persona."""
+    deleted = delete_campaign_persona(persona_id)
+    if not deleted:
+        return jsonify({'status': 'error', 'message': 'Persona not found'}), 404
+    return jsonify({'status': 'success', 'deleted': True})
+
+
+@app.route('/api/campaigns/<int:campaign_id>/personas/replace', methods=['POST'])
+def api_campaign_personas_replace(campaign_id):
+    """Replace all personas for a campaign at once."""
+    data = request.get_json() or {}
+    personas = data.get('personas', [])
+    count = replace_campaign_personas(campaign_id, personas)
+    return jsonify({'status': 'success', 'count': count})
+
+
+# ---------------------------------------------------------------------------
+# Enrollment Pipeline: Discovery, Email Generation, Apollo Enrollment
+# ---------------------------------------------------------------------------
+
+import threading as _threading
+
+
+class _RateLimiter:
+    """Simple token-bucket rate limiter for API calls."""
+    def __init__(self, max_per_minute=50):
+        self.interval = 60.0 / max_per_minute
+        self.last_call = 0
+        self._lock = _threading.Lock()
+
+    def wait(self):
+        import time as _time
+        with self._lock:
+            now = _time.time()
+            elapsed = now - self.last_call
+            if elapsed < self.interval:
+                _time.sleep(self.interval - elapsed)
+            self.last_call = _time.time()
+
+
+_apollo_limiter = _RateLimiter(max_per_minute=50)
+_openai_limiter = _RateLimiter(max_per_minute=30)
+
+
+def _derive_domain(website: str, company_name: str = '') -> str:
+    """Derive a domain from a website URL or company name."""
+    if website:
+        d = website.strip().lower()
+        for prefix in ['https://', 'http://', 'www.']:
+            d = d.replace(prefix, '')
+        return d.split('/')[0].strip()
+    # Fallback: guess from company name
+    name = company_name.strip().lower()
+    for suffix in [' inc', ' inc.', ' llc', ' corp', ' ltd', ' co']:
+        name = name.replace(suffix, '')
+    return name.replace(' ', '') + '.com'
+
+
+def _discovery_worker(batch_id: int):
+    """Background worker: discover contacts at target accounts via Apollo People Search."""
+    import requests as req
+    import time as _time
+
+    try:
+        batch = get_enrollment_batch(batch_id)
+        if not batch:
+            return
+        campaign = get_campaign(batch['campaign_id'])
+        if not campaign:
+            update_enrollment_batch(batch_id, status='failed', error_message='Campaign not found')
+            return
+        personas = campaign.get('personas', [])
+        if not personas:
+            update_enrollment_batch(batch_id, status='failed', error_message='No personas configured')
+            return
+
+        apollo_key = os.environ.get('APOLLO_API_KEY', '')
+        if not apollo_key:
+            update_enrollment_batch(batch_id, status='failed', error_message='Apollo API key not configured')
+            return
+
+        apollo_headers = {'X-Api-Key': apollo_key, 'Content-Type': 'application/json'}
+        update_enrollment_batch(batch_id, status='discovering',
+                                started_at=datetime.now().isoformat())
+
+        # Load accounts
+        account_ids = batch.get('account_ids', [])
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        if account_ids:
+            placeholders = ','.join('?' * len(account_ids))
+            cursor.execute(
+                f'SELECT id, company_name, website, github_org FROM monitored_accounts WHERE id IN ({placeholders})',
+                account_ids
+            )
+        else:
+            cursor.execute('SELECT id, company_name, website, github_org FROM monitored_accounts LIMIT 0')
+        accounts = [dict(r) for r in cursor.fetchall()]
+        conn.close()
+
+        seen_emails = set()
+        contacts_to_insert = []
+        total_discovered = 0
+
+        for i, acct in enumerate(accounts):
+            domain = _derive_domain(acct.get('website', ''), acct.get('company_name', ''))
+            update_enrollment_batch(batch_id,
+                current_phase=f'Discovering at {acct["company_name"]} ({i+1}/{len(accounts)})...')
+
+            for persona in personas:
+                titles = persona.get('titles', [])
+                seniorities = persona.get('seniorities', [])
+                if not titles and not seniorities:
+                    continue
+
+                _apollo_limiter.wait()
+                try:
+                    search_payload = {
+                        'q_organization_domains_list': [domain],
+                        'per_page': 25,
+                        'page': 1
+                    }
+                    if titles:
+                        search_payload['person_titles'] = titles
+                    if seniorities:
+                        search_payload['person_seniorities'] = seniorities
+
+                    resp = req.post(
+                        'https://api.apollo.io/v1/mixed_people/search',
+                        json=search_payload,
+                        headers=apollo_headers,
+                        timeout=15
+                    )
+                    if resp.status_code != 200:
+                        app.logger.warning(f'Apollo People Search failed for {domain}: {resp.status_code}')
+                        continue
+
+                    data = resp.json()
+                    people = data.get('people', [])
+
+                    for person in people:
+                        email = (person.get('email') or '').lower().strip()
+                        if not email or email in seen_emails:
+                            continue
+                        seen_emails.add(email)
+
+                        contacts_to_insert.append({
+                            'batch_id': batch_id,
+                            'account_id': acct['id'],
+                            'company_name': acct['company_name'],
+                            'company_domain': domain,
+                            'persona_name': persona.get('persona_name', 'Default'),
+                            'sequence_id': persona.get('sequence_id', ''),
+                            'sequence_name': persona.get('sequence_name', ''),
+                            'apollo_person_id': person.get('id', ''),
+                            'first_name': person.get('first_name', ''),
+                            'last_name': person.get('last_name', ''),
+                            'email': email,
+                            'title': person.get('title', ''),
+                            'seniority': person.get('seniority', ''),
+                            'linkedin_url': person.get('linkedin_url', ''),
+                            'status': 'discovered'
+                        })
+                        total_discovered += 1
+
+                except Exception as e:
+                    app.logger.warning(f'Discovery error for {domain}/{persona.get("persona_name")}: {e}')
+
+            # Batch-insert contacts periodically
+            if len(contacts_to_insert) >= 50:
+                bulk_create_enrollment_contacts(contacts_to_insert)
+                contacts_to_insert.clear()
+                update_enrollment_batch(batch_id, discovered=total_discovered,
+                                         total_contacts=total_discovered)
+
+        # Insert remaining
+        if contacts_to_insert:
+            bulk_create_enrollment_contacts(contacts_to_insert)
+
+        update_enrollment_batch(batch_id,
+            status='discovered',
+            discovered=total_discovered,
+            total_contacts=total_discovered,
+            current_phase=f'Discovery complete — {total_discovered} contacts found')
+
+    except Exception as e:
+        app.logger.error(f'Discovery worker error for batch {batch_id}: {e}')
+        update_enrollment_batch(batch_id, status='failed', error_message=str(e)[:500])
+
+
+def _enrollment_pipeline_worker(batch_id: int):
+    """Background worker: generate emails then enroll contacts into Apollo sequences."""
+    import requests as req
+    from openai import OpenAI
+
+    try:
+        batch = get_enrollment_batch(batch_id)
+        if not batch:
+            return
+        campaign = get_campaign(batch['campaign_id'])
+        if not campaign:
+            update_enrollment_batch(batch_id, status='failed', error_message='Campaign not found')
+            return
+
+        apollo_key = os.environ.get('APOLLO_API_KEY', '')
+        api_key = os.environ.get('AI_INTEGRATIONS_OPENAI_API_KEY', '')
+        base_url = os.environ.get('AI_INTEGRATIONS_OPENAI_BASE_URL', '')
+
+        if not apollo_key:
+            update_enrollment_batch(batch_id, status='failed', error_message='Apollo API key not configured')
+            return
+        if not api_key or not base_url:
+            update_enrollment_batch(batch_id, status='failed', error_message='OpenAI API not configured')
+            return
+
+        apollo_headers = {'X-Api-Key': apollo_key, 'Content-Type': 'application/json'}
+        openai_client = OpenAI(api_key=api_key, base_url=base_url)
+
+        # ===== PHASE 1: Email Generation =====
+        update_enrollment_batch(batch_id, status='generating',
+                                started_at=datetime.now().isoformat())
+
+        generated_count = 0
+        while True:
+            contacts = get_next_contacts_for_phase(batch_id, 'discovered', limit=10)
+            if not contacts:
+                break
+            # Check for cancellation
+            b = get_enrollment_batch(batch_id)
+            if b and b.get('status') == 'cancelled':
+                return
+
+            for contact in contacts:
+                try:
+                    # Fetch account-level data for enrichment
+                    account_data = {}
+                    if contact.get('account_id'):
+                        score = get_scorecard_score(contact['account_id'])
+                        if score:
+                            account_data = score
+                        acct_info = get_account_by_company(contact['company_name'])
+                        if acct_info:
+                            account_data['evidence_summary'] = acct_info.get('evidence_summary', '')
+
+                    # Parse systems
+                    systems_raw = account_data.get('systems_json', '{}')
+                    try:
+                        systems = json.loads(systems_raw) if systems_raw else {}
+                    except (json.JSONDecodeError, TypeError):
+                        systems = {}
+                    active_systems = [k for k, v in systems.items() if v]
+
+                    # Build enriched prompt with BOTH account + contact data
+                    bdr_prompt = campaign.get('prompt', '').strip()
+                    prompt = f"""You are a BDR at Phrase, a localization/internationalization platform. Write a personalized cold outreach sequence.
+
+Account info:
+- Company: {contact['company_name']}
+- Annual Revenue: {account_data.get('annual_revenue', 'unknown')}
+- Cohort: {account_data.get('cohort', 'B')} ({'Enterprise $1.5B+' if account_data.get('cohort') == 'A' else 'Mid-Market'})
+- Languages/Locales detected: {account_data.get('locale_count', 0)}
+- Systems in use: {', '.join(active_systems) if active_systems else 'unknown'}
+- Evidence: {(account_data.get('evidence_summary', '') or '')[:300]}
+
+Contact info:
+- Name: {contact.get('first_name', '')} {contact.get('last_name', '')}
+- Title: {contact.get('title', 'unknown')}
+- Seniority: {contact.get('seniority', 'unknown')}
+- Persona: {contact.get('persona_name', 'Default')}
+
+{('Campaign Instructions: ' + bdr_prompt) if bdr_prompt else ''}
+
+Write a 4-email cold outreach sequence targeting {contact.get('first_name', 'this person')} specifically. Reference their title/role and their company's signals.
+
+Structure: subject_1 (thread 1) + subject_2 (thread 2) + email_1 + email_2 + email_3 + email_4
+
+Rules:
+- Reference the company by name and real signals (revenue tier, locale count, systems)
+- Personalize to their specific role ({contact.get('title', 'their role')})
+- Each email body: concise, value-driven, 3-4 sentences max
+- End each email with a simple CTA
+- No fluff. Sound like a human.
+- Use \\n for line breaks in email bodies
+
+Return ONLY valid JSON: {{"subject_1": "...", "subject_2": "...", "email_1": "...", "email_2": "...", "email_3": "...", "email_4": "..."}}"""
+
+                    _openai_limiter.wait()
+                    response = openai_client.chat.completions.create(
+                        model="gpt-5-mini",
+                        messages=[
+                            {"role": "system", "content": "You are a BDR at Phrase. Write diverse, natural emails. Return ONLY valid JSON."},
+                            {"role": "user", "content": prompt}
+                        ],
+                        response_format={"type": "json_object"},
+                        max_completion_tokens=4096
+                    )
+                    email_data = json.loads(response.choices[0].message.content)
+                    update_enrollment_contact(contact['id'],
+                        generated_emails_json=json.dumps(email_data),
+                        status='email_generated')
+                    generated_count += 1
+
+                except Exception as e:
+                    app.logger.warning(f'Email gen error for contact {contact["id"]}: {e}')
+                    update_enrollment_contact(contact['id'],
+                        status='failed',
+                        error_message=f'Email generation failed: {str(e)[:300]}')
+                    batch = get_enrollment_batch(batch_id)
+                    update_enrollment_batch(batch_id, failed=(batch or {}).get('failed', 0) + 1)
+
+                generated_count_display = generated_count
+                batch = get_enrollment_batch(batch_id)
+                total = (batch or {}).get('total_contacts', 0)
+                update_enrollment_batch(batch_id,
+                    generated=generated_count,
+                    current_phase=f'Generating emails ({generated_count}/{total})...')
+
+        # ===== PHASE 2: Apollo Enrollment =====
+        update_enrollment_batch(batch_id, status='enrolling')
+
+        # Cache Apollo resources once
+        custom_field_map = {}
+        try:
+            _apollo_limiter.wait()
+            fields_resp = req.get(
+                'https://api.apollo.io/v1/typed_custom_fields',
+                headers=apollo_headers, timeout=15
+            )
+            if fields_resp.status_code == 200:
+                for f in fields_resp.json().get('typed_custom_fields', []):
+                    norm = f.get('name', '').lower().replace(' ', '_')
+                    custom_field_map[norm] = f.get('id', '')
+        except Exception as e:
+            app.logger.warning(f'Custom field discovery failed: {e}')
+
+        # Env var fallbacks
+        field_env = {
+            'personalized_subject_1': os.environ.get('APOLLO_FIELD_PERSONALIZED_SUBJECT_1', ''),
+            'personalized_subject_2': os.environ.get('APOLLO_FIELD_PERSONALIZED_SUBJECT_2', ''),
+            'personalized_email_1': os.environ.get('APOLLO_FIELD_PERSONALIZED_EMAIL_1', ''),
+            'personalized_email_2': os.environ.get('APOLLO_FIELD_PERSONALIZED_EMAIL_2', ''),
+            'personalized_email_3': os.environ.get('APOLLO_FIELD_PERSONALIZED_EMAIL_3', ''),
+            'personalized_email_4': os.environ.get('APOLLO_FIELD_PERSONALIZED_EMAIL_4', ''),
+        }
+        for key, env_val in field_env.items():
+            if env_val and key not in custom_field_map:
+                custom_field_map[key] = env_val
+
+        # Resolve email account
+        email_account_id = None
+        try:
+            _apollo_limiter.wait()
+            ea_resp = req.get(
+                'https://api.apollo.io/api/v1/email_accounts',
+                headers=apollo_headers, timeout=15
+            )
+            if ea_resp.status_code == 200:
+                sender_email = os.environ.get('APOLLO_SENDER_EMAIL', '')
+                for ea in ea_resp.json().get('email_accounts', []):
+                    if ea.get('active'):
+                        if not email_account_id:
+                            email_account_id = ea['id']
+                        if sender_email and ea.get('email') == sender_email:
+                            email_account_id = ea['id']
+                            break
+        except Exception as e:
+            app.logger.warning(f'Email account resolution failed: {e}')
+
+        if not email_account_id:
+            update_enrollment_batch(batch_id, status='failed',
+                                     error_message='No active Apollo email account found')
+            return
+
+        enrolled_count = 0
+        failed_count = (get_enrollment_batch(batch_id) or {}).get('failed', 0)
+
+        while True:
+            contacts = get_next_contacts_for_phase(batch_id, 'email_generated', limit=10)
+            if not contacts:
+                break
+            b = get_enrollment_batch(batch_id)
+            if b and b.get('status') == 'cancelled':
+                return
+
+            for contact in contacts:
+                try:
+                    email_data = json.loads(contact.get('generated_emails_json') or '{}')
+
+                    # Build custom fields payload
+                    typed_fields = {}
+
+                    def _html(text):
+                        """Convert plain text line breaks to HTML."""
+                        if not text:
+                            return text
+                        return text.replace('\n\n', '<br><br>').replace('\n', '<br>')
+
+                    for field_name, field_key in [
+                        ('subject_1', 'personalized_subject_1'),
+                        ('subject_2', 'personalized_subject_2'),
+                        ('email_1', 'personalized_email_1'),
+                        ('email_2', 'personalized_email_2'),
+                        ('email_3', 'personalized_email_3'),
+                        ('email_4', 'personalized_email_4'),
+                    ]:
+                        val = email_data.get(field_name, '')
+                        fid = custom_field_map.get(field_key, '')
+                        if val and fid:
+                            typed_fields[fid] = _html(val) if 'email' in field_name else val
+
+                    # Step A: Search for existing contact
+                    _apollo_limiter.wait()
+                    search_resp = req.post(
+                        'https://api.apollo.io/api/v1/contacts/search',
+                        json={'q_keywords': contact['email'], 'per_page': 1},
+                        headers=apollo_headers, timeout=15
+                    )
+                    existing_contact = None
+                    if search_resp.status_code == 200:
+                        contacts_found = search_resp.json().get('contacts', [])
+                        if contacts_found:
+                            existing_contact = contacts_found[0]
+
+                    # Step B: Create or update contact with custom fields
+                    _apollo_limiter.wait()
+                    if existing_contact:
+                        apollo_contact_id = existing_contact['id']
+                        req.put(
+                            f'https://api.apollo.io/v1/contacts/{apollo_contact_id}',
+                            json={'typed_custom_fields': typed_fields},
+                            headers=apollo_headers, timeout=15
+                        )
+                    else:
+                        create_payload = {
+                            'first_name': contact.get('first_name', ''),
+                            'last_name': contact.get('last_name', ''),
+                            'email': contact['email'],
+                            'organization_name': contact['company_name'],
+                            'typed_custom_fields': typed_fields
+                        }
+                        create_resp = req.post(
+                            'https://api.apollo.io/v1/contacts',
+                            json=create_payload,
+                            headers=apollo_headers, timeout=15
+                        )
+                        if create_resp.status_code in (200, 201):
+                            apollo_contact_id = create_resp.json().get('contact', {}).get('id', '')
+                        else:
+                            raise Exception(f'Contact creation failed: {create_resp.status_code}')
+
+                    # Step C: Enroll in sequence
+                    _apollo_limiter.wait()
+                    seq_id = contact.get('sequence_id', '')
+                    enroll_resp = req.post(
+                        f'https://api.apollo.io/api/v1/emailer_campaigns/{seq_id}/add_contact_ids',
+                        json={
+                            'emailer_campaign_id': seq_id,
+                            'contact_ids': [apollo_contact_id],
+                            'send_email_from_email_account_id': email_account_id
+                        },
+                        headers=apollo_headers, timeout=15
+                    )
+                    if enroll_resp.status_code not in (200, 201):
+                        raise Exception(f'Enrollment failed: {enroll_resp.status_code} - {enroll_resp.text[:200]}')
+
+                    update_enrollment_contact(contact['id'],
+                        status='enrolled',
+                        apollo_contact_id=apollo_contact_id,
+                        enrolled_at=datetime.now().isoformat())
+                    enrolled_count += 1
+
+                except Exception as e:
+                    app.logger.warning(f'Enrollment error for contact {contact["id"]}: {e}')
+                    update_enrollment_contact(contact['id'],
+                        status='failed',
+                        error_message=str(e)[:500])
+                    failed_count += 1
+
+                batch = get_enrollment_batch(batch_id)
+                total = (batch or {}).get('total_contacts', 0)
+                update_enrollment_batch(batch_id,
+                    enrolled=enrolled_count,
+                    failed=failed_count,
+                    current_phase=f'Enrolling ({enrolled_count}/{total})...')
+
+        # Done
+        update_enrollment_batch(batch_id,
+            status='completed',
+            enrolled=enrolled_count,
+            failed=failed_count,
+            current_phase=f'Complete — {enrolled_count} enrolled, {failed_count} failed',
+            completed_at=datetime.now().isoformat())
+
+    except Exception as e:
+        app.logger.error(f'Enrollment pipeline error for batch {batch_id}: {e}')
+        update_enrollment_batch(batch_id, status='failed', error_message=str(e)[:500])
+
+
+# --- Enrollment API Routes ---
+
+@app.route('/api/campaigns/<int:campaign_id>/discover-contacts', methods=['POST'])
+def api_discover_contacts(campaign_id):
+    """Start contact discovery for a campaign. Returns batch_id for polling."""
+    campaign = get_campaign(campaign_id)
+    if not campaign:
+        return jsonify({'status': 'error', 'message': 'Campaign not found'}), 404
+    personas = campaign.get('personas', [])
+    if not personas:
+        return jsonify({'status': 'error', 'message': 'No personas configured for this campaign'}), 400
+
+    data = request.get_json() or {}
+    account_ids = data.get('account_ids', [])
+    if not account_ids:
+        return jsonify({'status': 'error', 'message': 'No accounts selected'}), 400
+
+    batch_id = create_enrollment_batch(campaign_id, account_ids)
+    # Submit to background worker
+    from concurrent.futures import ThreadPoolExecutor
+    if not hasattr(app, '_enrollment_executor'):
+        app._enrollment_executor = ThreadPoolExecutor(max_workers=3)
+    app._enrollment_executor.submit(_discovery_worker, batch_id)
+
+    return jsonify({'status': 'success', 'batch_id': batch_id})
+
+
+@app.route('/api/campaigns/<int:campaign_id>/enroll', methods=['POST'])
+def api_campaign_enroll(campaign_id):
+    """Start email generation + Apollo enrollment for a discovered batch."""
+    data = request.get_json() or {}
+    batch_id = data.get('batch_id')
+    if not batch_id:
+        return jsonify({'status': 'error', 'message': 'batch_id is required'}), 400
+
+    batch = get_enrollment_batch(batch_id)
+    if not batch:
+        return jsonify({'status': 'error', 'message': 'Batch not found'}), 404
+    if batch['status'] not in ('discovered', 'failed'):
+        return jsonify({'status': 'error', 'message': f'Batch is in {batch["status"]} state, cannot enroll'}), 400
+
+    # Submit to background worker
+    from concurrent.futures import ThreadPoolExecutor
+    if not hasattr(app, '_enrollment_executor'):
+        app._enrollment_executor = ThreadPoolExecutor(max_workers=3)
+    app._enrollment_executor.submit(_enrollment_pipeline_worker, batch_id)
+
+    return jsonify({'status': 'success', 'batch_id': batch_id})
+
+
+@app.route('/api/enrollment-batches/<int:batch_id>/status')
+def api_enrollment_batch_status(batch_id):
+    """Poll enrollment batch progress."""
+    batch = get_enrollment_batch(batch_id)
+    if not batch:
+        return jsonify({'status': 'error', 'message': 'Batch not found'}), 404
+    summary = get_enrollment_batch_summary(batch_id)
+    batch['contact_summary'] = summary
+    # Remove large JSON field from response
+    batch.pop('account_ids_json', None)
+    return jsonify({'status': 'success', 'batch': batch})
+
+
+@app.route('/api/enrollment-batches/<int:batch_id>/contacts')
+def api_enrollment_batch_contacts(batch_id):
+    """Get contacts in an enrollment batch, optionally filtered by status."""
+    status_filter = request.args.get('status')
+    limit = min(int(request.args.get('limit', 500)), 1000)
+    offset = int(request.args.get('offset', 0))
+    contacts = get_enrollment_contacts(batch_id, status=status_filter, limit=limit, offset=offset)
+    return jsonify({'status': 'success', 'contacts': contacts})
+
+
+@app.route('/api/enrollment-batches/<int:batch_id>/cancel', methods=['POST'])
+def api_enrollment_batch_cancel(batch_id):
+    """Cancel an in-progress enrollment batch."""
+    batch = get_enrollment_batch(batch_id)
+    if not batch:
+        return jsonify({'status': 'error', 'message': 'Batch not found'}), 404
+    update_enrollment_batch(batch_id, status='cancelled', current_phase='Cancelled by user')
+    return jsonify({'status': 'success', 'cancelled': True})
+
+
+@app.route('/api/enrollment-batches/<int:batch_id>/retry', methods=['POST'])
+def api_enrollment_batch_retry(batch_id):
+    """Retry failed contacts in an enrollment batch by resetting their status
+    and re-running the enrollment pipeline."""
+    batch = get_enrollment_batch(batch_id)
+    if not batch:
+        return jsonify({'status': 'error', 'message': 'Batch not found'}), 404
+
+    # Reset failed contacts back to 'email_generated' so the pipeline re-processes them
+    failed_contacts = get_enrollment_contacts(batch_id, status='failed')
+    if not failed_contacts:
+        return jsonify({'status': 'error', 'message': 'No failed contacts to retry'}), 400
+
+    for c in failed_contacts:
+        # If they had emails generated, restart from enrollment; otherwise from email gen
+        new_status = 'email_generated' if c.get('generated_emails_json') else 'discovered'
+        update_enrollment_contact(c['id'], status=new_status, error_message=None)
+
+    # Reset batch counters for the retry
+    update_enrollment_batch(batch_id,
+                            status='enrolling',
+                            current_phase='Retrying failed contacts...',
+                            failed=0)
+
+    executor.submit(_enrollment_pipeline_worker, batch_id)
+    return jsonify({'status': 'success', 'retrying': len(failed_contacts)})
+
+
+@app.route('/api/enrollment/accounts')
+def api_enrollment_accounts():
+    """List accounts available for enrollment selection, with scorecard data."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT a.id, a.company_name, a.website, a.github_org, a.annual_revenue,
+               a.current_tier, s.cohort, s.locale_count, s.total_score
+        FROM monitored_accounts a
+        LEFT JOIN scorecard_scores s ON s.account_id = a.id
+        WHERE a.archived_at IS NULL
+        ORDER BY a.company_name ASC
+    ''')
+    accounts = [dict(r) for r in cursor.fetchall()]
+    conn.close()
+    return jsonify({'status': 'success', 'accounts': accounts})
+
+
+@app.route('/enrollment')
+def enrollment_page():
+    """Render the enrollment wizard page."""
+    campaigns = get_all_campaigns()
+    active_campaigns = [c for c in campaigns if c.get('status') == 'active']
+    return render_template('enrollment.html', campaigns=active_campaigns)
 
 
 @app.route('/api/apollo/sequence-steps/<sequence_id>')
