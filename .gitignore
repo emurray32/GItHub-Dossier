@@ -67,3 +67,11 @@ htmlcov/
 
 # Exported configs with credentials
 attached_assets/exported-zap*.json
+
+# Tooling artifacts
+.claude/
+.agents/
+dogfood-output/
+skills-lock.json
+QA_REMAINING_ITEMS.csv
+QA_REMAINING_ITEMS.xlsx

@@ -10,7 +10,7 @@
  * 6. Set "Execute as": "Me"
  * 7. Set "Who has access": "Anyone"
  * 8. Click "Deploy" and authorize when prompted
- * 9. Copy the Web App URL (https://script.google.com/macros/s/XXXXX/exec)
+ * 9. Copy the Web App URL (https://script.google.com/macros/s/your-script-id/exec)
  * 10. In RepoRadar Settings, paste this URL as your Google Sheets Webhook URL
  *
  * SHEET REQUIREMENTS:
