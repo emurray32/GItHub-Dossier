@@ -12,3 +12,4 @@ lxml>=5.0.0
 openai>=2.24.0
 google-api-python-client>=2.100.0
 google-auth>=2.23.0
+mcp[cli]>=1.0.0
