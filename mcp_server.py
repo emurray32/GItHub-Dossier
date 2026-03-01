@@ -603,8 +603,467 @@ async def dossier_get_signals(params: GetSignalsInput) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Apollo Enrollment Tools
+# ---------------------------------------------------------------------------
+
+import requests as _requests
+
+_APOLLO_BASE = "https://api.apollo.io"
+
+
+def _apollo_headers() -> dict:
+    """Return Apollo API headers using APOLLO_API_KEY env var."""
+    key = os.environ.get("APOLLO_API_KEY", "")
+    if not key:
+        raise ValueError(
+            "APOLLO_API_KEY is not configured. "
+            "Set it as an environment variable or in Settings."
+        )
+    return {"X-Api-Key": key, "Content-Type": "application/json"}
+
+
+class ApolloSearchPeopleInput(BaseModel):
+    """Input for searching people in Apollo."""
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    domain: str = Field(..., description="Company domain to search (e.g., 'stripe.com')")
+    titles: Optional[List[str]] = Field(
+        default=None,
+        description="Job titles to filter by (e.g., ['VP Engineering', 'CTO'])",
+    )
+    seniorities: Optional[List[str]] = Field(
+        default=None,
+        description="Seniority levels (e.g., ['vp', 'director', 'c_suite', 'manager'])",
+    )
+    per_page: Optional[int] = Field(default=25, description="Results per page (max 100)", ge=1, le=100)
+    page: Optional[int] = Field(default=1, description="Page number", ge=1)
+
+
+class ApolloSearchSequencesInput(BaseModel):
+    """Input for searching Apollo sequences."""
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    name: Optional[str] = Field(default=None, description="Sequence name keyword filter")
+    page: Optional[int] = Field(default=1, description="Page number", ge=1)
+    per_page: Optional[int] = Field(default=25, description="Results per page", ge=1, le=100)
+
+
+class ApolloCreateContactInput(BaseModel):
+    """Input for creating an Apollo contact."""
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    first_name: str = Field(..., description="Contact first name")
+    last_name: str = Field(..., description="Contact last name")
+    email: str = Field(..., description="Contact email address")
+    organization_name: Optional[str] = Field(default=None, description="Company name")
+    title: Optional[str] = Field(default=None, description="Job title")
+
+
+class ApolloEnrollContactInput(BaseModel):
+    """Input for enrolling a contact into an Apollo sequence."""
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    contact_id: str = Field(..., description="Apollo contact ID to enroll")
+    sequence_id: str = Field(..., description="Apollo sequence ID to enroll into")
+    sender_email_account_id: Optional[str] = Field(
+        default=None,
+        description="Apollo email account ID to send from. If omitted, uses first active account.",
+    )
+
+
+class ApolloListEmailAccountsInput(BaseModel):
+    """Input for listing email accounts (no params needed)."""
+    model_config = ConfigDict(extra="forbid")
+
+
+class ApolloBatchEnrollInput(BaseModel):
+    """Input for batch-enrolling multiple contacts into a sequence."""
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    contact_ids: List[str] = Field(..., description="List of Apollo contact IDs to enroll", min_length=1)
+    sequence_id: str = Field(..., description="Apollo sequence ID")
+    sender_email_account_id: Optional[str] = Field(
+        default=None,
+        description="Apollo email account ID to send from",
+    )
+
+
+@mcp.tool(
+    name="apollo_search_people",
+    annotations={
+        "title": "Search People in Apollo",
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": True,
+    },
+)
+async def apollo_search_people(params: ApolloSearchPeopleInput) -> str:
+    """Search for people at a company in the Apollo database.
+
+    Finds contacts by domain, job titles, and seniority levels.
+    Does NOT return email addresses — use apollo_create_contact to enrich.
+
+    Args:
+        params: domain, titles, seniorities, per_page, page
+
+    Returns:
+        str: JSON with people results and pagination info.
+    """
+    try:
+        headers = _apollo_headers()
+    except ValueError as e:
+        return _json_response({"error": str(e)})
+
+    payload: dict = {
+        "q_organization_domains_list": [params.domain],
+        "per_page": params.per_page,
+        "page": params.page,
+    }
+    if params.titles:
+        payload["person_titles"] = params.titles
+    if params.seniorities:
+        payload["person_seniorities"] = params.seniorities
+
+    try:
+        resp = _requests.post(
+            f"{_APOLLO_BASE}/v1/mixed_people/search",
+            json=payload,
+            headers=headers,
+            timeout=15,
+        )
+        if resp.status_code != 200:
+            return _json_response({"error": f"Apollo returned {resp.status_code}", "body": resp.text[:500]})
+        data = resp.json()
+        people = data.get("people", [])
+        pagination = data.get("pagination", {})
+        return _json_response({
+            "total": pagination.get("total_entries", len(people)),
+            "page": pagination.get("page", params.page),
+            "per_page": params.per_page,
+            "people": [
+                {
+                    "id": p.get("id"),
+                    "first_name": p.get("first_name"),
+                    "last_name": p.get("last_name"),
+                    "title": p.get("title"),
+                    "seniority": p.get("seniority"),
+                    "email": p.get("email"),
+                    "linkedin_url": p.get("linkedin_url"),
+                    "organization_name": (p.get("organization") or {}).get("name"),
+                }
+                for p in people
+            ],
+        })
+    except Exception as e:
+        return _json_response({"error": f"Apollo search failed: {e}"})
+
+
+@mcp.tool(
+    name="apollo_search_sequences",
+    annotations={
+        "title": "Search Apollo Sequences",
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": True,
+    },
+)
+async def apollo_search_sequences(params: ApolloSearchSequencesInput) -> str:
+    """Search for email sequences in Apollo.
+
+    Args:
+        params: name filter, page, per_page
+
+    Returns:
+        str: JSON list of sequences with id, name, active status, num_steps.
+    """
+    try:
+        headers = _apollo_headers()
+    except ValueError as e:
+        return _json_response({"error": str(e)})
+
+    payload: dict = {"page": params.page, "per_page": params.per_page}
+    if params.name:
+        payload["q_name"] = params.name
+
+    try:
+        resp = _requests.post(
+            f"{_APOLLO_BASE}/api/v1/emailer_campaigns/search",
+            json=payload,
+            headers=headers,
+            timeout=15,
+        )
+        if resp.status_code != 200:
+            return _json_response({"error": f"Apollo returned {resp.status_code}"})
+        data = resp.json()
+        campaigns = data.get("emailer_campaigns", [])
+        return _json_response({
+            "total": data.get("pagination", {}).get("total_entries", len(campaigns)),
+            "sequences": [
+                {
+                    "id": c.get("id"),
+                    "name": c.get("name"),
+                    "active": c.get("active", False),
+                    "num_steps": c.get("num_steps", 0),
+                    "created_at": c.get("created_at"),
+                }
+                for c in campaigns
+            ],
+        })
+    except Exception as e:
+        return _json_response({"error": f"Sequence search failed: {e}"})
+
+
+@mcp.tool(
+    name="apollo_list_email_accounts",
+    annotations={
+        "title": "List Apollo Email Accounts",
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": True,
+    },
+)
+async def apollo_list_email_accounts(params: ApolloListEmailAccountsInput) -> str:
+    """List linked email accounts in Apollo for sending sequences.
+
+    Returns:
+        str: JSON list of email accounts with id, email, active status.
+    """
+    try:
+        headers = _apollo_headers()
+    except ValueError as e:
+        return _json_response({"error": str(e)})
+
+    try:
+        resp = _requests.get(
+            f"{_APOLLO_BASE}/v1/email_accounts",
+            headers=headers,
+            timeout=15,
+        )
+        if resp.status_code != 200:
+            return _json_response({"error": f"Apollo returned {resp.status_code}"})
+        data = resp.json()
+        accounts = data.get("email_accounts", [])
+        return _json_response({
+            "email_accounts": [
+                {
+                    "id": a.get("id"),
+                    "email": a.get("email"),
+                    "active": a.get("active", False),
+                    "type": a.get("type"),
+                    "user_id": a.get("user_id"),
+                }
+                for a in accounts
+            ],
+        })
+    except Exception as e:
+        return _json_response({"error": f"Failed to list email accounts: {e}"})
+
+
+@mcp.tool(
+    name="apollo_create_contact",
+    annotations={
+        "title": "Create Apollo Contact",
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": True,
+    },
+)
+async def apollo_create_contact(params: ApolloCreateContactInput) -> str:
+    """Create a new contact in Apollo (or return existing if email matches).
+
+    Args:
+        params: first_name, last_name, email, organization_name, title
+
+    Returns:
+        str: JSON with created/existing contact id and details.
+    """
+    try:
+        headers = _apollo_headers()
+    except ValueError as e:
+        return _json_response({"error": str(e)})
+
+    payload: dict = {
+        "first_name": params.first_name,
+        "last_name": params.last_name,
+        "email": params.email,
+    }
+    if params.organization_name:
+        payload["organization_name"] = params.organization_name
+    if params.title:
+        payload["title"] = params.title
+
+    try:
+        resp = _requests.post(
+            f"{_APOLLO_BASE}/v1/contacts",
+            json=payload,
+            headers=headers,
+            timeout=15,
+        )
+        if resp.status_code not in (200, 201):
+            return _json_response({"error": f"Apollo returned {resp.status_code}", "body": resp.text[:500]})
+        data = resp.json()
+        contact = data.get("contact", {})
+        return _json_response({
+            "contact_id": contact.get("id"),
+            "first_name": contact.get("first_name"),
+            "last_name": contact.get("last_name"),
+            "email": contact.get("email"),
+            "title": contact.get("title"),
+            "organization_name": contact.get("organization_name"),
+        })
+    except Exception as e:
+        return _json_response({"error": f"Contact creation failed: {e}"})
+
+
+@mcp.tool(
+    name="apollo_enroll_contact",
+    annotations={
+        "title": "Enroll Contact in Sequence",
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": True,
+    },
+)
+async def apollo_enroll_contact(params: ApolloEnrollContactInput) -> str:
+    """Enroll a single contact into an Apollo email sequence.
+
+    Args:
+        params: contact_id, sequence_id, sender_email_account_id (optional)
+
+    Returns:
+        str: JSON with enrollment result.
+    """
+    try:
+        headers = _apollo_headers()
+    except ValueError as e:
+        return _json_response({"error": str(e)})
+
+    # If no sender specified, fetch first active email account
+    sender_id = params.sender_email_account_id
+    if not sender_id:
+        try:
+            acct_resp = _requests.get(f"{_APOLLO_BASE}/v1/email_accounts", headers=headers, timeout=10)
+            if acct_resp.status_code == 200:
+                accounts = acct_resp.json().get("email_accounts", [])
+                active = [a for a in accounts if a.get("active")]
+                if active:
+                    sender_id = active[0]["id"]
+        except Exception:
+            pass
+    if not sender_id:
+        return _json_response({"error": "No sender email account found. Provide sender_email_account_id."})
+
+    payload = {
+        "contact_ids": [params.contact_id],
+        "emailer_campaign_id": params.sequence_id,
+        "send_email_from_email_account_id": sender_id,
+        "sequence_active_in_other_campaigns": False,
+        "sequence_no_email": False,
+    }
+
+    try:
+        resp = _requests.post(
+            f"{_APOLLO_BASE}/api/v1/emailer_campaigns/{params.sequence_id}/add_contact_ids",
+            json=payload,
+            headers=headers,
+            timeout=15,
+        )
+        if resp.status_code not in (200, 201):
+            return _json_response({"error": f"Enrollment failed: {resp.status_code}", "body": resp.text[:500]})
+        data = resp.json()
+        return _json_response({
+            "enrolled": True,
+            "contact_id": params.contact_id,
+            "sequence_id": params.sequence_id,
+            "sender_email_account_id": sender_id,
+            "contacts_added": data.get("contacts", []),
+        })
+    except Exception as e:
+        return _json_response({"error": f"Enrollment failed: {e}"})
+
+
+@mcp.tool(
+    name="apollo_batch_enroll",
+    annotations={
+        "title": "Batch Enroll Contacts in Sequence",
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": True,
+    },
+)
+async def apollo_batch_enroll(params: ApolloBatchEnrollInput) -> str:
+    """Enroll multiple contacts into an Apollo email sequence at once.
+
+    Args:
+        params: contact_ids (list), sequence_id, sender_email_account_id (optional)
+
+    Returns:
+        str: JSON with batch enrollment result.
+    """
+    try:
+        headers = _apollo_headers()
+    except ValueError as e:
+        return _json_response({"error": str(e)})
+
+    sender_id = params.sender_email_account_id
+    if not sender_id:
+        try:
+            acct_resp = _requests.get(f"{_APOLLO_BASE}/v1/email_accounts", headers=headers, timeout=10)
+            if acct_resp.status_code == 200:
+                accounts = acct_resp.json().get("email_accounts", [])
+                active = [a for a in accounts if a.get("active")]
+                if active:
+                    sender_id = active[0]["id"]
+        except Exception:
+            pass
+    if not sender_id:
+        return _json_response({"error": "No sender email account found. Provide sender_email_account_id."})
+
+    payload = {
+        "contact_ids": params.contact_ids,
+        "emailer_campaign_id": params.sequence_id,
+        "send_email_from_email_account_id": sender_id,
+        "sequence_active_in_other_campaigns": False,
+        "sequence_no_email": False,
+    }
+
+    try:
+        resp = _requests.post(
+            f"{_APOLLO_BASE}/api/v1/emailer_campaigns/{params.sequence_id}/add_contact_ids",
+            json=payload,
+            headers=headers,
+            timeout=30,
+        )
+        if resp.status_code not in (200, 201):
+            return _json_response({"error": f"Batch enrollment failed: {resp.status_code}", "body": resp.text[:500]})
+        data = resp.json()
+        return _json_response({
+            "enrolled": True,
+            "contact_count": len(params.contact_ids),
+            "sequence_id": params.sequence_id,
+            "sender_email_account_id": sender_id,
+            "contacts_added": data.get("contacts", []),
+        })
+    except Exception as e:
+        return _json_response({"error": f"Batch enrollment failed: {e}"})
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    mcp.run(transport="stdio")
+    transport = os.environ.get("MCP_TRANSPORT", "stdio")
+    if transport == "sse":
+        # HTTP/SSE transport for Replit and remote clients
+        host = os.environ.get("MCP_HOST", "0.0.0.0")
+        port = int(os.environ.get("MCP_PORT", "5001"))
+        mcp.run(transport="sse", host=host, port=port)
+    else:
+        mcp.run(transport="stdio")
