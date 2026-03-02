@@ -849,6 +849,15 @@ MAX_SCAN_WORKERS = int(os.environ.get('SCAN_WORKERS', 20))
 # overwhelming the thread pool and exhausting its internal queue memory
 MAX_PENDING_BATCH = int(os.environ.get('MAX_PENDING_BATCH', 100))
 
+# Maximum number of concurrent scans allowed to prevent GitHub API token exhaustion
+# When this many scans are actively running, new scans will be deferred
+MAX_CONCURRENT_SCANS = int(os.environ.get('MAX_CONCURRENT_SCANS', 5))
+# Minimum token pool remaining before we stop queuing new scans
+MIN_TOKEN_REMAINING_FOR_SCAN = int(os.environ.get('MIN_TOKEN_REMAINING_FOR_SCAN', 50))
+_scan_semaphore = threading.Semaphore(MAX_CONCURRENT_SCANS)
+_active_scan_count = 0
+_active_scan_lock = threading.Lock()
+
 # Batch rescan orchestrator state
 _batch_rescan_lock = threading.Lock()
 _batch_rescan_state = {
@@ -897,6 +906,49 @@ def get_executor() -> ThreadPoolExecutor:
             atexit.register(_shutdown_executor)
             logging.info(f"[EXECUTOR] Created ThreadPoolExecutor with {MAX_SCAN_WORKERS} workers")
         return _executor
+
+
+def _can_queue_scan() -> bool:
+    """Check if it's safe to queue another scan based on token pool status."""
+    try:
+        from utils import get_token_pool
+        pool = get_token_pool()
+        pool_status = pool.get_pool_status()
+        total_remaining = pool_status.get('total_remaining', 0)
+        tokens_available = pool_status.get('tokens_available', 0)
+        if tokens_available == 0:
+            logging.warning("[SCAN_LIMITER] No tokens available, deferring scan")
+            return False
+        if total_remaining < MIN_TOKEN_REMAINING_FOR_SCAN:
+            logging.warning(f"[SCAN_LIMITER] Token pool critically low ({total_remaining} remaining < {MIN_TOKEN_REMAINING_FOR_SCAN} threshold), deferring scan")
+            return False
+        with _active_scan_lock:
+            if _active_scan_count >= MAX_CONCURRENT_SCANS:
+                logging.info(f"[SCAN_LIMITER] Max concurrent scans reached ({_active_scan_count}/{MAX_CONCURRENT_SCANS}), deferring scan")
+                return False
+        return True
+    except Exception as e:
+        logging.error(f"[SCAN_LIMITER] Error checking scan capacity: {e}")
+        return True  # Allow scan on error to avoid blocking everything
+
+
+def _rate_limited_scan(company_name: str):
+    """Wrapper around perform_background_scan that enforces concurrency limits."""
+    global _active_scan_count
+    if not _scan_semaphore.acquire(timeout=60):
+        logging.warning(f"[EXECUTOR] Scan for {company_name} timed out waiting for scan slot, re-queuing")
+        set_scan_status(company_name, SCAN_STATUS_QUEUED)
+        return
+    try:
+        with _active_scan_lock:
+            _active_scan_count += 1
+        logging.info(f"[EXECUTOR] Scan slot acquired for {company_name} (active: {_active_scan_count}/{MAX_CONCURRENT_SCANS})")
+        perform_background_scan(company_name)
+    finally:
+        with _active_scan_lock:
+            _active_scan_count -= 1
+        _scan_semaphore.release()
+        logging.info(f"[EXECUTOR] Scan slot released for {company_name} (active: {_active_scan_count}/{MAX_CONCURRENT_SCANS})")
 
 
 def perform_background_scan(company_name: str):
@@ -1063,12 +1115,17 @@ def spawn_background_scan(company_name: str):
         print(f"[EXECUTOR] Skipping duplicate scan for {company_name} (status: {current_status})")
         return
 
+    # Check if token pool has capacity before queuing
+    if not _can_queue_scan():
+        logging.info(f"[EXECUTOR] Scan for {company_name} deferred - token pool or concurrency limit reached")
+        return
+
     # Mark as queued in database before submitting to executor
     set_scan_status(company_name, SCAN_STATUS_QUEUED)
 
-    # Submit to thread pool
+    # Submit to thread pool with rate limiting wrapper
     executor = get_executor()
-    future = executor.submit(perform_background_scan, company_name)
+    future = executor.submit(_rate_limited_scan, company_name)
     logging.info(f"[EXECUTOR] Submitted scan for {company_name}")
 
 
@@ -7006,6 +7063,10 @@ def _watchdog_worker():
                 logging.info(f"[WATCHDOG] Found {len(stale_queued)} stale queued accounts, re-queueing...")
                 # Re-queue these accounts by submitting them to the executor
                 for company_name in stale_queued:
+                    # Check token pool before re-queuing to avoid exhaustion
+                    if not _can_queue_scan():
+                        logging.info(f"[WATCHDOG] Stopping re-queue - token pool or concurrency limit reached")
+                        break
                     try:
                         spawn_background_scan(company_name)
                         logging.debug(f"[WATCHDOG] Re-queued: {company_name}")
@@ -7069,7 +7130,13 @@ def _scheduled_rescan_worker():
             batch = accounts_due[:max_per_cycle]
 
             queued_count = 0
+            skipped_count = 0
             for account in batch:
+                # Check token pool before each scan to avoid exhaustion
+                if not _can_queue_scan():
+                    skipped_count += 1
+                    logging.info(f"[SCHEDULED RESCAN] Pausing batch - token pool or concurrency limit reached after queuing {queued_count} accounts ({skipped_count} skipped)")
+                    break
                 company_name = account.get('company_name')
                 if company_name:
                     try:
