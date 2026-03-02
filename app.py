@@ -46,6 +46,7 @@ from database import (
     save_contributor, save_contributors_batch, get_contributors_datatable,
     get_contributor_stats, update_contributor_apollo_status, update_contributor_email,
     increment_contributor_emails, get_contributor_by_id, delete_contributor,
+    get_contributors_by_company,
     # ScoreCard
     get_scorecard_datatable, upsert_scorecard_scores, update_scorecard_systems,
     update_scorecard_enrollment, get_scorecard_score,
@@ -3399,6 +3400,218 @@ def api_update_account_notes(account_id: int):
     return jsonify({'status': 'success', 'notes': notes})
 
 
+@app.route('/api/accounts/<int:account_id>/contributors')
+def api_account_contributors(account_id):
+    """Get contributors for an account (used by RepoRadar detail panel)."""
+    account = get_account(account_id)
+    if not account:
+        return jsonify({'error': 'Not found'}), 404
+    github_org = account.get('github_org') or ''
+    company = account.get('company_name') or ''
+    # Try github_org first, fall back to company name
+    contributors = []
+    if github_org:
+        contributors = get_contributors_by_company(github_org)
+    if not contributors and company:
+        contributors = get_contributors_by_company(company)
+    return jsonify({'contributors': contributors, 'account': dict(account)})
+
+
+@app.route('/api/accounts/<int:account_id>/enroll', methods=['POST'])
+def api_account_enroll(account_id):
+    """Enroll selected contributors from an account into an Apollo sequence.
+
+    Expects JSON: { contributor_ids: [1,2,...], sequence_id: "abc" }
+    For each contributor: Apollo lookup -> generate email -> enroll in sequence.
+    """
+    import requests as req
+    from email_engine import generate_personalized_emails
+
+    account = get_account(account_id)
+    if not account:
+        return jsonify({'status': 'error', 'message': 'Account not found'}), 404
+
+    data = request.get_json() or {}
+    contributor_ids = data.get('contributor_ids', [])
+    sequence_id = data.get('sequence_id', '').strip()
+    sequence_name = data.get('sequence_name', '').strip()
+
+    if not contributor_ids or not sequence_id:
+        return jsonify({'status': 'error', 'message': 'Missing contributor_ids or sequence_id'}), 400
+
+    apollo_key = os.environ.get('APOLLO_API_KEY', '')
+    if not apollo_key:
+        return jsonify({'status': 'error', 'message': 'Apollo API key not configured'}), 400
+
+    company = account.get('company_name', '')
+    github_org = account.get('github_org', '')
+    evidence = account.get('evidence_summary', '')
+    notes = account.get('notes', '')
+
+    # Get scan signals for context
+    signals = get_signals_by_company(company, limit=20)
+
+    results = []
+    apollo_headers = {'X-Api-Key': apollo_key, 'Content-Type': 'application/json'}
+
+    for cid in contributor_ids:
+        contributor = get_contributor_by_id(cid)
+        if not contributor:
+            results.append({'contributor_id': cid, 'name': 'Unknown', 'status': 'failed', 'message': 'Contributor not found'})
+            continue
+
+        name = contributor.get('name') or contributor.get('github_login', '')
+        if contributor.get('enrolled_in_sequence'):
+            results.append({'contributor_id': cid, 'name': name, 'status': 'skipped', 'message': 'Already enrolled'})
+            continue
+
+        # Step 1: Apollo lookup if no email
+        email = contributor.get('email', '').strip()
+        if not email:
+            try:
+                parts = name.strip().split(' ', 1)
+                first_name = parts[0]
+                last_name = parts[1] if len(parts) > 1 else ''
+                domain = ''
+                if company:
+                    clean = company.strip().lower()
+                    for suffix in [' inc', ' inc.', ' corp', ' corp.', ' ltd', ' ltd.', ' llc', ' co', ' co.', ' gmbh', ' ag', ' sa']:
+                        if clean.endswith(suffix):
+                            clean = clean[:len(clean) - len(suffix)]
+                    domain = clean.replace(' ', '') + '.com'
+
+                match_resp = req.post('https://api.apollo.io/api/v1/people/match',
+                    json={
+                        'first_name': first_name,
+                        'last_name': last_name,
+                        'organization_domain': domain,
+                        'organization_name': company,
+                        'reveal_personal_emails': True,
+                    },
+                    headers=apollo_headers, timeout=15)
+
+                if match_resp.status_code == 200:
+                    person = match_resp.json().get('person', {})
+                    if person:
+                        email = _filter_personal_email(person.get('email', ''))
+                        if email:
+                            update_contributor_email(cid, email)
+            except Exception as e:
+                logging.warning(f"[PANEL ENROLL] Apollo lookup failed for {name}: {e}")
+
+        if not email:
+            results.append({'contributor_id': cid, 'name': name, 'status': 'failed', 'message': 'No email found'})
+            continue
+
+        # Step 2: Generate personalized email
+        try:
+            contact = {
+                'first_name': name.split(' ', 1)[0],
+                'last_name': name.split(' ', 1)[1] if ' ' in name else '',
+                'title': contributor.get('title', ''),
+                'company_name': company,
+                'email': email,
+            }
+            email_result = generate_personalized_emails(
+                contact=contact,
+                signals=signals,
+                account_data={'evidence_summary': evidence, 'notes': notes}
+            )
+        except Exception as e:
+            logging.warning(f"[PANEL ENROLL] Email generation failed for {name}: {e}")
+            email_result = None
+
+        # Step 3: Enroll in Apollo sequence
+        try:
+            first_name = name.split(' ', 1)[0]
+            last_name = name.split(' ', 1)[1] if ' ' in name else ''
+
+            def to_html(text):
+                if not text:
+                    return ''
+                return text.strip().replace('\n\n', '<br><br>').replace('\n', '<br>')
+
+            # Build contact update payload with custom fields
+            contact_payload = {
+                'email': email,
+                'first_name': first_name,
+                'last_name': last_name,
+                'organization_name': company,
+            }
+
+            typed_custom_fields = {}
+            if email_result and email_result.get('best_subject'):
+                # Resolve custom field IDs
+                FIELD_ENV_OVERRIDES = {
+                    'personalized_subject_1': os.environ.get('APOLLO_FIELD_PERSONALIZED_SUBJECT_1', ''),
+                    'personalized_email_1': os.environ.get('APOLLO_FIELD_PERSONALIZED_EMAIL_1', ''),
+                }
+                try:
+                    cf_resp = req.get('https://api.apollo.io/v1/typed_custom_fields',
+                                     headers=apollo_headers, timeout=15)
+                    if cf_resp.status_code == 200:
+                        field_id_map = {}
+                        for f in cf_resp.json().get('typed_custom_fields', []):
+                            fid = f.get('id')
+                            fname = (f.get('name') or '').lower().replace(' ', '_')
+                            if fid and fname:
+                                field_id_map[fname] = fid
+                        for k, v in FIELD_ENV_OVERRIDES.items():
+                            if v and k not in field_id_map:
+                                field_id_map[k] = v
+                    else:
+                        field_id_map = {k: v for k, v in FIELD_ENV_OVERRIDES.items() if v}
+                except Exception:
+                    field_id_map = {k: v for k, v in FIELD_ENV_OVERRIDES.items() if v}
+
+                field_values = {
+                    'personalized_subject_1': email_result.get('best_subject', ''),
+                    'personalized_email_1': to_html(email_result.get('best_body', '')),
+                }
+                for fk, fv in field_values.items():
+                    if fv and fk in field_id_map:
+                        typed_custom_fields[field_id_map[fk]] = fv
+
+            if typed_custom_fields:
+                contact_payload['typed_custom_fields'] = typed_custom_fields
+
+            # Create/update contact in Apollo
+            contact_resp = req.post('https://api.apollo.io/v1/contacts',
+                json=contact_payload, headers=apollo_headers, timeout=15)
+            contact_id = None
+            if contact_resp.status_code in (200, 201):
+                contact_id = contact_resp.json().get('contact', {}).get('id')
+
+            if not contact_id:
+                results.append({'contributor_id': cid, 'name': name, 'status': 'failed',
+                                'message': 'Could not create Apollo contact'})
+                continue
+
+            # Add to sequence
+            seq_resp = req.post('https://api.apollo.io/v1/emailer_campaigns/add_contact_ids',
+                json={
+                    'contact_ids': [contact_id],
+                    'emailer_campaign_id': sequence_id,
+                },
+                headers=apollo_headers, timeout=15)
+
+            if seq_resp.status_code in (200, 201):
+                update_contributor_apollo_status(cid, 'sent', sequence_name or sequence_id)
+                results.append({'contributor_id': cid, 'name': name, 'status': 'enrolled',
+                                'message': f'Enrolled in {sequence_name or sequence_id}'})
+            else:
+                err_msg = seq_resp.json().get('message', seq_resp.text[:200]) if seq_resp.text else 'Unknown error'
+                results.append({'contributor_id': cid, 'name': name, 'status': 'failed',
+                                'message': f'Sequence enrollment failed: {err_msg}'})
+        except Exception as e:
+            logging.error(f"[PANEL ENROLL] Error enrolling {name}: {e}")
+            results.append({'contributor_id': cid, 'name': name, 'status': 'failed',
+                            'message': str(e)})
+
+    enrolled_count = sum(1 for r in results if r['status'] == 'enrolled')
+    return jsonify({'status': 'success', 'results': results, 'enrolled': enrolled_count, 'total': len(results)})
+
+
 @app.route('/api/accounts/<int:account_id>/archive', methods=['POST'])
 def api_archive_account(account_id: int):
     """Archive an account (hide from main list but retain for periodic re-scan)."""
@@ -3485,6 +3698,7 @@ def api_contributors_datatable():
     warm_hot_filter = request.args.get('warm_hot', '').strip() or None
     i18n_filter = request.args.get('i18n_involved', '').strip() or None
     not_contacted_filter = request.args.get('not_contacted', '').strip() or None
+    enrolled_filter = request.args.get('enrolled', '').strip() or None
 
     length = max(1, min(length, 10000))
     start = max(0, start)
@@ -3497,7 +3711,8 @@ def api_contributors_datatable():
         has_email_filter=has_email_filter,
         warm_hot_filter=warm_hot_filter,
         i18n_filter=i18n_filter,
-        not_contacted_filter=not_contacted_filter
+        not_contacted_filter=not_contacted_filter,
+        enrolled_filter=enrolled_filter
     )
 
     # Enrich results with priority_score and company_tier
@@ -3852,6 +4067,245 @@ Return ONLY valid JSON with no markdown formatting:
     except Exception as e:
         logging.error(f"[CONTRIBUTOR EMAIL GEN] Error ({type(e).__name__}): {e}")
         return jsonify({'status': 'error', 'message': sanitize_ai_error(e)}), 500
+
+
+@app.route('/api/contributors/bulk-enroll', methods=['POST'])
+def api_contributors_bulk_enroll():
+    """Bulk-enroll selected contributors into an Apollo sequence.
+
+    For each contributor:
+    1. Look up email via Apollo (if missing)
+    2. Generate personalized emails using GPT-5 mini
+    3. Enroll in Apollo sequence with custom fields
+    4. Update contributor record
+    """
+    import requests as req
+    from openai import OpenAI
+
+    data = request.get_json() or {}
+    contributor_ids = data.get('contributor_ids', [])
+    campaign_id = data.get('campaign_id')
+    sequence_id = data.get('sequence_id', '').strip()
+
+    if not contributor_ids:
+        return jsonify({'status': 'error', 'message': 'No contributors selected'}), 400
+    if not campaign_id:
+        return jsonify({'status': 'error', 'message': 'Campaign is required'}), 400
+    if not sequence_id:
+        return jsonify({'status': 'error', 'message': 'Sequence is required'}), 400
+
+    campaign = get_campaign(campaign_id)
+    if not campaign:
+        return jsonify({'status': 'error', 'message': 'Campaign not found'}), 404
+
+    apollo_key = os.environ.get('APOLLO_API_KEY', '')
+    ai_key = os.environ.get('AI_INTEGRATIONS_OPENAI_API_KEY', '')
+    ai_base = os.environ.get('AI_INTEGRATIONS_OPENAI_BASE_URL', '')
+
+    if not apollo_key:
+        return jsonify({'status': 'error', 'message': 'Apollo API key not configured'}), 400
+    if not ai_key or not ai_base:
+        return jsonify({'status': 'error', 'message': 'OpenAI API not configured'}), 400
+
+    apollo_headers = {'X-Api-Key': apollo_key, 'Content-Type': 'application/json'}
+    openai_client = OpenAI(api_key=ai_key, base_url=ai_base)
+
+    # Pre-fetch Apollo custom field IDs once
+    custom_field_map = {}
+    try:
+        cf_resp = req.get('https://api.apollo.io/v1/typed_custom_fields',
+                          headers=apollo_headers, timeout=15)
+        if cf_resp.status_code == 200:
+            for f in cf_resp.json().get('typed_custom_fields', []):
+                norm = f.get('name', '').lower().replace(' ', '_')
+                custom_field_map[norm] = f.get('id', '')
+    except Exception:
+        pass
+    # Env var fallbacks
+    for key in ['personalized_subject_1', 'personalized_subject_2',
+                'personalized_email_1', 'personalized_email_2',
+                'personalized_email_3', 'personalized_email_4']:
+        env_val = os.environ.get('APOLLO_FIELD_' + key.upper(), '')
+        if env_val and key not in custom_field_map:
+            custom_field_map[key] = env_val
+
+    bdr_prompt = (campaign.get('prompt') or '').strip()
+    results = []
+
+    for cid in contributor_ids:
+        contributor = get_contributor_by_id(cid)
+        if not contributor:
+            results.append({'contributor_id': cid, 'success': False, 'message': 'Not found'})
+            continue
+
+        # Skip already enrolled
+        if contributor.get('enrolled_in_sequence') == 1:
+            results.append({'contributor_id': cid, 'success': False,
+                            'message': 'Already enrolled', 'name': contributor.get('name', '')})
+            continue
+
+        name = contributor.get('name') or contributor.get('github_login') or ''
+        first_name = name.split(' ')[0] if name else ''
+        last_name = ' '.join(name.split(' ')[1:]) if ' ' in name else ''
+        company = contributor.get('company') or ''
+        email = _sanitize_contributor_email(contributor.get('email', ''), company)
+
+        # Step 1: Apollo lookup if no email
+        if not email:
+            try:
+                domain = ''
+                if company:
+                    clean = company.strip().lower()
+                    for suffix in [' inc', ' inc.', ' corp', ' corp.', ' ltd', ' ltd.',
+                                   ' llc', ' co', ' co.', ' gmbh', ' ag', ' sa']:
+                        if clean.endswith(suffix):
+                            clean = clean[:len(clean) - len(suffix)]
+                    domain = clean.replace(' ', '') + '.com'
+
+                match_resp = req.post('https://api.apollo.io/api/v1/people/match',
+                    json={
+                        'first_name': first_name,
+                        'last_name': last_name,
+                        'organization_domain': domain,
+                        'organization_name': company,
+                        'reveal_personal_emails': True,
+                    },
+                    headers=apollo_headers, timeout=15)
+
+                if match_resp.status_code == 200:
+                    person = match_resp.json().get('person', {})
+                    if person:
+                        email = _filter_personal_email(person.get('email', ''))
+                        if email:
+                            update_contributor_email(cid, email)
+            except Exception as e:
+                logging.warning(f"[BULK ENROLL] Apollo lookup failed for {name}: {e}")
+
+        if not email:
+            results.append({'contributor_id': cid, 'success': False,
+                            'message': 'No email found', 'name': name})
+            continue
+
+        # Step 2: Generate personalized emails
+        try:
+            insight = contributor.get('insight') or ''
+            repo_source = contributor.get('repo_source') or ''
+            contributions = contributor.get('contributions') or 0
+
+            prompt = f"""You are a BDR at Phrase, a localization/internationalization platform. Write a personalized cold outreach sequence.
+
+Contact info:
+- Name: {name}
+- First name: {first_name}
+- GitHub: {contributor.get('github_login', '')}
+- Company: {company}
+- Active repo: {repo_source}
+- Contributions: {contributions}
+- Insight: {insight}
+
+{('Campaign Instructions: ' + bdr_prompt) if bdr_prompt else ''}
+
+Write a 4-email cold outreach sequence. The goal is to start a conversation about their i18n workflow and how Phrase can help.
+
+Structure: subject_1 (thread 1) + subject_2 (thread 2) + email_1 + email_2 + email_3 + email_4
+
+Rules:
+- Reference the company by name and real signals
+- Each email body: concise, 3-4 sentences max
+- End each email with a simple CTA
+- No fluff. Sound like a human.
+- Use their first name. Do NOT use template variables.
+- Use \\n for line breaks
+
+Return ONLY valid JSON: {{"subject_1": "...", "subject_2": "...", "email_1": "...", "email_2": "...", "email_3": "...", "email_4": "..."}}"""
+
+            response = openai_client.chat.completions.create(
+                model="gpt-5-mini",
+                messages=[
+                    {"role": "system", "content": "You are a BDR at Phrase. Write diverse, natural emails. Return ONLY valid JSON."},
+                    {"role": "user", "content": prompt}
+                ],
+                response_format={"type": "json_object"},
+                max_completion_tokens=4096
+            )
+            response_text = response.choices[0].message.content.strip()
+            response_text = strip_code_fences(response_text)
+            email_data = json.loads(response_text)
+        except Exception as e:
+            logging.warning(f"[BULK ENROLL] Email gen failed for {name}: {e}")
+            results.append({'contributor_id': cid, 'success': False,
+                            'message': f'Email generation failed', 'name': name})
+            continue
+
+        # Step 3: Enroll in Apollo sequence
+        try:
+            def to_html(text):
+                if not text:
+                    return ''
+                return text.strip().replace('\n\n', '<br><br>').replace('\n', '<br>')
+
+            typed_custom_fields = {}
+            field_values = {
+                'personalized_subject_1': email_data.get('subject_1', ''),
+                'personalized_subject_2': email_data.get('subject_2', ''),
+                'personalized_email_1': to_html(email_data.get('email_1', '')),
+                'personalized_email_2': to_html(email_data.get('email_2', '')),
+                'personalized_email_3': to_html(email_data.get('email_3', '')),
+                'personalized_email_4': to_html(email_data.get('email_4', '')),
+            }
+            for fk, fv in field_values.items():
+                if fv and fk in custom_field_map:
+                    typed_custom_fields[custom_field_map[fk]] = fv
+
+            # Create/update contact with custom fields
+            contact_payload = {
+                'email': email,
+                'first_name': first_name,
+                'last_name': last_name,
+                'organization_name': company,
+            }
+            if typed_custom_fields:
+                contact_payload['typed_custom_fields'] = typed_custom_fields
+
+            contact_resp = req.post(
+                'https://api.apollo.io/v1/contacts',
+                json=contact_payload,
+                headers=apollo_headers, timeout=15
+            )
+            contact_id = None
+            if contact_resp.status_code in (200, 201):
+                contact_id = contact_resp.json().get('contact', {}).get('id')
+
+            if not contact_id:
+                results.append({'contributor_id': cid, 'success': False,
+                                'message': 'Failed to create Apollo contact', 'name': name})
+                continue
+
+            # Add to sequence
+            seq_resp = req.post(
+                'https://api.apollo.io/v1/emailer_campaigns/add_contact_ids',
+                json={
+                    'id': sequence_id,
+                    'contact_ids': [contact_id],
+                },
+                headers=apollo_headers, timeout=15
+            )
+
+            if seq_resp.status_code in (200, 201):
+                # Step 4: Update contributor record
+                update_contributor_apollo_status(cid, 'sent', sequence_id)
+                results.append({'contributor_id': cid, 'success': True, 'name': name})
+            else:
+                error_msg = seq_resp.json().get('message', 'Unknown error')
+                results.append({'contributor_id': cid, 'success': False,
+                                'message': f'Sequence enrollment failed: {error_msg}', 'name': name})
+
+        except Exception as e:
+            logging.warning(f"[BULK ENROLL] Apollo enrollment failed for {name}: {e}")
+            results.append({'contributor_id': cid, 'success': False,
+                            'message': 'Apollo enrollment error', 'name': name})
+
+    return jsonify({'status': 'success', 'results': results})
 
 
 @app.route('/experiment')

@@ -5136,7 +5136,8 @@ def get_contributors_datatable(draw=1, start=0, length=50, search_value='',
                                 has_email_filter=None,
                                 warm_hot_filter=None,
                                 i18n_filter=None,
-                                not_contacted_filter=None) -> dict:
+                                not_contacted_filter=None,
+                                enrolled_filter=None) -> dict:
     """
     Server-side datatable processing for contributors.
     Returns paginated, sorted, and filtered contributor data.
@@ -5189,6 +5190,9 @@ def get_contributors_datatable(draw=1, start=0, length=50, search_value='',
 
     if not_contacted_filter == '1':
         conditions.append("apollo_status = 'not_sent'")
+
+    if enrolled_filter == '1':
+        conditions.append("enrolled_in_sequence = 1")
 
     where_clause = ''
     if conditions:
@@ -5306,6 +5310,24 @@ def update_contributor_email(contributor_id: int, email: str) -> bool:
         return False
     finally:
         conn.close()
+
+
+def get_contributors_by_company(company_name: str) -> list:
+    """Get all contributors for a company (by github_org or company name).
+
+    Used by the RepoRadar detail panel to show enrollable contributors.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT * FROM contributors
+        WHERE (github_org = ? OR LOWER(company) = LOWER(?))
+          AND (is_org_member IS NULL OR is_org_member = 1)
+        ORDER BY contributions DESC
+    ''', (company_name, company_name))
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
 
 
 def get_contributor_by_id(contributor_id: int) -> Optional[dict]:

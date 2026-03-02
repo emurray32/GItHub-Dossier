@@ -426,6 +426,46 @@
         <div class="batch-rescan-detail" id="batch-rescan-detail" style="font-size:0.8rem;color:var(--text-muted,#888);margin-top:0.35rem"></div>
     </div>
 
+    <!-- Account Detail Panel (slide-out) -->
+    <div class="account-detail-overlay" id="account-detail-overlay" onclick="closeDetailPanel()"></div>
+    <div class="account-detail-panel" id="account-detail-panel">
+        <div class="panel-header">
+            <div class="panel-header-info">
+                <h3 class="panel-company-name" id="panel-company-name"></h3>
+                <div class="panel-meta" id="panel-meta"></div>
+            </div>
+            <button class="panel-close" onclick="closeDetailPanel()" title="Close panel">&times;</button>
+        </div>
+        <div class="panel-body">
+            <section class="panel-section">
+                <h4>Evidence &amp; Context</h4>
+                <div class="panel-evidence" id="panel-evidence">No evidence recorded</div>
+                <a id="panel-report-link" href="#" target="_blank" class="panel-report-link" style="display:none">View Full Report</a>
+                <div class="panel-notes-wrap">
+                    <label for="panel-notes">Notes</label>
+                    <textarea id="panel-notes" rows="3" placeholder="Add notes..." onblur="saveAccountNotes()"></textarea>
+                </div>
+            </section>
+            <section class="panel-section">
+                <div class="panel-section-header">
+                    <h4>Contributors</h4>
+                    <button id="panel-fetch-btn" onclick="panelFetchContributors()" class="btn-sm">Fetch Contributors</button>
+                </div>
+                <div id="panel-contributors-list" class="panel-contributors-list">
+                    <div class="panel-placeholder">Click to load contributors</div>
+                </div>
+            </section>
+            <section class="panel-section panel-enroll-section">
+                <label for="panel-sequence-select">Sequence</label>
+                <select id="panel-sequence-select" class="panel-select"></select>
+                <button class="btn-enroll" id="panel-enroll-btn" onclick="generateAndEnroll()">
+                    Generate Emails &amp; Enroll
+                </button>
+                <div id="panel-enroll-results" class="panel-enroll-results" style="display:none"></div>
+            </section>
+        </div>
+    </div>
+
     <!-- Batch Rescan Confirmation Modal -->
     <div class="modal-overlay" id="batch-rescan-modal" style="display:none">
         <div class="modal-content" style="max-width:420px">
@@ -3751,10 +3791,266 @@
         }
     });
 
-    // Update Escape key handler to close integrations modal
+    // Update Escape key handler to close integrations modal + detail panel
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') {
+            closeDetailPanel();
             closeIntegrationsModal();
+        }
+    });
+
+    // =============================================================================
+    // Account Detail Panel — Inline Enrollment Flow
+    // =============================================================================
+
+    let _panelAccountId = null;
+    let _panelAccountData = null;
+
+    function openDetailPanel(accountId) {
+        _panelAccountId = accountId;
+        const panel = document.getElementById('account-detail-panel');
+        const overlay = document.getElementById('account-detail-overlay');
+        panel.classList.add('open');
+        overlay.classList.add('open');
+
+        // Reset state
+        document.getElementById('panel-company-name').textContent = 'Loading...';
+        document.getElementById('panel-meta').textContent = '';
+        document.getElementById('panel-evidence').textContent = 'Loading...';
+        document.getElementById('panel-report-link').style.display = 'none';
+        document.getElementById('panel-notes').value = '';
+        document.getElementById('panel-contributors-list').innerHTML = '<div class="panel-placeholder">Loading...</div>';
+        document.getElementById('panel-enroll-results').style.display = 'none';
+
+        // Fetch account data + contributors in parallel
+        Promise.all([
+            fetch(`/api/accounts/${accountId}/contributors`).then(r => r.json()),
+            fetch('/api/sequence-mappings/enabled').then(r => r.json())
+        ]).then(([contribData, seqData]) => {
+            if (contribData.error) {
+                document.getElementById('panel-company-name').textContent = 'Error';
+                return;
+            }
+
+            const account = contribData.account;
+            _panelAccountData = account;
+
+            // Populate header
+            document.getElementById('panel-company-name').textContent = account.company_name || 'Unknown';
+            const tierConfig = TIER_CONFIG[account.current_tier] || TIER_CONFIG[0];
+            const tierName = tierConfig ? tierConfig.name : ('Tier ' + account.current_tier);
+            const revenue = formatRevenue(account.annual_revenue);
+            const lastScan = account.last_scanned_at ? formatSmartDate(account.last_scanned_at) : 'Never';
+            document.getElementById('panel-meta').textContent = `${tierName} | ${revenue || 'No revenue'} | Last: ${lastScan}`;
+
+            // Evidence
+            document.getElementById('panel-evidence').textContent = account.evidence_summary || 'No evidence recorded';
+
+            // Report link
+            const reportLink = document.getElementById('panel-report-link');
+            if (account.latest_report_id) {
+                reportLink.href = `/report/${account.latest_report_id}`;
+                reportLink.style.display = 'inline-block';
+            } else {
+                reportLink.style.display = 'none';
+            }
+
+            // Notes
+            document.getElementById('panel-notes').value = account.notes || '';
+
+            // Contributors
+            renderPanelContributors(contribData.contributors || []);
+
+            // Sequence dropdown
+            const seqSelect = document.getElementById('panel-sequence-select');
+            seqSelect.innerHTML = '';
+            const sequences = (seqData.sequences || []);
+            if (sequences.length === 0) {
+                seqSelect.innerHTML = '<option value="">No sequences available</option>';
+            } else {
+                sequences.forEach(s => {
+                    const opt = document.createElement('option');
+                    opt.value = s.apollo_sequence_id || s.sequence_id || '';
+                    opt.textContent = s.sequence_name || s.name || 'Unnamed';
+                    opt.dataset.name = s.sequence_name || s.name || '';
+                    seqSelect.appendChild(opt);
+                });
+            }
+        }).catch(err => {
+            console.error('Error loading panel data:', err);
+            document.getElementById('panel-company-name').textContent = 'Error loading';
+        });
+    }
+
+    function closeDetailPanel() {
+        const panel = document.getElementById('account-detail-panel');
+        const overlay = document.getElementById('account-detail-overlay');
+        panel.classList.remove('open');
+        overlay.classList.remove('open');
+        _panelAccountId = null;
+        _panelAccountData = null;
+    }
+
+    function renderPanelContributors(contributors) {
+        const container = document.getElementById('panel-contributors-list');
+        if (!contributors || contributors.length === 0) {
+            container.innerHTML = '<div class="panel-placeholder">No contributors found. Click "Fetch Contributors" to discover them.</div>';
+            document.getElementById('panel-fetch-btn').style.display = 'inline-flex';
+            return;
+        }
+        document.getElementById('panel-fetch-btn').style.display = 'none';
+
+        container.innerHTML = contributors.map(c => {
+            const enrolled = c.enrolled_in_sequence === 1 || c.apollo_status === 'sent';
+            const name = escapeHtml(c.name || c.github_login || 'Unknown');
+            const repo = escapeHtml(c.repo_source || '');
+            const insight = escapeHtml((c.insight || '').substring(0, 80));
+            const checked = enrolled ? '' : 'checked';
+            const disabled = enrolled ? 'disabled' : '';
+            const badge = enrolled
+                ? `<span class="panel-enrolled-badge">Enrolled${c.sequence_name ? ' in ' + escapeHtml(c.sequence_name) : ''}</span>`
+                : '';
+
+            return `
+                <label class="panel-contributor-row ${enrolled ? 'enrolled' : ''}">
+                    <input type="checkbox" class="panel-contributor-cb" value="${c.id}" ${checked} ${disabled}>
+                    <div class="panel-contributor-info">
+                        <span class="panel-contributor-name">${name}</span>
+                        <span class="panel-contributor-repo">${repo}</span>
+                        <span class="panel-contributor-insight">${insight}</span>
+                        ${badge}
+                    </div>
+                </label>
+            `;
+        }).join('');
+    }
+
+    function panelFetchContributors() {
+        if (!_panelAccountData) return;
+        const org = _panelAccountData.github_org;
+        if (!org) {
+            showToast('No GitHub org set for this account', 'error');
+            return;
+        }
+
+        const btn = document.getElementById('panel-fetch-btn');
+        btn.disabled = true;
+        btn.textContent = 'Fetching...';
+        document.getElementById('panel-contributors-list').innerHTML = '<div class="panel-placeholder">Fetching contributors from GitHub...</div>';
+
+        fetch('/api/contributors/fetch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ org: org, limit: 5 })
+        })
+        .then(r => r.json())
+        .then(data => {
+            btn.disabled = false;
+            btn.textContent = 'Fetch Contributors';
+            if (data.status === 'success') {
+                // Re-fetch contributors for this account to get the updated list
+                fetch(`/api/accounts/${_panelAccountId}/contributors`)
+                    .then(r => r.json())
+                    .then(d => renderPanelContributors(d.contributors || []));
+            } else {
+                showToast('Failed to fetch contributors', 'error');
+            }
+        })
+        .catch(err => {
+            btn.disabled = false;
+            btn.textContent = 'Fetch Contributors';
+            console.error('Fetch contributors error:', err);
+            showToast('Error fetching contributors', 'error');
+        });
+    }
+
+    function saveAccountNotes() {
+        if (!_panelAccountId) return;
+        const notes = document.getElementById('panel-notes').value;
+        fetch(`/api/accounts/${_panelAccountId}/notes`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ notes: notes })
+        }).catch(err => console.error('Error saving notes:', err));
+    }
+
+    function generateAndEnroll() {
+        if (!_panelAccountId) return;
+
+        const checkboxes = document.querySelectorAll('.panel-contributor-cb:checked:not(:disabled)');
+        const contributorIds = Array.from(checkboxes).map(cb => parseInt(cb.value));
+
+        if (contributorIds.length === 0) {
+            showToast('Select at least one contributor to enroll', 'error');
+            return;
+        }
+
+        const seqSelect = document.getElementById('panel-sequence-select');
+        const sequenceId = seqSelect.value;
+        if (!sequenceId) {
+            showToast('Select a sequence first', 'error');
+            return;
+        }
+        const sequenceName = seqSelect.options[seqSelect.selectedIndex]?.dataset?.name || '';
+
+        const btn = document.getElementById('panel-enroll-btn');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="btn-spinner"></span> Generating & Enrolling...';
+
+        const resultsDiv = document.getElementById('panel-enroll-results');
+        resultsDiv.style.display = 'block';
+        resultsDiv.innerHTML = '<div class="panel-placeholder">Processing ' + contributorIds.length + ' contributor(s)...</div>';
+
+        fetch(`/api/accounts/${_panelAccountId}/enroll`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contributor_ids: contributorIds,
+                sequence_id: sequenceId,
+                sequence_name: sequenceName
+            })
+        })
+        .then(r => r.json())
+        .then(data => {
+            btn.disabled = false;
+            btn.innerHTML = 'Generate Emails &amp; Enroll';
+
+            if (data.status === 'success' && data.results) {
+                resultsDiv.innerHTML = data.results.map(r => {
+                    const icon = r.status === 'enrolled' ? '<span class="result-icon result-ok">&#10003;</span>'
+                               : r.status === 'skipped' ? '<span class="result-icon result-skip">&#8211;</span>'
+                               : '<span class="result-icon result-fail">&#10007;</span>';
+                    return `<div class="panel-result-row">${icon} <strong>${escapeHtml(r.name)}</strong> &mdash; ${escapeHtml(r.message)}</div>`;
+                }).join('');
+
+                // Refresh contributors to show updated enrollment badges
+                fetch(`/api/accounts/${_panelAccountId}/contributors`)
+                    .then(r => r.json())
+                    .then(d => renderPanelContributors(d.contributors || []));
+            } else {
+                resultsDiv.innerHTML = '<div class="panel-result-row"><span class="result-icon result-fail">&#10007;</span> ' + escapeHtml(data.message || 'Enrollment failed') + '</div>';
+            }
+        })
+        .catch(err => {
+            btn.disabled = false;
+            btn.innerHTML = 'Generate Emails &amp; Enroll';
+            resultsDiv.innerHTML = '<div class="panel-result-row"><span class="result-icon result-fail">&#10007;</span> Network error</div>';
+            console.error('Enrollment error:', err);
+        });
+    }
+
+    // Wire up row click: clicking on certain cells opens the detail panel.
+    // Exclude clicks on interactive elements (buttons, links, inputs, checkboxes).
+    document.addEventListener('click', (e) => {
+        // Ignore clicks on interactive controls
+        if (e.target.closest('button, a, input, select, textarea, .notes-edit-container, .github-org-input-container')) return;
+        // Match click within an accounts table row
+        const row = e.target.closest('#accounts-tbody tr[data-account-id]');
+        if (row) {
+            const accountId = row.dataset.accountId;
+            if (accountId) {
+                openDetailPanel(parseInt(accountId));
+            }
         }
     });
 </script>
