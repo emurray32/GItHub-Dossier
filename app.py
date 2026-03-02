@@ -1995,6 +1995,28 @@ def api_campaigns_activate(campaign_id):
     return jsonify({'status': 'success', 'new_status': new_status})
 
 
+@app.route('/api/campaigns/<int:campaign_id>/stats')
+def api_campaign_stats(campaign_id):
+    """Get enrollment stats for a campaign: total enrolled, generated, failed."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT
+            COALESCE(SUM(total_contacts), 0) AS total_enrolled,
+            COALESCE(SUM(generated), 0) AS total_generated,
+            COALESCE(SUM(failed), 0) AS total_failed
+        FROM enrollment_batches WHERE campaign_id = ?
+    ''', (campaign_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return jsonify({
+        'status': 'success',
+        'total_enrolled': row['total_enrolled'] if row else 0,
+        'total_generated': row['total_generated'] if row else 0,
+        'total_failed': row['total_failed'] if row else 0,
+    })
+
+
 # ---------------------------------------------------------------------------
 # Campaign Personas API
 # ---------------------------------------------------------------------------
@@ -8303,6 +8325,10 @@ if __name__ == '__main__':
 
     # Start the background watchdog thread
     start_watchdog()
+
+    # Seed the default RepoRadar campaign (idempotent)
+    from seed_reporadar_campaign import seed_reporadar_campaign
+    seed_reporadar_campaign()
 
     # Start Google Sheets cron scheduler
     sheets_start_cron()

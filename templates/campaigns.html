@@ -28,6 +28,14 @@
         position: relative;
     }
     .campaign-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.06); }
+    .campaign-card.pinned { border-color: #14b8a6; border-width: 2px; }
+    .campaign-card.pinned .campaign-card-name { display: flex; align-items: center; gap: 0.4rem; }
+    .default-badge {
+        display: inline-flex; align-items: center; gap: 0.25rem;
+        font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+        padding: 1px 7px; border-radius: 4px; background: #ccfbf1; color: #0d9488;
+    }
+    .stat-loading { color: var(--color-text-tertiary); font-size: 0.75rem; }
     .campaign-card-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 0.75rem; }
     .campaign-card-name { font-size: 1.05rem; font-weight: 700; color: var(--color-text); margin: 0; }
     .campaign-card-status {
@@ -207,9 +215,9 @@
     {% if campaigns %}
     <div class="campaigns-grid" id="campaigns-grid">
         {% for c in campaigns %}
-        <div class="campaign-card" id="campaign-{{ c.id }}" data-id="{{ c.id }}">
+        <div class="campaign-card{% if c.name == 'RepoRadar' %} pinned{% endif %}" id="campaign-{{ c.id }}" data-id="{{ c.id }}">
             <div class="campaign-card-header">
-                <h3 class="campaign-card-name">{{ c.name }}</h3>
+                <h3 class="campaign-card-name">{{ c.name }}{% if c.name == 'RepoRadar' %} <span class="default-badge">Default</span>{% endif %}</h3>
                 <span class="campaign-card-status {{ c.status }}">{{ c.status }}</span>
             </div>
             {% if c.prompt %}
@@ -243,6 +251,14 @@
                 <span class="meta-item">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
                     {{ c.updated_at[:10] if c.updated_at else 'N/A' }}
+                </span>
+                <span class="meta-item enrollment-stat" data-campaign-id="{{ c.id }}">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="8.5" cy="7" r="4"></circle><line x1="20" y1="8" x2="20" y2="14"></line><line x1="23" y1="11" x2="17" y2="11"></line></svg>
+                    <span class="stat-enrolled">--</span> enrolled
+                </span>
+                <span class="meta-item enrollment-stat" data-campaign-id="{{ c.id }}">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+                    <span class="stat-generated">--</span> generated
                 </span>
             </div>
             <div class="campaign-card-actions">
@@ -346,6 +362,24 @@
 
     let editingId = null;
     let sequencesCache = [];
+
+    // ── Load enrollment stats for each campaign card ──
+    (function loadEnrollmentStats() {
+        const cards = document.querySelectorAll('.campaign-card[data-id]');
+        cards.forEach(card => {
+            const cid = card.dataset.id;
+            fetch(`/api/campaigns/${cid}/stats`)
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status !== 'success') return;
+                    const enrolledEls = card.querySelectorAll('.stat-enrolled');
+                    const generatedEls = card.querySelectorAll('.stat-generated');
+                    enrolledEls.forEach(el => { el.textContent = data.total_enrolled; });
+                    generatedEls.forEach(el => { el.textContent = data.total_generated; });
+                })
+                .catch(() => {});
+        });
+    })();
     const SENIORITY_OPTIONS = [
         {value: 'c_suite', label: 'C-Suite'},
         {value: 'vp', label: 'VP'},
