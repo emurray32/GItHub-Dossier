@@ -34,8 +34,6 @@
         <!-- Stats Row (pills) -->
         <div class="contrib-stats-row">
             <span class="contrib-stat-pill"><span class="stat-pill-value" id="stat-total">{{ stats.total_contributors }}</span> <span class="stat-pill-label">contributors</span></span>
-            <span class="contrib-stat-pill stat-enrolled"><span class="stat-pill-value" id="stat-enrolled">{{ stats.total_enrolled }}</span> <span class="stat-pill-label">enrolled</span></span>
-            <span class="contrib-stat-pill stat-emails"><span class="stat-pill-value" id="stat-emails">{{ stats.total_emails_sent }}</span> <span class="stat-pill-label">emails sent</span></span>
         </div>
 
         <!-- Controls -->
@@ -58,10 +56,9 @@
 
         <!-- Filter Chips -->
         <div class="contrib-filter-chips">
-            <button class="filter-chip" id="filter-has-email" onclick="toggleFilter('has_email')">Has email</button>
             <button class="filter-chip" id="filter-warm-hot" onclick="toggleFilter('warm_hot')">Warm/Hot leads</button>
-            <button class="filter-chip" id="filter-i18n" onclick="toggleFilter('i18n_involved')">i18n involved</button>
             <button class="filter-chip" id="filter-not-contacted" onclick="toggleFilter('not_contacted')">Not contacted</button>
+            <button class="filter-chip" id="filter-enrolled" onclick="toggleFilter('enrolled')">Already enrolled</button>
         </div>
 
         <!-- Table -->
@@ -69,11 +66,13 @@
             <table class="contrib-table" id="contrib-table">
                 <thead>
                     <tr>
+                        <th class="col-check"><input type="checkbox" id="select-all-checkbox" onchange="toggleSelectAll(this.checked)" title="Select all"></th>
                         <th class="col-name sortable" data-col="1" data-dir="">Name <span class="sort-indicator"><span class="asc">&#9650;</span><span class="desc">&#9660;</span></span></th>
                         <th class="col-company sortable" data-col="2" data-dir="">Company <span class="sort-indicator"><span class="asc">&#9650;</span><span class="desc">&#9660;</span></span></th>
                         <th class="col-repo sortable" data-col="6" data-dir="desc">Repo <span class="sort-indicator"><span class="asc">&#9650;</span><span class="desc">&#9660;</span></span></th>
                         <th class="col-contributions sortable" data-col="6" data-dir="">Contributions <span class="sort-indicator"><span class="asc">&#9650;</span><span class="desc">&#9660;</span></span></th>
                         <th class="col-apollo sortable" data-col="7" data-dir="">Status <span class="sort-indicator"><span class="asc">&#9650;</span><span class="desc">&#9660;</span></span></th>
+                        <th class="col-enrolled">Enrolled</th>
                         <th class="col-insight">Insight</th>
                     </tr>
                 </thead>
@@ -81,11 +80,13 @@
                     <!-- Skeleton loading rows — replaced on data fetch -->
                     {% for i in range(5) %}
                     <tr class="skeleton-row">
+                        <td class="col-check"></td>
                         <td class="col-name"><div style="flex:1;"><div class="skeleton-bar" style="width:70%;margin-bottom:4px;"></div><div class="skeleton-bar" style="width:40%;height:8px;"></div></div></td>
                         <td class="col-company"><div class="skeleton-bar" style="width:60%;"></div></td>
                         <td class="col-repo"><div class="skeleton-bar" style="width:55%;"></div></td>
                         <td class="col-contributions"><div class="skeleton-bar" style="width:30%;"></div></td>
                         <td class="col-apollo"><div class="skeleton-bar" style="width:50%;"></div></td>
+                        <td class="col-enrolled"><div class="skeleton-bar" style="width:40%;"></div></td>
                         <td class="col-insight"><div class="skeleton-bar" style="width:80%;"></div></td>
                     </tr>
                     {% endfor %}
@@ -119,6 +120,18 @@
 
 </div>
 
+<!-- Enrollment Toolbar (floating bottom bar) -->
+<div class="enrollment-toolbar" id="enrollment-toolbar" style="display:none">
+    <span class="toolbar-count"><span id="selected-count">0</span> selected</span>
+    <select id="toolbar-campaign" class="toolbar-select">
+        <option value="">Select campaign...</option>
+    </select>
+    <select id="toolbar-sequence" class="toolbar-select">
+        <option value="">Select sequence...</option>
+    </select>
+    <button class="toolbar-btn-enroll" onclick="enrollSelected()">Enroll Selected</button>
+</div>
+
 <!-- Toast -->
 <div class="contrib-toast" id="contrib-toast"></div>
 {% endblock %}
@@ -136,6 +149,7 @@
     let activeFilters = {};
     let selectedContributorId = null;
     let cachedRows = [];
+    let selectedIds = new Set();
 
     const tbody = document.getElementById('contrib-tbody');
     const searchInput = document.getElementById('contrib-search');
@@ -152,7 +166,7 @@
         } else {
             activeFilters[filterName] = '1';
         }
-        const chipMap = { has_email: 'filter-has-email', warm_hot: 'filter-warm-hot', i18n_involved: 'filter-i18n', not_contacted: 'filter-not-contacted' };
+        const chipMap = { warm_hot: 'filter-warm-hot', not_contacted: 'filter-not-contacted', enrolled: 'filter-enrolled' };
         Object.entries(chipMap).forEach(([key, id]) => {
             const el = document.getElementById(id);
             if (el) el.classList.toggle('active', !!activeFilters[key]);
@@ -198,7 +212,7 @@
     function renderTable(rows) {
         if (!rows || rows.length === 0) {
             tbody.innerHTML = `
-                <tr><td colspan="6">
+                <tr><td colspan="8">
                     <div class="contrib-empty">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                             <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
@@ -227,10 +241,15 @@
                 : '';
             const isSelected = c.id === selectedContributorId;
             const hasEmail = c.email && c.email.trim();
+            const isEnrolled = c.enrolled_in_sequence === 1;
+            const isChecked = selectedIds.has(c.id);
 
             html += `
-            <tr data-id="${c.id}" class="contrib-row ${isSelected ? 'selected' : ''}" onclick="openSidebar(${c.id})">
-                <td class="col-name">
+            <tr data-id="${c.id}" class="contrib-row ${isSelected ? 'selected' : ''}">
+                <td class="col-check" onclick="event.stopPropagation()">
+                    <input type="checkbox" class="row-checkbox" data-id="${c.id}" ${isEnrolled ? 'disabled title="Already enrolled"' : ''} ${isChecked ? 'checked' : ''} onchange="onRowCheckChange(${c.id}, this.checked)">
+                </td>
+                <td class="col-name" onclick="openSidebar(${c.id})">
                     <div class="name-cell">
                         <div class="name-stack">
                             <span class="name-primary">${escapeHtml(displayName)}</span>
@@ -238,17 +257,31 @@
                         </div>
                     </div>
                 </td>
-                <td class="col-company">${tierDot}${escapeHtml(c.company || '-')}</td>
-                <td class="col-repo" title="${escapeHtml(c.repo_source || '')}">${escapeHtml(formatRepoSource(c.repo_source))}</td>
-                <td class="col-contributions">${c.contributions || 0}</td>
-                <td class="col-apollo">
+                <td class="col-company" onclick="openSidebar(${c.id})">${tierDot}${escapeHtml(c.company || '-')}</td>
+                <td class="col-repo" onclick="openSidebar(${c.id})" title="${escapeHtml(c.repo_source || '')}">${escapeHtml(formatRepoSource(c.repo_source))}</td>
+                <td class="col-contributions" onclick="openSidebar(${c.id})">${c.contributions || 0}</td>
+                <td class="col-apollo" onclick="openSidebar(${c.id})">
                     <span class="status-badge ${apolloClass} ${hasEmail ? 'has-email' : ''}">${apolloLabel}</span>
                 </td>
-                <td class="col-insight"><span class="insight-text" title="${escapedInsight}">${escapedInsight || '-'}</span></td>
+                <td class="col-enrolled" onclick="openSidebar(${c.id})">
+                    ${isEnrolled
+                        ? '<span class="enrolled-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14"><polyline points="20 6 9 17 4 12"></polyline></svg> Enrolled</span>'
+                        : '<span class="not-enrolled-badge">--</span>'}
+                </td>
+                <td class="col-insight" onclick="openSidebar(${c.id})"><span class="insight-text" title="${escapedInsight}">${escapedInsight || '-'}</span></td>
             </tr>`;
         });
 
         tbody.innerHTML = html;
+
+        // Sync select-all checkbox state
+        const selectAllCb = document.getElementById('select-all-checkbox');
+        if (selectAllCb) {
+            const checkboxes = document.querySelectorAll('.row-checkbox:not(:disabled)');
+            const checkedCount = document.querySelectorAll('.row-checkbox:not(:disabled):checked').length;
+            selectAllCb.checked = checkboxes.length > 0 && checkedCount === checkboxes.length;
+            selectAllCb.indeterminate = checkedCount > 0 && checkedCount < checkboxes.length;
+        }
     }
 
     // Open sidebar with contributor details
@@ -888,8 +921,6 @@
             .then(r => r.json())
             .then(s => {
                 document.getElementById('stat-total').textContent = s.total_contributors;
-                document.getElementById('stat-enrolled').textContent = s.total_enrolled;
-                document.getElementById('stat-emails').textContent = s.total_emails_sent;
             });
     }
 
@@ -1012,6 +1043,127 @@
             .replace(/\n/g, '\\n')
             .replace(/\r/g, '\\r');
     }
+
+    // --- Multi-select & Enrollment Toolbar ---
+    window.onRowCheckChange = function(id, checked) {
+        if (checked) {
+            selectedIds.add(id);
+        } else {
+            selectedIds.delete(id);
+        }
+        updateToolbar();
+
+        // Update select-all indeterminate state
+        const selectAllCb = document.getElementById('select-all-checkbox');
+        if (selectAllCb) {
+            const checkboxes = document.querySelectorAll('.row-checkbox:not(:disabled)');
+            const checkedCount = document.querySelectorAll('.row-checkbox:not(:disabled):checked').length;
+            selectAllCb.checked = checkboxes.length > 0 && checkedCount === checkboxes.length;
+            selectAllCb.indeterminate = checkedCount > 0 && checkedCount < checkboxes.length;
+        }
+    };
+
+    window.toggleSelectAll = function(checked) {
+        document.querySelectorAll('.row-checkbox:not(:disabled)').forEach(cb => {
+            const id = parseInt(cb.dataset.id);
+            cb.checked = checked;
+            if (checked) {
+                selectedIds.add(id);
+            } else {
+                selectedIds.delete(id);
+            }
+        });
+        updateToolbar();
+    };
+
+    function updateToolbar() {
+        const toolbar = document.getElementById('enrollment-toolbar');
+        const countEl = document.getElementById('selected-count');
+        if (selectedIds.size > 0) {
+            toolbar.style.display = 'flex';
+            countEl.textContent = selectedIds.size;
+            // Load toolbar dropdowns if not populated
+            loadToolbarDropdowns();
+        } else {
+            toolbar.style.display = 'none';
+        }
+    }
+
+    let toolbarDropdownsLoaded = false;
+    async function loadToolbarDropdowns() {
+        if (toolbarDropdownsLoaded) return;
+        toolbarDropdownsLoaded = true;
+        try {
+            const [campaignsResp, seqResp] = await Promise.all([
+                fetch('/api/campaigns').then(r => r.json()),
+                fetch('/api/sequence-mappings/enabled').then(r => r.json())
+            ]);
+
+            const campaignSel = document.getElementById('toolbar-campaign');
+            const campaigns = (campaignsResp.status === 'success' && campaignsResp.campaigns) ? campaignsResp.campaigns : [];
+            campaignSel.innerHTML = '<option value="">Select campaign...</option>' +
+                campaigns.map(c => '<option value="' + c.id + '">' + escapeHtml(c.name) + '</option>').join('');
+
+            const seqSel = document.getElementById('toolbar-sequence');
+            const sequences = (seqResp.status === 'success' && seqResp.sequences) ? seqResp.sequences : [];
+            seqSel.innerHTML = '<option value="">Select sequence...</option>' +
+                sequences.map(s => '<option value="' + escapeHtml(s.apollo_sequence_id || s.id || '') + '" data-mapping-id="' + (s.id || '') + '">' + escapeHtml(s.name || s.sequence_name || '') + '</option>').join('');
+        } catch (e) {
+            console.error('Failed to load toolbar dropdowns:', e);
+            toolbarDropdownsLoaded = false;
+        }
+    }
+
+    window.enrollSelected = async function() {
+        const ids = Array.from(selectedIds);
+        if (ids.length === 0) { showToast('No contributors selected', 'error'); return; }
+
+        const campaignSel = document.getElementById('toolbar-campaign');
+        const seqSel = document.getElementById('toolbar-sequence');
+        const campaignId = campaignSel.value;
+        const sequenceId = seqSel.value;
+
+        if (!campaignId) { showToast('Please select a campaign', 'error'); return; }
+        if (!sequenceId) { showToast('Please select a sequence', 'error'); return; }
+
+        const btn = document.querySelector('.toolbar-btn-enroll');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="btn-spinner"></span> Enrolling...';
+
+        try {
+            const resp = await fetch('/api/contributors/bulk-enroll', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    contributor_ids: ids,
+                    campaign_id: parseInt(campaignId),
+                    sequence_id: sequenceId
+                })
+            });
+            const data = await resp.json();
+
+            if (data.status === 'success') {
+                const succeeded = (data.results || []).filter(r => r.success).length;
+                const failed = (data.results || []).filter(r => !r.success).length;
+                let msg = 'Enrolled ' + succeeded + ' contributor' + (succeeded !== 1 ? 's' : '');
+                if (failed > 0) msg += ' (' + failed + ' failed)';
+                showToast(msg, failed > 0 ? 'warning' : 'success');
+
+                // Clear selection
+                selectedIds.clear();
+                document.getElementById('select-all-checkbox').checked = false;
+                updateToolbar();
+                loadTable();
+            } else {
+                showToast(data.message || 'Bulk enrollment failed', 'error');
+            }
+        } catch (e) {
+            showToast('Network error during bulk enrollment', 'error');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = 'Enroll Selected';
+        }
+    };
 
     // Initial load
     loadTable();

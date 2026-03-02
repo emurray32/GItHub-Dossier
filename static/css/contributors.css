@@ -584,12 +584,15 @@
 }
 
 /* Column widths */
-.col-name { width: 24%; }
-.col-company { width: 16%; }
-.col-repo { width: 16%; }
-.col-contributions { width: 10%; text-align: center; }
-.col-apollo { width: 10%; text-align: center; }
-.col-insight { width: 24%; }
+.col-check { width: 36px; text-align: center; padding: 0 0.25rem !important; }
+.col-check input[type="checkbox"] { cursor: pointer; width: 15px; height: 15px; accent-color: var(--color-primary); }
+.col-name { width: 20%; }
+.col-company { width: 14%; }
+.col-repo { width: 14%; }
+.col-contributions { width: 8%; text-align: center; }
+.col-apollo { width: 8%; text-align: center; }
+.col-enrolled { width: 8%; text-align: center; }
+.col-insight { width: 22%; }
 
 /* Name cell with avatar */
 .name-cell {
@@ -1005,3 +1008,114 @@
 .contrib-toast.error { background: var(--color-destructive); }
 .contrib-toast.info { background: var(--color-primary, #3b82f6); }
 .contrib-toast.warning { background: #f59e0b; color: #451a03; }
+
+/* -------------------------------------------------------
+   Enrolled Badge
+   ------------------------------------------------------- */
+.enrolled-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    background: rgba(79, 70, 229, 0.1);
+    color: var(--color-primary);
+    white-space: nowrap;
+}
+
+.enrolled-badge svg {
+    flex-shrink: 0;
+}
+
+.not-enrolled-badge {
+    color: var(--color-text-tertiary);
+    font-size: 12px;
+}
+
+/* -------------------------------------------------------
+   Enrollment Toolbar (floating bottom)
+   ------------------------------------------------------- */
+.enrollment-toolbar {
+    position: fixed;
+    bottom: 1.5rem;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1.25rem;
+    background: #1e293b;
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(255, 255, 255, 0.06);
+    z-index: 200;
+    animation: toolbar-slide-up 0.25s ease;
+}
+
+@keyframes toolbar-slide-up {
+    from { opacity: 0; transform: translateX(-50%) translateY(16px); }
+    to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+.toolbar-count {
+    font-size: 13px;
+    font-weight: 600;
+    color: #e2e8f0;
+    white-space: nowrap;
+}
+
+.toolbar-count span {
+    color: #5eead4;
+    font-weight: 700;
+}
+
+.toolbar-select {
+    padding: 0.3rem 0.5rem;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.08);
+    color: #e2e8f0;
+    font-size: 13px;
+    cursor: pointer;
+    min-width: 150px;
+    max-width: 220px;
+}
+
+.toolbar-select:focus {
+    border-color: #5eead4;
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(94, 234, 212, 0.2);
+}
+
+.toolbar-select option {
+    background: #1e293b;
+    color: #e2e8f0;
+}
+
+.toolbar-btn-enroll {
+    padding: 0.4rem 1rem;
+    background: #14b8a6;
+    color: #ffffff;
+    border: none;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+}
+
+.toolbar-btn-enroll:hover {
+    background: #0d9488;
+}
+
+.toolbar-btn-enroll:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.toolbar-btn-enroll .btn-spinner {
+    border-color: rgba(255, 255, 255, 0.3);
+    border-top-color: white;
+}
