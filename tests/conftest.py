@@ -1,8 +1,15 @@
 """
-Shared test fixtures for scoring engine tests.
+Shared test fixtures for scoring engine tests and enrollment pipeline tests.
 """
+import json
+import os
+import sqlite3
+import sys
+import tempfile
+
 import pytest
 from datetime import datetime, timezone, timedelta
+from unittest.mock import MagicMock, patch
 
 
 @pytest.fixture
@@ -335,3 +342,329 @@ def mixed_signal_results():
             'eng1': {'name': 'Engineer 1', 'contributions': 300, 'company': 'MixedCorp'},
         },
     }
+
+
+# ---------------------------------------------------------------------------
+# Database / Enrollment Fixtures
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def test_db(tmp_path, monkeypatch):
+    """Provide a fresh SQLite database for each test.
+
+    Patches Config.DATABASE_PATH and Config.DATABASE_URL so that database.py
+    uses this temp DB, then calls init_db() to create all tables.
+    """
+    db_path = str(tmp_path / 'test.db')
+
+    # Ensure DATABASE_URL is empty so we use SQLite path
+    monkeypatch.setattr('config.Config.DATABASE_URL', '')
+    monkeypatch.setattr('config.Config.DATABASE_PATH', db_path)
+
+    # Force database module to reload its dialect flag
+    import database
+    monkeypatch.setattr(database, '_USE_POSTGRES', False)
+
+    # Re-bind get_db_connection to use patched path
+    original_get_db = database.get_db_connection
+
+    def _patched_get_db():
+        conn = sqlite3.connect(db_path, timeout=30.0)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA foreign_keys=ON")
+        conn.execute("PRAGMA busy_timeout=5000")
+        return conn
+
+    monkeypatch.setattr(database, 'get_db_connection', _patched_get_db)
+
+    # Initialize schema
+    database.init_db()
+
+    yield db_path
+
+
+@pytest.fixture
+def flask_app(test_db, monkeypatch):
+    """Create a Flask test client with a clean database."""
+    # Set required env vars to avoid import-time errors
+    monkeypatch.setenv('APOLLO_API_KEY', 'test-key-123')
+
+    import app as flask_app_module
+    flask_app_module.app.config['TESTING'] = True
+    with flask_app_module.app.test_client() as client:
+        with flask_app_module.app.app_context():
+            yield client
+
+
+@pytest.fixture
+def sample_campaign(test_db):
+    """Create a sample campaign and return its ID."""
+    import database
+    conn = database.get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO campaigns (name, prompt, status) VALUES (?, ?, ?)",
+        ('Test Campaign', 'Test prompt', 'active')
+    )
+    conn.commit()
+    campaign_id = cursor.lastrowid
+    conn.close()
+    return campaign_id
+
+
+@pytest.fixture
+def sample_batch(test_db, sample_campaign):
+    """Create a sample enrollment batch and return its ID."""
+    import database
+    batch_id = database.create_enrollment_batch(sample_campaign, [1, 2, 3])
+    return batch_id
+
+
+@pytest.fixture
+def sample_sequence_mapping(test_db):
+    """Create a sample sequence mapping and return it."""
+    import database
+    return database.upsert_sequence_mapping(
+        sequence_id='seq_abc123',
+        sequence_name='Test Sequence - Preparing',
+        sequence_config='threaded_4',
+        num_steps=4,
+        active=True,
+        owner_name='eric@phrase.com'
+    )
+
+
+# ---------------------------------------------------------------------------
+# Apollo API Mock Fixtures
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def apollo_person_response():
+    """Mock Apollo People Match API response."""
+    return {
+        'person': {
+            'id': 'person_123',
+            'first_name': 'Jane',
+            'last_name': 'Smith',
+            'name': 'Jane Smith',
+            'email': 'jane.smith@targetcorp.com',
+            'email_status': 'verified',
+            'title': 'VP Engineering',
+            'linkedin_url': 'https://linkedin.com/in/janesmith',
+            'organization': {
+                'name': 'TargetCorp',
+                'website_url': 'https://targetcorp.com',
+            },
+        }
+    }
+
+
+@pytest.fixture
+def apollo_search_response():
+    """Mock Apollo People Search API response."""
+    return {
+        'people': [
+            {
+                'id': 'person_456',
+                'first_name': 'John',
+                'last_name': 'Doe',
+                'name': 'John Doe',
+                'email': 'john.doe@targetcorp.com',
+                'email_status': 'verified',
+                'title': 'Engineering Manager',
+                'linkedin_url': 'https://linkedin.com/in/johndoe',
+                'organization': {'name': 'TargetCorp'},
+            }
+        ],
+        'pagination': {'total_entries': 1, 'total_pages': 1, 'page': 1},
+    }
+
+
+@pytest.fixture
+def apollo_sequences_response():
+    """Mock Apollo Sequences search API response."""
+    return {
+        'emailer_campaigns': [
+            {
+                'id': 'seq_001',
+                'name': 'Preparing - Technical',
+                'active': True,
+                'num_steps': 4,
+                'created_at': '2025-01-01',
+                'emailer_steps': [
+                    {'type': 'auto_email', 'subject': 'i18n in {{company}}'},
+                    {'type': 'auto_email', 'subject': ''},
+                    {'type': 'auto_email', 'subject': ''},
+                    {'type': 'auto_email', 'subject': 'Quick follow-up'},
+                ],
+            },
+            {
+                'id': 'seq_002',
+                'name': 'Ghost Branch - Urgent',
+                'active': True,
+                'num_steps': 2,
+                'created_at': '2025-02-01',
+                'emailer_steps': [
+                    {'type': 'auto_email', 'subject': 'Your i18n branch'},
+                ],
+            },
+        ],
+        'pagination': {'total_entries': 2, 'total_pages': 1, 'page': 1},
+    }
+
+
+@pytest.fixture
+def apollo_contact_create_response():
+    """Mock Apollo contact creation response."""
+    return {
+        'contact': {
+            'id': 'contact_789',
+            'first_name': 'Jane',
+            'last_name': 'Smith',
+            'email': 'jane.smith@targetcorp.com',
+        }
+    }
+
+
+@pytest.fixture
+def apollo_enroll_response():
+    """Mock Apollo sequence enrollment response."""
+    return {
+        'contacts': [{'id': 'contact_789'}],
+    }
+
+
+@pytest.fixture
+def apollo_custom_fields_response():
+    """Mock Apollo typed custom fields response."""
+    return {
+        'typed_custom_fields': [
+            {'id': 'cf_sub1', 'name': 'Personalized Subject 1'},
+            {'id': 'cf_sub2', 'name': 'Personalized Subject 2'},
+            {'id': 'cf_email1', 'name': 'Personalized Email 1'},
+            {'id': 'cf_email2', 'name': 'Personalized Email 2'},
+            {'id': 'cf_email3', 'name': 'Personalized Email 3'},
+            {'id': 'cf_email4', 'name': 'Personalized Email 4'},
+        ]
+    }
+
+
+@pytest.fixture
+def apollo_email_accounts_response():
+    """Mock Apollo email accounts response."""
+    return {
+        'email_accounts': [
+            {'id': 'ea_001', 'email': 'eric@phrase.com', 'active': True},
+            {'id': 'ea_002', 'email': 'sales@phrase.com', 'active': True},
+        ]
+    }
+
+
+# ---------------------------------------------------------------------------
+# Mock GitHub Responses
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def github_repos_response():
+    """Mock GitHub repos API response for an org."""
+    return [
+        {
+            'name': 'webapp',
+            'full_name': 'targetcorp/webapp',
+            'fork': False,
+            'archived': False,
+            'stargazers_count': 500,
+            'watchers_count': 50,
+            'pushed_at': '2025-12-01T00:00:00Z',
+            'language': 'TypeScript',
+            'description': 'Main web application',
+            'default_branch': 'main',
+        },
+        {
+            'name': 'api-server',
+            'full_name': 'targetcorp/api-server',
+            'fork': False,
+            'archived': False,
+            'stargazers_count': 200,
+            'watchers_count': 20,
+            'pushed_at': '2025-11-15T00:00:00Z',
+            'language': 'Python',
+            'description': 'REST API server',
+            'default_branch': 'main',
+        },
+    ]
+
+
+@pytest.fixture
+def github_package_json_with_i18n():
+    """Mock package.json content with i18n library."""
+    return {
+        'name': 'webapp',
+        'dependencies': {
+            'react': '^18.0.0',
+            'react-i18next': '^13.0.0',
+            'i18next': '^23.0.0',
+        },
+    }
+
+
+@pytest.fixture
+def github_package_json_without_i18n():
+    """Mock package.json content without i18n library."""
+    return {
+        'name': 'webapp',
+        'dependencies': {
+            'react': '^18.0.0',
+            'next': '^14.0.0',
+        },
+    }
+
+
+@pytest.fixture
+def sample_enrollment_contacts():
+    """Sample enrollment contact data for batch operations."""
+    return [
+        {
+            'batch_id': 1,
+            'company_name': 'TargetCorp',
+            'company_domain': 'targetcorp.com',
+            'persona_name': 'Engineering',
+            'sequence_id': 'seq_001',
+            'sequence_name': 'Preparing - Technical',
+            'first_name': 'Jane',
+            'last_name': 'Smith',
+            'email': 'jane.smith@targetcorp.com',
+            'title': 'VP Engineering',
+            'seniority': 'vp',
+            'status': 'discovered',
+        },
+        {
+            'batch_id': 1,
+            'company_name': 'TargetCorp',
+            'company_domain': 'targetcorp.com',
+            'persona_name': 'Engineering',
+            'sequence_id': 'seq_001',
+            'sequence_name': 'Preparing - Technical',
+            'first_name': 'John',
+            'last_name': 'Doe',
+            'email': 'john.doe@targetcorp.com',
+            'title': 'Engineering Manager',
+            'seniority': 'manager',
+            'status': 'discovered',
+        },
+        {
+            'batch_id': 1,
+            'company_name': 'AnotherCorp',
+            'company_domain': 'anothercorp.com',
+            'persona_name': 'Product',
+            'sequence_id': 'seq_002',
+            'sequence_name': 'Ghost Branch - Urgent',
+            'first_name': 'Alice',
+            'last_name': 'Johnson',
+            'email': 'alice@anothercorp.com',
+            'title': 'Product Manager',
+            'seniority': 'manager',
+            'status': 'discovered',
+        },
+    ]
