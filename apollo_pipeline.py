@@ -438,6 +438,7 @@ def bulk_enroll_contacts(batch_id, contact_ids=None, limit=25):
     db.update_enrollment_batch(batch_id, status='in_progress', current_phase='enrolling')
 
     # Resolve sending email account
+    # TODO: Use sequence_mappings.owner_email_account_id when set, falling back to global _resolve_email_account()
     email_account_id = _resolve_email_account()
     if not email_account_id:
         db.update_enrollment_batch(batch_id, current_phase='error',

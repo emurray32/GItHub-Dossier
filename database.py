@@ -674,6 +674,7 @@ def init_db() -> None:
 
     # Migration: add enabled column if missing (existing DBs)
     _safe_add_column(cursor, 'sequence_mappings', 'enabled INTEGER DEFAULT 0')
+    _safe_add_column(cursor, 'sequence_mappings', 'owner_email_account_id TEXT DEFAULT ""')
 
     # Campaign personas table - maps campaigns to persona groups with sequence assignments
     cursor.execute(_adapt_ddl('''
@@ -5699,8 +5700,8 @@ def get_all_sequence_mappings(enabled_only: bool = False) -> list:
 
 
 def update_sequence_mapping(mapping_id: int, **kwargs) -> bool:
-    """Update a sequence mapping's owner_name and/or enabled status."""
-    allowed = {'owner_name', 'enabled'}
+    """Update a sequence mapping's owner_name, owner_email_account_id, and/or enabled status."""
+    allowed = {'owner_name', 'owner_email_account_id', 'enabled'}
     updates = {k: v for k, v in kwargs.items() if k in allowed}
     if not updates:
         return False
