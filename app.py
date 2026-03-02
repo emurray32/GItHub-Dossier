@@ -138,6 +138,21 @@ def enforce_authentication():
     if not request.path.startswith('/api/') and request.method == 'GET':
         return
 
+    # Allow same-origin browser requests (the UI's own JS fetch calls)
+    # Uses strict netloc comparison via urlparse to prevent subdomain/substring spoofing
+    from urllib.parse import urlparse
+    referer = request.headers.get('Referer', '')
+    origin = request.headers.get('Origin', '')
+    request_host = request.host  # includes port if non-standard
+    if referer:
+        parsed = urlparse(referer)
+        if parsed.netloc == request_host:
+            return
+    if origin:
+        parsed = urlparse(origin)
+        if parsed.netloc == request_host:
+            return
+
     # Check for API key in header or query param
     provided_key = request.headers.get('X-API-Key') or request.args.get('api_key')
     if not provided_key or provided_key != api_key:

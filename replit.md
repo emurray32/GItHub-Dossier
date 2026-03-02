@@ -45,6 +45,11 @@ python app.py
 - **AI**: OpenAI GPT-5-mini (all tasks — analysis, writing, cold emails, via Replit AI Integrations)
 
 ## Recent Changes
+- 2026-03-02: Fixed API authentication blocking browser requests
+  - `DOSSIER_API_KEY` middleware was returning 401 for all browser JS fetch calls (queue status, scan statuses, etc.)
+  - Added secure same-origin exemption using strict `urlparse` netloc comparison
+  - Browser requests from the app's own pages are now allowed through; external requests still require API key
+  - Prevents subdomain/substring spoofing attacks on Referer/Origin headers
 - 2026-02-22: Consolidated all AI to OpenAI GPT-5-mini
   - Removed all Google Gemini dependencies (genai library, GEMINI_API_KEY, GEMINI_MODEL)
   - GPT-5-mini now handles everything: scan analysis, cold emails, deep-dive narratives, LinkedIn outreach, signal verification, website analysis, company discovery
