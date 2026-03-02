@@ -81,14 +81,21 @@ class TokenPool:
                 if token and token not in self._tokens:
                     self._tokens[token] = TokenStatus(token=token)
 
+    # Preemptive rotation threshold: when a token drops below this percentage
+    # of its limit, prefer switching to a fresher token (if available).
+    # This prevents hitting the actual limit and triggering 429s.
+    PREEMPTIVE_ROTATION_THRESHOLD = 50  # requests remaining
+
     def get_best_token(self) -> Optional[str]:
         """
         Get the token with the highest remaining rate limit.
 
         Selection strategy:
         1. Skip tokens that are currently rate-limited (remaining=0 or is_rate_limited)
-        2. Among available tokens, select the one with highest 'remaining' count
-        3. If all tokens are rate-limited, return the one that resets soonest
+        2. Preemptive rotation: if a token is below PREEMPTIVE_ROTATION_THRESHOLD
+           and a fresher token exists, prefer the fresher one
+        3. Among available tokens, select the one with highest 'remaining' count
+        4. If all tokens are rate-limited, return the one that resets soonest
 
         Thread-safe: uses a lock to ensure consistent selection.
 
@@ -101,6 +108,7 @@ class TokenPool:
         with self._lock:
             now = time.time()
             available = []
+            low_quota = []
             rate_limited = []
 
             for token, status in self._tokens.items():
@@ -111,6 +119,9 @@ class TokenPool:
 
                 if status.is_rate_limited or status.remaining <= 0:
                     rate_limited.append((token, status))
+                elif status.remaining <= self.PREEMPTIVE_ROTATION_THRESHOLD:
+                    # Token is getting low -- deprioritize if fresher tokens exist
+                    low_quota.append((token, status))
                 else:
                     available.append((token, status))
 
@@ -118,6 +129,14 @@ class TokenPool:
                 # Sort by remaining (highest first), then by last_used (oldest first)
                 available.sort(key=lambda x: (-x[1].remaining, x[1].last_used))
                 best_token, best_status = available[0]
+                best_status.last_used = now
+                best_status.request_count += 1
+                return best_token
+
+            # No fresh tokens -- fall back to low-quota tokens
+            if low_quota:
+                low_quota.sort(key=lambda x: (-x[1].remaining, x[1].last_used))
+                best_token, best_status = low_quota[0]
                 best_status.last_used = now
                 best_status.request_count += 1
                 return best_token

@@ -4,6 +4,7 @@ GitHub Dossier - AI-Powered Sales Intelligence for Localization Opportunities
 A Flask application for analyzing GitHub organizations for localization signals.
 """
 import atexit
+import hmac
 import json
 import re
 import time
@@ -26,7 +27,7 @@ from database import (
     clear_stale_scan_statuses, reset_all_scan_statuses, batch_set_scan_status_queued,
     reset_stale_queued_accounts, reset_all_queued_to_idle, clear_misclassified_errors,
     SCAN_STATUS_IDLE, SCAN_STATUS_QUEUED, SCAN_STATUS_PROCESSING,
-    save_signals, cleanup_duplicate_accounts, update_account_annual_revenue,
+    save_signals, get_signals_by_company, cleanup_duplicate_accounts, update_account_annual_revenue,
     update_account_website, update_account_metadata, update_account_notes,
     create_import_batch, get_pending_import_batches, update_batch_progress, get_import_batch,
     increment_hourly_api_calls, get_current_hour_api_calls, cleanup_old_hourly_stats,
@@ -63,6 +64,7 @@ from database import (
     get_enrollment_batches_for_campaign,
     create_enrollment_contact, bulk_create_enrollment_contacts, update_enrollment_contact,
     get_enrollment_contacts, get_enrollment_batch_summary, get_next_contacts_for_phase,
+    get_account,
 )
 from monitors.webscraper_utils import (
     detect_expansion_signals, calculate_webscraper_tier, extract_tier_from_scan_results,
@@ -83,6 +85,9 @@ from sheets_sync import (
     start_cron_scheduler as sheets_start_cron,
     is_sync_in_progress as sheets_sync_in_progress
 )
+from auth import auth_bp
+from rate_limiter import limiter
+from database import log_audit_event
 import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -93,18 +98,42 @@ app.config.from_object(Config)
 # Limit file upload size to 16 MB to prevent memory exhaustion (Bug #7)
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 
+# Register Auth blueprint
+app.register_blueprint(auth_bp)
+
+# Register Slack Bot blueprint (interactive bot with slash commands)
+from slack_bot import slack_bot as slack_bot_bp
+app.register_blueprint(slack_bot_bp)
+
+# Register Email Engine blueprint (pipeline email generation & preview)
+from email_routes import email_bp
+app.register_blueprint(email_bp)
+
+# Register Pipeline Orchestrator blueprint (scheduling, circuit breakers, status)
+from pipeline_routes import pipeline_bp
+app.register_blueprint(pipeline_bp)
+
+# Initialize rate limiter with route-specific limits
+limiter.init_app(app)
+limiter.set_route_limit('/login', 10, 60)           # 10 login attempts per minute
+limiter.set_route_limit('/api/apollo', 30, 60)      # 30 Apollo calls per minute
+limiter.set_route_limit('/api/send', 20, 60)        # 20 email sends per minute
+limiter.set_route_limit('/api/import', 5, 60)       # 5 bulk imports per minute
+limiter.set_route_limit('/api/linkedin', 20, 60)    # 20 LinkedIn lookups per minute
+
 
 # =============================================================================
 # SECURITY MIDDLEWARE — API Key Authentication + CSRF Protection
 # =============================================================================
 
 # Routes that serve HTML pages (no auth required — they load the UI)
-_PUBLIC_PREFIXES = ('/static/',)
+_PUBLIC_PREFIXES = ('/static/', '/slack/', '/login', '/logout')
 _PUBLIC_ENDPOINTS = {
     'index', 'dashboard', 'reports_page', 'linkedin_prospector',
     'scorecard_page', 'webscraper_page', 'contributors_page',
     'settings_page', 'website_analyzer_page', 'serve_favicon',
-    'inject_cache_buster', 'add_no_cache_headers',
+    'inject_cache_buster', 'add_security_headers',
+    'auth.login', 'auth.logout',
 }
 
 
@@ -155,7 +184,8 @@ def enforce_authentication():
 
     # Check for API key in header or query param
     provided_key = request.headers.get('X-API-Key') or request.args.get('api_key')
-    if not provided_key or provided_key != api_key:
+    if not provided_key or not hmac.compare_digest(provided_key, api_key):
+        log_audit_event('auth_failure', f'path={request.path} method={request.method}', ip_address=request.remote_addr)
         return jsonify({'status': 'error', 'message': 'Unauthorized: invalid or missing API key'}), 401
 
 
@@ -174,6 +204,10 @@ def enforce_csrf_protection():
     """
     if request.method in ('GET', 'HEAD', 'OPTIONS'):
         return  # Safe methods don't need CSRF protection
+
+    # Slack routes use signing-secret verification instead of CSRF
+    if request.path.startswith('/slack/'):
+        return
 
     origin = request.headers.get('Origin')
     referer = request.headers.get('Referer')
@@ -235,11 +269,34 @@ def inject_cache_buster():
 
 
 @app.after_request
-def add_no_cache_headers(response):
+def add_security_headers(response):
+    """Add security headers to every response."""
+    # Cache control for dynamic content
     if 'text/html' in response.content_type or 'text/css' in response.content_type or 'javascript' in response.content_type:
         response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
         response.headers['Pragma'] = 'no-cache'
         response.headers['Expires'] = '0'
+
+    # Security headers
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'SAMEORIGIN'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+
+    # HSTS - Replit serves over HTTPS
+    response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+
+    # CSP: allow self + CDN resources used by the UI (DataTables, Bootstrap, etc.)
+    response.headers['Content-Security-Policy'] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://cdn.datatables.net; "
+        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://cdn.datatables.net https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; "
+        "img-src 'self' data: https:; "
+        "connect-src 'self'; "
+        "frame-ancestors 'self'"
+    )
+
     return response
 
 
@@ -1050,6 +1107,12 @@ def perform_background_scan(company_name: str):
         try:
             signals = scan_data.get('signals', [])
             if signals:
+                # Enrich signals with freshness scores before saving
+                try:
+                    from scheduler import enrich_signal_with_freshness
+                    signals = [enrich_signal_with_freshness(s) for s in signals]
+                except ImportError:
+                    pass  # APScheduler/scheduler not available, skip freshness
                 signals_count = save_signals(report_id, company_name, signals)
                 logging.info(f"[WORKER] Saved {signals_count} signals for {company_name}")
         except Exception as e:
@@ -1079,6 +1142,13 @@ def perform_background_scan(company_name: str):
                 trigger_webhook('tier_change', webhook_data)
                 # Also trigger Google Sheets export for Tier 1/2 accounts
                 trigger_gsheet_webhook('tier_change', webhook_data)
+                # Slack bot: immediate Tier 2 alert for Goldilocks Zone leads
+                if result.get('tier') == 2:
+                    try:
+                        from slack_bot import send_tier2_alert
+                        send_tier2_alert(webhook_data)
+                    except Exception as slack_err:
+                        logging.error(f"[WORKER] Slack Tier 2 alert failed: {slack_err}")
                 logging.info(f"[WORKER] Webhook triggered for {company_name} (Tier {result.get('tier')})")
         except Exception as e:
             # Store the error for user visibility instead of silently failing
@@ -1419,6 +1489,13 @@ def stream_scan(company: str):
                 trigger_webhook('tier_change', webhook_data)
                 # Also trigger Google Sheets export for Tier 1/2 accounts
                 trigger_gsheet_webhook('tier_change', webhook_data)
+                # Slack bot: immediate Tier 2 alert for Goldilocks Zone leads
+                if account_result.get('tier') == 2:
+                    try:
+                        from slack_bot import send_tier2_alert
+                        send_tier2_alert(webhook_data)
+                    except Exception as slack_err:
+                        logging.error(f"[STREAM] Slack Tier 2 alert failed: {slack_err}")
                 yield f"data: LOG:Webhook notification sent for {tier_name} lead\n\n"
 
         except Exception as e:
@@ -2973,6 +3050,7 @@ def api_scorecard_enroll():
 
         if enroll_resp.status_code in (200, 201):
             update_scorecard_enrollment(account_id, 'enrolled', sequence_name)
+            log_audit_event('apollo_enrollment', f'email={email} company={company_name} sequence={sequence_name}', ip_address=request.remote_addr)
             return jsonify({'status': 'success', 'message': f'Enrolled {email} in sequence', 'contact_id': contact_id})
         else:
             error_msg = enroll_resp.json().get('message', enroll_resp.text[:200]) if enroll_resp.text else 'Unknown error'
@@ -3499,6 +3577,7 @@ def api_contributor_send_email(contributor_id: int):
 
     if result.get('success'):
         increment_contributor_emails(contributor_id)
+        log_audit_event('email_send', f'contributor={contributor_id} to={to_email}', ip_address=request.remote_addr)
 
     return jsonify(result)
 
@@ -5449,6 +5528,55 @@ def api_scheduled_rescan_run_now():
     })
 
 
+# =============================================================================
+# PIPELINE SCAN SCHEDULE API — APScheduler-powered scan schedule overview
+# =============================================================================
+
+@app.route('/api/pipeline/scan-schedule')
+def api_pipeline_scan_schedule():
+    """
+    Return current scan queue status including scheduler state,
+    tier intervals, per-tier due counts, and active jobs.
+
+    This is the unified pipeline view combining scheduler status with
+    live queue information.
+    """
+    from scheduler import get_scan_scheduler
+
+    # Get scheduler status (APScheduler-based if available, fallback to legacy)
+    scheduler = get_scan_scheduler()
+    if scheduler is not None:
+        schedule_status = scheduler.get_status()
+    else:
+        # Fallback to legacy in-memory state
+        summary = get_scheduled_rescan_summary()
+        schedule_status = {
+            'scheduler': _scheduled_rescan_state,
+            'intervals': {str(k): v for k, v in TIER_SCAN_INTERVALS.items()},
+            'tiers': {str(k): v for k, v in summary.items()},
+            'jobs': [],
+        }
+
+    # Add live queue info
+    active_jobs = get_queued_and_processing_accounts()
+    queued = active_jobs.get('queued', [])
+    processing = active_jobs.get('processing', [])
+
+    schedule_status['queue'] = {
+        'queued_count': len(queued),
+        'processing_count': len(processing),
+        'queued_companies': queued,
+        'processing_companies': [p['company_name'] for p in processing],
+        'max_workers': MAX_SCAN_WORKERS,
+    }
+
+    # Add token pool health
+    from utils import get_token_pool_status
+    schedule_status['token_pool'] = get_token_pool_status()
+
+    return jsonify(schedule_status)
+
+
 @app.route('/api/queue-status')
 def api_queue_status():
     """
@@ -5625,10 +5753,34 @@ def api_sheets_enable_cron():
     return jsonify({'status': 'success', **sheets_get_sync_config()})
 
 
+@app.errorhandler(401)
+def unauthorized(e):
+    """Handle 401 errors."""
+    if request.path.startswith('/api/'):
+        return jsonify({'status': 'error', 'message': 'Unauthorized'}), 401
+    return render_template('error.html', message='Unauthorized. Please log in.'), 401
+
+
+@app.errorhandler(403)
+def forbidden(e):
+    """Handle 403 errors."""
+    if request.path.startswith('/api/'):
+        return jsonify({'status': 'error', 'message': 'Forbidden'}), 403
+    return render_template('error.html', message='Access denied.'), 403
+
+
 @app.errorhandler(404)
 def page_not_found(e):
     """Handle 404 errors."""
     return render_template('error.html', message='Page not found'), 404
+
+
+@app.errorhandler(429)
+def too_many_requests(e):
+    """Handle 429 rate limit errors."""
+    if request.path.startswith('/api/'):
+        return jsonify({'status': 'error', 'message': 'Too many requests. Please slow down.'}), 429
+    return render_template('error.html', message='Too many requests. Please wait a moment and try again.'), 429
 
 
 @app.errorhandler(500)
@@ -7356,21 +7508,21 @@ def send_outreach_email():
     data = request.get_json()
     if not data:
         return jsonify({'status': 'error', 'message': 'No data provided'}), 400
-    
+
     to_email = data.get('to_email', '')
     subject = data.get('subject', '')
     body = data.get('body', '')
     company_name = data.get('company_name', '')
     report_id = data.get('report_id', '')
-    
+
     if not to_email or not subject or not body:
         return jsonify({'status': 'error', 'message': 'Missing required fields: to_email, subject, body'}), 400
-    
+
     try:
         report_url = None
         if report_id:
             report_url = request.url_root.rstrip('/') + f'/report/{report_id}'
-        
+
         result = send_email_draft(
             to_email=to_email,
             subject=subject,
@@ -7378,8 +7530,9 @@ def send_outreach_email():
             company_name=company_name,
             report_url=report_url
         )
-        
+
         if result and result.get('success'):
+            log_audit_event('email_send', f'to={to_email} company={company_name}', ip_address=request.remote_addr)
             return jsonify({'status': 'success', 'message': f'Email sent to {to_email}'})
         else:
             return jsonify({'status': 'error', 'message': result.get('error', 'Failed to send email')}), 500
@@ -7729,6 +7882,7 @@ def api_apollo_enroll_sequence():
 
         if enroll_resp.status_code in (200, 201):
             logging.info(f"[APOLLO ENROLL] Enrolled {email} (contact {contact_id}) in sequence {sequence_id}")
+            log_audit_event('apollo_enrollment', f'email={email} company={company_name} sequence={sequence_id}', ip_address=request.remote_addr)
             return jsonify({
                 'status': 'success',
                 'message': f'Successfully enrolled {email} in sequence',
@@ -8158,12 +8312,39 @@ if __name__ == '__main__':
     start_rules_scheduler()
 
     # Start the tier-aware scheduled rescan scheduler
-    start_scheduled_rescan_scheduler()
-    logging.info("[APP] Tier-aware scheduled rescan started (intervals: " +
-                 ", ".join(f"T{t}={d}d" for t, d in sorted(TIER_SCAN_INTERVALS.items())) + ")")
+    # Try APScheduler-based scheduler first; fall back to legacy thread if unavailable
+    try:
+        from scheduler import init_scan_scheduler, shutdown_scan_scheduler
+        import atexit as _atexit
+        _scan_sched = init_scan_scheduler(
+            app=app,
+            spawn_scan_fn=spawn_background_scan,
+            max_workers=MAX_SCAN_WORKERS,
+            check_interval_hours=_scheduled_rescan_state.get('check_interval_hours', 6),
+            max_per_cycle=_scheduled_rescan_state.get('max_per_cycle', 100),
+        )
+        _atexit.register(shutdown_scan_scheduler)
+        logging.info("[APP] APScheduler-based scan scheduler started (intervals: " +
+                     ", ".join(f"T{t}={d}d" for t, d in sorted(TIER_SCAN_INTERVALS.items())) + ")")
+    except ImportError:
+        # APScheduler not installed -- fall back to legacy thread-based scheduler
+        start_scheduled_rescan_scheduler()
+        logging.info("[APP] Legacy tier-aware scheduled rescan started (intervals: " +
+                     ", ".join(f"T{t}={d}d" for t, d in sorted(TIER_SCAN_INTERVALS.items())) + ")")
 
     # Start the deduplication scheduler (runs daily to clean up duplicates)
     start_deduplication_scheduler()
+
+    # Start the Pipeline Orchestrator (APScheduler-based, Replit-compatible)
+    try:
+        from pipeline import PipelineOrchestrator
+        _pipeline = PipelineOrchestrator.instance()
+        _pipeline.start(app=app)
+        logging.info("[APP] Pipeline orchestrator started (APScheduler)")
+    except ImportError:
+        logging.warning("[APP] Pipeline orchestrator not available (apscheduler not installed?)")
+    except Exception as e:
+        logging.error(f"[APP] Pipeline orchestrator failed to start: {e}")
 
     # IMPORTANT: Recover stuck queued accounts BEFORE reset_all_scan_statuses
     # This captures accounts stuck in 'queued' state and re-queues them
