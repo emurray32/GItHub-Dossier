@@ -198,6 +198,56 @@ def _check_preparing(
     return has_deps and not has_launched
 
 
+def classify_tier3_sub(
+    signals: List[EnrichedSignal],
+    scan_results: Dict[str, Any],
+) -> Optional[str]:
+    """Sub-classify Tier 3 (launched) companies by language count.
+
+    Returns:
+        'tier_3a' (2-5 langs), 'tier_3b' (6-15), 'tier_3c' (16+), or None.
+    """
+    from config import Config
+    import re
+
+    # Count languages from locale folder contents in scan_results
+    locale_files = scan_results.get('locale_folder_files', {})
+    language_codes = set()
+
+    for folder, files in locale_files.items():
+        for f in files:
+            fname = f if isinstance(f, str) else f.get('name', '')
+            # Try each locale count pattern
+            for pattern_name, pattern in Config.LOCALE_COUNT_PATTERNS.items():
+                if re.search(pattern, fname):
+                    # Extract the language code portion
+                    code_match = re.search(r'[a-z]{2}(-[A-Z]{2})?', fname)
+                    if code_match:
+                        language_codes.add(code_match.group(0).lower())
+                    break
+
+    # Also count from .lproj directories
+    lproj_count = scan_results.get('lproj_count', 0)
+    if lproj_count > len(language_codes):
+        # Use lproj count if higher (iOS apps)
+        lang_count = lproj_count
+    else:
+        lang_count = len(language_codes)
+
+    # Also check if scan_results has a pre-computed locale count
+    precomputed = scan_results.get('locale_language_count', 0)
+    lang_count = max(lang_count, precomputed)
+
+    if lang_count < 2:
+        return None
+
+    for tier_key, tier_config in Config.TIER3_SUB_TIERS.items():
+        if tier_config['min_languages'] <= lang_count <= tier_config['max_languages']:
+            return tier_key
+
+    return None
+
+
 def _expected_signal_types(segment: MaturitySegment) -> set:
     """Return the expected signal type set for a segment (for confidence)."""
     expectations = {
@@ -212,14 +262,16 @@ def _expected_signal_types(segment: MaturitySegment) -> set:
         },
         MaturitySegment.RECENTLY_LAUNCHED: {
             'already_launched', 'dependency_injection', 'ghost_branch',
+            'competitor_tms', 'diy_translation',
         },
         MaturitySegment.MATURE_MIDMARKET: {
             'already_launched', 'tms_config_file', 'ci_cd_i18n_workflow',
-            'ci_localization_pipeline',
+            'ci_localization_pipeline', 'competitor_tms',
         },
         MaturitySegment.ENTERPRISE_SCALE: {
             'dependency_injection', 'smoking_gun_fork', 'tms_config_file',
             'ci_cd_i18n_workflow', 'rfc_discussion', 'ghost_branch',
+            'competitor_tms', 'diy_translation',
         },
     }
     return expectations.get(segment, set())

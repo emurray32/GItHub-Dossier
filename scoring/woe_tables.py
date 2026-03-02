@@ -48,6 +48,20 @@ WOE_TABLE = {
     'locale_update_velocity': 1.3,
     'api_international': 0.8,
 
+    # === COMPETITOR TMS SIGNALS (high — already paying for TMS) ===
+    'competitor_tms': 2.2,           # They have a TMS — displacement opportunity
+    'competitor_tms_sdk': 2.0,       # Using competitor SDK in code
+    'competitor_tms_config': 2.4,    # Config file for competitor TMS
+
+    # === DIY TRANSLATION SIGNALS (medium-high — building custom) ===
+    'diy_translation': 1.6,          # Using raw translation API
+    'diy_translation_google': 1.5,   # Google Translate API
+    'diy_translation_aws': 1.5,      # AWS Translate
+    'diy_translation_deepl': 1.7,    # DeepL API (higher — more sophisticated)
+
+    # === FRAMEWORK-SPECIFIC i18n SIGNALS ===
+    'framework_i18n_config': 1.4,    # Framework config with i18n settings
+
     # === NEGATIVE / DISQUALIFIER SIGNALS ===
     'already_launched': -1.5,
     'mega_corp_launched': -1.0,
@@ -90,6 +104,14 @@ SIGNAL_CATEGORY_MAP = {
     'locale_update_velocity': SignalCategory.ENHANCED_HEURISTIC,
     'api_international': SignalCategory.ENHANCED_HEURISTIC,
     'already_launched': SignalCategory.CONFIG_CHANGE,
+    'competitor_tms': SignalCategory.LIBRARY_INSTALL,
+    'competitor_tms_sdk': SignalCategory.LIBRARY_INSTALL,
+    'competitor_tms_config': SignalCategory.TMS_FILE,
+    'diy_translation': SignalCategory.LIBRARY_INSTALL,
+    'diy_translation_google': SignalCategory.LIBRARY_INSTALL,
+    'diy_translation_aws': SignalCategory.LIBRARY_INSTALL,
+    'diy_translation_deepl': SignalCategory.LIBRARY_INSTALL,
+    'framework_i18n_config': SignalCategory.CONFIG_CHANGE,
 }
 
 
@@ -143,6 +165,14 @@ RAW_STRENGTH_TABLE = {
     'locale_update_velocity': 1.5,
     'api_international': 0.8,
     'already_launched': 0.5,
+    'competitor_tms': 2.5,
+    'competitor_tms_sdk': 2.2,
+    'competitor_tms_config': 2.8,
+    'diy_translation': 1.8,
+    'diy_translation_google': 1.7,
+    'diy_translation_aws': 1.7,
+    'diy_translation_deepl': 2.0,
+    'framework_i18n_config': 1.5,
 }
 
 DEFAULT_RAW_STRENGTH = 1.0
@@ -162,6 +192,11 @@ INTERACTION_BONUSES = {
     ('dependency_injection', 'tms_config_file'): 0.6,   # Lib + TMS config
     ('job_posting_intent', 'dependency_injection'): 0.5, # Hiring + building
     ('headless_cms_i18n', 'dependency_injection'): 0.4,  # CMS + lib
+    ('competitor_tms', 'dependency_injection'): 0.7,    # Competitor TMS + i18n lib = migration
+    ('competitor_tms', 'rfc_discussion'): 0.6,          # TMS + discussing change = switching
+    ('diy_translation', 'dependency_injection'): 0.5,   # DIY + i18n lib = building custom
+    ('diy_translation', 'ghost_branch'): 0.6,           # DIY + active branch = active DIY build
+    ('framework_i18n_config', 'dependency_injection'): 0.4,  # Framework config + lib
 }
 
 

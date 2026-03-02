@@ -129,6 +129,7 @@ class Config:
 
     # Database
     DATABASE_PATH = os.path.join(os.path.dirname(__file__), 'data', 'lead_machine.db')
+    DATABASE_URL = os.getenv('DATABASE_URL')  # PostgreSQL connection string; overrides SQLite when set
 
     # ============================================================
     # REDIS CACHING CONFIGURATION
@@ -284,6 +285,16 @@ class Config:
         'rtl support',
         'right-to-left',
         'bidirectional text',
+        # Modern framework-specific i18n intent
+        'app router i18n',
+        'server components translation',
+        'rsc localization',
+        'server component i18n',
+        'paraglide',
+        'typesafe i18n',
+        'compile-time i18n',
+        'compile time i18n',
+        'inlang',
     ]
 
     # False positive patterns - if these appear near "translate", it's likely NOT about i18n
@@ -439,7 +450,95 @@ class Config:
         'rails-i18n', 'i18n-tasks',
         'go-i18n', 'messageformat',
 
+        # Rust ecosystem
+        'rust-i18n',                 # Rust i18n macro-based library
+        'fluent-rs',                 # Mozilla's Fluent localization system for Rust
+        'i18n-embed',                # Embed localizations into Rust binary
+        'icu4x',                     # Unicode ICU4X for Rust (low-level i18n)
+
+        # Swift / iOS ecosystem
+        'SwiftGen',                  # Code generation for localized strings (L10n templates)
+        'BartyCrouch',               # Incrementally update localized strings in Xcode
+        'Localize-Swift',            # Swift localization helper library
+
+        # Kotlin / Android ecosystem
+        'kotlinx-resources',         # Kotlin Multiplatform resource management
+        'lokalise-android-sdk',      # Lokalise OTA SDK for Android
+
+        # Go ecosystem
+        'gotext',                    # Go text processing / message catalogs
+
+        # Python ecosystem (additional)
+        'Babel',                     # Python i18n utilities (extraction, CLDR)
+        'django-modeltranslation',   # Django model field translation
+
+        # React / meta-framework ecosystem (additional)
+        'remix-i18n',                # Remix framework i18n
+        'remix-i18next',             # Remix + i18next integration
+
+        # SvelteKit ecosystem
+        'svelte-i18n',               # Svelte internationalization library
+        'sveltekit-i18n',            # SvelteKit i18n integration
+        'paraglide-js',              # Inlang's compile-time i18n for SvelteKit
+        '@inlang/paraglide-js',      # Inlang Paraglide (scoped package)
+
+        # Astro ecosystem
+        'astro-i18next',             # Astro + i18next integration
+        '@astrolicious/i18n',        # Astro i18n routing/content
+
+        # Flutter / Dart ecosystem
+        'flutter_localizations',     # Flutter built-in localization
+        'easy_localization',         # Flutter easy localization package
+        'slang',                     # Type-safe Flutter i18n
+
         # Note: 'uppy' is checked separately for i18n/locale properties
+    ]
+
+    # ============================================================
+    # COMPETITOR TMS LIBRARIES — HIGH VALUE SIGNAL
+    # ============================================================
+    # Detecting these means the company is ALREADY PAYING for a TMS.
+    # This is a displacement/migration opportunity for Phrase.
+    COMPETITOR_TMS_LIBS = [
+        # Crowdin
+        'crowdin-sdk', '@crowdin/ota-client', '@crowdin/cli',
+
+        # Lokalise
+        'lokalise-sdk', 'lokalise-node', '@lokalise/node-api',
+        'lokalise-android-sdk', 'lokalise-ios-sdk',
+
+        # Transifex
+        '@transifex/native', '@transifex/react', '@transifex/cli',
+        'transifex-python', 'transifex-javascript-sdk',
+
+        # Smartling
+        'smartling-sdk', 'smartling-api-sdk-nodejs',
+
+        # Memsource (now Phrase TMS — but detecting old branding = legacy user)
+        'memsource-sdk',
+    ]
+
+    # ============================================================
+    # DIY TRANSLATION LIBRARIES — MEDIUM-HIGH VALUE SIGNAL
+    # ============================================================
+    # Raw machine translation API usage = building in-house.
+    # Perfect prospect: they have the pain, building custom, Phrase solves it.
+    DIY_TRANSLATION_LIBS = [
+        # Google Translate
+        'google-cloud-translate', '@google-cloud/translate',
+
+        # AWS Translate
+        'aws-sdk',  # checked with translate context
+        '@aws-sdk/client-translate',
+
+        # DeepL
+        'deepl-node', 'deepl-python', 'deepl',
+    ]
+
+    # Context keywords to confirm aws-sdk is used for Translate (not just S3/etc.)
+    DIY_TRANSLATION_CONTEXT_KEYWORDS = [
+        'translate', 'Translate', 'TranslateClient', 'translateText',
+        'translateDocument',
     ]
 
     # Code cleaning/linting libraries for scrubbing hardcoded strings
@@ -525,6 +624,40 @@ class Config:
         'docusaurus.config.ts',
         'astro.config.mjs',
     ]
+
+    # ============================================================
+    # FRAMEWORK-SPECIFIC i18n DETECTION PATTERNS
+    # ============================================================
+    # Config file content patterns that indicate framework-level i18n setup.
+    # Detected during the framework config scan phase.
+
+    FRAMEWORK_I18N_PATTERNS = {
+        'next.config.js': {
+            'content_patterns': ['i18n', 'locales', 'defaultLocale', 'locale'],
+            'directory_patterns': ['[locale]', '[lang]', 'app/[locale]'],
+            'description': 'Next.js i18n routing configuration',
+        },
+        'next.config.mjs': {
+            'content_patterns': ['i18n', 'locales', 'defaultLocale', 'locale'],
+            'directory_patterns': ['[locale]', '[lang]', 'app/[locale]'],
+            'description': 'Next.js i18n routing configuration (ESM)',
+        },
+        'remix.config.js': {
+            'content_patterns': ['i18n', 'handle.i18n', 'locale', 'locales'],
+            'directory_patterns': [],
+            'description': 'Remix i18n configuration',
+        },
+        'astro.config.mjs': {
+            'content_patterns': ['i18n', 'locales', 'defaultLocale', 'routing'],
+            'directory_patterns': [],
+            'description': 'Astro i18n routing configuration',
+        },
+        'svelte.config.js': {
+            'content_patterns': ['paraglide', 'i18n', 'locale', 'locales'],
+            'directory_patterns': ['$lib/i18n', 'src/lib/i18n'],
+            'description': 'SvelteKit i18n configuration',
+        },
+    }
 
     # ============================================================
     # EXCLUSION FOLDERS - DISQUALIFIES "GOLDILOCKS ZONE" STATUS
@@ -828,12 +961,44 @@ class Config:
         'icu4j': 'Java ICU Library',
         'messageformat': 'Java MessageFormat',
 
+        # Rust
+        'rust-i18n': 'Rust i18n Macros',
+        'fluent-rs': 'Mozilla Fluent (Rust)',
+        'i18n-embed': 'Rust i18n Embed',
+        'icu4x': 'ICU4X (Rust)',
+        # Swift/iOS
+        'SwiftGen': 'Swift Code Generation (L10n)',
+        'BartyCrouch': 'Xcode String Updater',
+        'Localize-Swift': 'Swift Localization Helper',
+        # Kotlin/Android
+        'kotlinx-resources': 'Kotlin Multiplatform Resources',
+        'lokalise-android-sdk': 'Lokalise Android SDK',
+        # Go
+        'gotext': 'Go Text/Message Catalogs',
+        # Python
+        'Babel': 'Python i18n/CLDR Utilities',
+        'django-modeltranslation': 'Django Model Translation',
+        # React/Meta-frameworks
+        'remix-i18n': 'Remix i18n',
+        'remix-i18next': 'Remix + i18next',
+        # SvelteKit
+        'svelte-i18n': 'Svelte i18n',
+        'sveltekit-i18n': 'SvelteKit i18n',
+        'paraglide-js': 'Inlang Paraglide (SvelteKit)',
+        '@inlang/paraglide-js': 'Inlang Paraglide',
+        # Astro
+        'astro-i18next': 'Astro + i18next',
+        '@astrolicious/i18n': 'Astro i18n Routing',
+        # Flutter
+        'flutter_localizations': 'Flutter Localizations',
+        'easy_localization': 'Flutter Easy Localization',
+        'slang': 'Flutter Type-safe i18n',
+
         # Legacy mappings
         'react-intl': 'React',
         'i18next': 'JS/React',
         'vue-i18n': 'Vue',
         'lingui': 'React',
-        'django-modeltranslation': 'Django',
         'babel': 'Python',
         'globalize': 'Ruby',
         'fast_gettext': 'Ruby',
@@ -863,6 +1028,37 @@ class Config:
         'golang.org/x/text': 'Found backend localization library. Infrastructure is active.',
         'icu4j': 'Found backend localization library. Infrastructure is active.',
         'messageformat': 'Found backend localization library. Infrastructure is active.',
+
+        # Rust ecosystem
+        'rust-i18n': 'Found Rust i18n library. They are internationalizing a Rust application.',
+        'fluent-rs': 'Found Mozilla Fluent for Rust. Advanced localization framework.',
+        'i18n-embed': 'Found Rust i18n embed. Compiling translations into the binary.',
+        'icu4x': 'Found ICU4X for Rust. Low-level Unicode/i18n infrastructure.',
+        # Swift/iOS
+        'SwiftGen': 'Found SwiftGen L10n. Generating type-safe code for localized strings.',
+        'BartyCrouch': 'Found BartyCrouch. Automating Xcode localization string updates.',
+        'Localize-Swift': 'Found Localize-Swift. Runtime language switching in iOS app.',
+        # Kotlin/Android
+        'kotlinx-resources': 'Found Kotlin Multiplatform resources. Cross-platform localization.',
+        # Go
+        'gotext': 'Found Go text library. Building message catalogs for Go backend.',
+        # Python
+        'Babel': 'Found Python Babel. Extraction and CLDR-based formatting.',
+        'django-modeltranslation': 'Found Django model translation. Database-level i18n.',
+        # SvelteKit
+        'svelte-i18n': 'Found Svelte i18n library. Internationalizing a Svelte app.',
+        'sveltekit-i18n': 'Found SvelteKit i18n. Full framework-level localization.',
+        'paraglide-js': 'Found Inlang Paraglide. Compile-time i18n, very modern stack.',
+        # Astro
+        'astro-i18next': 'Found Astro i18next. Localizing an Astro static site.',
+        '@astrolicious/i18n': 'Found Astro i18n routing. Multi-language Astro site.',
+        # Flutter
+        'flutter_localizations': 'Found Flutter localizations. Mobile app i18n infrastructure.',
+        'easy_localization': 'Found Flutter Easy Localization. Simplifying mobile i18n.',
+        'slang': 'Found Slang for Flutter. Type-safe i18n with code generation.',
+        # Remix
+        'remix-i18n': 'Found Remix i18n. Internationalizing a Remix application.',
+        'remix-i18next': 'Found Remix i18next integration. Full-stack Remix localization.',
 
         'locale_folder_missing': 'GOLDILOCKS: They built the shelves, but have no books. Call now!',
         'locale_folder_source_only': 'GOLDILOCKS: They have a locale folder but ONLY source files. Infrastructure ready, waiting for translation!',
@@ -1472,3 +1668,42 @@ class Config:
         'Intl.PluralRules', 'Intl.ListFormat', 'Intl.DisplayNames',
         'Intl.Segmenter', 'Intl.Collator',
     ]
+
+    # ============================================================
+    # TIER 3 SUB-CLASSIFICATION — LAUNCHED MATURITY LEVELS
+    # ============================================================
+    # When a company has already launched (locale folders exist),
+    # classify how mature they are based on language count.
+
+    TIER3_SUB_TIERS = {
+        'tier_3a': {
+            'min_languages': 2,
+            'max_languages': 5,
+            'label': 'Early Localization (2-5 languages)',
+            'sales_angle': 'Still early — room for TMS value, likely manual process',
+        },
+        'tier_3b': {
+            'min_languages': 6,
+            'max_languages': 15,
+            'label': 'Growing Localization (6-15 languages)',
+            'sales_angle': 'Scaling pains — great prospect for TMS upgrade/migration',
+        },
+        'tier_3c': {
+            'min_languages': 16,
+            'max_languages': 999,
+            'label': 'Mature Localization (16+ languages)',
+            'sales_angle': 'Enterprise deal — complex needs, high ACV potential',
+        },
+    }
+
+    # File patterns used to count languages in a locale folder
+    LOCALE_COUNT_PATTERNS = {
+        'lproj': r'\.lproj$',          # iOS: en.lproj, fr.lproj, etc.
+        'arb': r'\.arb$',              # Flutter: app_en.arb, app_fr.arb
+        'values': r'^values-[a-z]{2}', # Android: values-fr, values-de
+        'json': r'^[a-z]{2}(-[A-Z]{2})?\.json$',  # en.json, fr-FR.json
+        'yaml': r'^[a-z]{2}(-[A-Z]{2})?\.(yml|yaml)$',
+        'properties': r'messages_[a-z]{2}\.properties$',  # Java: messages_fr.properties
+        'ts': r'^[a-z]{2}(-[A-Z]{2})?\.ts$',
+        'xml': r'^strings-[a-z]{2}\.xml$',
+    }

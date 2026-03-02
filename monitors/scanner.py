@@ -569,6 +569,16 @@ def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[obje
                 'high_priority_count': 0,
                 'hits': []
             },
+            # Competitor TMS detection
+            'competitor_tms': {
+                'count': 0,
+                'hits': []
+            },
+            # DIY Translation API detection
+            'diy_translation': {
+                'count': 0,
+                'hits': []
+            },
             # Enhanced Heuristics (10 additional signals)
             'enhanced_heuristics': {
                 'count': 0,
@@ -656,12 +666,26 @@ def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[obje
                 yield _sse_log(f"    {log_msg}")
             if signal:
                 scan_results['signals'].append(signal)
-                scan_results['signal_summary']['dependency_injection']['hits'].append(signal)
-                scan_results['signal_summary']['dependency_injection']['count'] += 1
+                sig_type = signal.get('type', '')
+                if sig_type == 'competitor_tms':
+                    scan_results['signal_summary']['competitor_tms']['hits'].append(signal)
+                    scan_results['signal_summary']['competitor_tms']['count'] += 1
+                elif sig_type == 'diy_translation':
+                    scan_results['signal_summary']['diy_translation']['hits'].append(signal)
+                    scan_results['signal_summary']['diy_translation']['count'] += 1
+                else:
+                    scan_results['signal_summary']['dependency_injection']['hits'].append(signal)
+                    scan_results['signal_summary']['dependency_injection']['count'] += 1
                 yield _sse_signal(signal)
 
     dep_count = scan_results['signal_summary']['dependency_injection']['count']
+    tms_count = scan_results['signal_summary']['competitor_tms']['count']
+    diy_count = scan_results['signal_summary']['diy_translation']['count']
     yield _sse_log(f"Dependency Injection scan complete: {dep_count} signals")
+    if tms_count > 0:
+        yield _sse_log(f"Competitor TMS detected: {tms_count} signals (displacement opportunity!)")
+    if diy_count > 0:
+        yield _sse_log(f"DIY Translation detected: {diy_count} signals (building in-house!)")
 
     # Phase 4b: Mobile Architecture Scan (iOS & Android Goldilocks)
     yield _sse_log("")
@@ -834,6 +858,8 @@ def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[obje
     yield _sse_log(f"   • Dependency Injection: {dep_count}")
     yield _sse_log(f"   • Documentation Intent: {doc_count} ({doc_high} HIGH)")
     yield _sse_log(f"   • Ghost Branches: {ghost_count}")
+    yield _sse_log(f"   • Competitor TMS: {summary.get('competitor_tms', {}).get('count', 0)}")
+    yield _sse_log(f"   • DIY Translation: {summary.get('diy_translation', {}).get('count', 0)}")
     yield _sse_log(f"   • Enhanced Heuristics: {enhanced_count}")
     yield _sse_log(f"Intent Score: {scan_results['intent_score']}/100")
     yield _sse_log(f"Scan Duration: {duration:.1f}s")
@@ -1391,6 +1417,80 @@ def _scan_dependency_injection(org: str, repo: str, company: str, is_fork: bool 
                             }
 
                             yield (f"CMS LOCALIZATION: {lib} found in {dep_path}", signal)
+
+                        # Check for COMPETITOR TMS libraries
+                        for lib in getattr(Config, 'COMPETITOR_TMS_LIBS', []):
+                            is_strict_file = dep_file in ['package.json', 'composer.json', 'package-lock.json']
+                            found = False
+                            if is_strict_file:
+                                if f'"{lib.lower()}"' in content_lower or f"'{lib.lower()}'" in content_lower:
+                                    found = True
+                            else:
+                                if lib.lower() in content_lower:
+                                    found = True
+
+                            if found:
+                                signal = {
+                                    'Company': company,
+                                    'Signal': 'Competitor TMS',
+                                    'Evidence': (
+                                        f"Found competitor TMS library '{lib}' in {dep_path} - "
+                                        "Already paying for translation management. Displacement opportunity!"
+                                    ),
+                                    'Link': file_url,
+                                    'priority': 'HIGH',
+                                    'type': 'competitor_tms',
+                                    'repo': repo,
+                                    'file': dep_path,
+                                    'competitor_lib': lib,
+                                    'detection_source': 'sdk',
+                                }
+                                yield (f"COMPETITOR TMS: {lib} found in {dep_path}", signal)
+
+                        # Check for DIY TRANSLATION libraries
+                        for lib in getattr(Config, 'DIY_TRANSLATION_LIBS', []):
+                            is_strict_file = dep_file in ['package.json', 'composer.json', 'package-lock.json']
+                            found = False
+                            if is_strict_file:
+                                if f'"{lib.lower()}"' in content_lower or f"'{lib.lower()}'" in content_lower:
+                                    found = True
+                            else:
+                                if lib.lower() in content_lower:
+                                    found = True
+
+                            if found:
+                                # Special case: 'aws-sdk' needs translate context
+                                if lib.lower() == 'aws-sdk':
+                                    context_keywords = getattr(Config, 'DIY_TRANSLATION_CONTEXT_KEYWORDS', [])
+                                    if not any(kw.lower() in content_lower for kw in context_keywords):
+                                        continue
+
+                                # Determine provider
+                                if 'google' in lib.lower():
+                                    provider = 'google'
+                                elif 'aws' in lib.lower():
+                                    provider = 'aws'
+                                elif 'deepl' in lib.lower():
+                                    provider = 'deepl'
+                                else:
+                                    provider = 'unknown'
+
+                                signal = {
+                                    'Company': company,
+                                    'Signal': 'DIY Translation',
+                                    'Evidence': (
+                                        f"Found raw translation API '{lib}' in {dep_path} - "
+                                        "Building in-house translation. Perfect Phrase prospect!"
+                                    ),
+                                    'Link': file_url,
+                                    'priority': 'HIGH',
+                                    'type': 'diy_translation',
+                                    'repo': repo,
+                                    'file': dep_path,
+                                    'diy_lib': lib,
+                                    'provider': provider,
+                                }
+                                yield (f"DIY TRANSLATION: {lib} ({provider}) found in {dep_path}", signal)
 
                     except Exception:
                         pass
@@ -2583,10 +2683,46 @@ def _calculate_intent_score(scan_results: dict) -> int:
     # ============================================================
     # Only if NO preparing signals were found, does a launched signal disqualify.
     already_launched_signals = [s for s in signals if s.get('type') == 'already_launched']
+
+    # ============================================================
+    # Check for COMPETITOR TMS / DIY TRANSLATION (displacement opportunity)
+    # ============================================================
+    # Even if launched, competitor TMS or DIY translation = migration prospect
+    competitor_tms_hits = summary.get('competitor_tms', {}).get('hits', [])
+    diy_translation_hits = summary.get('diy_translation', {}).get('hits', [])
+
+    if competitor_tms_hits:
+        # They're using a competitor TMS — displacement opportunity
+        scan_results['goldilocks_status'] = 'competitor_tms'
+        scan_results['lead_status'] = 'HIGH PRIORITY - Using Competitor TMS (Migration Opportunity)'
+        scan_results['competitor_tms_detected'] = [h.get('competitor_lib', '') for h in competitor_tms_hits]
+        base_score = 75  # High score — they already buy TMS
+        bonus = min(len(competitor_tms_hits) * 5, 15)
+        return min(base_score + bonus, 95)
+
+    if diy_translation_hits:
+        # They're building in-house translation — pain point prospect
+        scan_results['goldilocks_status'] = 'diy_translation'
+        scan_results['lead_status'] = 'HIGH PRIORITY - Building DIY Translation (Pain Point)'
+        scan_results['diy_translation_detected'] = [h.get('diy_lib', '') for h in diy_translation_hits]
+        base_score = 65  # Good score — they have the pain
+        bonus = min(len(diy_translation_hits) * 5, 15)
+        return min(base_score + bonus, 85)
+
     if already_launched_signals:
         # They have locale folders - TOO LATE
         scan_results['goldilocks_status'] = 'launched'
         scan_results['lead_status'] = Config.LEAD_STATUS_LABELS.get('launched', 'LOW PRIORITY')
+
+        # Tier 3 sub-classification
+        from scoring.maturity import classify_tier3_sub
+        tier3_sub = classify_tier3_sub([], scan_results)
+        if tier3_sub:
+            scan_results['tier3_sub'] = tier3_sub
+            tier_config = Config.TIER3_SUB_TIERS.get(tier3_sub, {})
+            scan_results['tier3_label'] = tier_config.get('label', '')
+            scan_results['tier3_sales_angle'] = tier_config.get('sales_angle', '')
+
         return Config.GOLDILOCKS_SCORES.get('launched', 10)
 
     # ============================================================

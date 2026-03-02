@@ -91,6 +91,24 @@ def _resolve_signal_type(signal: Dict[str, Any]) -> str:
             if age is not None and age <= 14:
                 return 'ghost_branch_active'
 
+    # Competitor TMS with config file gets higher WoE
+    if sig_type == 'competitor_tms' and signal.get('detection_source') == 'config_file':
+        return 'competitor_tms_config'
+
+    # Competitor TMS detected via SDK in code
+    if sig_type == 'competitor_tms' and signal.get('detection_source') == 'sdk':
+        return 'competitor_tms_sdk'
+
+    # DIY translation with specific provider
+    if sig_type == 'diy_translation':
+        provider = signal.get('provider', '')
+        if 'google' in provider.lower():
+            return 'diy_translation_google'
+        if 'aws' in provider.lower():
+            return 'diy_translation_aws'
+        if 'deepl' in provider.lower():
+            return 'diy_translation_deepl'
+
     return sig_type
 
 
@@ -169,6 +187,12 @@ def _detect_new_signals(scan_results: Dict[str, Any]) -> List[EnrichedSignal]:
 
     # Detect infrastructure signals from existing signals
     new_signals.extend(_detect_infra_from_signals(signals, org))
+
+    # Detect competitor TMS usage from existing signals
+    new_signals.extend(_detect_competitor_tms_from_signals(signals, org))
+
+    # Detect DIY translation API usage from existing signals
+    new_signals.extend(_detect_diy_translation_from_signals(signals, org))
 
     return new_signals
 
@@ -391,3 +415,89 @@ def _detect_infra_from_signals(signals: List[Dict], org: str) -> List[EnrichedSi
                     infra_signals.append(es)
 
     return infra_signals
+
+
+def _detect_competitor_tms_from_signals(signals: List[Dict], org: str) -> List[EnrichedSignal]:
+    """Check existing signals for competitor TMS library usage."""
+    from config import Config
+
+    tms_signals = []
+    seen_tms = set()
+
+    for signal in signals:
+        evidence = str(signal.get('Evidence', '') or signal.get('Signal', '')).lower()
+        file_path = str(signal.get('file', '') or signal.get('Link', '')).lower()
+        combined = evidence + ' ' + file_path
+
+        for lib in getattr(Config, 'COMPETITOR_TMS_LIBS', []):
+            if lib.lower() in combined:
+                tms_key = lib.lower()
+                if tms_key not in seen_tms:
+                    seen_tms.add(tms_key)
+                    es = EnrichedSignal(
+                        signal_type='competitor_tms',
+                        evidence=f"Competitor TMS detected: {lib}",
+                        company=org,
+                        link=signal.get('Link', ''),
+                        priority='HIGH',
+                        repo=signal.get('repo', ''),
+                        signal_category=SignalCategory.LIBRARY_INSTALL,
+                        woe_value=WOE_TABLE.get('competitor_tms', 2.2),
+                        raw_strength=RAW_STRENGTH_TABLE.get('competitor_tms', 2.5),
+                        decayed_strength=RAW_STRENGTH_TABLE.get('competitor_tms', 2.5),
+                        raw_signal={**signal, 'detection_source': 'sdk', 'competitor_lib': lib},
+                    )
+                    tms_signals.append(es)
+
+    return tms_signals
+
+
+def _detect_diy_translation_from_signals(signals: List[Dict], org: str) -> List[EnrichedSignal]:
+    """Check existing signals for DIY translation API usage (Google Translate, AWS, DeepL)."""
+    from config import Config
+
+    diy_signals = []
+    seen_diy = set()
+
+    for signal in signals:
+        evidence = str(signal.get('Evidence', '') or signal.get('Signal', '')).lower()
+        file_path = str(signal.get('file', '') or signal.get('Link', '')).lower()
+        combined = evidence + ' ' + file_path
+
+        for lib in getattr(Config, 'DIY_TRANSLATION_LIBS', []):
+            lib_lower = lib.lower()
+            if lib_lower in combined:
+                # Special case: 'aws-sdk' needs translate context
+                if lib_lower == 'aws-sdk':
+                    context_keywords = getattr(Config, 'DIY_TRANSLATION_CONTEXT_KEYWORDS', [])
+                    if not any(kw.lower() in combined for kw in context_keywords):
+                        continue
+
+                if lib_lower not in seen_diy:
+                    seen_diy.add(lib_lower)
+                    # Determine provider
+                    if 'google' in lib_lower:
+                        provider = 'google'
+                    elif 'aws' in lib_lower:
+                        provider = 'aws'
+                    elif 'deepl' in lib_lower:
+                        provider = 'deepl'
+                    else:
+                        provider = 'unknown'
+
+                    es = EnrichedSignal(
+                        signal_type='diy_translation',
+                        evidence=f"DIY translation API detected: {lib}",
+                        company=org,
+                        link=signal.get('Link', ''),
+                        priority='HIGH',
+                        repo=signal.get('repo', ''),
+                        signal_category=SignalCategory.LIBRARY_INSTALL,
+                        woe_value=WOE_TABLE.get('diy_translation', 1.6),
+                        raw_strength=RAW_STRENGTH_TABLE.get('diy_translation', 1.8),
+                        decayed_strength=RAW_STRENGTH_TABLE.get('diy_translation', 1.8),
+                        raw_signal={**signal, 'provider': provider, 'diy_lib': lib},
+                    )
+                    diy_signals.append(es)
+
+    return diy_signals
