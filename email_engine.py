@@ -375,6 +375,12 @@ def generate_personalized_emails(
         evidence = (account_data.get('evidence_summary', '') or '')[:200]
         if evidence:
             parts.append(f"Evidence: {evidence}")
+        notes = (account_data.get('notes', '') or '')[:200]
+        if notes:
+            parts.append(f"BDR Notes: {notes}")
+        report_context = (account_data.get('report_context', '') or '')[:300]
+        if report_context:
+            parts.append(f"Report Findings: {report_context}")
         if parts:
             account_ctx = '\n'.join(f'- {p}' for p in parts)
 

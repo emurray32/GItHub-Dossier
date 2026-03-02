@@ -3448,6 +3448,32 @@ def api_account_enroll(account_id):
     evidence = account.get('evidence_summary', '')
     notes = account.get('notes', '')
 
+    # Get full report context for richer email personalization
+    report_context = ''
+    latest_report_id = account.get('latest_report_id')
+    if latest_report_id:
+        try:
+            report = get_report(latest_report_id)
+            if report:
+                scan_data = report.get('scan_data', '{}')
+                if isinstance(scan_data, str):
+                    import json as _json
+                    try:
+                        scan_data = _json.loads(scan_data)
+                    except (ValueError, TypeError):
+                        scan_data = {}
+                # Extract key findings for email context
+                parts = []
+                if scan_data.get('goldilocks_status'):
+                    parts.append(f"Goldilocks status: {scan_data['goldilocks_status']}")
+                for sig in (scan_data.get('signals', []) or [])[:5]:
+                    desc = sig.get('description', '')[:100]
+                    if desc:
+                        parts.append(desc)
+                report_context = '; '.join(parts)
+        except Exception as e:
+            logging.warning(f"[PANEL ENROLL] Failed to fetch report context: {e}")
+
     # Get scan signals for context
     signals = get_signals_by_company(company, limit=20)
 
@@ -3515,7 +3541,7 @@ def api_account_enroll(account_id):
             email_result = generate_personalized_emails(
                 contact=contact,
                 signals=signals,
-                account_data={'evidence_summary': evidence, 'notes': notes}
+                account_data={'evidence_summary': evidence, 'notes': notes, 'report_context': report_context}
             )
         except Exception as e:
             logging.warning(f"[PANEL ENROLL] Email generation failed for {name}: {e}")

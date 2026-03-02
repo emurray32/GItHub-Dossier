@@ -1143,8 +1143,27 @@
             const data = await resp.json();
 
             if (data.status === 'success') {
-                const succeeded = (data.results || []).filter(r => r.success).length;
-                const failed = (data.results || []).filter(r => !r.success).length;
+                const results = data.results || [];
+                const succeeded = results.filter(r => r.success).length;
+                const failed = results.filter(r => !r.success).length;
+
+                // Show per-contributor results in the toolbar
+                const toolbar = document.getElementById('enrollment-toolbar');
+                if (toolbar && results.length > 0) {
+                    let html = '<div class="enroll-results" style="margin-top:8px;max-height:140px;overflow-y:auto;font-size:12px;">';
+                    results.forEach(r => {
+                        const icon = r.success ? '&#10003;' : '&#10007;';
+                        const cls = r.success ? 'color:#2dd4bf' : 'color:#f87171';
+                        const detail = r.message || (r.success ? 'Enrolled' : 'Failed');
+                        html += '<div style="padding:2px 0;' + cls + '">' + icon + ' <strong>' + (r.name || 'Unknown') + '</strong> &mdash; ' + detail + '</div>';
+                    });
+                    html += '</div>';
+                    // Insert results before the toolbar buttons
+                    const existing = toolbar.querySelector('.enroll-results');
+                    if (existing) existing.remove();
+                    toolbar.insertAdjacentHTML('beforeend', html);
+                }
+
                 let msg = 'Enrolled ' + succeeded + ' contributor' + (succeeded !== 1 ? 's' : '');
                 if (failed > 0) msg += ' (' + failed + ' failed)';
                 showToast(msg, failed > 0 ? 'warning' : 'success');
