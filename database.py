@@ -18,9 +18,17 @@ from signal_verifier import verify_signals
 _USE_POSTGRES = bool(Config.DATABASE_URL)
 
 if _USE_POSTGRES:
-    import psycopg2
-    import psycopg2.extras
-    import psycopg2.pool
+    try:
+        import psycopg2
+        import psycopg2.extras
+        import psycopg2.pool
+    except ImportError:
+        logging.warning(
+            "DATABASE_URL is set but psycopg2 is not installed. "
+            "Falling back to SQLite. Run: pip install psycopg2-binary"
+        )
+        _USE_POSTGRES = False
+        import sqlite3
 else:
     import sqlite3
 
