@@ -240,9 +240,9 @@ class TestApolloSequences:
         mock_post.return_value = _mock_response(200, {
             'emailer_campaigns': [
                 {'id': 'seq1', 'name': 'Test Sequence', 'active': True,
-                 'emailer_steps': [{'type': 'auto_email'}], 'created_at': '2024-01-01'},
+                 'num_steps': 1, 'emailer_steps': [{'type': 'auto_email'}], 'created_at': '2024-01-01'},
                 {'id': 'seq2', 'name': 'Paused Seq', 'active': False,
-                 'emailer_steps': [], 'created_at': '2024-01-02'},
+                 'num_steps': 0, 'emailer_steps': [], 'created_at': '2024-01-02'},
             ]
         })
 
@@ -847,15 +847,19 @@ class TestLinkedInGenerateEmail:
 
     def test_no_body(self, client):
         """Returns 400 when no JSON body."""
-        resp = client.post('/api/linkedin/generate-email', content_type='application/json')
-        assert resp.status_code == 400
+        mock_openai = MagicMock()
+        with patch.dict('sys.modules', {'openai': mock_openai}):
+            resp = client.post('/api/linkedin/generate-email', content_type='application/json')
+            assert resp.status_code == 400
 
     def test_no_ai_key(self, client):
         """Returns 400 when OpenAI keys missing."""
-        with patch.dict(os.environ, {'AI_INTEGRATIONS_OPENAI_API_KEY': '', 'AI_INTEGRATIONS_OPENAI_BASE_URL': ''}):
-            resp = client.post('/api/linkedin/generate-email',
-                               json={'contact': {'name': 'John', 'company': 'Acme'}})
-            assert resp.status_code == 400
+        mock_openai = MagicMock()
+        with patch.dict('sys.modules', {'openai': mock_openai}):
+            with patch.dict(os.environ, {'AI_INTEGRATIONS_OPENAI_API_KEY': '', 'AI_INTEGRATIONS_OPENAI_BASE_URL': ''}):
+                resp = client.post('/api/linkedin/generate-email',
+                                   json={'contact': {'name': 'John', 'company': 'Acme'}})
+                assert resp.status_code == 400
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -1005,16 +1009,20 @@ class TestScorecardGenerateEmail:
 
     def test_no_body(self, client):
         """Returns 400 when no JSON body."""
-        resp = client.post('/api/scorecard/generate-email',
-                           content_type='application/json')
-        assert resp.status_code == 400
+        mock_openai = MagicMock()
+        with patch.dict('sys.modules', {'openai': mock_openai}):
+            resp = client.post('/api/scorecard/generate-email',
+                               content_type='application/json')
+            assert resp.status_code == 400
 
     def test_no_ai_key(self, client):
         """Returns 400 when OpenAI keys missing."""
-        with patch.dict(os.environ, {'AI_INTEGRATIONS_OPENAI_API_KEY': '', 'AI_INTEGRATIONS_OPENAI_BASE_URL': ''}):
-            resp = client.post('/api/scorecard/generate-email',
-                               json={'company_name': 'Acme', 'contact_name': 'John'})
-            assert resp.status_code == 400
+        mock_openai = MagicMock()
+        with patch.dict('sys.modules', {'openai': mock_openai}):
+            with patch.dict(os.environ, {'AI_INTEGRATIONS_OPENAI_API_KEY': '', 'AI_INTEGRATIONS_OPENAI_BASE_URL': ''}):
+                resp = client.post('/api/scorecard/generate-email',
+                                   json={'company_name': 'Acme', 'contact_name': 'John'})
+                assert resp.status_code == 400
 
 
 # ──────────────────────────────────────────────────────────────────────
