@@ -1341,6 +1341,14 @@ def process_import_batch_worker(batch_id: int):
         except Exception as e:
             logging.error(f"[BATCH-WORKER] Post-import deduplication error: {e}")
 
+        # Log import audit for RepoRadar tracking
+        if added:
+            logging.info(
+                f"[BATCH-WORKER] Import audit: batch={batch_id}, "
+                f"added={len(added)}, skipped={len(skipped)}, "
+                f"companies={added[:5]}{'...' if len(added) > 5 else ''}"
+            )
+
         # Auto-queue newly imported accounts for scanning (with throttling)
         # Limit initial queue to prevent overwhelming the executor
         MAX_AUTO_QUEUE = 50  # Queue at most 50 accounts immediately, rest will be picked up by watchdog
@@ -9186,14 +9194,12 @@ if __name__ == '__main__':
     logging.info("[APP] Starting application...")
     logging.info(f"[APP] ThreadPoolExecutor configured with {MAX_SCAN_WORKERS} workers")
 
-    # Re-tier accounts if scoring criteria changed since last startup
+    # Re-tier accounts: either one-time migration (force_retier_all covers everything)
+    # or incremental retier if only scoring files changed.
     from database import auto_retier_if_version_changed, force_retier_all, get_setting, set_setting
-    retier_count = auto_retier_if_version_changed()
-    if retier_count > 0:
-        logging.info(f"[APP] Re-tiered {retier_count} accounts after scoring version change")
-
-    # One-time migration: retier all accounts with website localization data (runs in background)
     if get_setting('website_tiering_applied') != '2':
+        # One-time migration: retier ALL accounts with website data (runs in background).
+        # This also updates the scoring fingerprint, so auto_retier is unnecessary.
         import threading
         def _run_website_tiering_migration():
             try:
@@ -9204,6 +9210,10 @@ if __name__ == '__main__':
             except Exception as e:
                 logging.error(f"[APP] Website tiering migration failed: {e}")
         threading.Thread(target=_run_website_tiering_migration, daemon=True).start()
+    else:
+        retier_count = auto_retier_if_version_changed()
+        if retier_count > 0:
+            logging.info(f"[APP] Re-tiered {retier_count} accounts after scoring version change")
 
     # Cleanup any duplicate accounts
     cleanup_result = cleanup_duplicate_accounts()

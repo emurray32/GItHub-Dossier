@@ -6,6 +6,7 @@
 
 {% block head %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/contributors.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/enrollment.css') }}">
 {% endblock %}
 
 {% block content %}
@@ -120,6 +121,7 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ url_for('static', filename='js/enrollment.js') }}"></script>
 <script>
 (function() {
     // State
@@ -358,43 +360,35 @@
                 <p class="sidebar-insight">${escapeHtml(c.insight || 'No insight available.')}</p>
             </div>
 
-            <!-- Outreach Actions -->
+            <!-- Unified Enrollment Panel -->
             <div class="sidebar-section">
-                <div class="sidebar-section-title">Outreach</div>
-
-                <button class="btn-action btn-find-email ${hasEmail ? 'email-found' : ''}" onclick="findEmail(${c.id}, '${escapeJs(c.github_login)}', '${escapeJs(c.name || '')}', '${escapeJs(c.company || '')}')" id="find-email-btn-${c.id}" ${hasEmail ? 'disabled' : ''}>
-                    ${hasEmail
-                        ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg> ' + escapeHtml(c.email)
-                        : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg> Find Email via Apollo'}
-                </button>
-
-                <div class="outreach-field" style="margin:8px 0;">
-                    <label class="outreach-label">Apollo Sequence</label>
-                    <select class="outreach-input" id="seq-select-${c.id}" onchange="onSequenceChanged(${c.id})">
-                        <option value="">Loading sequences...</option>
-                    </select>
+                <div class="enroll-panel" id="enroll-panel-contrib-${c.id}">
+                    <div class="enroll-panel-title">Enrollment</div>
+                    <div class="enroll-steps">
+                        <div class="enroll-step active"></div>
+                        <div class="enroll-step"></div>
+                        <div class="enroll-step"></div>
+                    </div>
+                    <button class="enroll-btn enroll-btn-find" type="button"${hasEmail ? ' disabled' : ''}>
+                        ${hasEmail
+                            ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="20 6 9 17 4 12"></polyline></svg> ' + escapeHtml(c.email)
+                            : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg> Find Email'}
+                    </button>
+                    <div class="enroll-contact-info" style="display:none"></div>
+                    <div class="enroll-field"><label>Email</label><input type="email" class="enroll-email-input" placeholder="name@company.com" value="${escapeHtml(c.email || '')}"></div>
+                    <div class="enroll-field-row">
+                        <div class="enroll-field"><label>First Name</label><input type="text" class="enroll-first-name" placeholder="First" value="${escapeHtml((c.name || '').split(' ')[0] || '')}"></div>
+                        <div class="enroll-field"><label>Last Name</label><input type="text" class="enroll-last-name" placeholder="Last" value="${escapeHtml((c.name || '').split(' ').slice(1).join(' ') || '')}"></div>
+                    </div>
+                    <hr class="enroll-separator">
+                    <div class="enroll-field"><label>Apollo Sequence</label><select class="enroll-seq-select" id="seq-select-${c.id}" onchange="onSequenceChanged(${c.id})"><option value="">Loading sequences...</option></select></div>
+                    <button class="enroll-btn" style="background:var(--primary,#6366f1);color:#fff;margin-bottom:0.4rem" onclick="generateEmail(${c.id})" id="gen-email-btn-${c.id}" type="button">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg> Generate Sequence
+                    </button>
+                    <div id="email-fields-container-${c.id}"></div>
+                    <button class="enroll-btn enroll-btn-enroll" type="button"${!hasEmail && !isEnrolled ? ' disabled' : ''}>${isEnrolled ? 'Enrolled in Sequence' : 'Approve & Enroll'}</button>
+                    <div class="enroll-status">${isEnrolled ? '<span class="enroll-status-success">Already enrolled</span>' : ''}</div>
                 </div>
-
-                <button class="btn-action btn-generate-email" onclick="generateEmail(${c.id})" id="gen-email-btn-${c.id}" title="Generate emails matching selected sequence">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
-                    </svg>
-                    Generate Sequence
-                </button>
-            </div>
-
-            <!-- Email Sequence Fields (dynamically rebuilt by onSequenceChanged) -->
-            <div class="sidebar-section" id="outreach-fields-${c.id}">
-                <div id="email-fields-container-${c.id}"></div>
-
-                <button class="btn-action btn-add-sequence ${isEnrolled ? 'enrolled' : ''}" onclick="enrollInSelectedSequence(${c.id})" id="seq-btn-${c.id}" ${!hasEmail && !isEnrolled ? 'disabled title="Find email first"' : ''}>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        ${isEnrolled
-                            ? '<polyline points="20 6 9 17 4 12"></polyline>'
-                            : '<line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line>'}
-                    </svg>
-                    ${isEnrolled ? 'Enrolled in Sequence' : 'Approve & Enroll in Sequence'}
-                </button>
             </div>
         `;
 
@@ -402,8 +396,40 @@
         sidebar.classList.add('open');
         mainArea.classList.add('sidebar-active');
 
-        // Load sequence dropdown and build email fields
-        loadSidebarSequences(id);
+        // Initialize unified enrollment panel
+        var enrollPanel = document.getElementById('enroll-panel-contrib-' + id);
+        if (enrollPanel) {
+            Enrollment.init(enrollPanel, {
+                getContactData: function() {
+                    var cached = cachedRows.find(function(x) { return x.id === id; });
+                    return {
+                        name: cached ? cached.name : '',
+                        company: cached ? cached.company : '',
+                        github_login: cached ? cached.github_login : '',
+                        contributor_id: id
+                    };
+                },
+                onEmailFound: function(data) {
+                    // Persist email to DB and update cache
+                    fetch('/api/contributors/' + id + '/email', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ email: data.email })
+                    }).catch(function(err) { console.error('Failed to save email:', err); });
+                    var cached = cachedRows.find(function(x) { return x.id === id; });
+                    if (cached) cached.email = data.email;
+                },
+                onEnrolled: function(data, sequenceName) {
+                    fetch('/api/contributors/' + id + '/apollo', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ status: 'sent', sequence_name: sequenceName })
+                    });
+                    showToast('Enrolled in ' + sequenceName, 'success');
+                    loadTable();
+                }
+            });
+        }
     };
 
     // Close sidebar

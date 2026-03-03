@@ -331,6 +331,9 @@ def init_db() -> None:
     _safe_add_column(cursor, 'monitored_accounts', 'archived_at TIMESTAMP')
     _safe_add_column(cursor, 'monitored_accounts', 'metadata TEXT')
     _safe_add_column(cursor, 'monitored_accounts', 'latest_report_id INTEGER')
+    _safe_add_column(cursor, 'monitored_accounts', 'previous_tier INTEGER')
+    _safe_add_column(cursor, 'monitored_accounts', 'imported_at TIMESTAMP')
+    _safe_add_column(cursor, 'monitored_accounts', 'import_source TEXT')
     _safe_add_column(cursor, 'reports', 'is_favorite INTEGER DEFAULT 0')
 
     cursor.execute('''
@@ -387,6 +390,22 @@ def init_db() -> None:
             value TEXT
         )
     ''')
+
+    # Tier Audit Log - tracks before/after tier counts when auto-retier runs
+    cursor.execute(_adapt_ddl('''
+        CREATE TABLE IF NOT EXISTS tier_audit_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            triggered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            old_fingerprint TEXT,
+            new_fingerprint TEXT,
+            total_accounts INTEGER DEFAULT 0,
+            accounts_changed INTEGER DEFAULT 0,
+            tier_counts_before TEXT,
+            tier_counts_after TEXT,
+            changes_detail TEXT,
+            mass_change_blocked INTEGER DEFAULT 0
+        )
+    '''))
 
     # System Stats table - daily usage tracking
     cursor.execute('''
@@ -1432,6 +1451,24 @@ def _convert_library_to_sales_name(lib_name: str) -> str:
     return lib_name.replace('-', ' ').replace('_', ' ').title()
 
 
+def _build_website_data_from_row(row) -> dict:
+    """Build a website_data dict from a DB row that has joined website columns.
+
+    Expects row to have keys: localization_score, analysis_details_json,
+    locale_count, hreflang_tags (all nullable).
+    """
+    website_data = {}
+    if row['localization_score'] is not None:
+        website_data['localization_score'] = row['localization_score']
+    if row['analysis_details_json']:
+        website_data['analysis_details_json'] = row['analysis_details_json']
+    if row['locale_count'] is not None:
+        website_data['locale_count'] = row['locale_count']
+    if row['hreflang_tags']:
+        website_data['hreflang_tags'] = row['hreflang_tags']
+    return website_data or None
+
+
 def _extract_website_signals(website_data: Optional[dict]) -> dict:
     """Extract and normalize website localization signals from website analysis data.
 
@@ -1506,6 +1543,13 @@ def _extract_website_signals(website_data: Optional[dict]) -> dict:
     return result
 
 
+def _with_website_evidence(evidence: str, ws: dict) -> str:
+    """Append website evidence to a tier evidence string if the site is localized."""
+    if ws['website_is_localized']:
+        return evidence + " | " + ws['website_evidence']
+    return evidence
+
+
 def calculate_tier_from_scan(scan_data: dict, skip_verification: bool = False, website_data: Optional[dict] = None) -> tuple[int, str]:
     """
     Apply Sales-First tier logic based on scan results.
@@ -1554,9 +1598,7 @@ def calculate_tier_from_scan(scan_data: dict, skip_verification: bool = False, w
 
         # V2 found a meaningful tier — use it
         if tier > 0:
-            if ws['website_is_localized']:
-                evidence = evidence + " | " + ws['website_evidence']
-            return tier, evidence
+            return tier, _with_website_evidence(evidence, ws)
 
         # V2 said PRE_I18N (tier 0). V2's aggressive filters may have
         # removed signals that the legacy tiering (which uses raw
@@ -1616,9 +1658,7 @@ def calculate_tier_from_scan(scan_data: dict, skip_verification: bool = False, w
     # =========================================================================
     if locale_folders_found:
         evidence = "Too Late: Translation files already exist in codebase."
-        if ws['website_is_localized']:
-            evidence = evidence + " | " + ws['website_evidence']
-        return TIER_LAUNCHED, evidence
+        return TIER_LAUNCHED, _with_website_evidence(evidence, ws)
 
     # =========================================================================
     # TIER 2: PREPARING (GOLDILOCKS) - i18n libraries WITHOUT locale folders
@@ -1659,9 +1699,7 @@ def calculate_tier_from_scan(scan_data: dict, skip_verification: bool = False, w
             evidence = f"INFRASTRUCTURE READY: Installed {sales_name} but NO translations found."
         else:
             evidence = "INFRASTRUCTURE READY: i18n library installed but NO translations found."
-        if ws['website_is_localized']:
-            evidence = evidence + " | " + ws['website_evidence']
-        return TIER_PREPARING, evidence
+        return TIER_PREPARING, _with_website_evidence(evidence, ws)
 
     # Single dependency signal without silver bullet -> downgrade to TIER 1 (Thinking)
     # Rationale: One i18n library alone could be a dev doing things right, not org investment
@@ -1679,9 +1717,7 @@ def calculate_tier_from_scan(scan_data: dict, skip_verification: bool = False, w
                         dep_names.append(lib_name)
         lib_list = ', '.join(dep_names[:3]) if dep_names else 'i18n library'
         evidence = f"Found {lib_list} (single signal - needs corroborating evidence for Hot Lead)"
-        if ws['website_is_localized']:
-            evidence = evidence + " | " + ws['website_evidence']
-        return TIER_THINKING, evidence
+        return TIER_THINKING, _with_website_evidence(evidence, ws)
     
     # =========================================================================
     # TIER 1: THINKING - RFC discussions OR Ghost Branches found
@@ -1706,9 +1742,7 @@ def calculate_tier_from_scan(scan_data: dict, skip_verification: bool = False, w
                 evidence_parts.append(f"ACTIVE BUILD: {ghost_count} i18n branch(es)")
 
         evidence = "; ".join(evidence_parts)
-        if ws['website_is_localized']:
-            evidence = evidence + " | " + ws['website_evidence']
-        return TIER_THINKING, evidence
+        return TIER_THINKING, _with_website_evidence(evidence, ws)
 
     # =========================================================================
     # TIER 0 vs TIER 4: No signals found - Split based on repos scanned and org status
@@ -1807,14 +1841,19 @@ def update_account_status(scan_data: dict, report_id: Optional[int] = None) -> d
     )
     existing = cursor.fetchone()
 
-    # Fetch website data for tier calculation
+    # Fetch website data for tier calculation (reuse existing cursor to avoid extra connection)
     website_data = {}
-    # Get latest website_analyses data
-    wa = get_latest_website_analysis(company_name)
-    if wa:
-        website_data['localization_score'] = wa.get('localization_score')
-        website_data['analysis_details_json'] = wa.get('analysis_details_json') or wa.get('analysis_details')
-    # Get webscraper_accounts data if linked
+    cursor.execute('''
+        SELECT localization_score, analysis_details_json
+        FROM website_analyses
+        WHERE LOWER(company_name) = LOWER(?)
+        ORDER BY analyzed_at DESC
+        LIMIT 1
+    ''', (company_name,))
+    wa_row = cursor.fetchone()
+    if wa_row:
+        website_data['localization_score'] = wa_row['localization_score']
+        website_data['analysis_details_json'] = wa_row['analysis_details_json']
     if existing:
         cursor.execute('''
             SELECT locale_count, hreflang_tags
@@ -1831,7 +1870,7 @@ def update_account_status(scan_data: dict, report_id: Optional[int] = None) -> d
 
     # Calculate tier and evidence (with website data)
     new_tier, evidence_summary = calculate_tier_from_scan(
-        scan_data, website_data=website_data if website_data else None
+        scan_data, website_data=website_data or None
     )
     # Guard against None tier values to prevent comparison errors
     new_tier = new_tier if new_tier is not None else 0
@@ -2039,10 +2078,12 @@ def add_account_to_tier_0(company_name: str, github_org: str, annual_revenue: Op
         account_id = _insert_returning_id(cursor, '''
             INSERT INTO monitored_accounts (
                 company_name, github_org, annual_revenue, website, current_tier, last_scanned_at,
-                status_changed_at, evidence_summary, next_scan_due, metadata
-            ) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)
+                status_changed_at, evidence_summary, next_scan_due, metadata,
+                imported_at, import_source
+            ) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)
         ''', (company_name.strip(), github_org, annual_revenue, website, TIER_TRACKING, now,
-              "Added via Grow pipeline", next_scan_iso, metadata_json))
+              "Added via Grow pipeline", next_scan_iso, metadata_json,
+              now, 'csv_import'))
 
     conn.commit()
     conn.close()
@@ -3462,6 +3503,12 @@ def auto_retier_if_version_changed() -> int:
     re-reads each account's latest report scan_data and re-applies the
     maturity-to-tier mapping.
 
+    Includes safety guards:
+    - Snapshots tier counts before/after for audit trail
+    - Preserves previous_tier on each account so changes are reversible
+    - If >50% of accounts would change tier, logs a WARNING (mass-change guard)
+    - All changes are recorded in tier_audit_log table
+
     No API calls or rescanning needed — uses existing data only.
     No manual version bumping needed — file changes are detected automatically.
 
@@ -3475,10 +3522,21 @@ def auto_retier_if_version_changed() -> int:
     if stored_fp == current_fp:
         return 0
 
-    logging.info(f"[RETIER] Scoring files changed (fingerprint {stored_fp} → {current_fp}), re-tiering accounts...")
+    logging.warning(
+        f"[RETIER] Scoring files changed (fingerprint {stored_fp} → {current_fp}), "
+        f"re-tiering accounts..."
+    )
 
     with db_connection() as conn:
         cursor = conn.cursor()
+
+        # Snapshot tier counts BEFORE re-tiering
+        cursor.execute('''
+            SELECT current_tier, COUNT(*) as count
+            FROM monitored_accounts WHERE archived_at IS NULL
+            GROUP BY current_tier
+        ''')
+        tier_counts_before = {str(r['current_tier'] or 0): r['count'] for r in cursor.fetchall()}
 
         cursor.execute('''
             SELECT ma.id, ma.company_name, ma.current_tier, r.scan_data,
@@ -3494,7 +3552,8 @@ def auto_retier_if_version_changed() -> int:
         ''')
         rows = cursor.fetchall()
 
-        updated = 0
+        # First pass: calculate new tiers without writing (to check for mass change)
+        pending_changes = []
         for row in rows:
             try:
                 scan_data = json.loads(row['scan_data']) if isinstance(row['scan_data'], str) else row['scan_data']
@@ -3505,33 +3564,97 @@ def auto_retier_if_version_changed() -> int:
             if not scoring_v2 or not isinstance(scoring_v2, dict):
                 continue
 
-            # Build website_data from joined columns
-            website_data = {}
-            if row['localization_score'] is not None:
-                website_data['localization_score'] = row['localization_score']
-            if row['analysis_details_json']:
-                website_data['analysis_details_json'] = row['analysis_details_json']
-            if row['locale_count'] is not None:
-                website_data['locale_count'] = row['locale_count']
-            if row['hreflang_tags']:
-                website_data['hreflang_tags'] = row['hreflang_tags']
+            website_data = _build_website_data_from_row(row)
 
             new_tier, evidence = calculate_tier_from_scan(
                 scan_data, skip_verification=True,
-                website_data=website_data if website_data else None
+                website_data=website_data
             )
             if new_tier != row['current_tier']:
-                cursor.execute(
-                    'UPDATE monitored_accounts SET current_tier = ?, evidence_summary = ? WHERE id = ?',
-                    (new_tier, evidence, row['id'])
-                )
-                updated += 1
+                pending_changes.append({
+                    'id': row['id'],
+                    'company_name': row['company_name'],
+                    'old_tier': row['current_tier'],
+                    'new_tier': new_tier,
+                    'evidence': evidence,
+                })
+
+        total_with_reports = len(rows)
+        change_count = len(pending_changes)
+        mass_change_blocked = False
+
+        # Mass-change guard: if >50% of accounts would change, log warning
+        if total_with_reports > 0 and change_count > total_with_reports * 0.5:
+            logging.warning(
+                f"[RETIER] MASS CHANGE DETECTED: {change_count}/{total_with_reports} accounts "
+                f"({100 * change_count // total_with_reports}%) would change tier. "
+                f"Proceeding but preserving previous_tier for rollback."
+            )
+            mass_change_blocked = True
+
+        # Second pass: apply changes with previous_tier preservation
+        for change in pending_changes:
+            cursor.execute(
+                'UPDATE monitored_accounts SET previous_tier = current_tier, '
+                'current_tier = ?, evidence_summary = ? WHERE id = ?',
+                (change['new_tier'], change['evidence'], change['id'])
+            )
 
         conn.commit()
 
+        # Snapshot tier counts AFTER re-tiering
+        cursor.execute('''
+            SELECT current_tier, COUNT(*) as count
+            FROM monitored_accounts WHERE archived_at IS NULL
+            GROUP BY current_tier
+        ''')
+        tier_counts_after = {str(r['current_tier'] or 0): r['count'] for r in cursor.fetchall()}
+
+        # Build changes detail for audit log (limit to 100 to keep manageable)
+        changes_summary = [
+            {'id': c['id'], 'company': c['company_name'],
+             'old': c['old_tier'], 'new': c['new_tier']}
+            for c in pending_changes[:100]
+        ]
+
+        # Write audit log entry
+        now = datetime.now().isoformat()
+        _insert_returning_id(cursor, '''
+            INSERT INTO tier_audit_log (
+                triggered_at, old_fingerprint, new_fingerprint,
+                total_accounts, accounts_changed,
+                tier_counts_before, tier_counts_after,
+                changes_detail, mass_change_blocked
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (now, stored_fp or 'initial', current_fp,
+              total_with_reports, change_count,
+              json.dumps(tier_counts_before), json.dumps(tier_counts_after),
+              json.dumps(changes_summary), 1 if mass_change_blocked else 0))
+        conn.commit()
+
     set_setting('scoring_fingerprint', current_fp)
-    logging.info(f"[RETIER] Done — updated {updated} of {len(rows)} accounts.")
-    return updated
+
+    # Log summary
+    if change_count == 0:
+        logging.info(f"[RETIER] Done — no tier changes (fingerprint updated, {total_with_reports} accounts checked).")
+    else:
+        logging.warning(
+            f"[RETIER] Done — updated {change_count} of {total_with_reports} accounts. "
+            f"Before: {tier_counts_before} → After: {tier_counts_after}"
+        )
+    return change_count
+
+
+def get_tier_audit_log(limit: int = 20) -> list:
+    """Get recent tier audit log entries (most recent first)."""
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            'SELECT * FROM tier_audit_log ORDER BY triggered_at DESC LIMIT ?',
+            (limit,)
+        )
+        rows = cursor.fetchall()
+    return [dict(r) for r in rows]
 
 
 def force_retier_all() -> dict:
@@ -3571,21 +3694,12 @@ def force_retier_all() -> dict:
             if not scan_data:
                 continue
 
-            # Build website_data from joined columns
-            website_data = {}
-            if row['localization_score'] is not None:
-                website_data['localization_score'] = row['localization_score']
-            if row['analysis_details_json']:
-                website_data['analysis_details_json'] = row['analysis_details_json']
-            if row['locale_count'] is not None:
-                website_data['locale_count'] = row['locale_count']
-            if row['hreflang_tags']:
-                website_data['hreflang_tags'] = row['hreflang_tags']
+            website_data = _build_website_data_from_row(row)
 
             try:
                 new_tier, evidence = calculate_tier_from_scan(
                     scan_data, skip_verification=True,
-                    website_data=website_data if website_data else None
+                    website_data=website_data
                 )
             except Exception as e:
                 logging.warning(f"[RETIER] Error re-tiering account {row['id']} ({row['company_name']}): {e}")
@@ -5980,6 +6094,15 @@ def get_scorecard_score(account_id: int) -> Optional[dict]:
 # =============================================================================
 # CAMPAIGNS CRUD
 # =============================================================================
+
+def get_reporadar_campaign_id() -> Optional[int]:
+    """Get the RepoRadar campaign ID (cached after first lookup)."""
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id FROM campaigns WHERE name = 'RepoRadar' LIMIT 1")
+        row = cursor.fetchone()
+    return row['id'] if row else None
+
 
 def create_campaign(name: str, prompt: str, assets: list, sequence_id: str = None,
                     sequence_name: str = None, sequence_config: str = None) -> dict:

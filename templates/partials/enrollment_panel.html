@@ -1,0 +1,61 @@
+{# Unified Enrollment Panel — include on any page that needs enrollment.
+   Usage: {% include "partials/enrollment_panel.html" %}
+   Then call Enrollment.init(document.getElementById('enrollment-panel-ID'), { ... }) in JS.
+
+   This generates a generic panel. Pass panel_id to make IDs unique when multiple panels exist. #}
+{% set pid = panel_id|default('default') %}
+
+<div class="enroll-panel" id="enroll-panel-{{ pid }}">
+    <div class="enroll-panel-title">Enrollment</div>
+
+    <!-- Step indicators -->
+    <div class="enroll-steps">
+        <div class="enroll-step active"></div>
+        <div class="enroll-step"></div>
+        <div class="enroll-step"></div>
+    </div>
+
+    <!-- Step 1: Find Email -->
+    <button class="enroll-btn enroll-btn-find" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+            <circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+        Find Email
+    </button>
+
+    <!-- Contact info (shown after email found) -->
+    <div class="enroll-contact-info" style="display:none"></div>
+
+    <!-- Contact details fields -->
+    <div class="enroll-field">
+        <label>Email</label>
+        <input type="email" class="enroll-email-input" placeholder="name@company.com">
+    </div>
+    <div class="enroll-field-row">
+        <div class="enroll-field">
+            <label>First Name</label>
+            <input type="text" class="enroll-first-name" placeholder="First">
+        </div>
+        <div class="enroll-field">
+            <label>Last Name</label>
+            <input type="text" class="enroll-last-name" placeholder="Last">
+        </div>
+    </div>
+
+    <hr class="enroll-separator">
+
+    <!-- Step 2: Select Sequence -->
+    <div class="enroll-field">
+        <label>Apollo Sequence</label>
+        <select class="enroll-seq-select">
+            <option value="">Loading sequences...</option>
+        </select>
+    </div>
+
+    <!-- Step 3: Enroll -->
+    <button class="enroll-btn enroll-btn-enroll" type="button" disabled>
+        Approve & Enroll
+    </button>
+
+    <div class="enroll-status"></div>
+</div>

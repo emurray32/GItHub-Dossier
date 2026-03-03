@@ -6,6 +6,7 @@
 
 {% block head %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/scorecard.css') }}?v={{ cache_bust }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/enrollment.css') }}">
 {% endblock %}
 
 {% block content %}
@@ -260,6 +261,7 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ url_for('static', filename='js/enrollment.js') }}"></script>
 <script>
 (function () {
     'use strict';
@@ -658,15 +660,20 @@
             '<div id="scEmailFields"></div>' +
             '</div>';
 
-        // Section 4: Enrollment
+        // Section 4: Unified Enrollment Panel
         html += '<div class="sc-sidebar-section">' +
-            '<div class="sc-outreach-field"><label>Contact Email</label><input type="email" id="scEnrollEmail" placeholder="name@company.com"></div>' +
-            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.4rem">' +
-            '<div class="sc-outreach-field"><label>First Name</label><input type="text" id="scEnrollFirst" placeholder="First"></div>' +
-            '<div class="sc-outreach-field"><label>Last Name</label><input type="text" id="scEnrollLast" placeholder="Last"></div>' +
-            '</div>' +
-            '<button class="sc-enroll-btn" id="scEnrollBtn" type="button">Approve & Enroll</button>' +
-            '</div>';
+            '<div class="enroll-panel" id="enroll-panel-sc-' + accountId + '">' +
+            '<div class="enroll-panel-title">Enrollment</div>' +
+            '<div class="enroll-steps"><div class="enroll-step active"></div><div class="enroll-step"></div><div class="enroll-step"></div></div>' +
+            '<button class="enroll-btn enroll-btn-find" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg> Find Email</button>' +
+            '<div class="enroll-contact-info" style="display:none"></div>' +
+            '<div class="enroll-field"><label>Email</label><input type="email" class="enroll-email-input" placeholder="name@company.com"></div>' +
+            '<div class="enroll-field-row"><div class="enroll-field"><label>First Name</label><input type="text" class="enroll-first-name" placeholder="First"></div><div class="enroll-field"><label>Last Name</label><input type="text" class="enroll-last-name" placeholder="Last"></div></div>' +
+            '<hr class="enroll-separator">' +
+            '<div class="enroll-field"><label>Apollo Sequence</label><select class="enroll-seq-select"><option value="">Loading sequences...</option></select></div>' +
+            '<button class="enroll-btn enroll-btn-enroll" type="button" disabled>Approve & Enroll</button>' +
+            '<div class="enroll-status"></div>' +
+            '</div></div>';
 
         $sidebarBody.innerHTML = html;
         $sidebar.classList.add('open');
@@ -676,7 +683,26 @@
         // Bind sidebar events
         document.getElementById('scSaveSystems').addEventListener('click', function () { saveSystems(accountId); });
         document.getElementById('scGenerateSeqBtn').addEventListener('click', function () { generateEmail(accountId); });
-        document.getElementById('scEnrollBtn').addEventListener('click', function () { enrollAccount(accountId); });
+
+        // Initialize unified enrollment panel
+        var enrollPanel = document.getElementById('enroll-panel-sc-' + accountId);
+        if (enrollPanel) {
+            Enrollment.init(enrollPanel, {
+                getContactData: function() {
+                    var r = cachedRows[accountId];
+                    return {
+                        name: '',
+                        company: r ? r.company_name : '',
+                        github_login: r ? (r.github_org || '') : ''
+                    };
+                },
+                onEnrolled: function(data, sequenceName) {
+                    showToast('Enrolled in Apollo', 'success');
+                    if (cachedRows[accountId]) cachedRows[accountId].apollo_status = 'enrolled';
+                    loadAccounts();
+                }
+            });
+        }
 
         // Load sequences
         loadSidebarSequences(accountId);

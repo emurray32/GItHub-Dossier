@@ -3,6 +3,7 @@
 
 {% block head %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/report.css') }}?v={{ cache_bust }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/enrollment.css') }}">
 {% endblock %}
 
 {% block content %}
@@ -366,6 +367,7 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ url_for('static', filename='js/enrollment.js') }}"></script>
 <script>
     // Contributor data for detail panel
     const contributorsData = {{ (report.scan_data.contributors or {})|tojson }};

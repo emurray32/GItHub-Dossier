@@ -5,6 +5,7 @@
 
 {% block head %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/accounts.css') }}?v={{ cache_bust }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/enrollment.css') }}">
 {% endblock %}
 
 {% block header_search %}
@@ -422,11 +423,22 @@
                 </div>
             </section>
             <section class="panel-section panel-enroll-section">
-                <label for="panel-sequence-select">Sequence</label>
-                <select id="panel-sequence-select" class="panel-select"></select>
-                <button class="btn-enroll" id="panel-enroll-btn" onclick="generateAndEnroll()">
-                    Generate Emails &amp; Enroll
-                </button>
+                <div class="enroll-panel" id="enroll-panel-account">
+                    <div class="enroll-panel-title">Enrollment</div>
+                    <div class="enroll-steps">
+                        <div class="enroll-step active"></div>
+                        <div class="enroll-step"></div>
+                        <div class="enroll-step"></div>
+                    </div>
+                    <div class="enroll-field">
+                        <label>Apollo Sequence</label>
+                        <select class="enroll-seq-select" id="panel-sequence-select"></select>
+                    </div>
+                    <button class="enroll-btn enroll-btn-enroll" id="panel-enroll-btn" type="button" onclick="generateAndEnroll()">
+                        Generate Emails &amp; Enroll
+                    </button>
+                    <div class="enroll-status" id="panel-enroll-status"></div>
+                </div>
                 <div id="panel-enroll-results" class="panel-enroll-results" style="display:none"></div>
             </section>
         </div>
@@ -629,6 +641,7 @@
     </div>
 </div>
 
+<script src="{{ url_for('static', filename='js/enrollment.js') }}"></script>
 <script>
     // Tier name map
     const TIER_NAMES = {0: 'Tracking', 1: 'Thinking', 2: 'Preparing', 3: 'Launched', 4: 'Not Found'};
@@ -3490,11 +3503,9 @@
         document.getElementById('panel-contributors-list').innerHTML = '<div class="panel-placeholder">Loading...</div>';
         document.getElementById('panel-enroll-results').style.display = 'none';
 
-        // Fetch account data + contributors in parallel
-        Promise.all([
-            fetch(`/api/accounts/${accountId}/contributors`).then(r => r.json()),
-            fetch('/api/sequence-mappings/enabled').then(r => r.json())
-        ]).then(([contribData, seqData]) => {
+        // Fetch account data + contributors
+        fetch(`/api/accounts/${accountId}/contributors`).then(r => r.json())
+        .then(contribData => {
             if (contribData.error) {
                 document.getElementById('panel-company-name').textContent = 'Error';
                 return;
@@ -3529,21 +3540,8 @@
             // Contributors
             renderPanelContributors(contribData.contributors || []);
 
-            // Sequence dropdown
-            const seqSelect = document.getElementById('panel-sequence-select');
-            seqSelect.innerHTML = '';
-            const sequences = (seqData.sequences || []);
-            if (sequences.length === 0) {
-                seqSelect.innerHTML = '<option value="">No sequences available</option>';
-            } else {
-                sequences.forEach(s => {
-                    const opt = document.createElement('option');
-                    opt.value = s.apollo_sequence_id || s.sequence_id || '';
-                    opt.textContent = s.sequence_name || s.name || 'Unnamed';
-                    opt.dataset.name = s.sequence_name || s.name || '';
-                    seqSelect.appendChild(opt);
-                });
-            }
+            // Populate sequence dropdown via unified enrollment module
+            Enrollment.populateSelect(document.getElementById('panel-sequence-select'));
         }).catch(err => {
             console.error('Error loading panel data:', err);
             document.getElementById('panel-company-name').textContent = 'Error loading';
