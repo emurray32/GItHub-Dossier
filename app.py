@@ -9192,12 +9192,18 @@ if __name__ == '__main__':
     if retier_count > 0:
         logging.info(f"[APP] Re-tiered {retier_count} accounts after scoring version change")
 
-    # One-time migration: retier all accounts with website localization data
+    # One-time migration: retier all accounts with website localization data (runs in background)
     if get_setting('website_tiering_applied') != '2':
-        logging.info("[APP] Applying website tiering migration (one-time)...")
-        result = force_retier_all()
-        set_setting('website_tiering_applied', '2')
-        logging.info(f"[APP] Website tiering migration done — {result['updated']} accounts updated. By tier: {result['by_tier']}")
+        import threading
+        def _run_website_tiering_migration():
+            try:
+                logging.info("[APP] Applying website tiering migration in background (one-time)...")
+                result = force_retier_all()
+                set_setting('website_tiering_applied', '2')
+                logging.info(f"[APP] Website tiering migration done — {result['updated']} accounts updated. By tier: {result['by_tier']}")
+            except Exception as e:
+                logging.error(f"[APP] Website tiering migration failed: {e}")
+        threading.Thread(target=_run_website_tiering_migration, daemon=True).start()
 
     # Cleanup any duplicate accounts
     cleanup_result = cleanup_duplicate_accounts()
