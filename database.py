@@ -1043,7 +1043,7 @@ def cleanup_duplicate_accounts() -> dict:
 
         # Step 2: Find duplicates by GitHub Org (case-insensitive)
         cursor.execute('''
-            SELECT github_org, COUNT(*) as cnt
+            SELECT LOWER(github_org) as normalized_org, COUNT(*) as cnt
             FROM monitored_accounts
             WHERE github_org IS NOT NULL AND github_org != ''
             GROUP BY LOWER(github_org)
@@ -1052,7 +1052,7 @@ def cleanup_duplicate_accounts() -> dict:
         org_duplicates = cursor.fetchall()
         
         for row in org_duplicates:
-            org = row['github_org']
+            org = row['normalized_org']
             
             cursor.execute('''
                 SELECT * FROM monitored_accounts 
