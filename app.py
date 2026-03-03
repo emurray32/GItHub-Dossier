@@ -9193,10 +9193,10 @@ if __name__ == '__main__':
         logging.info(f"[APP] Re-tiered {retier_count} accounts after scoring version change")
 
     # One-time migration: retier all accounts with website localization data
-    if get_setting('website_tiering_applied') != '1':
+    if get_setting('website_tiering_applied') != '2':
         logging.info("[APP] Applying website tiering migration (one-time)...")
         result = force_retier_all()
-        set_setting('website_tiering_applied', '1')
+        set_setting('website_tiering_applied', '2')
         logging.info(f"[APP] Website tiering migration done — {result['updated']} accounts updated. By tier: {result['by_tier']}")
 
     # Cleanup any duplicate accounts

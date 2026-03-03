@@ -3486,8 +3486,8 @@ def auto_retier_if_version_changed() -> int:
                    ws.locale_count, ws.hreflang_tags
             FROM monitored_accounts ma
             JOIN reports r ON r.id = ma.latest_report_id
-            LEFT JOIN website_analyses wa ON wa.account_id = ma.id
-                AND wa.id = (SELECT id FROM website_analyses WHERE account_id = ma.id ORDER BY analyzed_at DESC LIMIT 1)
+            LEFT JOIN website_analyses wa ON LOWER(wa.company_name) = LOWER(ma.company_name)
+                AND wa.id = (SELECT id FROM website_analyses WHERE LOWER(company_name) = LOWER(ma.company_name) ORDER BY analyzed_at DESC LIMIT 1)
             LEFT JOIN webscraper_accounts ws ON ws.monitored_account_id = ma.id
                 AND ws.scan_status = 'completed' AND ws.archived_at IS NULL
             WHERE ma.latest_report_id IS NOT NULL
@@ -3552,8 +3552,8 @@ def force_retier_all() -> dict:
                    ws.locale_count, ws.hreflang_tags
             FROM monitored_accounts ma
             JOIN reports r ON r.id = ma.latest_report_id
-            LEFT JOIN website_analyses wa ON wa.account_id = ma.id
-                AND wa.id = (SELECT id FROM website_analyses WHERE account_id = ma.id ORDER BY analyzed_at DESC LIMIT 1)
+            LEFT JOIN website_analyses wa ON LOWER(wa.company_name) = LOWER(ma.company_name)
+                AND wa.id = (SELECT id FROM website_analyses WHERE LOWER(company_name) = LOWER(ma.company_name) ORDER BY analyzed_at DESC LIMIT 1)
             LEFT JOIN webscraper_accounts ws ON ws.monitored_account_id = ma.id
                 AND ws.scan_status = 'completed' AND ws.archived_at IS NULL
             WHERE ma.latest_report_id IS NOT NULL
