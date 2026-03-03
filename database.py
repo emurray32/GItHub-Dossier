@@ -1013,10 +1013,10 @@ def cleanup_duplicate_accounts() -> dict:
     try:
         # Step 1: Find duplicates by Company Name (case-insensitive)
         cursor.execute('''
-            SELECT LOWER(company_name) as normalized_name, COUNT(*) as count
+            SELECT LOWER(company_name) as normalized_name, COUNT(*) as cnt
             FROM monitored_accounts
             GROUP BY LOWER(company_name)
-            HAVING count > 1
+            HAVING COUNT(*) > 1
         ''')
         name_duplicates = cursor.fetchall()
         
@@ -1043,11 +1043,11 @@ def cleanup_duplicate_accounts() -> dict:
 
         # Step 2: Find duplicates by GitHub Org (case-insensitive)
         cursor.execute('''
-            SELECT github_org, COUNT(*) as count
+            SELECT github_org, COUNT(*) as cnt
             FROM monitored_accounts
             WHERE github_org IS NOT NULL AND github_org != ''
             GROUP BY LOWER(github_org)
-            HAVING count > 1
+            HAVING COUNT(*) > 1
         ''')
         org_duplicates = cursor.fetchall()
         
