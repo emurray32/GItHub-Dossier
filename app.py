@@ -90,6 +90,13 @@ from sheets_sync import (
 from auth import auth_bp
 from rate_limiter import limiter
 from database import log_audit_event
+from validators import (
+    validate_company_name, validate_github_org, validate_email,
+    validate_url, validate_search_query, validate_notes,
+    validate_positive_int, validate_tier, validate_sort_direction,
+    validate_scope, sanitize_for_log,
+    MAX_URL_LENGTH, MAX_COMPANY_NAME_LENGTH,
+)
 import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -1376,6 +1383,9 @@ def index():
 @app.route('/scan/<company>')
 def scan_page(company: str):
     """Render the live console page for scanning."""
+    valid, company = validate_company_name(company)
+    if not valid:
+        return render_template('error.html', message=company), 400
     return render_template('console.html', company=company)
 
 
@@ -1387,6 +1397,10 @@ def stream_scan(company: str):
     This endpoint keeps the connection alive while the scan runs,
     preventing browser timeouts during long operations.
     """
+    valid, company = validate_company_name(company)
+    if not valid:
+        return jsonify({'error': company}), 400
+
     def generate():
         start_time = time.time()
         scan_data = None
@@ -1566,6 +1580,9 @@ def search():
 def api_reports():
     """API endpoint to get recent reports."""
     limit = request.args.get('limit', 20, type=int)
+    valid, limit = validate_positive_int(limit, name='limit', max_val=500)
+    if not valid:
+        return jsonify({'error': limit}), 400
     reports = get_recent_reports(limit=limit)
     return jsonify(reports)
 
@@ -1574,6 +1591,10 @@ def api_reports():
 def api_search_reports():
     """API endpoint to search reports."""
     query = request.args.get('q', '')
+    if query:
+        valid, query = validate_search_query(query)
+        if not valid:
+            return jsonify({'error': query}), 400
     reports = search_reports(query)
     return jsonify(reports)
 
@@ -1593,6 +1614,24 @@ def api_reports_paginated():
     sort_by = request.args.get('sort_by', 'created_at', type=str)
     sort_order = request.args.get('sort_order', 'desc', type=str)
     favorites_only = request.args.get('favorites_only', 'false', type=str).lower() == 'true'
+
+    # Validate pagination parameters
+    valid, page = validate_positive_int(page, name='page', max_val=10000)
+    if not valid:
+        return jsonify({'error': page}), 400
+    valid, limit = validate_positive_int(limit, name='limit', max_val=100)
+    if not valid:
+        return jsonify({'error': limit}), 400
+    if search:
+        valid, search = validate_search_query(search)
+        if not valid:
+            return jsonify({'error': search}), 400
+    # Whitelist sort_by to prevent SQL injection
+    if sort_by not in ('created_at', 'company_name', 'signal_count', 'github_org'):
+        sort_by = 'created_at'
+    valid, sort_order = validate_sort_direction(sort_order)
+    if not valid:
+        return jsonify({'error': sort_order}), 400
 
     result = get_paginated_reports(
         page=page,
@@ -1662,13 +1701,25 @@ def api_send_to_bdr():
     body = data.get('body')
     company_name = data.get('company_name')
     report_url = data.get('report_url')
-    
+
     if not to_email:
         return jsonify({'success': False, 'error': 'BDR email address required'}), 400
-    
+    valid, to_email = validate_email(to_email)
+    if not valid:
+        return jsonify({'success': False, 'error': to_email}), 400
+
     if not subject or not body:
         return jsonify({'success': False, 'error': 'Email subject and body required'}), 400
-    
+
+    if company_name:
+        valid, company_name = validate_company_name(company_name)
+        if not valid:
+            return jsonify({'success': False, 'error': company_name}), 400
+    if report_url:
+        valid, report_url = validate_url(report_url)
+        if not valid:
+            return jsonify({'success': False, 'error': report_url}), 400
+
     result = send_email_draft(
         to_email=to_email,
         subject=subject,
@@ -1867,6 +1918,9 @@ def api_sequence_mappings_search():
     q = request.args.get('q', '').strip()
     if not q or len(q) < 2:
         return jsonify({'status': 'success', 'results': []})
+    valid, q = validate_search_query(q)
+    if not valid:
+        return jsonify({'status': 'error', 'message': q}), 400
     results = search_sequence_mappings(q, enabled_only=False)
     return jsonify({'status': 'success', 'results': results})
 
@@ -2556,6 +2610,13 @@ def api_discover_contacts(campaign_id):
     if not account_ids:
         return jsonify({'status': 'error', 'message': 'No accounts selected'}), 400
 
+    if not isinstance(account_ids, list):
+        return jsonify({'status': 'error', 'message': 'account_ids must be a list'}), 400
+    for aid in account_ids:
+        valid, _ = validate_positive_int(aid, name='account_id')
+        if not valid:
+            return jsonify({'status': 'error', 'message': f'Invalid account_id: {aid}'}), 400
+
     batch_id = create_enrollment_batch(campaign_id, account_ids)
     # Submit to background worker
     from concurrent.futures import ThreadPoolExecutor
@@ -2606,8 +2667,20 @@ def api_enrollment_batch_status(batch_id):
 def api_enrollment_batch_contacts(batch_id):
     """Get contacts in an enrollment batch, optionally filtered by status."""
     status_filter = request.args.get('status')
-    limit = min(int(request.args.get('limit', 500)), 1000)
-    offset = int(request.args.get('offset', 0))
+    try:
+        limit = min(int(request.args.get('limit', 500)), 1000)
+    except (ValueError, TypeError):
+        return jsonify({'error': 'limit must be an integer'}), 400
+    try:
+        offset = int(request.args.get('offset', 0))
+    except (ValueError, TypeError):
+        return jsonify({'error': 'offset must be an integer'}), 400
+    valid, limit = validate_positive_int(limit, name='limit', max_val=1000)
+    if not valid:
+        return jsonify({'error': limit}), 400
+    valid, offset = validate_positive_int(offset, name='offset', max_val=100000)
+    if not valid:
+        return jsonify({'error': offset}), 400
     contacts = get_enrollment_contacts(batch_id, status=status_filter, limit=limit, offset=offset)
     return jsonify({'status': 'success', 'contacts': contacts})
 
@@ -2795,6 +2868,17 @@ def api_scorecard_datatable():
     order_dir = request.args.get('order[0][dir]', 'desc')
     cohort = request.args.get('cohort', '').strip()
 
+    # Validate datatable parameters
+    length = max(1, min(length, 10000))
+    start = max(0, start)
+    valid, order_dir = validate_sort_direction(order_dir)
+    if not valid:
+        order_dir = 'desc'
+    if search_value:
+        valid, search_value = validate_search_query(search_value)
+        if not valid:
+            search_value = ''
+
     result = get_scorecard_datatable(
         draw=draw, start=start, length=length,
         search_value=search_value, cohort_filter=cohort,
@@ -2883,6 +2967,9 @@ def api_scorecard_systems():
 
     if not account_id:
         return jsonify({'status': 'error', 'message': 'Missing account_id'}), 400
+    valid, account_id = validate_positive_int(account_id, name='account_id')
+    if not valid:
+        return jsonify({'status': 'error', 'message': account_id}), 400
 
     # Calculate systems_score from checkboxes x rubric weights
     sys_keys = {
@@ -2927,6 +3014,17 @@ def api_scorecard_enroll():
 
     if not email or not sequence_id or not account_id:
         return jsonify({'status': 'error', 'message': 'Missing required: email, sequence_id, account_id'}), 400
+
+    valid, account_id = validate_positive_int(account_id, name='account_id')
+    if not valid:
+        return jsonify({'status': 'error', 'message': account_id}), 400
+    valid, email = validate_email(email)
+    if not valid:
+        return jsonify({'status': 'error', 'message': email}), 400
+    if company_name:
+        valid, company_name = validate_company_name(company_name)
+        if not valid:
+            return jsonify({'status': 'error', 'message': company_name}), 400
 
     # Convert plain newlines to HTML for Apollo
     def to_html(text):
@@ -3086,6 +3184,11 @@ def api_scorecard_generate_email():
     systems_json = data.get('systems_json', '{}')
     num_emails = data.get('num_emails', 4)
     bdr_prompt = data.get('bdr_prompt', '').strip()
+
+    if company_name:
+        valid, company_name = validate_company_name(company_name)
+        if not valid:
+            return jsonify({'status': 'error', 'message': company_name}), 400
 
     # Build structure guidance based on num_emails
     if num_emails == 1:
@@ -3335,6 +3438,13 @@ def api_accounts_datatable():
     # Validate parameters
     length = max(1, min(length, 10000))  # Limit to max 10000 rows per request
     start = max(0, start)
+    valid, order_dir = validate_sort_direction(order_dir)
+    if not valid:
+        order_dir = 'asc'
+    if search_value:
+        valid, search_value = validate_search_query(search_value)
+        if not valid:
+            search_value = ''
 
     # Get data from database
     result = get_all_accounts_datatable(
@@ -3374,6 +3484,11 @@ def api_update_account_notes(account_id: int):
     """Update the notes field for an account."""
     data = request.get_json() or {}
     notes = data.get('notes', '')
+
+    if notes:
+        valid, notes = validate_notes(notes)
+        if not valid:
+            return jsonify({'error': notes}), 400
 
     updated = update_account_notes(account_id, notes)
     if not updated:
@@ -3419,6 +3534,13 @@ def api_account_enroll(account_id):
 
     if not contributor_ids or not sequence_id:
         return jsonify({'status': 'error', 'message': 'Missing contributor_ids or sequence_id'}), 400
+
+    if not isinstance(contributor_ids, list):
+        return jsonify({'status': 'error', 'message': 'contributor_ids must be a list'}), 400
+    for cid in contributor_ids:
+        valid, _ = validate_positive_int(cid, name='contributor_id')
+        if not valid:
+            return jsonify({'status': 'error', 'message': f'Invalid contributor_id: {cid}'}), 400
 
     apollo_key = os.environ.get('APOLLO_API_KEY', '')
     if not apollo_key:
@@ -3707,6 +3829,13 @@ def api_contributors_datatable():
 
     length = max(1, min(length, 10000))
     start = max(0, start)
+    valid, order_dir = validate_sort_direction(order_dir)
+    if not valid:
+        order_dir = 'desc'
+    if search_value:
+        valid, search_value = validate_search_query(search_value)
+        if not valid:
+            search_value = ''
 
     result = get_contributors_datatable(
         draw=draw, start=start, length=length,
@@ -3809,6 +3938,9 @@ def api_contributor_send_email(contributor_id: int):
 
     if not to_email:
         return jsonify({'error': 'No email address available for this contributor'}), 400
+    valid, to_email = validate_email(to_email)
+    if not valid:
+        return jsonify({'error': to_email}), 400
 
     result = send_email_draft(
         to_email=to_email,
@@ -3844,6 +3976,14 @@ def api_fetch_contributors():
     data = request.get_json() or {}
     specific_org = data.get('org', '').strip()
     limit_per_repo = data.get('limit', 5)
+
+    if specific_org:
+        valid, specific_org = validate_github_org(specific_org)
+        if not valid:
+            return jsonify({'error': specific_org}), 400
+    valid, limit_per_repo = validate_positive_int(limit_per_repo, name='limit', max_val=50)
+    if not valid:
+        return jsonify({'error': limit_per_repo}), 400
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -3965,6 +4105,11 @@ def api_generate_contributor_email():
     insight = data.get('insight', '')
     contributions = data.get('contributions', 0)
     goldilocks_status = data.get('goldilocks_status', '')
+
+    if company:
+        valid, company = validate_company_name(company)
+        if not valid:
+            return jsonify({'status': 'error', 'message': company}), 400
 
     num_emails = data.get('num_emails', 4)
 
@@ -4098,6 +4243,16 @@ def api_contributors_bulk_enroll():
         return jsonify({'status': 'error', 'message': 'Campaign is required'}), 400
     if not sequence_id:
         return jsonify({'status': 'error', 'message': 'Sequence is required'}), 400
+
+    if not isinstance(contributor_ids, list):
+        return jsonify({'status': 'error', 'message': 'contributor_ids must be a list'}), 400
+    for cid in contributor_ids:
+        valid, _ = validate_positive_int(cid, name='contributor_id')
+        if not valid:
+            return jsonify({'status': 'error', 'message': f'Invalid contributor_id: {cid}'}), 400
+    valid, campaign_id = validate_positive_int(campaign_id, name='campaign_id')
+    if not valid:
+        return jsonify({'status': 'error', 'message': campaign_id}), 400
 
     campaign = get_campaign(campaign_id)
     if not campaign:
@@ -4344,6 +4499,9 @@ def api_webscraper_analyze():
 
         if not url:
             return jsonify({'error': 'Missing required field: url'}), 400
+        valid, url = validate_url(url)
+        if not valid:
+            return jsonify({'error': url}), 400
 
         if not prompt:
             return jsonify({'error': 'Missing required field: prompt'}), 400
@@ -4407,6 +4565,13 @@ def api_webscraper_analyze_batch():
 
         if not account_ids:
             return jsonify({'error': 'Missing required field: account_ids'}), 400
+
+        if not isinstance(account_ids, list):
+            return jsonify({'error': 'account_ids must be a list'}), 400
+        for aid in account_ids:
+            valid, _ = validate_positive_int(aid, name='account_id')
+            if not valid:
+                return jsonify({'error': f'Invalid account_id: {aid}'}), 400
 
         # Get accounts
         conn = get_db_connection()
@@ -4492,6 +4657,13 @@ def api_webscraper_analyses():
     try:
         limit = request.args.get('limit', 100, type=int)
         offset = request.args.get('offset', 0, type=int)
+
+        valid, limit = validate_positive_int(limit, name='limit', max_val=500)
+        if not valid:
+            return jsonify({'error': limit}), 400
+        valid, offset = validate_positive_int(offset, name='offset', max_val=100000)
+        if not valid:
+            return jsonify({'error': offset}), 400
 
         analyses = get_all_website_analyses(limit=limit, offset=offset)
 
@@ -4581,6 +4753,13 @@ def api_webscraper_accounts_datatable():
     # Validate parameters
     length = max(1, min(length, 10000))
     start = max(0, start)
+    valid, order_dir = validate_sort_direction(order_dir)
+    if not valid:
+        order_dir = 'asc'
+    if search_value:
+        valid, search_value = validate_search_query(search_value)
+        if not valid:
+            search_value = ''
 
     # Get data from database
     result = get_webscraper_accounts_datatable(
@@ -4717,7 +4896,9 @@ def api_webscraper_history():
     Returns the most recent scans with their results for display in the History modal.
     """
     limit = request.args.get('limit', 20, type=int)
-    limit = min(limit, 100)  # Cap at 100
+    valid, limit = validate_positive_int(limit, name='limit', max_val=100)
+    if not valid:
+        return jsonify({'error': limit}), 400
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -4885,6 +5066,16 @@ def api_webscraper_bulk_action():
         if not account_ids:
             return jsonify({'error': 'Missing required field: account_ids'}), 400
 
+        if not isinstance(account_ids, list):
+            return jsonify({'error': 'account_ids must be a list'}), 400
+        for aid in account_ids:
+            valid, _ = validate_positive_int(aid, name='account_id')
+            if not valid:
+                return jsonify({'error': f'Invalid account_id: {aid}'}), 400
+
+        if action not in ('archive', 'unarchive', 'delete', 'change_tier', 'scan'):
+            return jsonify({'error': f'Unknown action: {action}'}), 400
+
         if action == 'archive':
             affected = webscraper_bulk_archive(account_ids)
             return jsonify({'success': True, 'action': 'archive', 'affected': affected})
@@ -5022,6 +5213,11 @@ def api_webscraper_update_notes(account_id):
     data = request.get_json() or {}
     notes = data.get('notes', '')
 
+    if notes:
+        valid, notes = validate_notes(notes)
+        if not valid:
+            return jsonify({'error': notes}), 400
+
     updated = update_webscraper_notes(account_id, notes)
     if not updated:
         return jsonify({'error': 'Account not found'}), 404
@@ -5081,6 +5277,12 @@ def api_discover():
 
     if not keyword:
         return jsonify({'error': 'Missing query parameter: q'}), 400
+    valid, keyword = validate_search_query(keyword)
+    if not valid:
+        return jsonify({'error': keyword}), 400
+    valid, limit = validate_positive_int(limit, name='limit', max_val=100)
+    if not valid:
+        return jsonify({'error': limit}), 400
 
     # Search for orgs matching the keyword
     results = search_github_orgs(keyword, limit=limit)
@@ -5127,6 +5329,12 @@ def api_ai_discover():
 
     if not keyword:
         return jsonify({'error': 'Missing query parameter: q'}), 400
+    valid, keyword = validate_search_query(keyword)
+    if not valid:
+        return jsonify({'error': keyword}), 400
+    valid, limit = validate_positive_int(limit, name='limit', max_val=50)
+    if not valid:
+        return jsonify({'error': limit}), 400
 
     # Use AI to discover companies in this sector
     companies = discover_companies_via_ai(keyword, limit=limit)
@@ -5164,11 +5372,12 @@ def api_lead_stream():
     offset = request.args.get('offset', 0, type=int)
     limit = request.args.get('limit', 10, type=int)
 
-    # Enforce max limit
-    if limit > 30:
-        limit = 30
-    if offset < 0:
-        offset = 0
+    valid, offset = validate_positive_int(offset, name='offset', max_val=10000)
+    if not valid:
+        return jsonify({'error': offset}), 400
+    valid, limit = validate_positive_int(limit, name='limit', max_val=30)
+    if not valid:
+        return jsonify({'error': limit}), 400
 
     try:
         # Discover Technology companies
@@ -5436,6 +5645,13 @@ def api_track():
     if not org_login or not company_name:
         return jsonify({'error': 'Missing required fields: org_login, company_name'}), 400
 
+    valid, org_login = validate_github_org(org_login)
+    if not valid:
+        return jsonify({'error': org_login}), 400
+    valid, company_name = validate_company_name(company_name)
+    if not valid:
+        return jsonify({'error': company_name}), 400
+
     try:
         existing = get_account_by_company_case_insensitive(company_name)
         if existing:
@@ -5474,6 +5690,13 @@ def api_update_org():
 
     if not company_name or not github_org:
         return jsonify({'status': 'error', 'message': 'Missing required fields'}), 400
+
+    valid, company_name = validate_company_name(company_name)
+    if not valid:
+        return jsonify({'status': 'error', 'message': company_name}), 400
+    valid, github_org = validate_github_org(github_org)
+    if not valid:
+        return jsonify({'status': 'error', 'message': github_org}), 400
 
     conn = get_db_connection()
     try:
@@ -5518,6 +5741,10 @@ def api_rescan(company_name: str):
     Returns:
         JSON with queued status. The UI should refresh to see updated results.
     """
+    valid, company_name = validate_company_name(company_name)
+    if not valid:
+        return jsonify({'error': company_name}), 400
+
     # Check if already scanning
     current_status = get_scan_status(company_name)
     if current_status and current_status.get('scan_status') in (SCAN_STATUS_QUEUED, SCAN_STATUS_PROCESSING):
@@ -5806,11 +6033,17 @@ def api_batch_rescan():
 
     data = request.get_json() or {}
     scope = data.get('scope', 'all')
+    valid, scope = validate_scope(scope, ('all', 'refreshable', 'never_scanned'))
+    if not valid:
+        with _batch_rescan_lock:
+            _batch_rescan_state['active'] = False
+        return jsonify({'status': 'error', 'message': scope}), 400
     try:
         batch_size = max(min(int(data.get('batch_size', 50)), 200), 1)
         delay_seconds = max(int(data.get('delay_seconds', 30)), 5)
     except (ValueError, TypeError):
-        _batch_rescan_state['active'] = False
+        with _batch_rescan_lock:
+            _batch_rescan_state['active'] = False
         return jsonify({'status': 'error', 'message': 'batch_size and delay_seconds must be integers'}), 400
 
     # Query accounts based on scope
@@ -6468,7 +6701,14 @@ def api_settings():
     # Update webhook URL if provided
     if 'webhook_url' in data:
         webhook_url = data['webhook_url'].strip()
-        # Validate URL format (must be empty or start with http:// or https://)
+        # Validate URL format and length via validators module
+        if webhook_url:
+            valid, webhook_url = validate_url(webhook_url)
+            if not valid:
+                return jsonify({
+                    'status': 'error',
+                    'message': webhook_url
+                }), 400
         if webhook_url and not (webhook_url.startswith('http://') or webhook_url.startswith('https://')):
             return jsonify({
                 'status': 'error',
@@ -6525,11 +6765,11 @@ def api_settings_zapier():
             'message': 'Missing zapier_url field'
         }), 400
 
-    # Validate URL format
-    if not (zapier_url.startswith('http://') or zapier_url.startswith('https://')):
+    valid, zapier_url = validate_url(zapier_url)
+    if not valid:
         return jsonify({
             'status': 'error',
-            'message': 'Zapier URL must start with http:// or https://'
+            'message': zapier_url
         }), 400
 
     set_setting('zapier_webhook_url', zapier_url)
@@ -6573,12 +6813,13 @@ def api_settings_gsheet():
     if 'gsheet_webhook_url' in data:
         gsheet_url = data['gsheet_webhook_url'].strip()
 
-        # Validate URL format (must be empty or start with https://script.google.com or http(s)://)
-        if gsheet_url and not (gsheet_url.startswith('http://') or gsheet_url.startswith('https://')):
-            return jsonify({
-                'status': 'error',
-                'message': 'Google Sheets webhook URL must start with http:// or https://'
-            }), 400
+        if gsheet_url:
+            valid, gsheet_url = validate_url(gsheet_url)
+            if not valid:
+                return jsonify({
+                    'status': 'error',
+                    'message': gsheet_url
+                }), 400
 
         set_setting('gsheet_webhook_url', gsheet_url)
 
@@ -6697,6 +6938,15 @@ def api_zapier_trigger():
     data = request.get_json() or {}
     report_id = data.get('report_id')
     company_name = data.get('company_name')
+
+    if report_id is not None:
+        valid, report_id = validate_positive_int(report_id, name='report_id')
+        if not valid:
+            return jsonify({'status': 'error', 'message': report_id}), 400
+    if company_name:
+        valid, company_name = validate_company_name(company_name)
+        if not valid:
+            return jsonify({'status': 'error', 'message': company_name}), 400
 
     # Load report or account data
     report = None
@@ -6880,6 +7130,9 @@ def api_stats():
         }
     """
     days = request.args.get('days', 30, type=int)
+    valid, days = validate_positive_int(days, name='days', max_val=365)
+    if not valid:
+        return jsonify({'error': days}), 400
     stats = get_stats_last_n_days(days)
 
     return jsonify({
@@ -7043,6 +7296,9 @@ def api_cache_invalidate_org(org_login):
     Returns:
         JSON with number of entries invalidated.
     """
+    valid, org_login = validate_github_org(org_login)
+    if not valid:
+        return jsonify({'error': org_login}), 400
     from cache import invalidate_org_cache
     deleted = invalidate_org_cache(org_login)
     return jsonify({
@@ -7062,6 +7318,9 @@ def api_webhook_logs():
         JSON with recent webhook logs for display.
     """
     limit = request.args.get('limit', 50, type=int)
+    valid, limit = validate_positive_int(limit, name='limit', max_val=500)
+    if not valid:
+        return jsonify({'error': limit}), 400
     logs = get_recent_webhook_logs(limit)
 
     return jsonify({
@@ -7861,6 +8120,11 @@ def apollo_lookup():
     company = data.get('company', '')
     github_login = data.get('github_login', '')
 
+    if company:
+        valid, company = validate_company_name(company)
+        if not valid:
+            return jsonify({'status': 'error', 'message': company}), 400
+
     # Parse name if first/last not provided
     if not first_name and name:
         parts = name.strip().split(' ', 1)
@@ -7995,6 +8259,14 @@ def send_outreach_email():
 
     if not to_email or not subject or not body:
         return jsonify({'status': 'error', 'message': 'Missing required fields: to_email, subject, body'}), 400
+
+    valid, to_email = validate_email(to_email)
+    if not valid:
+        return jsonify({'status': 'error', 'message': to_email}), 400
+    if company_name:
+        valid, company_name = validate_company_name(company_name)
+        if not valid:
+            return jsonify({'status': 'error', 'message': company_name}), 400
 
     try:
         report_url = None
@@ -8191,6 +8463,17 @@ def api_apollo_enroll_sequence():
     sequence_id = data.get('sequence_id', '').strip()
     company_name = data.get('company_name', '').strip()
 
+    if not email or not sequence_id:
+        return jsonify({'status': 'error', 'message': 'Missing required fields: email and sequence_id'}), 400
+
+    valid, email = validate_email(email)
+    if not valid:
+        return jsonify({'status': 'error', 'message': email}), 400
+    if company_name:
+        valid, company_name = validate_company_name(company_name)
+        if not valid:
+            return jsonify({'status': 'error', 'message': company_name}), 400
+
     # Convert plain newlines to HTML breaks for Apollo rendering
     def to_html(text):
         if not text:
@@ -8204,9 +8487,6 @@ def api_apollo_enroll_sequence():
     personalized_email_2 = to_html(data.get('personalized_email_2', ''))
     personalized_email_3 = to_html(data.get('personalized_email_3', ''))
     personalized_email_4 = to_html(data.get('personalized_email_4', ''))
-
-    if not email or not sequence_id:
-        return jsonify({'status': 'error', 'message': 'Missing required fields: email and sequence_id'}), 400
 
     try:
         apollo_headers = {'X-Api-Key': apollo_key, 'Content-Type': 'application/json'}
@@ -8487,6 +8767,15 @@ def api_linkedin_find_contact():
     name = data.get('name', '').strip()
     linkedin_url = data.get('linkedin_url', '').strip()
 
+    if company:
+        valid, company = validate_company_name(company)
+        if not valid:
+            return jsonify({'status': 'error', 'message': company}), 400
+    if linkedin_url:
+        valid, linkedin_url = validate_url(linkedin_url)
+        if not valid:
+            return jsonify({'status': 'error', 'message': linkedin_url}), 400
+
     # Parse name from LinkedIn URL slug as last resort
     if not name and not first_name and linkedin_url:
         import re as _re
@@ -8667,6 +8956,11 @@ def api_linkedin_generate_email():
     headline = contact.get('headline') or linkedin_data.get('headline', '')
     summary = contact.get('summary') or linkedin_data.get('summary', '')
     goldilocks_status = data.get('goldilocks_status', '')
+
+    if company:
+        valid, company = validate_company_name(company)
+        if not valid:
+            return jsonify({'status': 'error', 'message': company}), 400
 
     tone_guidance = ''
     if goldilocks_status == 'preparing':

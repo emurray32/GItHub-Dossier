@@ -248,6 +248,38 @@ def validate_positive_int(value, name: str = 'value', max_val: int = None) -> Tu
     return True, val
 
 
+def validate_sort_direction(direction: str) -> Tuple[bool, str]:
+    """Validate a sort direction (must be 'asc' or 'desc').
+
+    Returns:
+        (True, cleaned_direction) on success, (False, error_message) on failure.
+    """
+    if not direction or not isinstance(direction, str):
+        return True, 'asc'  # default
+
+    direction = direction.strip().lower()
+    if direction not in ('asc', 'desc'):
+        return False, 'Sort direction must be asc or desc'
+
+    return True, direction
+
+
+def validate_scope(scope: str, allowed: tuple) -> Tuple[bool, str]:
+    """Validate a scope/enum value against a whitelist.
+
+    Returns:
+        (True, cleaned_scope) on success, (False, error_message) on failure.
+    """
+    if not scope or not isinstance(scope, str):
+        return False, 'Scope is required'
+
+    scope = scope.strip().lower()
+    if scope not in allowed:
+        return False, f'Invalid scope. Allowed: {", ".join(allowed)}'
+
+    return True, scope
+
+
 def sanitize_for_log(value: str, max_length: int = 200) -> str:
     """Sanitize a string for safe inclusion in log messages.
 

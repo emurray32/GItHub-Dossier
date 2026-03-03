@@ -3,6 +3,7 @@ Database module for storing Lead Machine reports.
 Supports SQLite (default/local) and PostgreSQL (when DATABASE_URL is set).
 """
 import json
+import logging
 import os
 import time
 from contextlib import contextmanager
