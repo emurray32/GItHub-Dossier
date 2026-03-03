@@ -30,31 +30,7 @@
     align-items: center;
 }
 
-/* ---------------------------------------------------------------------------
-   Tier Filter Buttons — 32px height, 6px radius
-   --------------------------------------------------------------------------- */
-.tier-filter {
-    display: flex;
-    align-items: center;
-    gap: 0.35rem;
-    flex-wrap: wrap;
-}
-
-.tier-filter-btn {
-    padding: 0.3rem 0.55rem;
-    height: 32px;
-    border-radius: 6px;
-    border: 1px solid var(--color-border);
-    background: var(--color-surface);
-    color: var(--color-text-secondary);
-    font-size: 0.75rem;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25rem;
-    transition: all var(--transition-fast);
-    user-select: none;
-}
+/* Tier filter buttons — primary definitions at line ~2420 below */
 
 .tier-filter-btn:hover {
     border-color: var(--color-primary);
