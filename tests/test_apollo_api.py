@@ -155,41 +155,75 @@ class TestApolloLookup:
 
 
 class TestApolloSequences:
-    """Test /api/apollo/sequences route."""
+    """Test /api/apollo/sequences route.
 
-    def test_list_sequences(self, flask_app, apollo_sequences_response):
-        with patch('requests.post', return_value=_mock_response(200, apollo_sequences_response)):
-            resp = flask_app.get('/api/apollo/sequences')
+    This endpoint now reads from the local sequence_mappings table
+    (enabled sequences only) instead of hitting the Apollo API directly.
+    """
+
+    def test_list_sequences_from_mappings(self, flask_app, test_db):
+        """Returns enabled sequences from the local mapping table."""
+        import database
+        r1 = database.upsert_sequence_mapping(
+            sequence_id='seq_a1', sequence_name='Preparing - Technical',
+            num_steps=4, active=True,
+        )
+        r2 = database.upsert_sequence_mapping(
+            sequence_id='seq_a2', sequence_name='Ghost Branch',
+            num_steps=2, active=True,
+        )
+        database.toggle_sequence_mapping_enabled(r1['id'], True)
+        database.toggle_sequence_mapping_enabled(r2['id'], True)
+
+        resp = flask_app.get('/api/apollo/sequences')
         data = resp.get_json()
         assert data['status'] == 'success'
         assert len(data['sequences']) == 2
-        assert data['sequences'][0]['name'] == 'Preparing - Technical'
+        names = sorted(s['name'] for s in data['sequences'])
+        assert 'Ghost Branch' in names
+        assert 'Preparing - Technical' in names
 
-    def test_sequences_no_api_key(self, flask_app):
-        with patch.dict('os.environ', {'APOLLO_API_KEY': ''}, clear=False):
-            resp = flask_app.get('/api/apollo/sequences')
-        assert resp.status_code == 400
+    def test_sequences_without_api_key_still_works(self, flask_app, test_db, monkeypatch):
+        """Endpoint reads from local DB, so no API key is needed."""
+        monkeypatch.delenv('APOLLO_API_KEY', raising=False)
+        import database
+        r = database.upsert_sequence_mapping(
+            sequence_id='seq_nokey', sequence_name='No Key Needed',
+            num_steps=1, active=True,
+        )
+        database.toggle_sequence_mapping_enabled(r['id'], True)
 
-    def test_sequences_403_error(self, flask_app):
-        with patch('requests.post', return_value=_mock_response(403)):
-            resp = flask_app.get('/api/apollo/sequences')
-        assert resp.status_code == 502
-
-    def test_sequences_pagination(self, flask_app):
-        """Verify sequences endpoint paginates through multiple pages."""
-        page1 = {
-            'emailer_campaigns': [{'id': f'seq_{i}', 'name': f'Seq {i}', 'active': True, 'num_steps': 1} for i in range(25)],
-            'pagination': {'total_pages': 2, 'page': 1},
-        }
-        page2 = {
-            'emailer_campaigns': [{'id': 'seq_25', 'name': 'Seq 25', 'active': True, 'num_steps': 1}],
-            'pagination': {'total_pages': 2, 'page': 2},
-        }
-        with patch('requests.post', side_effect=[_mock_response(200, page1), _mock_response(200, page2)]):
-            resp = flask_app.get('/api/apollo/sequences')
+        resp = flask_app.get('/api/apollo/sequences')
+        assert resp.status_code == 200
         data = resp.get_json()
         assert data['status'] == 'success'
-        assert len(data['sequences']) == 26
+        assert len(data['sequences']) == 1
+
+    def test_sequences_does_not_call_apollo(self, flask_app, test_db):
+        """No external HTTP calls should be made."""
+        with patch('requests.post') as mock_post:
+            resp = flask_app.get('/api/apollo/sequences')
+            mock_post.assert_not_called()
+        assert resp.status_code == 200
+
+    def test_sequences_only_returns_enabled(self, flask_app, test_db):
+        """Disabled mappings should not appear in the dropdown."""
+        import database
+        r_on = database.upsert_sequence_mapping(
+            sequence_id='seq_on', sequence_name='Enabled',
+            num_steps=3, active=True,
+        )
+        database.upsert_sequence_mapping(
+            sequence_id='seq_off', sequence_name='Disabled',
+            num_steps=2, active=True,
+        )
+        database.toggle_sequence_mapping_enabled(r_on['id'], True)
+
+        resp = flask_app.get('/api/apollo/sequences')
+        data = resp.get_json()
+        ids = [s['id'] for s in data['sequences']]
+        assert 'seq_on' in ids
+        assert 'seq_off' not in ids
 
 
 class TestApolloSequenceDetect:

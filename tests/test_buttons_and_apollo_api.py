@@ -223,66 +223,51 @@ class TestApolloLookup:
 # Apollo Sequences: /api/apollo/sequences
 # ──────────────────────────────────────────────────────────────────────
 class TestApolloSequences:
-    """Tests for /api/apollo/sequences (sequence dropdown)."""
+    """Tests for /api/apollo/sequences (sequence dropdown).
 
-    def test_no_api_key(self, client):
-        """Returns error when APOLLO_API_KEY is unset."""
+    This endpoint now reads from the local sequence_mappings table
+    (enabled sequences only) instead of hitting the Apollo API.
+    """
+
+    def test_no_api_key_still_works(self, client):
+        """Endpoint reads from local DB, so no API key is needed."""
         with patch.dict(os.environ, {'APOLLO_API_KEY': ''}):
             resp = client.get('/api/apollo/sequences')
-            assert resp.status_code == 400
+            assert resp.status_code == 200
             data = resp.get_json()
-            assert data['status'] == 'error'
-            assert 'NO_API_KEY' in data.get('code', '') or 'not configured' in data.get('message', '').lower()
+            assert data['status'] == 'success'
 
-    @patch('requests.post')
-    def test_successful_sequences(self, mock_post, client):
-        """Returns sequences from Apollo campaigns search."""
-        mock_post.return_value = _mock_response(200, {
-            'emailer_campaigns': [
-                {'id': 'seq1', 'name': 'Test Sequence', 'active': True,
-                 'num_steps': 1, 'emailer_steps': [{'type': 'auto_email'}], 'created_at': '2024-01-01'},
-                {'id': 'seq2', 'name': 'Paused Seq', 'active': False,
-                 'num_steps': 0, 'emailer_steps': [], 'created_at': '2024-01-02'},
-            ]
-        })
-
+    def test_returns_success_from_local_db(self, client):
+        """Returns sequences from the local mapping table (not Apollo API)."""
         resp = client.get('/api/apollo/sequences')
         assert resp.status_code == 200
         data = resp.get_json()
         assert data['status'] == 'success'
-        assert len(data['sequences']) == 2
-        assert data['sequences'][0]['name'] == 'Test Sequence'
-        assert data['sequences'][0]['active'] is True
-        assert data['sequences'][0]['num_steps'] == 1
-        assert data['sequences'][1]['active'] is False
+        assert isinstance(data['sequences'], list)
 
-    @patch('requests.post')
-    def test_forbidden_key(self, mock_post, client):
-        """Returns 502 when Apollo returns 403 (insufficient permissions)."""
-        mock_post.return_value = _mock_response(403)
+    def test_does_not_call_apollo(self, client):
+        """No external HTTP calls should be made."""
+        with patch('requests.post') as mock_post:
+            resp = client.get('/api/apollo/sequences')
+            mock_post.assert_not_called()
+        assert resp.status_code == 200
 
+    def test_sequences_returns_list(self, client):
+        """Endpoint should always return a list even if empty."""
         resp = client.get('/api/apollo/sequences')
-        assert resp.status_code == 502
         data = resp.get_json()
-        assert 'permission' in data['message'].lower() or 'master' in data['message'].lower()
+        assert data['status'] == 'success'
+        assert isinstance(data['sequences'], list)
 
-    @patch('requests.post')
-    def test_api_error(self, mock_post, client):
-        """Returns 502 for non-200 Apollo responses."""
-        mock_post.return_value = _mock_response(500)
-
+    def test_sequence_fields_present(self, client):
+        """Each sequence should have id, name, active, num_steps fields."""
         resp = client.get('/api/apollo/sequences')
-        assert resp.status_code == 502
-
-    @patch('requests.post')
-    def test_exception_handled(self, mock_post, client):
-        """Network exceptions return 500."""
-        mock_post.side_effect = Exception('Timeout')
-
-        resp = client.get('/api/apollo/sequences')
-        assert resp.status_code == 500
         data = resp.get_json()
-        assert data['status'] == 'error'
+        for seq in data.get('sequences', []):
+            assert 'id' in seq
+            assert 'name' in seq
+            assert 'active' in seq
+            assert 'num_steps' in seq
 
 
 # ──────────────────────────────────────────────────────────────────────

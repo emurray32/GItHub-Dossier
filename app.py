@@ -1901,14 +1901,17 @@ def mapping_sequences():
 # SEQUENCE MAPPINGS API
 # =============================================================================
 
-@app.route('/api/sequence-mappings/sync', methods=['POST'])
-def api_sequence_mappings_sync():
-    """Pull sequences from Apollo and upsert into sequence_mappings table."""
+def _sync_sequences_from_apollo():
+    """Pull sequences from Apollo and upsert into sequence_mappings table.
+
+    Returns (synced_count, error_message).  error_message is None on success.
+    Called by the /api/sequence-mappings/sync endpoint and on app startup.
+    """
     import requests as req
 
     apollo_key = os.environ.get('APOLLO_API_KEY', '')
     if not apollo_key:
-        return jsonify({'status': 'error', 'message': 'Apollo API key not configured. Add APOLLO_API_KEY in Settings.'}), 400
+        return 0, 'Apollo API key not configured. Add APOLLO_API_KEY in Settings.'
 
     try:
         apollo_headers = {'X-Api-Key': apollo_key, 'Content-Type': 'application/json'}
@@ -1923,10 +1926,10 @@ def api_sequence_mappings_sync():
                            timeout=15)
 
             if resp.status_code == 403:
-                return jsonify({'status': 'error', 'message': 'API key lacks permission. Ensure you are using a Master API key.'}), 502
+                return 0, 'API key lacks permission. Ensure you are using a Master API key.'
             if resp.status_code != 200:
                 logging.error(f"[SEQUENCE SYNC] Apollo returned {resp.status_code}: {resp.text[:500]}")
-                return jsonify({'status': 'error', 'message': f'Apollo API returned {resp.status_code}'}), 502
+                return 0, f'Apollo API returned {resp.status_code}'
 
             data = resp.json()
             batch = data.get('emailer_campaigns', [])
@@ -1937,9 +1940,8 @@ def api_sequence_mappings_sync():
                 break
             page += 1
 
-        apollo_sequences = all_sequences
         synced = 0
-        for seq in apollo_sequences:
+        for seq in all_sequences:
             seq_id = seq.get('id')
             if not seq_id:
                 continue
@@ -1967,11 +1969,21 @@ def api_sequence_mappings_sync():
             )
             synced += 1
 
-        mappings = get_all_sequence_mappings()
-        return jsonify({'status': 'success', 'synced': synced, 'mappings': mappings})
+        return synced, None
     except Exception as e:
         logging.error(f"[SEQUENCE MAPPINGS SYNC ERROR] {e}")
-        return jsonify({'status': 'error', 'message': 'Failed to sync sequences from Apollo'}), 500
+        return 0, 'Failed to sync sequences from Apollo'
+
+
+@app.route('/api/sequence-mappings/sync', methods=['POST'])
+def api_sequence_mappings_sync():
+    """Pull sequences from Apollo and upsert into sequence_mappings table."""
+    synced, error = _sync_sequences_from_apollo()
+    if error:
+        return jsonify({'status': 'error', 'message': error}), 400 if 'not configured' in error else 502
+
+    mappings = get_all_sequence_mappings()
+    return jsonify({'status': 'success', 'synced': synced, 'mappings': mappings})
 
 
 @app.route('/api/sequence-mappings/<int:mapping_id>', methods=['PUT'])
@@ -8459,49 +8471,32 @@ def send_outreach_email():
 
 @app.route('/api/apollo/sequences')
 def api_apollo_sequences():
-    """Fetch available Apollo email sequences."""
-    import requests as req
-    
-    apollo_key = os.environ.get('APOLLO_API_KEY', '')
-    if not apollo_key:
-        return jsonify({'status': 'error', 'code': 'NO_API_KEY', 'message': 'Apollo API key not configured. Add APOLLO_API_KEY in Settings.'}), 400
-    
+    """Return enabled sequences from the local sequence_mappings table.
+
+    Previously this hit the Apollo API directly, which showed sequences
+    that were never synced/enabled in the app.  Now it reads from the
+    same sequence_mappings table that the Mapping Sequences page manages,
+    returning only enabled sequences.  The field names returned (id, name,
+    active, num_steps) match the original Apollo-direct format so every
+    dropdown that calls this endpoint keeps working without changes.
+    """
     try:
-        apollo_headers = {'X-Api-Key': apollo_key, 'Content-Type': 'application/json'}
+        mappings = get_all_sequence_mappings(enabled_only=True)
 
-        # Paginate through all sequences (Apollo returns 25 per page)
         sequences = []
-        page = 1
-        while True:
-            resp = req.post('https://api.apollo.io/api/v1/emailer_campaigns/search',
-                           json={'page': page},
-                           headers=apollo_headers,
-                           timeout=15)
-
-            if resp.status_code == 403:
-                return jsonify({'status': 'error', 'message': 'API key lacks permission. Ensure you are using a Master API key in Apollo.'}), 502
-            if resp.status_code != 200:
-                return jsonify({'status': 'error', 'message': f'Apollo API returned {resp.status_code}'}), 502
-
-            data = resp.json()
-            for c in data.get('emailer_campaigns', []):
-                sequences.append({
-                    'id': c.get('id'),
-                    'name': c.get('name', 'Unnamed Sequence'),
-                    'active': c.get('active', False),
-                    'num_steps': c.get('num_steps', 0),
-                    'created_at': c.get('created_at', ''),
-                })
-
-            pagination = data.get('pagination', {})
-            if page >= pagination.get('total_pages', 1):
-                break
-            page += 1
+        for m in mappings:
+            sequences.append({
+                'id': m.get('sequence_id', ''),
+                'name': m.get('sequence_name', 'Unnamed Sequence'),
+                'active': bool(m.get('active', False)),
+                'num_steps': m.get('num_steps', 0),
+                'created_at': m.get('created_at', ''),
+            })
 
         return jsonify({'status': 'success', 'sequences': sequences})
     except Exception as e:
         logging.error(f"[APOLLO SEQUENCES ERROR] {e}")
-        return jsonify({'status': 'error', 'message': 'Failed to fetch Apollo sequences'}), 500
+        return jsonify({'status': 'error', 'message': 'Failed to load sequences from mapping table'}), 500
 
 
 @app.route('/api/apollo/sequence-detect', methods=['POST'])
@@ -9212,6 +9207,16 @@ if __name__ == '__main__':
     # Seed the default RepoRadar campaign (idempotent)
     from seed_reporadar_campaign import seed_reporadar_campaign
     seed_reporadar_campaign()
+
+    # Auto-sync Apollo sequences into sequence_mappings on startup
+    try:
+        seq_synced, seq_err = _sync_sequences_from_apollo()
+        if seq_err:
+            logging.warning(f"[APP] Sequence auto-sync skipped: {seq_err}")
+        elif seq_synced > 0:
+            logging.info(f"[APP] Auto-synced {seq_synced} Apollo sequences into sequence_mappings")
+    except Exception as e:
+        logging.warning(f"[APP] Sequence auto-sync failed (non-fatal): {e}")
 
     # Start Google Sheets cron scheduler
     sheets_start_cron()

@@ -650,6 +650,8 @@
     top: 0;
     z-index: 3;
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .accounts-table td {
@@ -680,17 +682,17 @@
 
 .accounts-table th.company-col,
 .accounts-table td.company-cell {
-    width: 140px;
+    width: 150px;
 }
 
 .accounts-table th.revenue-col,
 .accounts-table td.annual-revenue-cell {
-    width: 90px;
+    width: 120px;
 }
 
 .accounts-table th.org-col,
 .accounts-table td.github-org-cell {
-    width: 140px;
+    width: 130px;
 }
 
 .accounts-table th.tier-col {

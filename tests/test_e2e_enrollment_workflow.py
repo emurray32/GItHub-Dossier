@@ -487,3 +487,280 @@ class TestScanToScorecardPipeline:
         names = [r['company_name'] for r in data['data']]
         assert 'Tier2Corp' in names
         assert 'Tier0Corp' not in names
+
+
+# ---------------------------------------------------------------------------
+# E2E: Sequence Sync & Dropdown Consistency
+# ---------------------------------------------------------------------------
+
+class TestSequenceSyncEndpoint:
+    """Test that POST /api/sequence-mappings/sync pulls from Apollo and
+    populates the sequence_mappings table."""
+
+    def test_sync_populates_sequence_mappings(self, flask_app, test_db):
+        """Calling POST /api/sequence-mappings/sync should upsert Apollo
+        sequences into the sequence_mappings table."""
+        apollo_response = {
+            'emailer_campaigns': [
+                {
+                    'id': 'seq_sync_001',
+                    'name': 'Ty - Direct - Upsell Disco',
+                    'active': True,
+                    'num_steps': 4,
+                    'created_at': '2025-06-01',
+                    'user': {'first_name': 'Ty', 'last_name': 'Smith'},
+                },
+                {
+                    'id': 'seq_sync_002',
+                    'name': 'ZH_CN_outbound_gaming',
+                    'active': False,
+                    'num_steps': 3,
+                    'created_at': '2025-07-15',
+                    'user': {'first_name': 'Jane', 'last_name': 'Doe'},
+                },
+            ],
+            'pagination': {'total_entries': 2, 'total_pages': 1, 'page': 1},
+        }
+
+        with patch('requests.post', return_value=_mock_apollo_response(200, apollo_response)):
+            resp = flask_app.post('/api/sequence-mappings/sync')
+
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data['status'] == 'success'
+        assert data['synced'] == 2
+
+        # Verify the mappings are in the database
+        import database
+        mappings = database.get_all_sequence_mappings()
+        seq_ids = [m['sequence_id'] for m in mappings]
+        assert 'seq_sync_001' in seq_ids
+        assert 'seq_sync_002' in seq_ids
+
+        # Verify active/inactive status is preserved
+        sync_001 = next(m for m in mappings if m['sequence_id'] == 'seq_sync_001')
+        sync_002 = next(m for m in mappings if m['sequence_id'] == 'seq_sync_002')
+        assert sync_001['active'] == 1  # active
+        assert sync_002['active'] == 0  # paused
+
+    def test_sync_updates_existing_sequences(self, flask_app, test_db):
+        """If a sequence already exists in the mapping table, sync should
+        update its name and step count."""
+        import database
+
+        # Pre-seed a mapping
+        database.upsert_sequence_mapping(
+            sequence_id='seq_existing',
+            sequence_name='Old Name',
+            num_steps=2,
+            active=True,
+        )
+
+        apollo_response = {
+            'emailer_campaigns': [
+                {
+                    'id': 'seq_existing',
+                    'name': 'Updated Name',
+                    'active': False,
+                    'num_steps': 5,
+                },
+            ],
+            'pagination': {'total_entries': 1, 'total_pages': 1, 'page': 1},
+        }
+
+        with patch('requests.post', return_value=_mock_apollo_response(200, apollo_response)):
+            resp = flask_app.post('/api/sequence-mappings/sync')
+
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data['synced'] == 1
+
+        mappings = database.get_all_sequence_mappings()
+        updated = next(m for m in mappings if m['sequence_id'] == 'seq_existing')
+        assert updated['sequence_name'] == 'Updated Name'
+        assert updated['num_steps'] == 5
+        assert updated['active'] == 0  # now paused
+
+    def test_sync_handles_pagination(self, flask_app, test_db):
+        """Sync should paginate through all Apollo sequence pages."""
+        page1_response = {
+            'emailer_campaigns': [
+                {'id': 'seq_page1', 'name': 'Page 1 Seq', 'active': True, 'num_steps': 2},
+            ],
+            'pagination': {'total_entries': 2, 'total_pages': 2, 'page': 1},
+        }
+        page2_response = {
+            'emailer_campaigns': [
+                {'id': 'seq_page2', 'name': 'Page 2 Seq', 'active': True, 'num_steps': 3},
+            ],
+            'pagination': {'total_entries': 2, 'total_pages': 2, 'page': 2},
+        }
+
+        call_count = [0]
+        def mock_paginated_post(*args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return _mock_apollo_response(200, page1_response)
+            return _mock_apollo_response(200, page2_response)
+
+        with patch('requests.post', side_effect=mock_paginated_post):
+            resp = flask_app.post('/api/sequence-mappings/sync')
+
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data['synced'] == 2
+
+        import database
+        mappings = database.get_all_sequence_mappings()
+        seq_ids = [m['sequence_id'] for m in mappings]
+        assert 'seq_page1' in seq_ids
+        assert 'seq_page2' in seq_ids
+
+    def test_sync_without_api_key_returns_error(self, flask_app, test_db, monkeypatch):
+        """Sync should return an error if APOLLO_API_KEY is not set."""
+        monkeypatch.delenv('APOLLO_API_KEY', raising=False)
+
+        resp = flask_app.post('/api/sequence-mappings/sync')
+        assert resp.status_code == 400
+        data = resp.get_json()
+        assert data['status'] == 'error'
+        assert 'not configured' in data['message']
+
+
+class TestSequenceDropdownConsistency:
+    """Test that the /api/apollo/sequences dropdown endpoint returns
+    sequences from the sequence_mappings table (not Apollo directly),
+    and that it matches what /api/sequence-mappings/enabled returns."""
+
+    def test_dropdown_returns_enabled_mappings_only(self, flask_app, test_db):
+        """GET /api/apollo/sequences should return only enabled sequences
+        from the mapping table, not hit Apollo API at all."""
+        import database
+
+        # Create two mappings: one enabled, one disabled
+        result_on = database.upsert_sequence_mapping(
+            sequence_id='seq_drop_on',
+            sequence_name='Enabled Seq',
+            num_steps=3,
+            active=True,
+        )
+        result_off = database.upsert_sequence_mapping(
+            sequence_id='seq_drop_off',
+            sequence_name='Disabled Seq',
+            num_steps=2,
+            active=True,
+        )
+        database.toggle_sequence_mapping_enabled(result_on['id'], True)
+        # seq_drop_off stays disabled (enabled=0 by default)
+
+        # Call the dropdown endpoint — should NOT hit Apollo API
+        resp = flask_app.get('/api/apollo/sequences')
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data['status'] == 'success'
+
+        seq_ids = [s['id'] for s in data['sequences']]
+        assert 'seq_drop_on' in seq_ids, 'Enabled sequence should appear in dropdown'
+        assert 'seq_drop_off' not in seq_ids, 'Disabled sequence should NOT appear in dropdown'
+
+    def test_dropdown_matches_enabled_endpoint(self, flask_app, test_db):
+        """GET /api/apollo/sequences and GET /api/sequence-mappings/enabled
+        should return the same set of sequences."""
+        import database
+
+        # Create and enable two sequences
+        for i, name in enumerate(['Alpha', 'Beta']):
+            result = database.upsert_sequence_mapping(
+                sequence_id=f'seq_match_{i}',
+                sequence_name=f'{name} Sequence',
+                num_steps=i + 2,
+                active=True,
+            )
+            database.toggle_sequence_mapping_enabled(result['id'], True)
+
+        # Fetch from both endpoints
+        apollo_resp = flask_app.get('/api/apollo/sequences')
+        mapping_resp = flask_app.get('/api/sequence-mappings/enabled')
+
+        apollo_data = apollo_resp.get_json()
+        mapping_data = mapping_resp.get_json()
+
+        # Both should return the same sequence IDs
+        apollo_ids = sorted(s['id'] for s in apollo_data['sequences'])
+        mapping_ids = sorted(
+            s.get('sequence_id', s.get('apollo_sequence_id', ''))
+            for s in mapping_data['sequences']
+        )
+
+        assert apollo_ids == mapping_ids, (
+            f'Dropdown and mapping endpoints return different sequences: '
+            f'{apollo_ids} vs {mapping_ids}'
+        )
+
+    def test_dropdown_does_not_call_apollo_api(self, flask_app, test_db):
+        """GET /api/apollo/sequences should NOT make any external HTTP calls.
+        It should read from the local database only."""
+        import database
+
+        result = database.upsert_sequence_mapping(
+            sequence_id='seq_local',
+            sequence_name='Local Only',
+            num_steps=2,
+            active=True,
+        )
+        database.toggle_sequence_mapping_enabled(result['id'], True)
+
+        with patch('requests.post') as mock_post, \
+             patch('requests.get') as mock_get:
+            resp = flask_app.get('/api/apollo/sequences')
+
+            # No external HTTP calls should have been made
+            mock_post.assert_not_called()
+            mock_get.assert_not_called()
+
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data['status'] == 'success'
+        assert len(data['sequences']) >= 1
+
+    def test_dropdown_shows_paused_sequences_with_status(self, flask_app, test_db):
+        """Paused sequences (active=False) should appear in the dropdown
+        with their active status set to False so the UI can mark them."""
+        import database
+
+        # Create an enabled but paused sequence
+        result = database.upsert_sequence_mapping(
+            sequence_id='seq_paused',
+            sequence_name='Paused Outbound',
+            num_steps=4,
+            active=False,  # paused in Apollo
+        )
+        database.toggle_sequence_mapping_enabled(result['id'], True)
+
+        resp = flask_app.get('/api/apollo/sequences')
+        data = resp.get_json()
+        paused_seq = next(
+            (s for s in data['sequences'] if s['id'] == 'seq_paused'),
+            None,
+        )
+        assert paused_seq is not None, 'Paused sequence should appear in dropdown'
+        assert paused_seq['active'] is False, 'Paused sequence should have active=False'
+        assert paused_seq['name'] == 'Paused Outbound'
+
+    def test_dropdown_empty_when_no_enabled_sequences(self, flask_app, test_db):
+        """When no sequences are enabled, the dropdown should return an
+        empty list (not an error)."""
+        import database
+
+        # Create a mapping but don't enable it
+        database.upsert_sequence_mapping(
+            sequence_id='seq_not_enabled',
+            sequence_name='Not Enabled',
+            num_steps=2,
+            active=True,
+        )
+
+        resp = flask_app.get('/api/apollo/sequences')
+        data = resp.get_json()
+        assert data['status'] == 'success'
+        assert data['sequences'] == []
