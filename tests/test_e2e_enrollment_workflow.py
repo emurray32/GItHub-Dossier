@@ -438,12 +438,13 @@ class TestSequenceMappingWorkflow:
         """API returns sequence mappings from the database."""
         _seed_sequence_mapping(test_db)
 
-        resp = flask_app.get('/api/sequence-mappings')
+        # Use search endpoint (no enabled filter) to find our mapping
+        resp = flask_app.get('/api/sequence-mappings/search?q=E2E')
         assert resp.status_code == 200
         data = resp.get_json()
 
         # Find our E2E test sequence
-        mappings = data.get('mappings', data.get('sequences', []))
+        mappings = data.get('results', [])
         assert len(mappings) >= 1
         e2e_seq = next((m for m in mappings if m.get('sequence_id') == 'seq_e2e_001'), None)
         assert e2e_seq is not None
@@ -480,7 +481,7 @@ class TestScanToScorecardPipeline:
         _seed_account(test_db, 'Tier2Corp', 'tier2corp', tier=2)
         _seed_account(test_db, 'Tier0Corp', 'tier0corp', tier=0)
 
-        resp = flask_app.get('/api/accounts/datatable?draw=1&start=0&length=50&tier[]=2')
+        resp = flask_app.get('/api/accounts/datatable?draw=1&start=0&length=50&tier=2')
         data = resp.get_json()
 
         names = [r['company_name'] for r in data['data']]

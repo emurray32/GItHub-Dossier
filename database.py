@@ -1432,7 +1432,7 @@ def _convert_library_to_sales_name(lib_name: str) -> str:
     return lib_name.replace('-', ' ').replace('_', ' ').title()
 
 
-def calculate_tier_from_scan(scan_data: dict) -> tuple[int, str]:
+def calculate_tier_from_scan(scan_data: dict, skip_verification: bool = False) -> tuple[int, str]:
     """
     Apply Sales-First tier logic based on scan results.
 
@@ -1443,6 +1443,11 @@ def calculate_tier_from_scan(scan_data: dict) -> tuple[int, str]:
     4. Tier 0 vs Tier 4 Split - Based on repos scanned:
        - repos_scanned > 0 → Tier 0 (Tracking) - Monitor for future changes
        - repos_scanned == 0 → Tier 4 (Disqualified) - Empty org or no access
+
+    Args:
+        scan_data: The full scan data dict.
+        skip_verification: If True, skip LLM-based signal verification
+            (used during bulk re-tiering to avoid expensive API calls).
 
     Returns:
         Tuple of (tier_number, evidence_summary)
@@ -1465,24 +1470,33 @@ def calculate_tier_from_scan(scan_data: dict) -> tuple[int, str]:
             f"V2: {maturity_label} (confidence: {confidence:.0f}%, "
             f"readiness: {readiness:.2f}, outreach: {outreach})"
         )
-        return tier, evidence
+
+        # V2 found a meaningful tier — use it
+        if tier > 0:
+            return tier, evidence
+
+        # V2 said PRE_I18N (tier 0). V2's aggressive filters may have
+        # removed signals that the legacy tiering (which uses raw
+        # signal_summary counts) would still recognize. Fall through to
+        # legacy tiering as a safety net so we don't lose Tier 1/2 leads.
 
     # ============================================================
     # SIGNAL VERIFICATION: Filter false positives before tiering
     # ============================================================
-    try:
-        scan_data = verify_signals(scan_data, use_llm=True)
-        verification = scan_data.get('verification', {})
-        
-        # If verification flagged as definitive false positive, downgrade to Tier 0
-        if verification.get('is_false_positive'):
-            recommended_tier = verification.get('recommended_tier', 0)
-            fp_reasons = verification.get('false_positive_reasons', ['Unknown reason'])
-            evidence = f"VERIFIED FALSE POSITIVE: {fp_reasons[0]}"
-            print(f"[TIER] Signal verification overrode tier: {evidence}")
-            return recommended_tier, evidence
-    except Exception as e:
-        print(f"[TIER] Signal verification error (continuing with normal tiering): {e}")
+    if not skip_verification:
+        try:
+            scan_data = verify_signals(scan_data, use_llm=True)
+            verification = scan_data.get('verification', {})
+
+            # If verification flagged as definitive false positive, downgrade to Tier 0
+            if verification.get('is_false_positive'):
+                recommended_tier = verification.get('recommended_tier', 0)
+                fp_reasons = verification.get('false_positive_reasons', ['Unknown reason'])
+                evidence = f"VERIFIED FALSE POSITIVE: {fp_reasons[0]}"
+                print(f"[TIER] Signal verification overrode tier: {evidence}")
+                return recommended_tier, evidence
+        except Exception as e:
+            print(f"[TIER] Signal verification error (continuing with normal tiering): {e}")
 
     signal_summary = scan_data.get('signal_summary', {})
 
@@ -3361,7 +3375,7 @@ def auto_retier_if_version_changed() -> int:
             if not scoring_v2 or not isinstance(scoring_v2, dict):
                 continue
 
-            new_tier, evidence = calculate_tier_from_scan(scan_data)
+            new_tier, evidence = calculate_tier_from_scan(scan_data, skip_verification=True)
             if new_tier != row['current_tier']:
                 cursor.execute(
                     'UPDATE monitored_accounts SET current_tier = ?, evidence_summary = ? WHERE id = ?',
@@ -3374,6 +3388,59 @@ def auto_retier_if_version_changed() -> int:
     set_setting('scoring_fingerprint', current_fp)
     logging.info(f"[RETIER] Done — updated {updated} of {len(rows)} accounts.")
     return updated
+
+
+def force_retier_all() -> dict:
+    """Force re-tier ALL accounts from stored scan data (ignores fingerprint).
+
+    Unlike auto_retier_if_version_changed(), this always runs and also
+    processes accounts that lack scoring_v2 data (using legacy tiering).
+
+    Returns:
+        dict with 'total', 'updated', 'by_tier' counts.
+    """
+    with db_connection() as conn:
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT ma.id, ma.company_name, ma.current_tier, r.scan_data
+            FROM monitored_accounts ma
+            JOIN reports r ON r.id = ma.latest_report_id
+            WHERE ma.latest_report_id IS NOT NULL
+        ''')
+        rows = cursor.fetchall()
+
+        updated = 0
+        by_tier = {0: 0, 1: 0, 2: 0, 3: 0, 4: 0}
+        for row in rows:
+            try:
+                scan_data = json.loads(row['scan_data']) if isinstance(row['scan_data'], str) else row['scan_data']
+            except (json.JSONDecodeError, TypeError):
+                continue
+
+            if not scan_data:
+                continue
+
+            new_tier, evidence = calculate_tier_from_scan(scan_data, skip_verification=True)
+            by_tier[new_tier] = by_tier.get(new_tier, 0) + 1
+
+            # Always update evidence string even if tier didn't change
+            if True:
+                cursor.execute(
+                    'UPDATE monitored_accounts SET current_tier = ?, evidence_summary = ? WHERE id = ?',
+                    (new_tier, evidence, row['id'])
+                )
+                updated += 1
+
+        conn.commit()
+
+    # Also update the fingerprint so auto_retier doesn't re-run
+    from scoring import get_scoring_fingerprint
+    set_setting('scoring_fingerprint', get_scoring_fingerprint())
+
+    logging.info(f"[RETIER] Force re-tier done — updated {updated} of {len(rows)} accounts. "
+                 f"By tier: {by_tier}")
+    return {'total': len(rows), 'updated': updated, 'by_tier': by_tier}
 
 
 def increment_daily_stat(stat_name: str, amount: int = 1) -> None:

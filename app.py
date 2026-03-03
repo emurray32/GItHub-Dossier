@@ -67,7 +67,7 @@ from database import (
     get_enrollment_batches_for_campaign,
     create_enrollment_contact, bulk_create_enrollment_contacts, update_enrollment_contact,
     get_enrollment_contacts, get_enrollment_batch_summary, get_next_contacts_for_phase,
-    get_account,
+    get_account, force_retier_all,
 )
 from monitors.webscraper_utils import (
     detect_expansion_signals, calculate_webscraper_tier, extract_tier_from_scan_results,
@@ -6370,6 +6370,18 @@ def api_pipeline_scan_schedule():
     schedule_status['token_pool'] = get_token_pool_status()
 
     return jsonify(schedule_status)
+
+
+@app.route('/api/retier-all', methods=['POST'])
+def api_retier_all():
+    """Force re-tier all accounts from stored scan data.
+
+    Uses the updated calculate_tier_from_scan which falls back to legacy
+    tiering when V2 returns PRE_I18N, recovering Tier 1/2 leads that
+    V2's aggressive filters missed.
+    """
+    result = force_retier_all()
+    return jsonify({'status': 'success', **result})
 
 
 @app.route('/api/queue-status')
