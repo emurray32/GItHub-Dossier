@@ -5,284 +5,370 @@
 
 {% block head %}
 <style>
-    .campaigns-page { max-width: 1200px; margin: 0 auto; padding: 1.5rem; }
+    /* ============================================================
+       CAMPAIGNS — Utilitarian table layout
+       ============================================================ */
+    .cp { max-width: 1200px; margin: 0 auto; padding: 0 1.25rem 1.25rem; }
 
-    /* Page header */
-    .campaigns-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem; }
-    .campaigns-header h1 { font-size: 1.5rem; font-weight: 700; margin: 0; color: var(--color-text); }
-    .campaigns-header .subtitle { font-size: 0.9rem; color: var(--color-text-secondary); margin-top: 0.25rem; }
-    .btn-create-campaign {
-        display: inline-flex; align-items: center; gap: 0.5rem;
-        padding: 0.6rem 1.25rem; background: var(--color-primary); color: #fff;
-        border: none; border-radius: 8px; font-size: 0.9rem; font-weight: 600;
-        cursor: pointer; transition: background 0.15s;
+    /* Toolbar */
+    .cp-toolbar {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 0.6rem 0; margin-bottom: 0.25rem;
     }
-    .btn-create-campaign:hover { background: var(--color-primary-hover); }
+    .cp-toolbar-left { display: flex; align-items: center; gap: 0.75rem; }
+    .cp-count {
+        font-size: 0.8rem; color: var(--color-text-tertiary); font-weight: 500;
+        font-variant-numeric: tabular-nums;
+    }
+    .cp-btn-new {
+        display: inline-flex; align-items: center; gap: 0.35rem;
+        padding: 0.35rem 0.75rem; background: var(--color-primary); color: #fff;
+        border: none; border-radius: 6px; font-size: 0.8rem; font-weight: 600;
+        cursor: pointer; transition: background 0.12s; font-family: var(--font-sans);
+    }
+    .cp-btn-new:hover { background: var(--color-primary-hover); }
+    .cp-btn-new svg { width: 14px; height: 14px; }
 
-    /* Campaign cards grid */
-    .campaigns-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 1rem; }
-
-    .campaign-card {
+    /* Table */
+    .cp-table-wrap {
         background: var(--color-surface); border: 1px solid var(--color-border);
-        border-radius: 12px; padding: 1.25rem; transition: box-shadow 0.15s;
-        position: relative;
+        border-radius: 8px; overflow: hidden;
     }
-    .campaign-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.06); }
-    .campaign-card.pinned { border-color: #14b8a6; border-width: 2px; }
-    .campaign-card.pinned .campaign-card-name { display: flex; align-items: center; gap: 0.4rem; }
-    .default-badge {
-        display: inline-flex; align-items: center; gap: 0.25rem;
-        font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
-        padding: 1px 7px; border-radius: 4px; background: #ccfbf1; color: #0d9488;
+    .cp-table {
+        width: 100%; border-collapse: collapse; font-size: 0.84rem;
+        table-layout: fixed;
     }
-    .stat-loading { color: var(--color-text-tertiary); font-size: 0.75rem; }
-    .campaign-card-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 0.75rem; }
-    .campaign-card-name { font-size: 1.05rem; font-weight: 700; color: var(--color-text); margin: 0; }
-    .campaign-card-status {
-        font-size: 0.75rem; font-weight: 600; padding: 2px 10px; border-radius: 20px;
-        text-transform: uppercase; letter-spacing: 0.5px;
+    .cp-table thead th {
+        text-align: left; padding: 0.55rem 0.75rem;
+        font-size: 0.7rem; font-weight: 600; text-transform: uppercase;
+        letter-spacing: 0.4px; color: var(--color-text-tertiary);
+        border-bottom: 1px solid var(--color-border); background: var(--color-bg);
+        white-space: nowrap;
     }
-    .campaign-card-status.draft { background: #f3f4f6; color: #6b7280; }
-    .campaign-card-status.active { background: #d1fae5; color: #065f46; }
+    .cp-table tbody tr {
+        border-bottom: 1px solid var(--color-border-subtle);
+        transition: background 0.1s;
+    }
+    .cp-table tbody tr:last-child { border-bottom: none; }
+    .cp-table tbody tr:hover { background: var(--color-bg); }
+    .cp-table td { padding: 0.6rem 0.75rem; vertical-align: middle; }
 
-    .campaign-card-prompt {
-        font-size: 0.85rem; color: var(--color-text-secondary); line-height: 1.5;
-        margin-bottom: 0.75rem; max-height: 3.6em; overflow: hidden;
-        display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+    /* Column widths */
+    .cp-col-name { width: 22%; }
+    .cp-col-prompt { width: 30%; }
+    .cp-col-seq { width: 16%; }
+    .cp-col-stats { width: 14%; }
+    .cp-col-updated { width: 9%; }
+    .cp-col-actions { width: 9%; text-align: right; }
+
+    /* Name cell */
+    .cp-name {
+        font-weight: 600; color: var(--color-text);
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        display: flex; align-items: center; gap: 0.4rem;
+    }
+    .cp-badge {
+        display: inline-block; font-size: 0.6rem; font-weight: 700;
+        text-transform: uppercase; letter-spacing: 0.3px;
+        padding: 1px 5px; border-radius: 3px; flex-shrink: 0;
+    }
+    .cp-badge--default { background: #ccfbf1; color: #0d9488; }
+    .cp-badge--active { background: #d1fae5; color: #065f46; }
+    .cp-badge--draft { background: #f3f4f6; color: #6b7280; }
+
+    /* Prompt cell */
+    .cp-prompt {
+        color: var(--color-text-secondary); font-size: 0.8rem; line-height: 1.4;
+        display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+        overflow: hidden;
     }
 
-    .campaign-card-meta { display: flex; gap: 1rem; flex-wrap: wrap; font-size: 0.8rem; color: var(--color-text-tertiary); }
-    .campaign-card-meta .meta-item { display: flex; align-items: center; gap: 0.35rem; }
-    .campaign-card-meta svg { width: 14px; height: 14px; flex-shrink: 0; }
+    /* Sequence cell */
+    .cp-seq {
+        font-size: 0.8rem; color: var(--color-text-secondary);
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .cp-seq-config {
+        display: block; font-size: 0.7rem; color: var(--color-text-tertiary);
+        margin-top: 1px;
+    }
+    .cp-personas {
+        display: inline-flex; align-items: center; gap: 0.2rem;
+        font-size: 0.7rem; color: var(--color-text-tertiary); margin-top: 2px;
+    }
+    .cp-personas svg { width: 11px; height: 11px; }
 
-    .campaign-card-actions {
-        display: flex; gap: 0.5rem; margin-top: 0.75rem; padding-top: 0.75rem;
-        border-top: 1px solid var(--color-border-subtle);
+    /* Stats cell */
+    .cp-stats { display: flex; gap: 0.75rem; font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+    .cp-stat {
+        display: flex; align-items: center; gap: 0.25rem;
+        color: var(--color-text-secondary);
     }
-    .campaign-card-actions button {
-        flex: 1; padding: 0.4rem 0.75rem; font-size: 0.8rem; font-weight: 500;
-        border-radius: 6px; cursor: pointer; border: 1px solid var(--color-border);
-        background: transparent; color: var(--color-text-secondary); transition: all 0.15s;
+    .cp-stat svg { width: 13px; height: 13px; color: var(--color-text-tertiary); flex-shrink: 0; }
+    .cp-stat-val { font-weight: 600; color: var(--color-text); }
+
+    /* Updated cell */
+    .cp-date { font-size: 0.78rem; color: var(--color-text-tertiary); white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+    /* Actions cell */
+    .cp-actions { display: flex; align-items: center; gap: 0.15rem; justify-content: flex-end; }
+    .cp-act {
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 28px; height: 28px; border: none; background: transparent;
+        border-radius: 5px; cursor: pointer; color: var(--color-text-tertiary);
+        transition: all 0.12s;
     }
-    .campaign-card-actions button:hover { background: var(--color-bg); color: var(--color-text); }
-    .campaign-card-actions button.btn-del:hover { background: #fef2f2; color: var(--color-destructive); border-color: var(--color-destructive); }
+    .cp-act svg { width: 15px; height: 15px; }
+    .cp-act:hover { background: var(--color-bg); color: var(--color-text); }
+    .cp-act--del:hover { background: #fef2f2; color: var(--color-destructive); }
+    .cp-act[title]:hover::after { content: none; }
+
+    /* Assets inline */
+    .cp-assets {
+        display: inline-flex; align-items: center; gap: 0.2rem;
+        font-size: 0.7rem; color: var(--color-text-tertiary); margin-top: 2px;
+    }
+    .cp-assets svg { width: 11px; height: 11px; }
 
     /* Empty state */
-    .campaigns-empty {
-        text-align: center; padding: 3rem 1.5rem;
-        background: var(--color-surface); border: 2px dashed var(--color-border);
-        border-radius: 12px;
+    .cp-empty {
+        padding: 2rem 1rem; text-align: center;
+        color: var(--color-text-tertiary); font-size: 0.85rem;
     }
-    .campaigns-empty svg { width: 48px; height: 48px; color: var(--color-text-tertiary); margin-bottom: 1rem; }
-    .campaigns-empty h3 { font-size: 1.1rem; font-weight: 600; margin: 0 0 0.5rem; color: var(--color-text); }
-    .campaigns-empty p { font-size: 0.9rem; color: var(--color-text-secondary); margin: 0 0 1rem; }
+    .cp-empty-title { font-weight: 600; color: var(--color-text-secondary); margin-bottom: 0.25rem; }
 
     /* ============================================================
-       CREATE/EDIT MODAL
+       MODAL — Tightened
        ============================================================ */
     .campaign-modal-overlay {
         display: none; position: fixed; inset: 0; z-index: 1000;
-        background: rgba(0,0,0,0.45); align-items: center; justify-content: center;
+        background: rgba(0,0,0,0.4); align-items: center; justify-content: center;
     }
     .campaign-modal-overlay.open { display: flex; }
     .campaign-modal {
-        background: var(--color-surface); border-radius: 14px;
-        width: 680px; max-width: 95vw; max-height: 90vh; overflow-y: auto;
-        box-shadow: 0 24px 48px rgba(0,0,0,0.12);
+        background: var(--color-surface); border-radius: 10px;
+        width: 620px; max-width: 95vw; max-height: 90vh; overflow-y: auto;
+        box-shadow: 0 20px 40px rgba(0,0,0,0.12);
     }
     .campaign-modal-header {
         display: flex; align-items: center; justify-content: space-between;
-        padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--color-border);
+        padding: 1rem 1.25rem; border-bottom: 1px solid var(--color-border);
     }
-    .campaign-modal-header h2 { margin: 0; font-size: 1.15rem; font-weight: 700; }
+    .campaign-modal-header h2 { margin: 0; font-size: 1rem; font-weight: 700; }
     .campaign-modal-close {
-        background: none; border: none; cursor: pointer; color: var(--color-text-secondary);
-        padding: 0.25rem; border-radius: 6px;
+        background: none; border: none; cursor: pointer; color: var(--color-text-tertiary);
+        padding: 0.2rem; border-radius: 5px; display: flex; align-items: center;
     }
-    .campaign-modal-close:hover { background: var(--color-bg); }
-    .campaign-modal-body { padding: 1.5rem; }
+    .campaign-modal-close:hover { background: var(--color-bg); color: var(--color-text); }
+    .campaign-modal-close svg { width: 18px; height: 18px; }
+    .campaign-modal-body { padding: 1.25rem; }
     .campaign-modal-footer {
-        padding: 1rem 1.5rem; border-top: 1px solid var(--color-border);
-        display: flex; gap: 0.75rem; justify-content: flex-end;
+        padding: 0.75rem 1.25rem; border-top: 1px solid var(--color-border);
+        display: flex; gap: 0.5rem; justify-content: flex-end;
     }
 
     /* Form fields */
-    .form-group { margin-bottom: 1.25rem; }
+    .form-group { margin-bottom: 1rem; }
+    .form-group:last-child { margin-bottom: 0; }
     .form-group label {
-        display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.35rem;
+        display: block; font-size: 0.8rem; font-weight: 600; margin-bottom: 0.3rem;
         color: var(--color-text);
     }
-    .form-group .form-help { font-size: 0.8rem; color: var(--color-text-tertiary); margin-top: 0.25rem; }
+    .form-group .form-help { font-size: 0.75rem; color: var(--color-text-tertiary); margin-top: 0.2rem; }
     .form-input, .form-textarea, .form-select {
-        width: 100%; padding: 0.6rem 0.75rem; border: 1px solid var(--color-border);
-        border-radius: 8px; font-size: 0.9rem; font-family: var(--font-sans);
+        width: 100%; padding: 0.5rem 0.65rem; border: 1px solid var(--color-border);
+        border-radius: 6px; font-size: 0.85rem; font-family: var(--font-sans);
         background: var(--color-surface); color: var(--color-text);
-        transition: border-color 0.15s;
+        transition: border-color 0.12s; box-sizing: border-box;
     }
     .form-input:focus, .form-textarea:focus, .form-select:focus {
-        outline: none; border-color: var(--color-primary); box-shadow: 0 0 0 3px rgba(79,70,229,0.1);
+        outline: none; border-color: var(--color-primary); box-shadow: 0 0 0 2px rgba(79,70,229,0.08);
     }
-    .form-textarea { min-height: 100px; resize: vertical; line-height: 1.6; }
+    .form-textarea { min-height: 80px; resize: vertical; line-height: 1.5; }
 
     /* Sequence picker */
-    .seq-picker { display: flex; gap: 0.5rem; align-items: flex-end; }
+    .seq-picker { display: flex; gap: 0.4rem; align-items: flex-end; }
     .seq-picker .form-select { flex: 1; }
-    .seq-picker .btn-detect {
-        padding: 0.6rem 1rem; background: var(--color-bg); border: 1px solid var(--color-border);
-        border-radius: 8px; font-size: 0.85rem; cursor: pointer; white-space: nowrap;
-        color: var(--color-text-secondary); font-weight: 500;
+    .seq-picker .btn-detect, .btn-detect {
+        padding: 0.5rem 0.75rem; background: var(--color-bg); border: 1px solid var(--color-border);
+        border-radius: 6px; font-size: 0.8rem; cursor: pointer; white-space: nowrap;
+        color: var(--color-text-secondary); font-weight: 500; font-family: var(--font-sans);
     }
-    .seq-picker .btn-detect:hover { background: var(--color-border-subtle); color: var(--color-text); }
+    .seq-picker .btn-detect:hover, .btn-detect:hover { background: var(--color-border-subtle); color: var(--color-text); }
 
     /* Sequence steps preview */
-    .seq-steps-preview { margin-top: 0.75rem; }
+    .seq-steps-preview { margin-top: 0.5rem; }
     .seq-steps-list {
-        background: var(--color-bg); border-radius: 8px; padding: 0.5rem;
-        max-height: 240px; overflow-y: auto;
+        background: var(--color-bg); border-radius: 6px; padding: 0.35rem;
+        max-height: 200px; overflow-y: auto;
     }
     .seq-step-item {
-        display: flex; align-items: center; gap: 0.75rem;
-        padding: 0.5rem 0.75rem; border-radius: 6px;
-        font-size: 0.85rem;
+        display: flex; align-items: center; gap: 0.5rem;
+        padding: 0.35rem 0.5rem; border-radius: 4px; font-size: 0.8rem;
     }
-    .seq-step-item:not(:last-child) { margin-bottom: 2px; }
+    .seq-step-item:not(:last-child) { margin-bottom: 1px; }
     .seq-step-item:hover { background: var(--color-surface); }
     .seq-step-num {
-        width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;
+        width: 20px; height: 20px; display: flex; align-items: center; justify-content: center;
         background: var(--color-primary); color: #fff; border-radius: 50%;
-        font-size: 0.75rem; font-weight: 700; flex-shrink: 0;
+        font-size: 0.65rem; font-weight: 700; flex-shrink: 0;
     }
     .seq-step-num.task { background: var(--color-warning); }
     .seq-step-num.linkedin { background: #0a66c2; }
     .seq-step-type {
-        font-size: 0.75rem; font-weight: 600; color: var(--color-text-tertiary);
-        text-transform: uppercase; letter-spacing: 0.3px; width: 50px; flex-shrink: 0;
+        font-size: 0.7rem; font-weight: 600; color: var(--color-text-tertiary);
+        text-transform: uppercase; letter-spacing: 0.3px; width: 42px; flex-shrink: 0;
     }
-    .seq-step-subject { flex: 1; color: var(--color-text); font-weight: 500; }
-    .seq-step-delay { font-size: 0.75rem; color: var(--color-text-tertiary); flex-shrink: 0; }
+    .seq-step-subject { flex: 1; color: var(--color-text); font-weight: 500; font-size: 0.8rem; }
+    .seq-step-delay { font-size: 0.7rem; color: var(--color-text-tertiary); flex-shrink: 0; }
 
     /* Persona rows */
-    .persona-row { display:flex; gap:0.5rem; align-items:flex-start; padding:0.6rem; background:var(--color-bg); border-radius:8px; margin-bottom:0.4rem; }
-    .persona-row input[type="text"] { padding:0.4rem 0.6rem; border:1px solid var(--color-border); border-radius:6px; font-size:0.8rem; }
-    .persona-row .p-name { width:140px; }
-    .persona-row .p-titles { flex:1; min-width:200px; }
-    .persona-row select { padding:0.4rem 0.6rem; border:1px solid var(--color-border); border-radius:6px; font-size:0.8rem; flex:1; min-width:160px; }
-    .persona-row .p-remove { background:none; border:none; color:#DC2626; cursor:pointer; font-size:1.1rem; padding:0.3rem; line-height:1; }
-    .persona-row .p-remove:hover { background:#FEF2F2; border-radius:4px; }
-    .seniority-checks { display:flex; gap:0.5rem; flex-wrap:wrap; margin-top:0.25rem; }
-    .seniority-checks label { font-size:0.7rem; display:flex; align-items:center; gap:0.2rem; color:var(--color-text-secondary); cursor:pointer; }
-    .seniority-checks input { width:13px; height:13px; }
-    .seq-steps-empty { padding: 1rem; text-align: center; color: var(--color-text-tertiary); font-size: 0.85rem; }
-    .seq-steps-loading { padding: 0.75rem; text-align: center; color: var(--color-text-tertiary); font-size: 0.85rem; }
+    .persona-row { display:flex; gap:0.4rem; align-items:flex-start; padding:0.5rem; background:var(--color-bg); border-radius:6px; margin-bottom:0.3rem; }
+    .persona-row input[type="text"] { padding:0.35rem 0.5rem; border:1px solid var(--color-border); border-radius:5px; font-size:0.78rem; font-family:var(--font-sans); }
+    .persona-row .p-name { width:120px; }
+    .persona-row .p-titles { flex:1; min-width:160px; }
+    .persona-row select { padding:0.35rem 0.5rem; border:1px solid var(--color-border); border-radius:5px; font-size:0.78rem; flex:1; min-width:140px; font-family:var(--font-sans); }
+    .persona-row .p-remove { background:none; border:none; color:#DC2626; cursor:pointer; font-size:1rem; padding:0.2rem; line-height:1; }
+    .persona-row .p-remove:hover { background:#FEF2F2; border-radius:3px; }
+    .seniority-checks { display:flex; gap:0.4rem; flex-wrap:wrap; margin-top:0.2rem; }
+    .seniority-checks label { font-size:0.68rem; display:flex; align-items:center; gap:0.15rem; color:var(--color-text-secondary); cursor:pointer; }
+    .seniority-checks input { width:12px; height:12px; }
+    .seq-steps-empty { padding: 0.75rem; text-align: center; color: var(--color-text-tertiary); font-size: 0.8rem; }
+    .seq-steps-loading { padding: 0.5rem; text-align: center; color: var(--color-text-tertiary); font-size: 0.8rem; }
 
-    /* Notification toast */
+    /* Modal buttons */
+    .btn-create-campaign {
+        display: inline-flex; align-items: center; gap: 0.3rem;
+        padding: 0.45rem 0.9rem; background: var(--color-primary); color: #fff;
+        border: none; border-radius: 6px; font-size: 0.84rem; font-weight: 600;
+        cursor: pointer; transition: background 0.12s; font-family: var(--font-sans);
+    }
+    .btn-create-campaign:hover { background: var(--color-primary-hover); }
+
+    /* Toast */
     .campaign-toast {
-        position: fixed; bottom: 1.5rem; right: 1.5rem; z-index: 2000;
-        padding: 0.75rem 1.25rem; border-radius: 8px; font-size: 0.9rem; font-weight: 500;
-        color: #fff; box-shadow: 0 4px 16px rgba(0,0,0,0.15);
-        transform: translateY(100px); opacity: 0; transition: all 0.3s;
+        position: fixed; bottom: 1.25rem; right: 1.25rem; z-index: 2000;
+        padding: 0.6rem 1rem; border-radius: 6px; font-size: 0.84rem; font-weight: 500;
+        color: #fff; box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+        transform: translateY(80px); opacity: 0; transition: all 0.25s;
     }
     .campaign-toast.show { transform: translateY(0); opacity: 1; }
     .campaign-toast.success { background: var(--color-success); }
     .campaign-toast.error { background: var(--color-destructive); }
     .campaign-toast.info { background: var(--color-info); }
 
-    /* Assets tag display */
-    .assets-tags { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.5rem; }
-    .asset-tag {
-        display: inline-flex; align-items: center; gap: 0.25rem;
-        padding: 2px 8px; background: var(--color-primary-subtle); color: var(--color-primary);
-        border-radius: 6px; font-size: 0.75rem; max-width: 200px; overflow: hidden;
-        text-overflow: ellipsis; white-space: nowrap;
+    /* Responsive */
+    @media (max-width: 768px) {
+        .cp-col-prompt, .cp-col-seq { display: none; }
+        .cp-table thead th:nth-child(2),
+        .cp-table thead th:nth-child(3),
+        .cp-table tbody td:nth-child(2),
+        .cp-table tbody td:nth-child(3) { display: none; }
+        .cp-col-name { width: 35%; }
+        .cp-col-stats { width: 25%; }
+        .cp-col-updated { width: 20%; }
+        .cp-col-actions { width: 20%; }
     }
-    .asset-tag svg { width: 12px; height: 12px; flex-shrink: 0; }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="campaigns-page">
-    <div class="campaigns-header">
-        <div>
-            <h1>Campaigns</h1>
-            <p class="subtitle">Create outreach campaigns with custom prompts, assets, and mapped Apollo sequences</p>
+<div class="cp">
+    <div class="cp-toolbar">
+        <div class="cp-toolbar-left">
+            <span class="cp-count">{{ campaigns|length if campaigns else 0 }} campaign{{ 's' if not campaigns or campaigns|length != 1 else '' }}</span>
         </div>
-        <button class="btn-create-campaign" onclick="openCreateModal()">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-            New Campaign
+        <button class="cp-btn-new" onclick="openCreateModal()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            New
         </button>
     </div>
 
+    <div class="cp-table-wrap">
     {% if campaigns %}
-    <div class="campaigns-grid" id="campaigns-grid">
-        {% for c in campaigns %}
-        <div class="campaign-card{% if c.name == 'RepoRadar' %} pinned{% endif %}" id="campaign-{{ c.id }}" data-id="{{ c.id }}">
-            <div class="campaign-card-header">
-                <h3 class="campaign-card-name">{{ c.name }}{% if c.name == 'RepoRadar' %} <span class="default-badge">Default</span>{% endif %}</h3>
-                <span class="campaign-card-status {{ c.status }}">{{ c.status }}</span>
-            </div>
-            {% if c.prompt %}
-            <p class="campaign-card-prompt">{{ c.prompt }}</p>
-            {% endif %}
-            <div class="campaign-card-meta">
-                {% if c.sequence_name %}
-                <span class="meta-item">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
-                    {{ c.sequence_name }}
-                </span>
-                {% endif %}
-                {% if c.sequence_config %}
-                <span class="meta-item">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
-                    {{ c.sequence_config | replace('_', ' ') | title }}
-                </span>
-                {% endif %}
-                {% if c.persona_count %}
-                <span class="meta-item">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
-                    {{ c.persona_count }} persona{{ 's' if c.persona_count != 1 else '' }}
-                </span>
-                {% endif %}
-                {% if c.assets %}
-                <span class="meta-item">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
-                    {{ c.assets | length }} asset{{ 's' if c.assets | length != 1 else '' }}
-                </span>
-                {% endif %}
-                <span class="meta-item">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-                    {{ c.updated_at|string|truncate(10, True, "") if c.updated_at else 'N/A' }}
-                </span>
-                <span class="meta-item enrollment-stat" data-campaign-id="{{ c.id }}">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="8.5" cy="7" r="4"></circle><line x1="20" y1="8" x2="20" y2="14"></line><line x1="23" y1="11" x2="17" y2="11"></line></svg>
-                    <span class="stat-enrolled">--</span> enrolled
-                </span>
-                <span class="meta-item enrollment-stat" data-campaign-id="{{ c.id }}">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
-                    <span class="stat-generated">--</span> generated
-                </span>
-            </div>
-            <div class="campaign-card-actions">
-                <button onclick="editCampaign({{ c.id }})">Edit</button>
-                <button onclick="toggleCampaignStatus({{ c.id }})">{{ 'Deactivate' if c.status == 'active' else 'Activate' }}</button>
-                <button class="btn-del" onclick="deleteCampaign({{ c.id }}, '{{ c.name | e }}')">Delete</button>
-            </div>
-        </div>
-        {% endfor %}
-    </div>
+        <table class="cp-table" id="campaigns-grid">
+            <thead>
+                <tr>
+                    <th class="cp-col-name">Campaign</th>
+                    <th class="cp-col-prompt">Prompt</th>
+                    <th class="cp-col-seq">Sequence</th>
+                    <th class="cp-col-stats">Stats</th>
+                    <th class="cp-col-updated">Updated</th>
+                    <th class="cp-col-actions"></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for c in campaigns %}
+                <tr class="campaign-card" id="campaign-{{ c.id }}" data-id="{{ c.id }}">
+                    <td>
+                        <div class="cp-name">
+                            <span>{{ c.name }}</span>
+                            {% if c.name == 'RepoRadar' %}<span class="cp-badge cp-badge--default">Default</span>{% endif %}
+                            <span class="cp-badge cp-badge--{{ c.status }}">{{ c.status }}</span>
+                        </div>
+                        {% if c.assets %}
+                        <div class="cp-assets">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
+                            {{ c.assets | length }} asset{{ 's' if c.assets | length != 1 else '' }}
+                        </div>
+                        {% endif %}
+                    </td>
+                    <td><div class="cp-prompt">{{ c.prompt if c.prompt else '—' }}</div></td>
+                    <td>
+                        {% if c.sequence_name %}
+                        <div class="cp-seq">{{ c.sequence_name }}</div>
+                        {% if c.sequence_config %}<span class="cp-seq-config">{{ c.sequence_config | replace('_', ' ') | title }}</span>{% endif %}
+                        {% else %}
+                        <span class="cp-seq" style="color:var(--color-text-tertiary);">—</span>
+                        {% endif %}
+                        {% if c.persona_count %}
+                        <div class="cp-personas">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle></svg>
+                            {{ c.persona_count }}
+                        </div>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <div class="cp-stats">
+                            <span class="cp-stat enrollment-stat" data-campaign-id="{{ c.id }}">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="8.5" cy="7" r="4"></circle><line x1="20" y1="8" x2="20" y2="14"></line><line x1="23" y1="11" x2="17" y2="11"></line></svg>
+                                <span class="cp-stat-val stat-enrolled">--</span>
+                            </span>
+                            <span class="cp-stat enrollment-stat" data-campaign-id="{{ c.id }}">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+                                <span class="cp-stat-val stat-generated">--</span>
+                            </span>
+                        </div>
+                    </td>
+                    <td><span class="cp-date">{{ c.updated_at|string|truncate(10, True, "") if c.updated_at else '—' }}</span></td>
+                    <td>
+                        <div class="cp-actions">
+                            <button class="cp-act" onclick="editCampaign({{ c.id }})" title="Edit">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                            </button>
+                            <button class="cp-act" onclick="toggleCampaignStatus({{ c.id }})" title="{{ 'Deactivate' if c.status == 'active' else 'Activate' }}">
+                                {% if c.status == 'active' %}
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
+                                {% else %}
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                                {% endif %}
+                            </button>
+                            <button class="cp-act cp-act--del" onclick="deleteCampaign({{ c.id }}, '{{ c.name | e }}')" title="Delete">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
     {% else %}
-    <div class="campaigns-empty" id="campaigns-empty">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect>
-            <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path>
-        </svg>
-        <h3>No campaigns yet</h3>
-        <p>Create your first campaign to pair a custom prompt and assets with an Apollo sequence.</p>
-        <button class="btn-create-campaign" onclick="openCreateModal()">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-            New Campaign
-        </button>
-    </div>
+        <div class="cp-empty" id="campaigns-empty">
+            <div class="cp-empty-title">No campaigns</div>
+            <div>Create one to pair a prompt with an Apollo sequence.</div>
+        </div>
     {% endif %}
+    </div>
 </div>
 
 <!-- Create/Edit Campaign Modal -->
@@ -291,43 +377,41 @@
         <div class="campaign-modal-header">
             <h2 id="modal-title">New Campaign</h2>
             <button class="campaign-modal-close" onclick="closeModal()">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="20" height="20"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
             </button>
         </div>
         <div class="campaign-modal-body">
             <input type="hidden" id="campaign-edit-id" value="">
 
             <div class="form-group">
-                <label for="campaign-name">Campaign Name</label>
+                <label for="campaign-name">Name</label>
                 <input type="text" id="campaign-name" class="form-input" placeholder="e.g. Q1 Greenfield Outreach">
             </div>
 
             <div class="form-group">
-                <label for="campaign-prompt">Campaign Prompt</label>
-                <textarea id="campaign-prompt" class="form-textarea" placeholder="Describe the messaging angle, tone, and what signals to reference. This prompt guides the AI when generating cold emails for contacts enrolled in this campaign."></textarea>
-                <p class="form-help">The AI uses this prompt to craft personalized emails when contacts are enrolled in this campaign's sequence.</p>
+                <label for="campaign-prompt">Prompt</label>
+                <textarea id="campaign-prompt" class="form-textarea" placeholder="Messaging angle, tone, and signals to reference..."></textarea>
+                <p class="form-help">Guides AI-generated emails for contacts enrolled in this campaign.</p>
             </div>
 
             <div class="form-group">
                 <label for="campaign-assets">Assets (URLs, one per line)</label>
-                <textarea id="campaign-assets" class="form-textarea" style="min-height:70px" placeholder="https://phrase.com/blog/posts/i18n-guide&#10;https://phrase.com/pricing"></textarea>
-                <p class="form-help">Reference URLs the AI can cite in generated emails — blog posts, case studies, pricing pages, etc.</p>
+                <textarea id="campaign-assets" class="form-textarea" style="min-height:60px" placeholder="https://phrase.com/blog/posts/i18n-guide&#10;https://phrase.com/pricing"></textarea>
+                <p class="form-help">URLs the AI can cite — blog posts, case studies, pricing pages.</p>
             </div>
 
             <div class="form-group">
-                <label>Mapped Apollo Sequence</label>
+                <label>Apollo Sequence</label>
                 <div class="seq-picker">
                     <select id="campaign-sequence" class="form-select">
                         <option value="">Select a sequence...</option>
                     </select>
                     <button type="button" class="btn-detect" onclick="loadApolloSequences()">Refresh</button>
                 </div>
-                <p class="form-help">Choose the Apollo sequence contacts will be enrolled in. Steps are shown below.</p>
-                <div id="seq-shared-info" style="display:none; margin-top:0.5rem; padding:0.4rem 0.75rem; background:#fef3c7; border-radius:6px; font-size:0.8rem; color:#92400e;">
-                    ⚡ Also used by: <span id="seq-shared-campaigns" style="font-weight:600;"></span>
+                <p class="form-help">Sequence contacts will be enrolled in.</p>
+                <div id="seq-shared-info" style="display:none; margin-top:0.4rem; padding:0.35rem 0.6rem; background:#fef3c7; border-radius:5px; font-size:0.75rem; color:#92400e;">
+                    Also used by: <span id="seq-shared-campaigns" style="font-weight:600;"></span>
                 </div>
-
-                <!-- Sequence Steps Preview -->
                 <div class="seq-steps-preview" id="seq-steps-preview" style="display:none">
                     <div class="seq-steps-list" id="seq-steps-list">
                         <div class="seq-steps-loading">Loading steps...</div>
@@ -335,22 +419,21 @@
                 </div>
             </div>
 
-            <!-- Personas Configuration -->
             <div class="form-group">
-                <label>Personas <span style="font-weight:400;color:var(--color-text-secondary);font-size:0.8rem;">(optional — for batch enrollment)</span></label>
-                <p class="form-help" style="margin-bottom:0.5rem;">Define target personas with title/seniority filters and assign each to an Apollo sequence. Used by the Enrollment page.</p>
+                <label>Personas <span style="font-weight:400;color:var(--color-text-secondary);font-size:0.75rem;">(optional)</span></label>
+                <p class="form-help" style="margin-bottom:0.4rem;">Target personas with title/seniority filters for batch enrollment.</p>
                 <div id="personas-list"></div>
-                <button type="button" class="btn-detect" style="margin-top:0.5rem;" onclick="addPersonaRow()">+ Add Persona</button>
+                <button type="button" class="btn-detect" style="margin-top:0.35rem;" onclick="addPersonaRow()">+ Add Persona</button>
             </div>
         </div>
         <div class="campaign-modal-footer">
             <button class="btn-detect" onclick="closeModal()">Cancel</button>
-            <button class="btn-create-campaign" onclick="saveCampaign()">Save Campaign</button>
+            <button class="btn-create-campaign" onclick="saveCampaign()">Save</button>
         </div>
     </div>
 </div>
 
-<!-- Toast Notification -->
+<!-- Toast -->
 <div class="campaign-toast" id="campaign-toast"></div>
 
 {% endblock %}
@@ -363,7 +446,7 @@
     let editingId = null;
     let sequencesCache = [];
 
-    // ── Load enrollment stats for each campaign card ──
+    // ── Load enrollment stats for each campaign row ──
     (function loadEnrollmentStats() {
         const cards = document.querySelectorAll('.campaign-card[data-id]');
         cards.forEach(card => {
@@ -454,7 +537,6 @@
                     opt.dataset.steps = seq.num_steps;
                     sel.appendChild(opt);
                 }
-                // Restore previous selection if exists
                 if (currentVal) sel.value = currentVal;
             } else {
                 sel.innerHTML = '<option value="">No enabled sequences — enable them in Mapping Sequences</option>';
@@ -464,7 +546,7 @@
         }
     };
 
-    // ── Show sequence steps + shared-campaign indicator when selection changes ──
+    // ── Show sequence steps + shared-campaign indicator ──
     document.getElementById('campaign-sequence').addEventListener('change', async function() {
         const seqId = this.value;
         const preview = document.getElementById('seq-steps-preview');
@@ -480,7 +562,6 @@
         preview.style.display = 'block';
         list.innerHTML = '<div class="seq-steps-loading">Loading steps...</div>';
 
-        // Fetch steps
         try {
             const resp = await fetch(`/api/apollo/sequence-steps/${seqId}`);
             const data = await resp.json();
@@ -508,7 +589,6 @@
             list.innerHTML = '<div class="seq-steps-empty">Failed to load steps</div>';
         }
 
-        // Fetch shared campaigns for this sequence
         try {
             const cResp = await fetch(`/api/campaigns/by-sequence/${seqId}`);
             const cData = await cResp.json();
@@ -616,7 +696,6 @@
         const name = nameEl.value.trim();
         const prompt = promptEl.value.trim();
 
-        // Validate required fields
         let valid = true;
         if (!name) {
             nameEl.style.borderColor = 'var(--color-destructive)';
@@ -640,7 +719,6 @@
         const seqOpt = seqSelect.selectedOptions[0];
         const seqName = (seqOpt && seqOpt.dataset.name) || null;
 
-        // Detect config from the sequence
         let seqConfig = null;
         if (seqId) {
             try {
@@ -684,7 +762,6 @@
             if (data.status === 'success') {
                 showToast(editingId ? 'Campaign updated' : 'Campaign created', 'success');
                 closeModal();
-                // Reload to show new/updated campaign
                 window.location.reload();
             } else {
                 showToast(data.message || 'Failed to save', 'error');
@@ -712,15 +789,12 @@
             document.getElementById('campaign-assets').value = (c.assets || []).join('\n');
             document.getElementById('campaign-modal').classList.add('open');
 
-            // Load sequences then set selected
             await loadApolloSequences();
             if (c.sequence_id) {
                 document.getElementById('campaign-sequence').value = c.sequence_id;
-                // Trigger step preview
                 document.getElementById('campaign-sequence').dispatchEvent(new Event('change'));
             }
 
-            // Load personas
             renderPersonaRows(c.personas || []);
         } catch(e) {
             showToast('Failed to load campaign', 'error');
@@ -756,9 +830,8 @@
                     card.style.transition = 'all 0.2s';
                     setTimeout(() => {
                         card.remove();
-                        // Show empty state if no campaigns left
                         const grid = document.getElementById('campaigns-grid');
-                        if (grid && grid.children.length === 0) {
+                        if (grid && grid.querySelector('tbody') && grid.querySelector('tbody').children.length === 0) {
                             window.location.reload();
                         }
                     }, 200);

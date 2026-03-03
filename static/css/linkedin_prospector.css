@@ -92,12 +92,11 @@
 /* Empty state */
 .lp-upload-empty {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
   justify-content: center;
-  padding: 48px 24px 44px;
-  gap: 14px;
-  background: linear-gradient(180deg, var(--color-surface) 0%, var(--color-bg, #fafbfc) 100%);
+  padding: 20px 24px;
+  gap: 10px;
 }
 .lp-upload-illustration {
   color: var(--color-text-tertiary);
