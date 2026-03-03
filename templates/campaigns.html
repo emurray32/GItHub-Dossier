@@ -611,15 +611,28 @@
 
     // ── Save campaign (create or update) ──
     window.saveCampaign = async function() {
-        const name = document.getElementById('campaign-name').value.trim();
+        const nameEl = document.getElementById('campaign-name');
+        const promptEl = document.getElementById('campaign-prompt');
+        const name = nameEl.value.trim();
+        const prompt = promptEl.value.trim();
+
+        // Validate required fields
+        let valid = true;
         if (!name) {
-            document.getElementById('campaign-name').focus();
-            document.getElementById('campaign-name').style.borderColor = 'var(--color-destructive)';
-            setTimeout(() => document.getElementById('campaign-name').style.borderColor = '', 1500);
+            nameEl.style.borderColor = 'var(--color-destructive)';
+            setTimeout(() => nameEl.style.borderColor = '', 2000);
+            valid = false;
+        }
+        if (!prompt) {
+            promptEl.style.borderColor = 'var(--color-destructive)';
+            setTimeout(() => promptEl.style.borderColor = '', 2000);
+            valid = false;
+        }
+        if (!valid) {
+            showToast('Campaign name and prompt are required', 'error');
+            (name ? promptEl : nameEl).focus();
             return;
         }
-
-        const prompt = document.getElementById('campaign-prompt').value.trim();
         const assetsRaw = document.getElementById('campaign-assets').value.trim();
         const assets = assetsRaw ? assetsRaw.split('\n').map(a => a.trim()).filter(Boolean) : [];
         const seqSelect = document.getElementById('campaign-sequence');

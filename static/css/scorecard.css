@@ -485,6 +485,7 @@
 .sc-table-container {
     position: relative;
     min-height: 200px;
+    overflow-x: auto;
 }
 
 .sc-loading-overlay {
