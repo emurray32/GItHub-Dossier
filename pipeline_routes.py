@@ -159,12 +159,8 @@ def api_pipeline_config():
         from pipeline import _get_config, _set_config, _DEFAULT_CONFIG
         data = request.get_json() or {}
 
-        # Allowlist of valid config keys
-        _ALLOWED_CONFIG_KEYS = {
-            'pipeline_enabled', 'check_interval_hours', 'max_per_cycle',
-            'scan_batch_size',
-        }
-        unknown_keys = set(data.keys()) - _ALLOWED_CONFIG_KEYS
+        # Validate against actual config keys
+        unknown_keys = set(data.keys()) - set(_DEFAULT_CONFIG.keys())
         if unknown_keys:
             return jsonify({
                 'status': 'error',

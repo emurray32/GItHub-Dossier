@@ -47,21 +47,15 @@ def classify_maturity(
     if _check_thinking(active, scan_results):
         return MaturitySegment.THINKING
 
-    # If we have any signals at all but no segment match, default to PREPARING
-    # if there are library/fork signals, THINKING if exploration signals, else PRE_I18N
+    # If we have signals but no segment match, default to PREPARING for
+    # library/fork signals (caught by _check_preparing above, so this is
+    # a safety net), otherwise PRE_I18N.
     has_library_signals = any(
         s.signal_type in ('dependency_injection', 'smoking_gun_fork')
         for s in active
     )
     if has_library_signals:
         return MaturitySegment.PREPARING
-
-    has_exploration_signals = any(
-        s.signal_type in ('rfc_discussion', 'ghost_branch', 'documentation_intent')
-        for s in active
-    )
-    if has_exploration_signals:
-        return MaturitySegment.THINKING
 
     return MaturitySegment.PRE_I18N
 

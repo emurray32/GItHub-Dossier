@@ -42,6 +42,9 @@ _MATURITY_TO_TIER = {
     MaturitySegment.ENTERPRISE_SCALE: 2,
 }
 
+# String-keyed version for database code that works with raw maturity values
+MATURITY_VALUE_TO_TIER = {seg.value: tier for seg, tier in _MATURITY_TO_TIER.items()}
+
 
 def _score_to_intent(result: ScoringResult) -> int:
     """Convert org_intent_score (0.0-1.0) to legacy intent_score (0-100).

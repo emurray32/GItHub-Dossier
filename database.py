@@ -1397,22 +1397,14 @@ def calculate_tier_from_scan(scan_data: dict) -> tuple[int, str]:
     # ============================================================
     scoring_v2 = scan_data.get('scoring_v2')
     if scoring_v2 and isinstance(scoring_v2, dict):
+        from scoring.compat import MATURITY_VALUE_TO_TIER
+
         maturity = scoring_v2.get('org_maturity_level', '')
         maturity_label = scoring_v2.get('org_maturity_label', '')
         confidence = scoring_v2.get('confidence_percent', 0)
         readiness = scoring_v2.get('readiness_index', 0)
 
-        _MATURITY_TO_TIER = {
-            'pre_i18n': 0,
-            'thinking': 1,
-            'preparing': 2,
-            'active_implementation': 2,
-            'recently_launched': 3,
-            'mature_midmarket': 3,
-            'enterprise_scale': 2,
-        }
-
-        tier = _MATURITY_TO_TIER.get(maturity, 0)
+        tier = MATURITY_VALUE_TO_TIER.get(maturity, 0)
         outreach = scoring_v2.get('outreach_angle_label', '')
         evidence = (
             f"V2: {maturity_label} (confidence: {confidence:.0f}%, "
@@ -2032,57 +2024,59 @@ def enrich_existing_account(company_name: str, annual_revenue=None, website=None
         True if the account was found (regardless of whether any fields changed),
         False if the account does not exist.
     """
-    conn = get_db_connection()
-    try:
-        cursor = conn.cursor()
-        stripped = company_name.strip()
+    with db_connection() as conn:
+        try:
+            cursor = conn.cursor()
+            stripped = company_name.strip()
 
-        # Look up the existing account
-        cursor.execute(
-            'SELECT id, metadata FROM monitored_accounts WHERE LOWER(company_name) = LOWER(?)',
-            (stripped,),
-        )
-        row = cursor.fetchone()
-        if not row:
+            # Look up the existing account by name (case-insensitive)
+            cursor.execute(
+                'SELECT id, metadata FROM monitored_accounts WHERE LOWER(company_name) = LOWER(?)',
+                (stripped,),
+            )
+            row = cursor.fetchone()
+            if not row:
+                return False
+
+            account_id = row['id'] if isinstance(row, dict) else row[0]
+
+            # Build a single UPDATE with all provided fields
+            set_clauses = []
+            params = []
+
+            if annual_revenue is not None:
+                set_clauses.append('annual_revenue = ?')
+                params.append(annual_revenue)
+
+            if website is not None:
+                set_clauses.append('website = ?')
+                params.append(website)
+
+            if metadata is not None:
+                existing_metadata = {}
+                raw = row['metadata'] if isinstance(row, dict) else row[1]
+                if raw:
+                    try:
+                        existing_metadata = json.loads(raw)
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+                existing_metadata.update(metadata)
+                set_clauses.append('metadata = ?')
+                params.append(json.dumps(existing_metadata))
+
+            if set_clauses:
+                params.append(account_id)
+                cursor.execute(
+                    f'UPDATE monitored_accounts SET {", ".join(set_clauses)} WHERE id = ?',
+                    params,
+                )
+
+            conn.commit()
+            return True
+        except Exception as e:
+            print(f"[DB] Error enriching account {company_name}: {e}")
+            conn.rollback()
             return False
-
-        # Update annual_revenue if provided
-        if annual_revenue is not None:
-            cursor.execute(
-                'UPDATE monitored_accounts SET annual_revenue = ? WHERE LOWER(company_name) = LOWER(?)',
-                (annual_revenue, stripped),
-            )
-
-        # Update website if provided
-        if website is not None:
-            cursor.execute(
-                'UPDATE monitored_accounts SET website = ? WHERE LOWER(company_name) = LOWER(?)',
-                (website, stripped),
-            )
-
-        # Merge metadata if provided
-        if metadata is not None:
-            existing_metadata = {}
-            raw = row['metadata'] if isinstance(row, dict) else row[1]
-            if raw:
-                try:
-                    existing_metadata = json.loads(raw)
-                except (json.JSONDecodeError, TypeError):
-                    pass
-            existing_metadata.update(metadata)
-            cursor.execute(
-                'UPDATE monitored_accounts SET metadata = ? WHERE LOWER(company_name) = LOWER(?)',
-                (json.dumps(existing_metadata), stripped),
-            )
-
-        conn.commit()
-        return True
-    except Exception as e:
-        print(f"[DB] Error enriching account {company_name}: {e}")
-        conn.rollback()
-        return False
-    finally:
-        conn.close()
 
 
 def get_all_accounts(page: int = 1, limit: int = 50, tier_filter: Optional[list] = None, search_query: Optional[str] = None) -> dict:
@@ -3290,38 +3284,37 @@ def auto_retier_if_version_changed() -> int:
 
     logging.info(f"[RETIER] Scoring files changed (fingerprint {stored_fp} → {current_fp}), re-tiering accounts...")
 
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    cursor.execute('''
-        SELECT ma.id, ma.company_name, ma.current_tier, r.scan_data
-        FROM monitored_accounts ma
-        JOIN reports r ON r.id = ma.latest_report_id
-        WHERE ma.latest_report_id IS NOT NULL
-    ''')
-    rows = cursor.fetchall()
+        cursor.execute('''
+            SELECT ma.id, ma.company_name, ma.current_tier, r.scan_data
+            FROM monitored_accounts ma
+            JOIN reports r ON r.id = ma.latest_report_id
+            WHERE ma.latest_report_id IS NOT NULL
+        ''')
+        rows = cursor.fetchall()
 
-    updated = 0
-    for row in rows:
-        try:
-            scan_data = json.loads(row['scan_data']) if isinstance(row['scan_data'], str) else row['scan_data']
-        except (json.JSONDecodeError, TypeError):
-            continue
+        updated = 0
+        for row in rows:
+            try:
+                scan_data = json.loads(row['scan_data']) if isinstance(row['scan_data'], str) else row['scan_data']
+            except (json.JSONDecodeError, TypeError):
+                continue
 
-        scoring_v2 = scan_data.get('scoring_v2') if scan_data else None
-        if not scoring_v2 or not isinstance(scoring_v2, dict):
-            continue
+            scoring_v2 = scan_data.get('scoring_v2') if scan_data else None
+            if not scoring_v2 or not isinstance(scoring_v2, dict):
+                continue
 
-        new_tier, evidence = calculate_tier_from_scan(scan_data)
-        if new_tier != row['current_tier']:
-            cursor.execute(
-                'UPDATE monitored_accounts SET current_tier = ?, evidence_summary = ? WHERE id = ?',
-                (new_tier, evidence, row['id'])
-            )
-            updated += 1
+            new_tier, evidence = calculate_tier_from_scan(scan_data)
+            if new_tier != row['current_tier']:
+                cursor.execute(
+                    'UPDATE monitored_accounts SET current_tier = ?, evidence_summary = ? WHERE id = ?',
+                    (new_tier, evidence, row['id'])
+                )
+                updated += 1
 
-    conn.commit()
-    conn.close()
+        conn.commit()
 
     set_setting('scoring_fingerprint', current_fp)
     logging.info(f"[RETIER] Done — updated {updated} of {len(rows)} accounts.")

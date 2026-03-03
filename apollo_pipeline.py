@@ -28,12 +28,6 @@ def _db():
     return database
 
 
-def _app_helpers():
-    """Import helper functions from app.py (email/domain filters)."""
-    import app as _app
-    return _app
-
-
 # ---------------------------------------------------------------------------
 # Thread-safe Apollo Rate Limiter (token-bucket, 50 requests / 60 seconds)
 # ---------------------------------------------------------------------------
@@ -79,51 +73,7 @@ class ApolloRateLimiter:
 rate_limiter = ApolloRateLimiter(max_tokens=50, refill_period=60.0)
 
 
-# ---------------------------------------------------------------------------
-# Personal email / domain filters (duplicated from app.py to avoid circular import)
-# ---------------------------------------------------------------------------
-
-_PERSONAL_EMAIL_DOMAINS = {
-    'gmail.com', 'googlemail.com', 'yahoo.com', 'hotmail.com',
-    'outlook.com', 'aol.com', 'icloud.com', 'me.com', 'live.com',
-    'msn.com', 'protonmail.com', 'proton.me', 'mail.com', 'ymail.com',
-}
-
-
-def _filter_personal_email(email):
-    """Return empty string if email is from a personal domain."""
-    if not email:
-        return ''
-    domain = email.lower().split('@')[-1] if '@' in email else ''
-    return '' if domain in _PERSONAL_EMAIL_DOMAINS else email
-
-
-def _derive_company_domain(company):
-    """Derive a likely domain from a company name (e.g. 'Clay' -> 'clay.com')."""
-    if not company:
-        return ''
-    clean = company.strip().lower()
-    for suffix in [' inc', ' inc.', ' corp', ' corp.', ' ltd', ' ltd.',
-                   ' llc', ' co', ' co.', ' gmbh', ' ag', ' sa']:
-        if clean.endswith(suffix):
-            clean = clean[:len(clean) - len(suffix)]
-    return clean.replace(' ', '') + '.com'
-
-
-def _check_company_match(email, target_company):
-    """Return True if the email domain plausibly matches the target company."""
-    if not email or not target_company:
-        return True
-    if '@' not in email:
-        return True
-    email_domain = email.lower().split('@')[-1]
-    target_domain = _derive_company_domain(target_company)
-    if target_domain and email_domain == target_domain:
-        return True
-    co_lower = target_company.lower().strip().replace(' ', '')
-    if co_lower in email_domain or email_domain.split('.')[0] in co_lower:
-        return True
-    return False
+from email_utils import _filter_personal_email, _derive_company_domain, _check_company_match
 
 
 # ---------------------------------------------------------------------------

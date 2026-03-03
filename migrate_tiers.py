@@ -3,9 +3,9 @@
 One-time migration: Re-calculate tiers from existing scan data.
 
 This script reads the stored scoring_v2 data from each account's latest
-report and re-applies the tier mapping (which now includes THINKING → Tier 1).
+report and re-applies the tier mapping (which now includes THINKING -> Tier 1).
 
-No re-scanning needed — it uses the data already in the database.
+No re-scanning needed -- it uses the data already in the database.
 
 Usage:
     python migrate_tiers.py          # Dry run (shows what would change)
@@ -13,18 +13,7 @@ Usage:
 """
 import json
 import sys
-from database import get_db_connection
-
-# The updated mapping (must match database.py and scoring/compat.py)
-_MATURITY_TO_TIER = {
-    'pre_i18n': 0,
-    'thinking': 1,
-    'preparing': 2,
-    'active_implementation': 2,
-    'recently_launched': 3,
-    'mature_midmarket': 3,
-    'enterprise_scale': 2,
-}
+from database import get_db_connection, calculate_tier_from_scan
 
 
 def migrate_tiers(apply=False):
@@ -51,28 +40,17 @@ def migrate_tiers(apply=False):
         except (json.JSONDecodeError, TypeError):
             continue
 
-        scoring_v2 = scan_data.get('scoring_v2') if scan_data else None
-        if not scoring_v2 or not isinstance(scoring_v2, dict):
+        if not scan_data:
             continue
 
-        maturity = scoring_v2.get('org_maturity_level', '')
-        new_tier = _MATURITY_TO_TIER.get(maturity, 0)
+        new_tier, evidence = calculate_tier_from_scan(scan_data)
 
         if new_tier != old_tier:
-            maturity_label = scoring_v2.get('org_maturity_label', maturity)
-            confidence = scoring_v2.get('confidence_percent', 0)
-            readiness = scoring_v2.get('readiness_index', 0)
-            outreach = scoring_v2.get('outreach_angle_label', '')
-            evidence = (
-                f"V2: {maturity_label} (confidence: {confidence:.0f}%, "
-                f"readiness: {readiness:.2f}, outreach: {outreach})"
-            )
             changes.append({
                 'id': account_id,
                 'company': company,
                 'old_tier': old_tier,
                 'new_tier': new_tier,
-                'maturity': maturity,
                 'evidence': evidence,
             })
 
@@ -88,7 +66,7 @@ def migrate_tiers(apply=False):
     # Group by change type
     by_change = {}
     for c in changes:
-        key = f"Tier {c['old_tier']} → Tier {c['new_tier']} ({c['maturity']})"
+        key = f"Tier {c['old_tier']} → Tier {c['new_tier']}"
         by_change.setdefault(key, []).append(c)
 
     for change_type, accounts in sorted(by_change.items()):

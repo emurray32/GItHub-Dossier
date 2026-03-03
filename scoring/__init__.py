@@ -18,12 +18,14 @@ def get_scoring_fingerprint() -> str:
     scoring_dir = os.path.dirname(os.path.abspath(__file__))
     project_dir = os.path.dirname(scoring_dir)
 
-    # Files that affect how tiers are calculated
+    # Files that affect how tiers are calculated.
+    # NOTE: __init__.py is deliberately excluded — it contains this function
+    # itself, so hashing it would cause spurious retier churn on any comment
+    # or docstring change in this file.
     files_to_hash = [
         os.path.join(scoring_dir, 'models.py'),      # MaturitySegment enum
         os.path.join(scoring_dir, 'maturity.py'),     # classify_maturity() logic
         os.path.join(scoring_dir, 'compat.py'),       # _MATURITY_TO_TIER mapping
-        os.path.join(scoring_dir, '__init__.py'),      # pipeline orchestration
         os.path.join(scoring_dir, 'bayesian_pipeline.py'),  # stage1 fast filter
     ]
 

@@ -680,7 +680,6 @@ def _send_webhook_request(url: str, payload: dict, event_type: str, company_name
         response = requests.post(
             url,
             json=payload,
-            headers={'Content-Type': 'application/json'},
             timeout=timeout,
         )
         if 200 <= response.status_code < 300:
