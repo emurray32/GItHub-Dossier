@@ -12,6 +12,17 @@ from datetime import datetime, timezone, timedelta
 from unittest.mock import MagicMock, patch
 
 
+@pytest.fixture(autouse=True)
+def _disable_api_key_auth(monkeypatch):
+    """Disable API key authentication for all tests by default.
+
+    In CI, DOSSIER_API_KEY is set which activates enforce_authentication().
+    Tests that specifically test auth (test_auth.py) override this via their
+    own monkeypatch.setattr calls within each test function.
+    """
+    monkeypatch.setattr('config.Config.API_KEY', '')
+
+
 @pytest.fixture
 def empty_scan_results():
     """Scan results with zero signals."""
