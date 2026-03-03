@@ -86,4 +86,4 @@ class TestLegacyFieldsAlwaysPresent:
         assert 'goldilocks_status' in legacy
         assert 'lead_status' in legacy
         assert isinstance(legacy['intent_score'], int)
-        assert legacy['goldilocks_status'] in ('none', 'preparing', 'launched')
+        assert legacy['goldilocks_status'] in ('none', 'thinking', 'preparing', 'launched')

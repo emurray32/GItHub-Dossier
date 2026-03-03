@@ -1404,6 +1404,7 @@ def calculate_tier_from_scan(scan_data: dict) -> tuple[int, str]:
 
         _MATURITY_TO_TIER = {
             'pre_i18n': 0,
+            'thinking': 1,
             'preparing': 2,
             'active_implementation': 2,
             'recently_launched': 3,

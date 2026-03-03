@@ -44,14 +44,24 @@ def classify_maturity(
     if _check_preparing(active, scan_results):
         return MaturitySegment.PREPARING
 
+    if _check_thinking(active, scan_results):
+        return MaturitySegment.THINKING
+
     # If we have any signals at all but no segment match, default to PREPARING
-    # if there are library/fork signals, otherwise PRE_I18N
+    # if there are library/fork signals, THINKING if exploration signals, else PRE_I18N
     has_library_signals = any(
         s.signal_type in ('dependency_injection', 'smoking_gun_fork')
         for s in active
     )
     if has_library_signals:
         return MaturitySegment.PREPARING
+
+    has_exploration_signals = any(
+        s.signal_type in ('rfc_discussion', 'ghost_branch', 'documentation_intent')
+        for s in active
+    )
+    if has_exploration_signals:
+        return MaturitySegment.THINKING
 
     return MaturitySegment.PRE_I18N
 
@@ -198,6 +208,29 @@ def _check_preparing(
     return has_deps and not has_launched
 
 
+def _check_thinking(
+    signals: List[EnrichedSignal],
+    scan_results: Dict[str, Any],
+) -> bool:
+    """Thinking: Early exploration signals without library installs.
+
+    Primary: rfc_discussion OR ghost_branch OR documentation_intent
+    Disqualifier: dependency_injection, smoking_gun_fork, already_launched
+    (those would place the account in a higher segment)
+    """
+    has_exploration = any(
+        s.signal_type in ('rfc_discussion', 'ghost_branch', 'documentation_intent')
+        for s in signals
+    )
+    has_deps = any(
+        s.signal_type in ('dependency_injection', 'smoking_gun_fork')
+        for s in signals
+    )
+    has_launched = any(s.signal_type == 'already_launched' for s in signals)
+
+    return has_exploration and not has_deps and not has_launched
+
+
 def classify_tier3_sub(
     signals: List[EnrichedSignal],
     scan_results: Dict[str, Any],
@@ -252,6 +285,9 @@ def _expected_signal_types(segment: MaturitySegment) -> set:
     """Return the expected signal type set for a segment (for confidence)."""
     expectations = {
         MaturitySegment.PRE_I18N: set(),
+        MaturitySegment.THINKING: {
+            'rfc_discussion', 'ghost_branch', 'documentation_intent',
+        },
         MaturitySegment.PREPARING: {
             'dependency_injection', 'smoking_gun_fork', 'rfc_discussion',
             'ghost_branch', 'documentation_intent',

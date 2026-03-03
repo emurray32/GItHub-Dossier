@@ -14,8 +14,9 @@ from datetime import datetime
 # ============================================================
 
 class MaturitySegment(Enum):
-    """Six maturity segments for org i18n classification."""
+    """Seven maturity segments for org i18n classification."""
     PRE_I18N = "pre_i18n"
+    THINKING = "thinking"
     PREPARING = "preparing"
     ACTIVE_IMPLEMENTATION = "active_implementation"
     RECENTLY_LAUNCHED = "recently_launched"
@@ -26,6 +27,7 @@ class MaturitySegment(Enum):
     def display_label(self) -> str:
         labels = {
             "pre_i18n": "Pre-i18n",
+            "thinking": "Thinking",
             "preparing": "Preparing",
             "active_implementation": "Active Implementation",
             "recently_launched": "Recently Launched",
@@ -38,6 +40,7 @@ class MaturitySegment(Enum):
     def color(self) -> str:
         colors = {
             "pre_i18n": "#6b7280",         # gray
+            "thinking": "#06b6d4",          # cyan
             "preparing": "#f59e0b",         # amber
             "active_implementation": "#3b82f6",  # blue
             "recently_launched": "#10b981",  # green

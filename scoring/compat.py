@@ -12,6 +12,7 @@ from scoring.models import ScoringResult, MaturitySegment
 # Maturity → legacy goldilocks_status mapping
 _MATURITY_TO_GOLDILOCKS = {
     MaturitySegment.PRE_I18N: 'none',
+    MaturitySegment.THINKING: 'thinking',
     MaturitySegment.PREPARING: 'preparing',
     MaturitySegment.ACTIVE_IMPLEMENTATION: 'preparing',
     MaturitySegment.RECENTLY_LAUNCHED: 'launched',
@@ -22,6 +23,7 @@ _MATURITY_TO_GOLDILOCKS = {
 # Maturity → legacy lead_status mapping
 _MATURITY_TO_LEAD_STATUS = {
     MaturitySegment.PRE_I18N: 'COLD - No Signals Detected',
+    MaturitySegment.THINKING: 'WARM - Early Exploration Signals (Needs Corroboration)',
     MaturitySegment.PREPARING: 'HOT LEAD - Infrastructure Ready, No Translations',
     MaturitySegment.ACTIVE_IMPLEMENTATION: 'HOT LEAD - Infrastructure Ready, No Translations',
     MaturitySegment.RECENTLY_LAUNCHED: 'LOW PRIORITY - Already Localized',
@@ -32,6 +34,7 @@ _MATURITY_TO_LEAD_STATUS = {
 # Maturity → database tier mapping
 _MATURITY_TO_TIER = {
     MaturitySegment.PRE_I18N: 0,
+    MaturitySegment.THINKING: 1,
     MaturitySegment.PREPARING: 2,
     MaturitySegment.ACTIVE_IMPLEMENTATION: 2,
     MaturitySegment.RECENTLY_LAUNCHED: 3,
@@ -51,6 +54,10 @@ def _score_to_intent(result: ScoringResult) -> int:
 
     if maturity == MaturitySegment.PRE_I18N:
         return 0
+
+    if maturity == MaturitySegment.THINKING:
+        # Map to 30-60 range (Warm — early signals, needs corroboration)
+        return int(30 + p * 30)
 
     if maturity in (MaturitySegment.PREPARING, MaturitySegment.ACTIVE_IMPLEMENTATION):
         # Map to 90-100 range (Goldilocks Zone)
