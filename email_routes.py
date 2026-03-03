@@ -7,6 +7,7 @@ Routes:
 """
 import json
 from flask import Blueprint, request, jsonify
+from validators import validate_positive_int, validate_company_name
 from database import (
     get_enrollment_batch, get_campaign, get_next_contacts_for_phase,
     get_signals_by_company, get_account_by_company, get_scorecard_score,
@@ -33,7 +34,9 @@ def api_pipeline_generate_emails():
         return jsonify({'status': 'error', 'message': 'batch_id is required'}), 400
 
     batch_id = data['batch_id']
-    limit = min(int(data.get('limit', 50)), 200)
+    is_valid, limit = validate_positive_int(data.get('limit', 50), name='limit', max_val=200)
+    if not is_valid:
+        return jsonify({'status': 'error', 'message': limit}), 400
 
     batch = get_enrollment_batch(batch_id)
     if not batch:
@@ -160,9 +163,12 @@ def api_pipeline_email_preview():
         return jsonify({'status': 'success', 'email': result, 'generated_live': True})
 
     # No contact_id — generate from company_name
-    company_name = request.args.get('company_name', '').strip()
-    if not company_name:
-        return jsonify({'status': 'error', 'message': 'contact_id or company_name is required'}), 400
+    raw_company = request.args.get('company_name', '')
+    is_valid, company_name = validate_company_name(raw_company)
+    if not is_valid:
+        if not raw_company or not raw_company.strip():
+            return jsonify({'status': 'error', 'message': 'contact_id or company_name is required'}), 400
+        return jsonify({'status': 'error', 'message': company_name}), 400
 
     title = request.args.get('title', '')
     signals = get_signals_by_company(company_name, limit=50)

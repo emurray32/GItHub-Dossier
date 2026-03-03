@@ -6,7 +6,6 @@ Provides:
 - Session-based authentication for web UI routes
 - Decorators for route-level auth control
 - Login/logout views
-- enforce_authentication() before_request hook
 """
 import functools
 import hmac
@@ -198,50 +197,3 @@ def require_session(f):
 
         return f(*args, **kwargs)
     return decorated
-
-
-# ---------------------------------------------------------------------------
-# enforce_authentication() — before_request hook
-# ---------------------------------------------------------------------------
-
-# Paths that skip authentication entirely
-_SKIP_PREFIXES = ('/static/', '/login', '/logout', '/health', '/slack/')
-
-
-def enforce_authentication():
-    """Flask before_request hook for global authentication.
-
-    - Skip: static files, /login, /logout, /health, /slack/* (uses signing secret)
-    - API routes (/api/*): require API key if DOSSIER_API_KEY is set
-    - Web routes: require session if DOSSIER_UI_PASSWORD is set
-    - If neither env var set: backward compatible, no auth required
-    """
-    path = request.path
-
-    # Skip exempt paths
-    for prefix in _SKIP_PREFIXES:
-        if path.startswith(prefix):
-            return None
-
-    # --- API route authentication ---
-    if path.startswith('/api/'):
-        api_key = _get_api_key()
-        if not api_key:
-            return None  # No API key configured — skip auth
-
-        provided = request.headers.get('X-API-Key') or request.args.get('api_key')
-        if not provided or not hmac.compare_digest(provided.encode(), api_key.encode()):
-            _audit_log('auth_failure', f'path={path} method={request.method}', ip_address=request.remote_addr)
-            return jsonify({'status': 'error', 'message': 'Unauthorized: invalid or missing API key'}), 401
-
-        return None
-
-    # --- Web route authentication ---
-    ui_password = _get_ui_password()
-    if not ui_password:
-        return None  # No UI password configured — skip auth
-
-    if not session.get('authenticated'):
-        return redirect(url_for('auth.login', next=path))
-
-    return None

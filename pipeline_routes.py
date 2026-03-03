@@ -7,6 +7,7 @@ Register this blueprint in app.py:
 """
 import threading
 from flask import Blueprint, jsonify, request
+from validators import validate_positive_int, validate_company_name, validate_apollo_id
 
 pipeline_bp = Blueprint('pipeline', __name__)
 
@@ -89,9 +90,16 @@ def api_pipeline_runs():
         from pipeline import get_recent_runs, get_run_steps
         run_id = request.args.get('run_id')
         if run_id:
-            steps = get_run_steps(int(run_id))
+            is_valid, result = validate_positive_int(run_id, name='run_id')
+            if not is_valid:
+                return jsonify({'status': 'error', 'message': result}), 400
+            steps = get_run_steps(result)
             return jsonify({'status': 'success', 'steps': steps})
-        runs = get_recent_runs(limit=int(request.args.get('limit', 20)))
+        limit_str = request.args.get('limit', 20)
+        is_valid, result = validate_positive_int(limit_str, name='limit', max_val=500)
+        if not is_valid:
+            return jsonify({'status': 'error', 'message': result}), 400
+        runs = get_recent_runs(limit=result)
         return jsonify({'status': 'success', 'runs': runs})
     except ImportError:
         return jsonify({'status': 'error', 'message': 'Pipeline module not available'}), 503
@@ -150,6 +158,19 @@ def api_pipeline_config():
     try:
         from pipeline import _get_config, _set_config, _DEFAULT_CONFIG
         data = request.get_json() or {}
+
+        # Allowlist of valid config keys
+        _ALLOWED_CONFIG_KEYS = {
+            'pipeline_enabled', 'check_interval_hours', 'max_per_cycle',
+            'scan_batch_size',
+        }
+        unknown_keys = set(data.keys()) - _ALLOWED_CONFIG_KEYS
+        if unknown_keys:
+            return jsonify({
+                'status': 'error',
+                'message': f'Unknown config keys: {", ".join(sorted(unknown_keys))}',
+            }), 400
+
         updated = {}
         for key, value in data.items():
             if key in _DEFAULT_CONFIG:
@@ -191,6 +212,15 @@ def api_pipeline_discover_contacts():
     account_ids = data.get('account_ids', [])
     if not account_ids or not isinstance(account_ids, list):
         return jsonify({'status': 'error', 'message': 'account_ids must be a non-empty list'}), 400
+
+    # Validate each account ID
+    validated_ids = []
+    for aid in account_ids:
+        is_valid, result = validate_positive_int(aid, name='account_id')
+        if not is_valid:
+            return jsonify({'status': 'error', 'message': result}), 400
+        validated_ids.append(result)
+    account_ids = validated_ids
 
     campaign_id = data.get('campaign_id')
     run_async = data.get('async', False)

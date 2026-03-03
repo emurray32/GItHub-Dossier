@@ -22,6 +22,7 @@ from typing import Optional
 
 import requests as http_requests
 from flask import Blueprint, request, jsonify
+from validators import validate_company_name
 
 from database import (
     get_tier_counts, get_all_accounts, get_account_by_company_case_insensitive,
@@ -229,6 +230,16 @@ def _cmd_scan_async(company_name: str, response_url: str):
             'text': 'Usage: `/reporadar scan <company name>`',
         })
         return
+
+    # Validate company name before database insertion
+    is_valid, result = validate_company_name(company_name)
+    if not is_valid:
+        _respond_to_slack(response_url, {
+            'response_type': 'ephemeral',
+            'text': f'Invalid company name: {result}',
+        })
+        return
+    company_name = result
 
     # Import here to avoid circular imports (app.py -> slack_bot -> app.py)
     from app import spawn_background_scan, add_account_to_tier_0
