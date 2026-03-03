@@ -9,7 +9,7 @@ url = "http://localhost:5001/sse"
 
 [nix]
 channel = "stable-25_05"
-packages = ["xcodebuild", "zlib", "sqlite"]
+packages = ["sqlite", "xcodebuild", "zlib"]
 
 [workflows]
 runButton = "Project"
