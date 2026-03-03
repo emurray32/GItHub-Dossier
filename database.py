@@ -55,7 +55,7 @@ class _ConnectionProxy:
 # ---------------------------------------------------------------------------
 # Dialect detection
 # ---------------------------------------------------------------------------
-_USE_POSTGRES = bool(Config.DATABASE_URL)
+_USE_POSTGRES = bool(Config.DATABASE_URL) and Config.DATABASE_URL.startswith('postgres')
 
 if _USE_POSTGRES:
     try:
