@@ -28,7 +28,7 @@ from database import (
     reset_stale_queued_accounts, reset_all_queued_to_idle, clear_misclassified_errors,
     SCAN_STATUS_IDLE, SCAN_STATUS_QUEUED, SCAN_STATUS_PROCESSING,
     save_signals, get_signals_by_company, cleanup_duplicate_accounts, update_account_annual_revenue,
-    update_account_website, update_account_metadata, update_account_notes,
+    update_account_website, update_account_metadata, update_account_notes, enrich_existing_account,
     create_import_batch, get_pending_import_batches, update_batch_progress, get_import_batch,
     increment_hourly_api_calls, get_current_hour_api_calls, cleanup_old_hourly_stats,
     archive_account, unarchive_account, get_archived_accounts, get_archived_accounts_for_rescan,
@@ -45,7 +45,7 @@ from database import (
     # Contributors
     save_contributor, save_contributors_batch, get_contributors_datatable,
     get_contributor_stats, update_contributor_apollo_status, update_contributor_email,
-    increment_contributor_emails, get_contributor_by_id, delete_contributor,
+    increment_contributor_emails, get_contributor_by_id, get_contributors_by_ids, delete_contributor,
     get_contributors_by_company,
     # ScoreCard
     get_scorecard_datatable, upsert_scorecard_scores, update_scorecard_systems,
@@ -79,6 +79,7 @@ from pdf_generator import generate_report_pdf
 from agentmail_client import is_agentmail_configured, send_email_draft
 from sheets_client import is_sheets_configured, get_sheet_info
 from utils import make_github_request
+from email_utils import _PERSONAL_EMAIL_DOMAINS, _filter_personal_email, _derive_company_domain, _check_company_match
 from sheets_sync import (
     run_sync as sheets_run_sync,
     get_sync_config as sheets_get_sync_config,
@@ -660,6 +661,55 @@ def enrich_webhook_data(company_data: dict, report_id: Optional[int] = None) -> 
     return enriched
 
 
+def _send_webhook_request(url: str, payload: dict, event_type: str, company_name: str, label: str, timeout: int = 10) -> None:
+    """
+    Send an HTTP POST to a webhook URL with standard error handling and logging.
+
+    Handles: HTTP POST, status code check, log_webhook() call,
+    Timeout/RequestException handling.
+
+    Args:
+        url: The webhook URL to POST to.
+        payload: JSON-serialisable dict to send as the request body.
+        event_type: Event type string for log_webhook() (e.g. 'tier_change', 'gsheet_tier_change').
+        company_name: Company name for log messages and log_webhook().
+        label: Human-readable label for log messages (e.g. 'WEBHOOK', 'GSHEET WEBHOOK').
+        timeout: HTTP request timeout in seconds (default 10).
+    """
+    try:
+        response = requests.post(
+            url,
+            json=payload,
+            headers={'Content-Type': 'application/json'},
+            timeout=timeout,
+        )
+        if 200 <= response.status_code < 300:
+            logging.info(f"[{label}] Success: {company_name} -> {url} (status: {response.status_code})")
+            try:
+                log_webhook(event_type, company_name, 'success')
+                increment_daily_stat('webhooks_fired')
+            except Exception as db_err:
+                logging.error(f"[{label}] DB logging error: {db_err}")
+        else:
+            logging.error(f"[{label}] Failed: {company_name} -> {url} (status: {response.status_code})")
+            try:
+                log_webhook(event_type, company_name, 'fail')
+            except Exception as db_err:
+                logging.error(f"[{label}] DB logging error: {db_err}")
+    except requests.exceptions.Timeout:
+        logging.error(f"[{label}] Timeout: {company_name} -> {url}")
+        try:
+            log_webhook(event_type, company_name, 'fail')
+        except Exception as log_err:
+            logging.error(f"[{label}] DB logging error after timeout: {log_err}")
+    except requests.exceptions.RequestException as e:
+        logging.error(f"[{label}] Error: {company_name} -> {str(e)}")
+        try:
+            log_webhook(event_type, company_name, 'fail')
+        except Exception as log_err:
+            logging.error(f"[{label}] DB logging error after request failure: {log_err}")
+
+
 def trigger_webhook(event_type: str, company_data: dict) -> None:
     """
     Send a webhook notification asynchronously.
@@ -716,39 +766,8 @@ def trigger_webhook(event_type: str, company_data: dict) -> None:
                 **company_data
             }
 
-        try:
-            response = requests.post(
-                webhook_url,
-                json=payload,
-                headers={'Content-Type': 'application/json'},
-                timeout=10
-            )
-            if response.status_code >= 200 and response.status_code < 300:
-                webhook_type = "Slack" if is_slack_webhook else "Generic"
-                logging.info(f"[WEBHOOK] Success ({webhook_type}): {company_name} -> {webhook_url} (status: {response.status_code})")
-                try:
-                    log_webhook(event_type, company_name, 'success')
-                    increment_daily_stat('webhooks_fired')
-                except Exception as db_err:
-                    logging.error(f"[WEBHOOK] DB logging error: {db_err}")
-            else:
-                logging.error(f"[WEBHOOK] Failed: {company_name} -> {webhook_url} (status: {response.status_code})")
-                try:
-                    log_webhook(event_type, company_name, 'fail')
-                except Exception as db_err:
-                    logging.error(f"[WEBHOOK] DB logging error: {db_err}")
-        except requests.exceptions.Timeout:
-            logging.error(f"[WEBHOOK] Timeout: {company_name} -> {webhook_url}")
-            try:
-                log_webhook(event_type, company_name, 'fail')
-            except Exception as log_err:
-                print(f"[WEBHOOK] DB logging error after timeout: {log_err}")
-        except requests.exceptions.RequestException as e:
-            logging.error(f"[WEBHOOK] Error: {company_name} -> {str(e)}")
-            try:
-                log_webhook(event_type, company_name, 'fail')
-            except Exception as log_err:
-                print(f"[WEBHOOK] DB logging error after request failure: {log_err}")
+        label = "Slack WEBHOOK" if is_slack_webhook else "WEBHOOK"
+        _send_webhook_request(webhook_url, payload, event_type, company_name, label, timeout=10)
 
     # Run in background thread to avoid blocking
     webhook_thread = threading.Thread(target=send_webhook, daemon=True, name="WebhookSender")
@@ -850,47 +869,51 @@ def trigger_gsheet_webhook(event_type: str, company_data: dict) -> None:
 
     def send_gsheet_webhook():
         company_name = company_data.get('company', company_data.get('company_name', 'Unknown'))
-
-        try:
-            # Format payload for Google Apps Script
-            payload = format_gsheet_payload(event_type, company_data)
-
-            response = requests.post(
-                gsheet_url,
-                json=payload,
-                headers={'Content-Type': 'application/json'},
-                timeout=30  # Google Apps Script can be slow
-            )
-
-            if response.status_code >= 200 and response.status_code < 300:
-                logging.info(f"[GSHEET WEBHOOK] Success: {company_name} exported to Google Sheets (status: {response.status_code})")
-                try:
-                    log_webhook(f'gsheet_{event_type}', company_name, 'success')
-                except Exception as db_err:
-                    logging.error(f"[GSHEET WEBHOOK] DB logging error: {db_err}")
-            else:
-                logging.error(f"[GSHEET WEBHOOK] Failed: {company_name} (status: {response.status_code}, response: {response.text[:200]})")
-                try:
-                    log_webhook(f'gsheet_{event_type}', company_name, 'fail')
-                except Exception as db_err:
-                    logging.error(f"[GSHEET WEBHOOK] DB logging error: {db_err}")
-
-        except requests.exceptions.Timeout:
-            logging.error(f"[GSHEET WEBHOOK] Timeout: {company_name} -> {gsheet_url}")
-            try:
-                log_webhook(f'gsheet_{event_type}', company_name, 'fail')
-            except Exception as log_err:
-                print(f"[GSHEET WEBHOOK] DB logging error after timeout: {log_err}")
-        except requests.exceptions.RequestException as e:
-            logging.error(f"[GSHEET WEBHOOK] Error: {company_name} -> {str(e)}")
-            try:
-                log_webhook(f'gsheet_{event_type}', company_name, 'fail')
-            except Exception as log_err:
-                print(f"[GSHEET WEBHOOK] DB logging error after request failure: {log_err}")
+        payload = format_gsheet_payload(event_type, company_data)
+        _send_webhook_request(gsheet_url, payload, f'gsheet_{event_type}', company_name,
+                              'GSHEET WEBHOOK', timeout=30)
 
     # Run in background thread to avoid blocking
     gsheet_thread = threading.Thread(target=send_gsheet_webhook, daemon=True, name="GSheetWebhookSender")
     gsheet_thread.start()
+
+
+def _notify_tier_change(company_name: str, result: dict, scan_data: dict, report_id) -> None:
+    """
+    Build webhook data, enrich it, trigger both webhooks, and send Tier 2 Slack alert.
+
+    Consolidates the tier-change notification chain used by both the background
+    worker scan path and the streaming SSE scan path.
+
+    Args:
+        company_name: Company name string.
+        result: Dict returned by update_account_status() containing tier, tier_name,
+                evidence, revenue, website, etc.
+        scan_data: Raw scan data dict (used for org_login).
+        report_id: The saved report ID (int or None).
+    """
+    tier_name = result.get('tier_name', 'Unknown')
+    webhook_data = {
+        'company': company_name,
+        'tier': result.get('tier'),
+        'tier_name': tier_name,
+        'evidence': result.get('evidence', ''),
+        'github_org': scan_data.get('org_login', ''),
+        'revenue': result.get('revenue'),
+        'website': result.get('website', ''),
+    }
+    # Enrich with report details and signals
+    webhook_data = enrich_webhook_data(webhook_data, report_id)
+    trigger_webhook('tier_change', webhook_data)
+    # Also trigger Google Sheets export for Tier 1/2 accounts
+    trigger_gsheet_webhook('tier_change', webhook_data)
+    # Slack bot: immediate Tier 2 alert for Goldilocks Zone leads
+    if result.get('tier') == 2:
+        try:
+            from slack_bot import send_tier2_alert
+            send_tier2_alert(webhook_data)
+        except Exception as slack_err:
+            logging.error(f"[NOTIFY] Slack Tier 2 alert failed: {slack_err}")
 
 
 # =============================================================================
@@ -1129,27 +1152,7 @@ def perform_background_scan(company_name: str):
 
             # Phase 5: Trigger webhook if tier changed to Thinking or Preparing
             if result.get('webhook_event'):
-                webhook_data = {
-                    'company': company_name,
-                    'tier': result.get('tier'),
-                    'tier_name': tier_name,
-                    'evidence': result.get('evidence', ''),
-                    'github_org': scan_data.get('org_login', ''),
-                    'revenue': result.get('revenue'),
-                    'website': result.get('website', '')
-                }
-                # Enrich with report details and signals
-                webhook_data = enrich_webhook_data(webhook_data, report_id)
-                trigger_webhook('tier_change', webhook_data)
-                # Also trigger Google Sheets export for Tier 1/2 accounts
-                trigger_gsheet_webhook('tier_change', webhook_data)
-                # Slack bot: immediate Tier 2 alert for Goldilocks Zone leads
-                if result.get('tier') == 2:
-                    try:
-                        from slack_bot import send_tier2_alert
-                        send_tier2_alert(webhook_data)
-                    except Exception as slack_err:
-                        logging.error(f"[WORKER] Slack Tier 2 alert failed: {slack_err}")
+                _notify_tier_change(company_name, result, scan_data, report_id)
                 logging.info(f"[WORKER] Webhook triggered for {company_name} (Tier {result.get('tier')})")
         except Exception as e:
             # Store the error for user visibility instead of silently failing
@@ -1283,16 +1286,14 @@ def process_import_batch_worker(batch_id: int):
                 continue
 
             try:
-                # Check if account already exists (idempotency)
-                existing = get_account_by_company_case_insensitive(company_name)
-                if existing:
-                    # If annual_revenue or website provided and account exists, enrich it
-                    if annual_revenue:
-                        update_account_annual_revenue(company_name, annual_revenue)
-                    if website:
-                        update_account_website(company_name, website)
-                    if metadata:
-                        update_account_metadata(company_name, metadata)
+                # Check if account already exists and enrich in one connection
+                enriched = enrich_existing_account(
+                    company_name,
+                    annual_revenue=annual_revenue,
+                    website=website,
+                    metadata=metadata,
+                )
+                if enriched:
                     skipped.append(company_name)
                     processed_count = i + 1
                     # Update progress every 10 items
@@ -1477,26 +1478,7 @@ def stream_scan(company: str):
 
             # Phase 3.6: Trigger webhook if tier changed to Thinking or Preparing
             if account_result.get('webhook_event'):
-                webhook_data = {
-                    'company': company,
-                    'tier': account_result.get('tier'),
-                    'tier_name': tier_name,
-                    'evidence': account_result.get('evidence', ''),
-                    'github_org': scan_data.get('org_login', ''),
-                    'revenue': account_result.get('revenue')
-                }
-                # Enrich with report details and signals
-                webhook_data = enrich_webhook_data(webhook_data, report_id)
-                trigger_webhook('tier_change', webhook_data)
-                # Also trigger Google Sheets export for Tier 1/2 accounts
-                trigger_gsheet_webhook('tier_change', webhook_data)
-                # Slack bot: immediate Tier 2 alert for Goldilocks Zone leads
-                if account_result.get('tier') == 2:
-                    try:
-                        from slack_bot import send_tier2_alert
-                        send_tier2_alert(webhook_data)
-                    except Exception as slack_err:
-                        logging.error(f"[STREAM] Slack Tier 2 alert failed: {slack_err}")
+                _notify_tier_change(company, account_result, scan_data, report_id)
                 yield f"data: LOG:Webhook notification sent for {tier_name} lead\n\n"
 
         except Exception as e:
@@ -3480,8 +3462,35 @@ def api_account_enroll(account_id):
     results = []
     apollo_headers = {'X-Api-Key': apollo_key, 'Content-Type': 'application/json'}
 
+    # Pre-fetch all contributors in one query (fixes N+1)
+    contributors_list = get_contributors_by_ids(contributor_ids)
+    contributors_map = {c['id']: c for c in contributors_list}
+
+    # Pre-fetch Apollo custom field IDs once (moved out of loop)
+    FIELD_ENV_OVERRIDES = {
+        'personalized_subject_1': os.environ.get('APOLLO_FIELD_PERSONALIZED_SUBJECT_1', ''),
+        'personalized_email_1': os.environ.get('APOLLO_FIELD_PERSONALIZED_EMAIL_1', ''),
+    }
+    field_id_map = {}
+    try:
+        cf_resp = req.get('https://api.apollo.io/v1/typed_custom_fields',
+                         headers=apollo_headers, timeout=15)
+        if cf_resp.status_code == 200:
+            for f in cf_resp.json().get('typed_custom_fields', []):
+                fid = f.get('id')
+                fname = (f.get('name') or '').lower().replace(' ', '_')
+                if fid and fname:
+                    field_id_map[fname] = fid
+            for k, v in FIELD_ENV_OVERRIDES.items():
+                if v and k not in field_id_map:
+                    field_id_map[k] = v
+        else:
+            field_id_map = {k: v for k, v in FIELD_ENV_OVERRIDES.items() if v}
+    except Exception:
+        field_id_map = {k: v for k, v in FIELD_ENV_OVERRIDES.items() if v}
+
     for cid in contributor_ids:
-        contributor = get_contributor_by_id(cid)
+        contributor = contributors_map.get(cid)
         if not contributor:
             results.append({'contributor_id': cid, 'name': 'Unknown', 'status': 'failed', 'message': 'Contributor not found'})
             continue
@@ -3498,13 +3507,7 @@ def api_account_enroll(account_id):
                 parts = name.strip().split(' ', 1)
                 first_name = parts[0]
                 last_name = parts[1] if len(parts) > 1 else ''
-                domain = ''
-                if company:
-                    clean = company.strip().lower()
-                    for suffix in [' inc', ' inc.', ' corp', ' corp.', ' ltd', ' ltd.', ' llc', ' co', ' co.', ' gmbh', ' ag', ' sa']:
-                        if clean.endswith(suffix):
-                            clean = clean[:len(clean) - len(suffix)]
-                    domain = clean.replace(' ', '') + '.com'
+                domain = _derive_company_domain(company) if company else ''
 
                 match_resp = req.post('https://api.apollo.io/api/v1/people/match',
                     json={
@@ -3567,29 +3570,6 @@ def api_account_enroll(account_id):
 
             typed_custom_fields = {}
             if email_result and email_result.get('best_subject'):
-                # Resolve custom field IDs
-                FIELD_ENV_OVERRIDES = {
-                    'personalized_subject_1': os.environ.get('APOLLO_FIELD_PERSONALIZED_SUBJECT_1', ''),
-                    'personalized_email_1': os.environ.get('APOLLO_FIELD_PERSONALIZED_EMAIL_1', ''),
-                }
-                try:
-                    cf_resp = req.get('https://api.apollo.io/v1/typed_custom_fields',
-                                     headers=apollo_headers, timeout=15)
-                    if cf_resp.status_code == 200:
-                        field_id_map = {}
-                        for f in cf_resp.json().get('typed_custom_fields', []):
-                            fid = f.get('id')
-                            fname = (f.get('name') or '').lower().replace(' ', '_')
-                            if fid and fname:
-                                field_id_map[fname] = fid
-                        for k, v in FIELD_ENV_OVERRIDES.items():
-                            if v and k not in field_id_map:
-                                field_id_map[k] = v
-                    else:
-                        field_id_map = {k: v for k, v in FIELD_ENV_OVERRIDES.items() if v}
-                except Exception:
-                    field_id_map = {k: v for k, v in FIELD_ENV_OVERRIDES.items() if v}
-
                 field_values = {
                     'personalized_subject_1': email_result.get('best_subject', ''),
                     'personalized_email_1': to_html(email_result.get('best_body', '')),
@@ -4158,8 +4138,12 @@ def api_contributors_bulk_enroll():
     bdr_prompt = (campaign.get('prompt') or '').strip()
     results = []
 
+    # Pre-fetch all contributors in one query (fixes N+1)
+    contributors_list_2 = get_contributors_by_ids(contributor_ids)
+    contributors_map_2 = {c['id']: c for c in contributors_list_2}
+
     for cid in contributor_ids:
-        contributor = get_contributor_by_id(cid)
+        contributor = contributors_map_2.get(cid)
         if not contributor:
             results.append({'contributor_id': cid, 'success': False, 'message': 'Not found'})
             continue
@@ -4179,14 +4163,7 @@ def api_contributors_bulk_enroll():
         # Step 1: Apollo lookup if no email
         if not email:
             try:
-                domain = ''
-                if company:
-                    clean = company.strip().lower()
-                    for suffix in [' inc', ' inc.', ' corp', ' corp.', ' ltd', ' ltd.',
-                                   ' llc', ' co', ' co.', ' gmbh', ' ag', ' sa']:
-                        if clean.endswith(suffix):
-                            clean = clean[:len(clean) - len(suffix)]
-                    domain = clean.replace(' ', '') + '.com'
+                domain = _derive_company_domain(company) if company else ''
 
                 match_resp = req.post('https://api.apollo.io/api/v1/people/match',
                     json={
@@ -8404,47 +8381,8 @@ def api_apollo_enroll_sequence():
 # LinkedIn Prospector Routes
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Personal email domains to filter from Apollo results (not useful for B2B outreach)
-_PERSONAL_EMAIL_DOMAINS = {'gmail.com', 'googlemail.com', 'yahoo.com', 'hotmail.com',
-                           'outlook.com', 'aol.com', 'icloud.com', 'me.com', 'live.com',
-                           'msn.com', 'protonmail.com', 'proton.me', 'mail.com', 'ymail.com'}
-
-
-def _filter_personal_email(email):
-    """Return empty string if email is from a personal domain (gmail, yahoo, etc.)."""
-    if not email:
-        return ''
-    domain = email.lower().split('@')[-1] if '@' in email else ''
-    return '' if domain in _PERSONAL_EMAIL_DOMAINS else email
-
-
-def _derive_company_domain(company):
-    """Derive a likely domain from a company name (e.g. 'Clay' -> 'clay.com')."""
-    if not company:
-        return ''
-    clean = company.strip().lower()
-    for suffix in [' inc', ' inc.', ' corp', ' corp.', ' ltd', ' ltd.', ' llc', ' co', ' co.', ' gmbh', ' ag', ' sa']:
-        if clean.endswith(suffix):
-            clean = clean[:len(clean) - len(suffix)]
-    return clean.replace(' ', '') + '.com'
-
-
-def _check_company_match(email, target_company):
-    """Return True if the email domain plausibly matches the target company."""
-    if not email or not target_company:
-        return True  # nothing to compare — allow through
-    if '@' not in email:
-        return True
-    email_domain = email.lower().split('@')[-1]
-    # Check against derived domain
-    target_domain = _derive_company_domain(target_company)
-    if target_domain and email_domain == target_domain:
-        return True
-    # Fuzzy: company name appears in email domain or vice versa
-    co_lower = target_company.lower().strip().replace(' ', '')
-    if co_lower in email_domain or email_domain.split('.')[0] in co_lower:
-        return True
-    return False
+# _PERSONAL_EMAIL_DOMAINS, _filter_personal_email, _derive_company_domain,
+# and _check_company_match are imported from email_utils.py
 
 
 def _sanitize_contributor_email(email, company=None):
@@ -8817,31 +8755,11 @@ if __name__ == '__main__':
     # Start the rules scheduler for 7am EST daily updates
     start_rules_scheduler()
 
-    # Start the tier-aware scheduled rescan scheduler
-    # Try APScheduler-based scheduler first; fall back to legacy thread if unavailable
-    try:
-        from scheduler import init_scan_scheduler, shutdown_scan_scheduler
-        import atexit as _atexit
-        _scan_sched = init_scan_scheduler(
-            app=app,
-            spawn_scan_fn=spawn_background_scan,
-            max_workers=MAX_SCAN_WORKERS,
-            check_interval_hours=_scheduled_rescan_state.get('check_interval_hours', 6),
-            max_per_cycle=_scheduled_rescan_state.get('max_per_cycle', 100),
-        )
-        _atexit.register(shutdown_scan_scheduler)
-        logging.info("[APP] APScheduler-based scan scheduler started (intervals: " +
-                     ", ".join(f"T{t}={d}d" for t, d in sorted(TIER_SCAN_INTERVALS.items())) + ")")
-    except ImportError:
-        # APScheduler not installed -- fall back to legacy thread-based scheduler
-        start_scheduled_rescan_scheduler()
-        logging.info("[APP] Legacy tier-aware scheduled rescan started (intervals: " +
-                     ", ".join(f"T{t}={d}d" for t, d in sorted(TIER_SCAN_INTERVALS.items())) + ")")
-
     # Start the deduplication scheduler (runs daily to clean up duplicates)
     start_deduplication_scheduler()
 
-    # Start the Pipeline Orchestrator (APScheduler-based, Replit-compatible)
+    # Start the Pipeline Orchestrator (sole scan scheduler — replaces legacy ScanScheduler)
+    # PipelineOrchestrator handles finding stale accounts and queuing rescans
     try:
         from pipeline import PipelineOrchestrator
         _pipeline = PipelineOrchestrator.instance()

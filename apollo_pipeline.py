@@ -168,7 +168,8 @@ def apollo_api_call(method, url, **kwargs):
 # auto_discover_contacts
 # ---------------------------------------------------------------------------
 
-def auto_discover_contacts(account_id, batch_id=None, personas=None):
+def auto_discover_contacts(account_id, batch_id=None, personas=None,
+                           existing_emails=None):
     """Discover contacts for a monitored account via Apollo People Search.
 
     Args:
@@ -176,6 +177,8 @@ def auto_discover_contacts(account_id, batch_id=None, personas=None):
         batch_id: optional enrollment_batches.id to link contacts to
         personas: list of persona dicts with titles_json, seniorities_json, etc.
                   If None, looks up campaign_personas for active campaigns.
+        existing_emails: optional set of lowercase emails for dedup. If provided,
+                         skips the DB query to load enrollment emails.
 
     Returns:
         dict with 'contacts' (list of dicts), 'total', 'new', 'skipped_dedup'
@@ -195,30 +198,29 @@ def auto_discover_contacts(account_id, batch_id=None, personas=None):
 
     # Resolve personas
     if not personas:
-        conn = db.get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT cp.* FROM campaign_personas cp
-            JOIN campaigns c ON c.id = cp.campaign_id
-            WHERE c.status = 'active'
-            ORDER BY cp.priority ASC
-        ''')
-        personas = [dict(r) for r in cursor.fetchall()]
-        conn.close()
+        with db.db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT cp.* FROM campaign_personas cp
+                JOIN campaigns c ON c.id = cp.campaign_id
+                WHERE c.status = 'active'
+                ORDER BY cp.priority ASC
+            ''')
+            personas = [dict(r) for r in cursor.fetchall()]
 
     if not personas:
         return {'error': 'No campaign personas configured', 'contacts': [],
                 'total': 0, 'new': 0, 'skipped_dedup': 0}
 
-    # Collect existing emails for dedup
-    conn = db.get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        'SELECT email FROM enrollment_contacts WHERE email IS NOT NULL AND email != ?',
-        ('',)
-    )
-    existing_emails = {r['email'].lower() for r in cursor.fetchall() if r['email']}
-    conn.close()
+    # Collect existing emails for dedup (skip DB query if caller provided the set)
+    if existing_emails is None:
+        with db.db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                'SELECT email FROM enrollment_contacts WHERE email IS NOT NULL AND email != ?',
+                ('',)
+            )
+            existing_emails = {r['email'].lower() for r in cursor.fetchall() if r['email']}
 
     all_contacts = []
     skipped_dedup = 0
@@ -334,54 +336,51 @@ def select_sequence(tier, persona_name, signal_type=None):
         dict with 'sequence_id', 'sequence_name' or None
     """
     db = _db()
-    conn = db.get_db_connection()
-    cursor = conn.cursor()
+    with db.db_connection() as conn:
+        cursor = conn.cursor()
 
-    # Strategy 1: Direct persona->sequence mapping
-    cursor.execute('''
-        SELECT cp.sequence_id, cp.sequence_name
-        FROM campaign_personas cp
-        JOIN campaigns c ON c.id = cp.campaign_id
-        WHERE c.status = 'active'
-          AND cp.persona_name = ?
-          AND cp.sequence_id IS NOT NULL
-          AND cp.sequence_id != ''
-        ORDER BY cp.priority ASC
-        LIMIT 1
-    ''', (persona_name,))
-    row = cursor.fetchone()
-    if row and row['sequence_id']:
-        conn.close()
-        return {'sequence_id': row['sequence_id'],
-                'sequence_name': row['sequence_name'] or ''}
+        # Strategy 1: Direct persona->sequence mapping
+        cursor.execute('''
+            SELECT cp.sequence_id, cp.sequence_name
+            FROM campaign_personas cp
+            JOIN campaigns c ON c.id = cp.campaign_id
+            WHERE c.status = 'active'
+              AND cp.persona_name = ?
+              AND cp.sequence_id IS NOT NULL
+              AND cp.sequence_id != ''
+            ORDER BY cp.priority ASC
+            LIMIT 1
+        ''', (persona_name,))
+        row = cursor.fetchone()
+        if row and row['sequence_id']:
+            return {'sequence_id': row['sequence_id'],
+                    'sequence_name': row['sequence_name'] or ''}
 
-    # Strategy 2: Signal-type keyword match
-    if signal_type:
-        keyword = signal_type.replace('_', ' ').lower()
+        # Strategy 2: Signal-type keyword match
+        if signal_type:
+            keyword = signal_type.replace('_', ' ').lower()
+            cursor.execute('''
+                SELECT sequence_id, sequence_name FROM sequence_mappings
+                WHERE enabled = 1 AND LOWER(sequence_name) LIKE ?
+                ORDER BY sequence_name ASC
+                LIMIT 1
+            ''', (f'%{keyword}%',))
+            row = cursor.fetchone()
+            if row:
+                return {'sequence_id': row['sequence_id'],
+                        'sequence_name': row['sequence_name']}
+
+        # Strategy 3: First enabled sequence
         cursor.execute('''
             SELECT sequence_id, sequence_name FROM sequence_mappings
-            WHERE enabled = 1 AND LOWER(sequence_name) LIKE ?
+            WHERE enabled = 1
             ORDER BY sequence_name ASC
             LIMIT 1
-        ''', (f'%{keyword}%',))
+        ''')
         row = cursor.fetchone()
         if row:
-            conn.close()
             return {'sequence_id': row['sequence_id'],
                     'sequence_name': row['sequence_name']}
-
-    # Strategy 3: First enabled sequence
-    cursor.execute('''
-        SELECT sequence_id, sequence_name FROM sequence_mappings
-        WHERE enabled = 1
-        ORDER BY sequence_name ASC
-        LIMIT 1
-    ''')
-    row = cursor.fetchone()
-    conn.close()
-    if row:
-        return {'sequence_id': row['sequence_id'],
-                'sequence_name': row['sequence_name']}
 
     return None
 
@@ -416,16 +415,15 @@ def bulk_enroll_contacts(batch_id, contact_ids=None, limit=25):
 
     # Get contacts to process
     if contact_ids:
-        conn = db.get_db_connection()
-        cursor = conn.cursor()
-        placeholders = ', '.join('?' * len(contact_ids))
-        cursor.execute(
-            f'SELECT * FROM enrollment_contacts '
-            f'WHERE id IN ({placeholders}) AND batch_id = ?',
-            contact_ids + [batch_id]
-        )
-        contacts = [dict(r) for r in cursor.fetchall()]
-        conn.close()
+        with db.db_connection() as conn:
+            cursor = conn.cursor()
+            placeholders = ', '.join('?' * len(contact_ids))
+            cursor.execute(
+                f'SELECT * FROM enrollment_contacts '
+                f'WHERE id IN ({placeholders}) AND batch_id = ?',
+                contact_ids + [batch_id]
+            )
+            contacts = [dict(r) for r in cursor.fetchall()]
     else:
         contacts = db.get_next_contacts_for_phase(batch_id, 'generated', limit=limit)
         if not contacts:

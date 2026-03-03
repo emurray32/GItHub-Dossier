@@ -94,64 +94,62 @@ def _set_config(key: str, value):
 def _init_pipeline_tables():
     """Create pipeline_runs and pipeline_step_results tables if they don't exist."""
     db = _db()
-    conn = db.get_db_connection()
-    cursor = conn.cursor()
+    with db.db_connection() as conn:
+        cursor = conn.cursor()
 
-    cursor.execute(db._adapt_ddl('''
-        CREATE TABLE IF NOT EXISTS pipeline_runs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            completed_at TIMESTAMP,
-            status TEXT DEFAULT 'running',
-            trigger_type TEXT DEFAULT 'scheduled',
-            steps_completed INTEGER DEFAULT 0,
-            steps_failed INTEGER DEFAULT 0,
-            error_log TEXT,
-            summary_json TEXT
-        )
-    '''))
+        cursor.execute(db._adapt_ddl('''
+            CREATE TABLE IF NOT EXISTS pipeline_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                completed_at TIMESTAMP,
+                status TEXT DEFAULT 'running',
+                trigger_type TEXT DEFAULT 'scheduled',
+                steps_completed INTEGER DEFAULT 0,
+                steps_failed INTEGER DEFAULT 0,
+                error_log TEXT,
+                summary_json TEXT
+            )
+        '''))
 
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_pipeline_runs_status
-        ON pipeline_runs(status)
-    ''')
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_pipeline_runs_status
+            ON pipeline_runs(status)
+        ''')
 
-    cursor.execute(db._adapt_ddl('''
-        CREATE TABLE IF NOT EXISTS pipeline_step_results (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            run_id INTEGER NOT NULL,
-            step_name TEXT NOT NULL,
-            status TEXT DEFAULT 'running',
-            records_processed INTEGER DEFAULT 0,
-            errors INTEGER DEFAULT 0,
-            duration_ms INTEGER DEFAULT 0,
-            detail_json TEXT,
-            started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            completed_at TIMESTAMP,
-            FOREIGN KEY (run_id) REFERENCES pipeline_runs(id)
-        )
-    '''))
+        cursor.execute(db._adapt_ddl('''
+            CREATE TABLE IF NOT EXISTS pipeline_step_results (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id INTEGER NOT NULL,
+                step_name TEXT NOT NULL,
+                status TEXT DEFAULT 'running',
+                records_processed INTEGER DEFAULT 0,
+                errors INTEGER DEFAULT 0,
+                duration_ms INTEGER DEFAULT 0,
+                detail_json TEXT,
+                started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                completed_at TIMESTAMP,
+                FOREIGN KEY (run_id) REFERENCES pipeline_runs(id)
+            )
+        '''))
 
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_pipeline_steps_run
-        ON pipeline_step_results(run_id)
-    ''')
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_pipeline_steps_run
+            ON pipeline_step_results(run_id)
+        ''')
 
-    conn.commit()
-    conn.close()
+        conn.commit()
     logger.info("[PIPELINE] Pipeline tables initialized")
 
 
 def _create_run(trigger_type: str = 'scheduled') -> int:
     """Create a new pipeline_runs row, return its id."""
     db = _db()
-    conn = db.get_db_connection()
-    cursor = conn.cursor()
-    run_id = db._insert_returning_id(cursor, '''
-        INSERT INTO pipeline_runs (trigger_type) VALUES (?)
-    ''', (trigger_type,))
-    conn.commit()
-    conn.close()
+    with db.db_connection() as conn:
+        cursor = conn.cursor()
+        run_id = db._insert_returning_id(cursor, '''
+            INSERT INTO pipeline_runs (trigger_type) VALUES (?)
+        ''', (trigger_type,))
+        conn.commit()
     return run_id
 
 
@@ -160,17 +158,16 @@ def _complete_run(run_id: int, status: str, steps_completed: int,
                   summary: Optional[dict] = None):
     """Mark a pipeline run as completed."""
     db = _db()
-    conn = db.get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        'UPDATE pipeline_runs SET completed_at = CURRENT_TIMESTAMP, '
-        'status = ?, steps_completed = ?, steps_failed = ?, '
-        'error_log = ?, summary_json = ? WHERE id = ?',
-        (status, steps_completed, steps_failed, error_log,
-         json.dumps(summary) if summary else None, run_id)
-    )
-    conn.commit()
-    conn.close()
+    with db.db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            'UPDATE pipeline_runs SET completed_at = CURRENT_TIMESTAMP, '
+            'status = ?, steps_completed = ?, steps_failed = ?, '
+            'error_log = ?, summary_json = ? WHERE id = ?',
+            (status, steps_completed, steps_failed, error_log,
+             json.dumps(summary) if summary else None, run_id)
+        )
+        conn.commit()
 
 
 def _record_step(run_id: int, step_name: str, status: str,
@@ -178,45 +175,42 @@ def _record_step(run_id: int, step_name: str, status: str,
                  duration_ms: int = 0, detail: Optional[dict] = None) -> int:
     """Record a completed pipeline step."""
     db = _db()
-    conn = db.get_db_connection()
-    cursor = conn.cursor()
-    step_id = db._insert_returning_id(cursor, '''
-        INSERT INTO pipeline_step_results
-            (run_id, step_name, status, records_processed, errors,
-             duration_ms, detail_json, completed_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-    ''', (run_id, step_name, status, records_processed, errors,
-          duration_ms, json.dumps(detail) if detail else None))
-    conn.commit()
-    conn.close()
+    with db.db_connection() as conn:
+        cursor = conn.cursor()
+        step_id = db._insert_returning_id(cursor, '''
+            INSERT INTO pipeline_step_results
+                (run_id, step_name, status, records_processed, errors,
+                 duration_ms, detail_json, completed_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ''', (run_id, step_name, status, records_processed, errors,
+              duration_ms, json.dumps(detail) if detail else None))
+        conn.commit()
     return step_id
 
 
 def get_recent_runs(limit: int = 20) -> list:
     """Return the most recent pipeline runs."""
     db = _db()
-    conn = db.get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        'SELECT * FROM pipeline_runs ORDER BY started_at DESC LIMIT ?',
-        (limit,)
-    )
-    rows = [dict(r) for r in cursor.fetchall()]
-    conn.close()
+    with db.db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            'SELECT * FROM pipeline_runs ORDER BY started_at DESC LIMIT ?',
+            (limit,)
+        )
+        rows = [dict(r) for r in cursor.fetchall()]
     return rows
 
 
 def get_run_steps(run_id: int) -> list:
     """Return step results for a given pipeline run."""
     db = _db()
-    conn = db.get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        'SELECT * FROM pipeline_step_results WHERE run_id = ? ORDER BY started_at ASC',
-        (run_id,)
-    )
-    rows = [dict(r) for r in cursor.fetchall()]
-    conn.close()
+    with db.db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            'SELECT * FROM pipeline_step_results WHERE run_id = ? ORDER BY started_at ASC',
+            (run_id,)
+        )
+        rows = [dict(r) for r in cursor.fetchall()]
     return rows
 
 
@@ -288,21 +282,20 @@ def step_process_tier_changes(run_id: int) -> dict:
     db = _db()
 
     try:
-        conn = db.get_db_connection()
-        cursor = conn.cursor()
+        with db.db_connection() as conn:
+            cursor = conn.cursor()
 
-        # Find accounts whose tier changed in the last 24 hours
-        dt_cutoff = db._adapt_datetime('-1 days')
-        cursor.execute(f'''
-            SELECT id, company_name, github_org, current_tier, website,
-                   annual_revenue, status_changed_at
-            FROM monitored_accounts
-            WHERE status_changed_at >= {dt_cutoff}
-              AND archived_at IS NULL
-            ORDER BY current_tier ASC
-        ''')
-        changed = [dict(r) for r in cursor.fetchall()]
-        conn.close()
+            # Find accounts whose tier changed in the last 24 hours
+            dt_cutoff = db._adapt_datetime('-1 days')
+            cursor.execute(f'''
+                SELECT id, company_name, github_org, current_tier, website,
+                       annual_revenue, status_changed_at
+                FROM monitored_accounts
+                WHERE status_changed_at >= {dt_cutoff}
+                  AND archived_at IS NULL
+                ORDER BY current_tier ASC
+            ''')
+            changed = [dict(r) for r in cursor.fetchall()]
 
         # Categorize
         tier_counts = {}
@@ -363,6 +356,16 @@ def step_discover_contacts(run_id: int, accounts: List[dict]) -> dict:
     all_contacts = []
     max_per_account = _get_config('max_contacts_per_account') or 5
 
+    # Load dedup email set ONCE before the account loop (Issue #10 optimization)
+    db = _db()
+    with db.db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            'SELECT email FROM enrollment_contacts WHERE email IS NOT NULL AND email != ?',
+            ('',)
+        )
+        existing_emails = {r['email'].lower() for r in cursor.fetchall() if r['email']}
+
     for account in accounts:
         company = account.get('company_name', '')
         domain = _extract_domain(account.get('website', ''))
@@ -377,7 +380,8 @@ def step_discover_contacts(run_id: int, accounts: List[dict]) -> dict:
             from apollo_pipeline import auto_discover_contacts
             account_id = account.get('id')
             if account_id:
-                result = auto_discover_contacts(account_id)
+                result = auto_discover_contacts(account_id,
+                                                existing_emails=existing_emails)
                 contacts = result.get('contacts', [])
             else:
                 contacts = []
@@ -657,16 +661,15 @@ def _extract_domain(url: str) -> str:
 def _get_weekly_email_count() -> int:
     """Count emails generated this week (Monday-Sunday)."""
     db = _db()
-    conn = db.get_db_connection()
-    cursor = conn.cursor()
-    dt_week_start = db._adapt_datetime('-7 days')
-    cursor.execute(f'''
-        SELECT COUNT(*) as cnt FROM enrollment_contacts
-        WHERE created_at >= {dt_week_start}
-          AND generated_emails_json IS NOT NULL
-    ''')
-    row = cursor.fetchone()
-    conn.close()
+    with db.db_connection() as conn:
+        cursor = conn.cursor()
+        dt_week_start = db._adapt_datetime('-7 days')
+        cursor.execute(f'''
+            SELECT COUNT(*) as cnt FROM enrollment_contacts
+            WHERE created_at >= {dt_week_start}
+              AND generated_emails_json IS NOT NULL
+        ''')
+        row = cursor.fetchone()
     return row['cnt'] if row else 0
 
 
@@ -952,22 +955,21 @@ class PipelineOrchestrator:
             return
 
         db = _db()
-        conn = db.get_db_connection()
-        cursor = conn.cursor()
+        with db.db_connection() as conn:
+            cursor = conn.cursor()
 
-        # Find accounts promoted to Tier 2 in the last check interval
-        interval_hours = _get_config('tier2_check_interval_hours') or 3
-        dt_cutoff = db._adapt_datetime(f'-{interval_hours} hours')
-        cursor.execute(f'''
-            SELECT id, company_name, github_org, current_tier, website,
-                   annual_revenue, evidence_summary
-            FROM monitored_accounts
-            WHERE current_tier = 2
-              AND status_changed_at >= {dt_cutoff}
-              AND archived_at IS NULL
-        ''')
-        new_tier2 = [dict(r) for r in cursor.fetchall()]
-        conn.close()
+            # Find accounts promoted to Tier 2 in the last check interval
+            interval_hours = _get_config('tier2_check_interval_hours') or 3
+            dt_cutoff = db._adapt_datetime(f'-{interval_hours} hours')
+            cursor.execute(f'''
+                SELECT id, company_name, github_org, current_tier, website,
+                       annual_revenue, evidence_summary
+                FROM monitored_accounts
+                WHERE current_tier = 2
+                  AND status_changed_at >= {dt_cutoff}
+                  AND archived_at IS NULL
+            ''')
+            new_tier2 = [dict(r) for r in cursor.fetchall()]
 
         if new_tier2:
             logger.info(f"[PIPELINE] Tier 2 check: {len(new_tier2)} new hot leads found")
@@ -1006,18 +1008,17 @@ class PipelineOrchestrator:
         total_api_calls = sum(s.get('api_calls_estimated', 0) for s in stats)
 
         # Count tier distribution
-        conn = db.get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT current_tier, COUNT(*) as cnt
-            FROM monitored_accounts
-            WHERE archived_at IS NULL
-            GROUP BY current_tier
-        ''')
-        tier_dist = {r['current_tier']: r['cnt'] for r in cursor.fetchall()}
-        cursor.execute('SELECT COUNT(*) as cnt FROM monitored_accounts WHERE archived_at IS NULL')
-        total_accounts = cursor.fetchone()['cnt']
-        conn.close()
+        with db.db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT current_tier, COUNT(*) as cnt
+                FROM monitored_accounts
+                WHERE archived_at IS NULL
+                GROUP BY current_tier
+            ''')
+            tier_dist = {r['current_tier']: r['cnt'] for r in cursor.fetchall()}
+            cursor.execute('SELECT COUNT(*) as cnt FROM monitored_accounts WHERE archived_at IS NULL')
+            total_accounts = cursor.fetchone()['cnt']
 
         digest = {
             'period': 'weekly',
@@ -1058,10 +1059,9 @@ class PipelineOrchestrator:
         # Check 1: Database connectivity
         try:
             db = _db()
-            conn = db.get_db_connection()
-            cursor = conn.cursor()
-            cursor.execute('SELECT 1')
-            conn.close()
+            with db.db_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('SELECT 1')
             health['checks']['database'] = {'status': 'ok'}
         except Exception as e:
             health['checks']['database'] = {'status': 'error', 'message': str(e)}

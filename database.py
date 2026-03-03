@@ -2014,6 +2014,76 @@ def update_account_notes(account_id: int, notes: str) -> bool:
         conn.close()
 
 
+def enrich_existing_account(company_name: str, annual_revenue=None, website=None, metadata=None) -> bool:
+    """
+    Enrich an existing account in a single database connection.
+
+    Opens ONE connection, looks up the existing account, and conditionally
+    updates annual_revenue, website, and/or metadata (merged with existing).
+
+    Args:
+        company_name: The company name to look up (case-insensitive).
+        annual_revenue: Optional revenue string to set (e.g. "$50M").
+        website: Optional website URL string to set.
+        metadata: Optional dict of extra fields to merge into existing metadata.
+
+    Returns:
+        True if the account was found (regardless of whether any fields changed),
+        False if the account does not exist.
+    """
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        stripped = company_name.strip()
+
+        # Look up the existing account
+        cursor.execute(
+            'SELECT id, metadata FROM monitored_accounts WHERE LOWER(company_name) = LOWER(?)',
+            (stripped,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            return False
+
+        # Update annual_revenue if provided
+        if annual_revenue is not None:
+            cursor.execute(
+                'UPDATE monitored_accounts SET annual_revenue = ? WHERE LOWER(company_name) = LOWER(?)',
+                (annual_revenue, stripped),
+            )
+
+        # Update website if provided
+        if website is not None:
+            cursor.execute(
+                'UPDATE monitored_accounts SET website = ? WHERE LOWER(company_name) = LOWER(?)',
+                (website, stripped),
+            )
+
+        # Merge metadata if provided
+        if metadata is not None:
+            existing_metadata = {}
+            raw = row['metadata'] if isinstance(row, dict) else row[1]
+            if raw:
+                try:
+                    existing_metadata = json.loads(raw)
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            existing_metadata.update(metadata)
+            cursor.execute(
+                'UPDATE monitored_accounts SET metadata = ? WHERE LOWER(company_name) = LOWER(?)',
+                (json.dumps(existing_metadata), stripped),
+            )
+
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"[DB] Error enriching account {company_name}: {e}")
+        conn.rollback()
+        return False
+    finally:
+        conn.close()
+
+
 def get_all_accounts(page: int = 1, limit: int = 50, tier_filter: Optional[list] = None, search_query: Optional[str] = None) -> dict:
     """
     Get all monitored accounts with pagination, sorted by tier priority.
@@ -2459,8 +2529,8 @@ def find_potential_duplicates_bulk(companies: list) -> dict:
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Fetch ALL existing accounts once
-    cursor.execute('SELECT * FROM monitored_accounts')
+    # Fetch only the columns needed for dedup matching
+    cursor.execute('SELECT id, company_name, github_org, website FROM monitored_accounts')
     all_accounts = [dict(row) for row in cursor.fetchall()]
     conn.close()
 
@@ -5338,6 +5408,26 @@ def get_contributor_by_id(contributor_id: int) -> Optional[dict]:
     row = cursor.fetchone()
     conn.close()
     return dict(row) if row else None
+
+
+def get_contributors_by_ids(ids: list) -> list:
+    """Fetch multiple contributors in a single query using WHERE id IN (...).
+
+    Args:
+        ids: List of contributor IDs to fetch.
+
+    Returns:
+        List of contributor dicts (order not guaranteed).
+    """
+    if not ids:
+        return []
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    placeholders = ','.join('?' * len(ids))
+    cursor.execute(f'SELECT * FROM contributors WHERE id IN ({placeholders})', tuple(ids))
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
 
 
 def delete_contributor(contributor_id: int) -> bool:
