@@ -8732,6 +8732,12 @@ if __name__ == '__main__':
     logging.info("[APP] Starting application...")
     logging.info(f"[APP] ThreadPoolExecutor configured with {MAX_SCAN_WORKERS} workers")
 
+    # Re-tier accounts if scoring criteria changed since last startup
+    from database import auto_retier_if_version_changed
+    retier_count = auto_retier_if_version_changed()
+    if retier_count > 0:
+        logging.info(f"[APP] Re-tiered {retier_count} accounts after scoring version change")
+
     # Cleanup any duplicate accounts
     cleanup_result = cleanup_duplicate_accounts()
     removed_count = cleanup_result.get('deleted', 0)

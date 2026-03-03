@@ -3267,6 +3267,64 @@ def set_setting(key: str, value: str) -> None:
     conn.close()
 
 
+def auto_retier_if_version_changed() -> int:
+    """Re-calculate tiers from stored scan data if scoring version has changed.
+
+    Compares the current SCORING_VERSION against the last-applied version
+    stored in system_settings. If different, re-reads each account's latest
+    report scan_data and re-applies the maturity-to-tier mapping.
+
+    No API calls or rescanning needed — uses existing data only.
+
+    Returns:
+        Number of accounts whose tier was updated (0 if no change needed).
+    """
+    from scoring import SCORING_VERSION
+
+    stored_version = get_setting('scoring_version')
+    if stored_version == SCORING_VERSION:
+        return 0
+
+    logging.info(f"[RETIER] Scoring version changed ({stored_version} → {SCORING_VERSION}), re-tiering accounts...")
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT ma.id, ma.company_name, ma.current_tier, r.scan_data
+        FROM monitored_accounts ma
+        JOIN reports r ON r.id = ma.latest_report_id
+        WHERE ma.latest_report_id IS NOT NULL
+    ''')
+    rows = cursor.fetchall()
+
+    updated = 0
+    for row in rows:
+        try:
+            scan_data = json.loads(row['scan_data']) if isinstance(row['scan_data'], str) else row['scan_data']
+        except (json.JSONDecodeError, TypeError):
+            continue
+
+        scoring_v2 = scan_data.get('scoring_v2') if scan_data else None
+        if not scoring_v2 or not isinstance(scoring_v2, dict):
+            continue
+
+        new_tier, evidence = calculate_tier_from_scan(scan_data)
+        if new_tier != row['current_tier']:
+            cursor.execute(
+                'UPDATE monitored_accounts SET current_tier = ?, evidence_summary = ? WHERE id = ?',
+                (new_tier, evidence, row['id'])
+            )
+            updated += 1
+
+    conn.commit()
+    conn.close()
+
+    set_setting('scoring_version', SCORING_VERSION)
+    logging.info(f"[RETIER] Done — updated {updated} of {len(rows)} accounts.")
+    return updated
+
+
 def increment_daily_stat(stat_name: str, amount: int = 1) -> None:
     """
     Increment a daily statistic counter.

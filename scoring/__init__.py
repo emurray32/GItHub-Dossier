@@ -5,6 +5,12 @@ Public API: score_scan_results(scan_results) -> ScoringResult
 """
 from scoring.models import ScoringResult, MaturitySegment, OutreachAngle, RiskLevel
 
+# Bump this version whenever you change tier criteria, maturity segments,
+# or the _MATURITY_TO_TIER mapping. On app startup, if this version differs
+# from the stored version, all accounts are automatically re-tiered from
+# their existing scan data (no rescanning needed).
+SCORING_VERSION = "2.1"  # 2.0 = original V2, 2.1 = added THINKING segment
+
 
 def score_scan_results(scan_results: dict) -> ScoringResult:
     """Score scan results using the full v2 pipeline.
