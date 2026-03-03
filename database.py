@@ -1,3 +1,4 @@
+import re
 """
 Database module for storing Lead Machine reports.
 Supports SQLite (default/local) and PostgreSQL (when DATABASE_URL is set).
@@ -11,6 +12,45 @@ from datetime import datetime, timedelta
 from typing import Optional
 from config import Config
 from signal_verifier import verify_signals
+
+
+class _ConnectionProxy:
+    """Thin wrapper around a psycopg2 connection that overrides cursor() and close()."""
+
+    def __init__(self, conn, pool, dialect):
+        self._conn = conn
+        self._pool = pool
+        self._dialect = dialect
+
+    def cursor(self, *args, **kwargs):
+        kwargs.setdefault('cursor_factory', psycopg2.extras.RealDictCursor)
+        return _CursorProxy(self._conn.cursor(*args, **kwargs), self._dialect)
+
+    def close(self):
+        self._pool.putconn(self._conn)
+
+    def commit(self):
+        return self._conn.commit()
+
+    def rollback(self):
+        return self._conn.rollback()
+
+    @property
+    def autocommit(self):
+        return self._conn.autocommit
+
+    @autocommit.setter
+    def autocommit(self, value):
+        self._conn.autocommit = value
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.close()
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
 
 # ---------------------------------------------------------------------------
 # Dialect detection
@@ -59,6 +99,8 @@ def _adapt_ddl(sql: str) -> str:
     # Replace bare JSON type with JSONB
     sql = sql.replace(' JSON,', ' JSONB,')
     sql = sql.replace(' JSON\n', ' JSONB\n')
+    # Convert SQLite double-quoted string defaults to PostgreSQL single-quoted
+    sql = re.sub(r'DEFAULT\s+"([^"]*)"', lambda m: "DEFAULT '" + m.group(1).replace("'", "''") + "'", sql)
     return sql
 
 
@@ -132,6 +174,13 @@ class _CursorProxy:
     def execute(self, sql, params=None):
         if self._dialect == 'postgres':
             sql = sql.replace('?', '%s')
+            # Convert SQLite datetime('now', '-X interval') to PostgreSQL NOW() - INTERVAL 'X interval'
+            sql = re.sub(
+                r"datetime\('now',\s*'(-?\d+\s+\w+)'\)",
+                lambda m: "(NOW() - INTERVAL '" + m.group(1).lstrip('-') + "')" if m.group(1).startswith('-') else "(NOW() + INTERVAL '" + m.group(1) + "')",
+                sql
+            )
+            sql = re.sub(r"datetime\('now'\)", "NOW()", sql)
         if params:
             return self._cursor.execute(sql, params)
         return self._cursor.execute(sql)
@@ -139,6 +188,12 @@ class _CursorProxy:
     def executemany(self, sql, params_list):
         if self._dialect == 'postgres':
             sql = sql.replace('?', '%s')
+            sql = re.sub(
+                r"datetime\('now',\s*'(-?\d+\s+\w+)'\)",
+                lambda m: "(NOW() - INTERVAL '" + m.group(1).lstrip('-') + "')" if m.group(1).startswith('-') else "(NOW() + INTERVAL '" + m.group(1) + "')",
+                sql
+            )
+            sql = re.sub(r"datetime\('now'\)", "NOW()", sql)
         return self._cursor.executemany(sql, params_list)
 
     def fetchone(self):
@@ -191,17 +246,8 @@ def get_db_connection():
         conn = pool.getconn()
         conn.autocommit = False
 
-        # Monkey-patch .cursor() to return our proxy with RealDictCursor
-        _original_cursor = conn.cursor
-
-        def _patched_cursor(*args, **kwargs):
-            kwargs.setdefault('cursor_factory', psycopg2.extras.RealDictCursor)
-            return _CursorProxy(_original_cursor(*args, **kwargs), 'postgres')
-
-        conn.cursor = _patched_cursor
-        # Monkey-patch .close() to return to pool instead
-        conn.close = lambda: pool.putconn(conn)
-        return conn
+        # Wrap in proxy to override cursor() and close()
+        return _ConnectionProxy(conn, pool, 'postgres')
     else:
         os.makedirs(os.path.dirname(Config.DATABASE_PATH), exist_ok=True)
         conn = sqlite3.connect(Config.DATABASE_PATH, timeout=30.0)
