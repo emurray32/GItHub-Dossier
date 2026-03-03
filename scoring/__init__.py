@@ -5,11 +5,36 @@ Public API: score_scan_results(scan_results) -> ScoringResult
 """
 from scoring.models import ScoringResult, MaturitySegment, OutreachAngle, RiskLevel
 
-# Bump this version whenever you change tier criteria, maturity segments,
-# or the _MATURITY_TO_TIER mapping. On app startup, if this version differs
-# from the stored version, all accounts are automatically re-tiered from
-# their existing scan data (no rescanning needed).
-SCORING_VERSION = "2.1"  # 2.0 = original V2, 2.1 = added THINKING segment
+def get_scoring_fingerprint() -> str:
+    """Compute a fingerprint of all files that affect tier classification.
+
+    If any of these files change, the fingerprint changes, and
+    auto_retier_if_version_changed() will re-tier all accounts on
+    next startup. No manual version bumping needed.
+    """
+    import hashlib
+    import os
+
+    scoring_dir = os.path.dirname(os.path.abspath(__file__))
+    project_dir = os.path.dirname(scoring_dir)
+
+    # Files that affect how tiers are calculated
+    files_to_hash = [
+        os.path.join(scoring_dir, 'models.py'),      # MaturitySegment enum
+        os.path.join(scoring_dir, 'maturity.py'),     # classify_maturity() logic
+        os.path.join(scoring_dir, 'compat.py'),       # _MATURITY_TO_TIER mapping
+        os.path.join(scoring_dir, '__init__.py'),      # pipeline orchestration
+        os.path.join(scoring_dir, 'bayesian_pipeline.py'),  # stage1 fast filter
+    ]
+
+    h = hashlib.sha256()
+    for fpath in sorted(files_to_hash):
+        try:
+            with open(fpath, 'rb') as f:
+                h.update(f.read())
+        except FileNotFoundError:
+            h.update(fpath.encode())
+    return h.hexdigest()[:16]
 
 
 def score_scan_results(scan_results: dict) -> ScoringResult:

@@ -3268,24 +3268,27 @@ def set_setting(key: str, value: str) -> None:
 
 
 def auto_retier_if_version_changed() -> int:
-    """Re-calculate tiers from stored scan data if scoring version has changed.
+    """Re-calculate tiers from stored scan data if scoring files have changed.
 
-    Compares the current SCORING_VERSION against the last-applied version
-    stored in system_settings. If different, re-reads each account's latest
-    report scan_data and re-applies the maturity-to-tier mapping.
+    Computes a fingerprint of all scoring files that affect tier classification.
+    If the fingerprint differs from the last-applied one in system_settings,
+    re-reads each account's latest report scan_data and re-applies the
+    maturity-to-tier mapping.
 
     No API calls or rescanning needed — uses existing data only.
+    No manual version bumping needed — file changes are detected automatically.
 
     Returns:
         Number of accounts whose tier was updated (0 if no change needed).
     """
-    from scoring import SCORING_VERSION
+    from scoring import get_scoring_fingerprint
 
-    stored_version = get_setting('scoring_version')
-    if stored_version == SCORING_VERSION:
+    current_fp = get_scoring_fingerprint()
+    stored_fp = get_setting('scoring_fingerprint')
+    if stored_fp == current_fp:
         return 0
 
-    logging.info(f"[RETIER] Scoring version changed ({stored_version} → {SCORING_VERSION}), re-tiering accounts...")
+    logging.info(f"[RETIER] Scoring files changed (fingerprint {stored_fp} → {current_fp}), re-tiering accounts...")
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -3320,7 +3323,7 @@ def auto_retier_if_version_changed() -> int:
     conn.commit()
     conn.close()
 
-    set_setting('scoring_version', SCORING_VERSION)
+    set_setting('scoring_fingerprint', current_fp)
     logging.info(f"[RETIER] Done — updated {updated} of {len(rows)} accounts.")
     return updated
 
