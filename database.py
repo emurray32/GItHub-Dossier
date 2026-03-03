@@ -1622,7 +1622,7 @@ def calculate_tier_from_scan(scan_data: dict, skip_verification: bool = False) -
     # Get repos_scanned count and check if org was found
     repos_scanned = len(scan_data.get('repos_scanned', []))
     org_login = scan_data.get('org_login', '')
-    org_public_repos = scan_data.get('org_public_repos', 0)
+    org_public_repos = scan_data.get('org_public_repos', 0) or 0
 
     if repos_scanned > 0:
         # We scanned valid repos but found no i18n signals - track for future changes
@@ -3421,16 +3421,18 @@ def force_retier_all() -> dict:
             if not scan_data:
                 continue
 
-            new_tier, evidence = calculate_tier_from_scan(scan_data, skip_verification=True)
-            by_tier[new_tier] = by_tier.get(new_tier, 0) + 1
+            try:
+                new_tier, evidence = calculate_tier_from_scan(scan_data, skip_verification=True)
+            except Exception as e:
+                logging.warning(f"[RETIER] Error re-tiering account {row['id']} ({row['company_name']}): {e}")
+                continue
 
-            # Always update evidence string even if tier didn't change
-            if True:
-                cursor.execute(
-                    'UPDATE monitored_accounts SET current_tier = ?, evidence_summary = ? WHERE id = ?',
-                    (new_tier, evidence, row['id'])
-                )
-                updated += 1
+            by_tier[new_tier] = by_tier.get(new_tier, 0) + 1
+            cursor.execute(
+                'UPDATE monitored_accounts SET current_tier = ?, evidence_summary = ? WHERE id = ?',
+                (new_tier, evidence, row['id'])
+            )
+            updated += 1
 
         conn.commit()
 
