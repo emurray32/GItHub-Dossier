@@ -1432,7 +1432,81 @@ def _convert_library_to_sales_name(lib_name: str) -> str:
     return lib_name.replace('-', ' ').replace('_', ' ').title()
 
 
-def calculate_tier_from_scan(scan_data: dict, skip_verification: bool = False) -> tuple[int, str]:
+def _extract_website_signals(website_data: Optional[dict]) -> dict:
+    """Extract and normalize website localization signals from website analysis data.
+
+    Args:
+        website_data: Dict with keys from website_analyses and/or webscraper_accounts,
+                      or None if no website data is available.
+
+    Returns:
+        Dict with 'website_is_localized' (bool) and 'website_evidence' (str).
+    """
+    result = {'website_is_localized': False, 'website_evidence': ''}
+
+    if not website_data or not isinstance(website_data, dict):
+        return result
+
+    evidence_parts = []
+
+    # --- website_analyses signals ---
+    localization_score = website_data.get('localization_score')
+    if localization_score is not None and localization_score >= 40:
+        evidence_parts.append(f"localization score {localization_score}")
+
+    # Parse analysis_details_json for hreflang/language_switcher
+    details_json = website_data.get('analysis_details_json')
+    details = None
+    if details_json:
+        if isinstance(details_json, str):
+            try:
+                details = json.loads(details_json)
+            except (json.JSONDecodeError, TypeError):
+                pass
+        elif isinstance(details_json, dict):
+            details = details_json
+
+    hreflang_count = 0
+    language_switcher = False
+    if details:
+        loc_details = details.get('localization', {})
+        if isinstance(loc_details, dict):
+            inner = loc_details.get('details', loc_details)
+            if isinstance(inner, dict):
+                hreflang_count = inner.get('hreflang_count', 0) or 0
+                language_switcher = bool(inner.get('language_switcher'))
+
+    if hreflang_count >= 2:
+        evidence_parts.append(f"{hreflang_count} hreflang tags")
+    if language_switcher:
+        evidence_parts.append("language switcher detected")
+
+    # --- webscraper_accounts signals ---
+    ws_locale_count = website_data.get('locale_count')
+    if ws_locale_count is not None and ws_locale_count >= 2:
+        evidence_parts.append(f"{ws_locale_count} locales detected")
+
+    # Parse webscraper hreflang_tags if we didn't already get hreflang from website_analyses
+    if hreflang_count < 2:
+        ws_hreflang = website_data.get('hreflang_tags')
+        if ws_hreflang:
+            if isinstance(ws_hreflang, str):
+                try:
+                    ws_hreflang = json.loads(ws_hreflang)
+                except (json.JSONDecodeError, TypeError):
+                    ws_hreflang = None
+            if isinstance(ws_hreflang, list) and len(ws_hreflang) >= 2:
+                evidence_parts.append(f"{len(ws_hreflang)} hreflang tags (webscraper)")
+
+    # Determine if localized: at least one evidence part means a threshold was met
+    if evidence_parts:
+        result['website_is_localized'] = True
+        result['website_evidence'] = "Website: " + ", ".join(evidence_parts)
+
+    return result
+
+
+def calculate_tier_from_scan(scan_data: dict, skip_verification: bool = False, website_data: Optional[dict] = None) -> tuple[int, str]:
     """
     Apply Sales-First tier logic based on scan results.
 
@@ -1448,10 +1522,17 @@ def calculate_tier_from_scan(scan_data: dict, skip_verification: bool = False) -
         scan_data: The full scan data dict.
         skip_verification: If True, skip LLM-based signal verification
             (used during bulk re-tiering to avoid expensive API calls).
+        website_data: Optional dict with website localization data from
+            website_analyses and/or webscraper_accounts tables.
 
     Returns:
         Tuple of (tier_number, evidence_summary)
     """
+    # ============================================================
+    # WEBSITE SIGNALS: Extract once, use throughout
+    # ============================================================
+    ws = _extract_website_signals(website_data)
+
     # ============================================================
     # SCORING V2: Use new maturity level if available
     # ============================================================
@@ -1473,12 +1554,15 @@ def calculate_tier_from_scan(scan_data: dict, skip_verification: bool = False) -
 
         # V2 found a meaningful tier — use it
         if tier > 0:
+            if ws['website_is_localized']:
+                evidence = evidence + " | " + ws['website_evidence']
             return tier, evidence
 
         # V2 said PRE_I18N (tier 0). V2's aggressive filters may have
         # removed signals that the legacy tiering (which uses raw
         # signal_summary counts) would still recognize. Fall through to
         # legacy tiering as a safety net so we don't lose Tier 1/2 leads.
+        # (Website promotion is handled in the Tier 0 fallback below.)
 
     # ============================================================
     # SIGNAL VERIFICATION: Filter false positives before tiering
@@ -1531,7 +1615,10 @@ def calculate_tier_from_scan(scan_data: dict, skip_verification: bool = False) -
     # TIER 3: LAUNCHED - Locale folders detected (Too Late)
     # =========================================================================
     if locale_folders_found:
-        return TIER_LAUNCHED, "Too Late: Translation files already exist in codebase."
+        evidence = "Too Late: Translation files already exist in codebase."
+        if ws['website_is_localized']:
+            evidence = evidence + " | " + ws['website_evidence']
+        return TIER_LAUNCHED, evidence
 
     # =========================================================================
     # TIER 2: PREPARING (GOLDILOCKS) - i18n libraries WITHOUT locale folders
@@ -1572,6 +1659,8 @@ def calculate_tier_from_scan(scan_data: dict, skip_verification: bool = False) -
             evidence = f"INFRASTRUCTURE READY: Installed {sales_name} but NO translations found."
         else:
             evidence = "INFRASTRUCTURE READY: i18n library installed but NO translations found."
+        if ws['website_is_localized']:
+            evidence = evidence + " | " + ws['website_evidence']
         return TIER_PREPARING, evidence
 
     # Single dependency signal without silver bullet -> downgrade to TIER 1 (Thinking)
@@ -1590,6 +1679,8 @@ def calculate_tier_from_scan(scan_data: dict, skip_verification: bool = False) -
                         dep_names.append(lib_name)
         lib_list = ', '.join(dep_names[:3]) if dep_names else 'i18n library'
         evidence = f"Found {lib_list} (single signal - needs corroborating evidence for Hot Lead)"
+        if ws['website_is_localized']:
+            evidence = evidence + " | " + ws['website_evidence']
         return TIER_THINKING, evidence
     
     # =========================================================================
@@ -1614,7 +1705,10 @@ def calculate_tier_from_scan(scan_data: dict, skip_verification: bool = False) -
             else:
                 evidence_parts.append(f"ACTIVE BUILD: {ghost_count} i18n branch(es)")
 
-        return TIER_THINKING, "; ".join(evidence_parts)
+        evidence = "; ".join(evidence_parts)
+        if ws['website_is_localized']:
+            evidence = evidence + " | " + ws['website_evidence']
+        return TIER_THINKING, evidence
 
     # =========================================================================
     # TIER 0 vs TIER 4: No signals found - Split based on repos scanned and org status
@@ -1623,6 +1717,12 @@ def calculate_tier_from_scan(scan_data: dict, skip_verification: bool = False) -
     repos_scanned = len(scan_data.get('repos_scanned', []))
     org_login = scan_data.get('org_login', '')
     org_public_repos = scan_data.get('org_public_repos', 0) or 0
+
+    # Website-only promotion: Tier 0 accounts with localized websites → Tier 3
+    if ws['website_is_localized']:
+        if repos_scanned > 0 or org_login:
+            return TIER_LAUNCHED, ws['website_evidence'] + " (no GitHub i18n signals, promoted via website)"
+        # Tier 4 (org not found) is never promoted — fall through below
 
     if repos_scanned > 0:
         # We scanned valid repos but found no i18n signals - track for future changes
@@ -1660,11 +1760,6 @@ def update_account_status(scan_data: dict, report_id: Optional[int] = None) -> d
 
     # Normalize company name to lowercase to prevent duplicates
     company_name_normalized = company_name.lower().strip()
-
-    # Calculate tier and evidence
-    new_tier, evidence_summary = calculate_tier_from_scan(scan_data)
-    # Guard against None tier values to prevent comparison errors
-    new_tier = new_tier if new_tier is not None else 0
 
     # Build scan metadata from all available fields so nothing is lost
     scan_metadata = {}
@@ -1711,6 +1806,35 @@ def update_account_status(scan_data: dict, report_id: Optional[int] = None) -> d
         (company_name_normalized,)
     )
     existing = cursor.fetchone()
+
+    # Fetch website data for tier calculation
+    website_data = {}
+    # Get latest website_analyses data
+    wa = get_latest_website_analysis(company_name)
+    if wa:
+        website_data['localization_score'] = wa.get('localization_score')
+        website_data['analysis_details_json'] = wa.get('analysis_details_json') or wa.get('analysis_details')
+    # Get webscraper_accounts data if linked
+    if existing:
+        cursor.execute('''
+            SELECT locale_count, hreflang_tags
+            FROM webscraper_accounts
+            WHERE monitored_account_id = ?
+              AND scan_status = 'completed' AND archived_at IS NULL
+            ORDER BY last_scanned_at DESC NULLS LAST
+            LIMIT 1
+        ''', (existing['id'],))
+        ws_row = cursor.fetchone()
+        if ws_row:
+            website_data['locale_count'] = ws_row['locale_count']
+            website_data['hreflang_tags'] = ws_row['hreflang_tags']
+
+    # Calculate tier and evidence (with website data)
+    new_tier, evidence_summary = calculate_tier_from_scan(
+        scan_data, website_data=website_data if website_data else None
+    )
+    # Guard against None tier values to prevent comparison errors
+    new_tier = new_tier if new_tier is not None else 0
 
     now = datetime.now().isoformat()
     # Set next scan due based on the tier-specific interval
@@ -3357,9 +3481,15 @@ def auto_retier_if_version_changed() -> int:
         cursor = conn.cursor()
 
         cursor.execute('''
-            SELECT ma.id, ma.company_name, ma.current_tier, r.scan_data
+            SELECT ma.id, ma.company_name, ma.current_tier, r.scan_data,
+                   wa.localization_score, wa.analysis_details_json,
+                   ws.locale_count, ws.hreflang_tags
             FROM monitored_accounts ma
             JOIN reports r ON r.id = ma.latest_report_id
+            LEFT JOIN website_analyses wa ON wa.account_id = ma.id
+                AND wa.id = (SELECT id FROM website_analyses WHERE account_id = ma.id ORDER BY analyzed_at DESC LIMIT 1)
+            LEFT JOIN webscraper_accounts ws ON ws.monitored_account_id = ma.id
+                AND ws.scan_status = 'completed' AND ws.archived_at IS NULL
             WHERE ma.latest_report_id IS NOT NULL
         ''')
         rows = cursor.fetchall()
@@ -3375,7 +3505,21 @@ def auto_retier_if_version_changed() -> int:
             if not scoring_v2 or not isinstance(scoring_v2, dict):
                 continue
 
-            new_tier, evidence = calculate_tier_from_scan(scan_data, skip_verification=True)
+            # Build website_data from joined columns
+            website_data = {}
+            if row['localization_score'] is not None:
+                website_data['localization_score'] = row['localization_score']
+            if row['analysis_details_json']:
+                website_data['analysis_details_json'] = row['analysis_details_json']
+            if row['locale_count'] is not None:
+                website_data['locale_count'] = row['locale_count']
+            if row['hreflang_tags']:
+                website_data['hreflang_tags'] = row['hreflang_tags']
+
+            new_tier, evidence = calculate_tier_from_scan(
+                scan_data, skip_verification=True,
+                website_data=website_data if website_data else None
+            )
             if new_tier != row['current_tier']:
                 cursor.execute(
                     'UPDATE monitored_accounts SET current_tier = ?, evidence_summary = ? WHERE id = ?',
@@ -3403,9 +3547,15 @@ def force_retier_all() -> dict:
         cursor = conn.cursor()
 
         cursor.execute('''
-            SELECT ma.id, ma.company_name, ma.current_tier, r.scan_data
+            SELECT ma.id, ma.company_name, ma.current_tier, r.scan_data,
+                   wa.localization_score, wa.analysis_details_json,
+                   ws.locale_count, ws.hreflang_tags
             FROM monitored_accounts ma
             JOIN reports r ON r.id = ma.latest_report_id
+            LEFT JOIN website_analyses wa ON wa.account_id = ma.id
+                AND wa.id = (SELECT id FROM website_analyses WHERE account_id = ma.id ORDER BY analyzed_at DESC LIMIT 1)
+            LEFT JOIN webscraper_accounts ws ON ws.monitored_account_id = ma.id
+                AND ws.scan_status = 'completed' AND ws.archived_at IS NULL
             WHERE ma.latest_report_id IS NOT NULL
         ''')
         rows = cursor.fetchall()
@@ -3421,8 +3571,22 @@ def force_retier_all() -> dict:
             if not scan_data:
                 continue
 
+            # Build website_data from joined columns
+            website_data = {}
+            if row['localization_score'] is not None:
+                website_data['localization_score'] = row['localization_score']
+            if row['analysis_details_json']:
+                website_data['analysis_details_json'] = row['analysis_details_json']
+            if row['locale_count'] is not None:
+                website_data['locale_count'] = row['locale_count']
+            if row['hreflang_tags']:
+                website_data['hreflang_tags'] = row['hreflang_tags']
+
             try:
-                new_tier, evidence = calculate_tier_from_scan(scan_data, skip_verification=True)
+                new_tier, evidence = calculate_tier_from_scan(
+                    scan_data, skip_verification=True,
+                    website_data=website_data if website_data else None
+                )
             except Exception as e:
                 logging.warning(f"[RETIER] Error re-tiering account {row['id']} ({row['company_name']}): {e}")
                 continue
