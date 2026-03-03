@@ -10,11 +10,13 @@ import re
 import time
 import os
 import threading
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional, Sequence
 import requests
 from datetime import datetime
-from flask import Flask, render_template, Response, request, jsonify, redirect, url_for, stream_with_context, send_file, send_from_directory
+from flask import Flask, render_template, Response, request, jsonify, redirect, url_for, stream_with_context, send_file, send_from_directory, g
+from werkzeug.exceptions import HTTPException
 from config import Config
 from database import (
     save_report, get_report, get_recent_reports, search_reports,
@@ -100,6 +102,8 @@ from validators import (
 import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+# Uptime tracking — used by /api/health endpoint
+_APP_START_TIME = time.time()
 
 app = Flask(__name__)
 app.config.from_object(Config)
@@ -143,6 +147,7 @@ _PUBLIC_ENDPOINTS = {
     'settings_page', 'website_analyzer_page', 'serve_favicon',
     'inject_cache_buster', 'add_security_headers',
     'auth.login', 'auth.logout',
+    'health_check',
 }
 
 
@@ -1574,6 +1579,85 @@ def search():
     if not company:
         return redirect(url_for('index'))
     return redirect(url_for('scan_page', company=company))
+
+
+@app.route('/api/health')
+def health_check():
+    """Health check endpoint — returns system status without authentication.
+
+    Checks:
+      - Database connectivity (SELECT 1)
+      - GitHub token pool availability
+      - Scoring fingerprint version
+      - Uptime since app start
+
+    Returns HTTP 200 if healthy, 503 if any check is degraded.
+    """
+    from scoring import get_scoring_fingerprint
+    from utils import get_token_pool
+
+    checks = {}
+    overall_status = 'healthy'
+
+    # --- Database connectivity ---
+    try:
+        t0 = time.time()
+        with db_connection() as conn:
+            cur = conn.cursor()
+            cur.execute('SELECT 1')
+            cur.fetchone()
+        latency_ms = round((time.time() - t0) * 1000, 1)
+        checks['database'] = {'status': 'ok', 'latency_ms': latency_ms}
+    except Exception as e:
+        checks['database'] = {'status': 'error', 'latency_ms': None}
+        overall_status = 'degraded'
+        logging.warning(f'Health check: database connectivity failed: {e}')
+
+    # --- GitHub token pool ---
+    try:
+        pool = get_token_pool()
+        pool_status = pool.get_pool_status()
+        total = pool_status.get('pool_size', 0)
+        available = pool_status.get('tokens_available', 0)
+
+        if total == 0:
+            token_check_status = 'error'
+            overall_status = 'degraded'
+        elif available == 0:
+            token_check_status = 'warning'
+            overall_status = 'degraded'
+        else:
+            token_check_status = 'ok'
+
+        checks['github_tokens'] = {
+            'status': token_check_status,
+            'available': available,
+            'total': total,
+        }
+    except Exception as e:
+        checks['github_tokens'] = {'status': 'error', 'available': 0, 'total': 0}
+        overall_status = 'degraded'
+        logging.warning(f'Health check: token pool check failed: {e}')
+
+    # --- Scoring fingerprint version ---
+    try:
+        checks['scoring_version'] = get_scoring_fingerprint()
+    except Exception:
+        checks['scoring_version'] = 'unknown'
+
+    # --- Build response ---
+    uptime_seconds = round(time.time() - _APP_START_TIME, 1)
+    timestamp = datetime.utcnow().isoformat() + 'Z'
+
+    payload = {
+        'status': overall_status,
+        'checks': checks,
+        'uptime_seconds': uptime_seconds,
+        'timestamp': timestamp,
+    }
+
+    status_code = 200 if overall_status == 'healthy' else 503
+    return jsonify(payload), status_code
 
 
 @app.route('/api/reports')
@@ -6464,6 +6548,36 @@ def api_sheets_enable_cron():
     return jsonify({'status': 'success', **sheets_get_sync_config()})
 
 
+# =============================================================================
+# REQUEST TIMING MIDDLEWARE
+# =============================================================================
+
+@app.before_request
+def set_request_timing():
+    """Record request start time and assign a unique request ID."""
+    g.request_start_time = time.time()
+    g.request_id = str(uuid.uuid4())
+
+
+@app.after_request
+def log_slow_requests(response):
+    """Log a warning for requests that take longer than 5 seconds."""
+    start_time = getattr(g, 'request_start_time', None)
+    if start_time is not None:
+        elapsed = time.time() - start_time
+        if elapsed > 5:
+            request_id = getattr(g, 'request_id', 'unknown')
+            logging.warning(
+                f"[SLOW REQUEST] {request.method} {request.path} "
+                f"took {elapsed:.2f}s (request_id={request_id})"
+            )
+    return response
+
+
+# =============================================================================
+# ERROR HANDLERS
+# =============================================================================
+
 @app.errorhandler(401)
 def unauthorized(e):
     """Handle 401 errors."""
@@ -6483,6 +6597,8 @@ def forbidden(e):
 @app.errorhandler(404)
 def page_not_found(e):
     """Handle 404 errors."""
+    if request.path.startswith('/api/'):
+        return jsonify({'status': 'error', 'message': 'Not found'}), 404
     return render_template('error.html', message='Page not found'), 404
 
 
@@ -6497,9 +6613,47 @@ def too_many_requests(e):
 @app.errorhandler(500)
 def internal_error(e):
     """Handle 500 errors."""
-    # Log full error server-side, return generic message to client
+    request_id = getattr(g, 'request_id', 'unknown')
     original = e.original_exception if hasattr(e, 'original_exception') else e
-    logging.error(f"[ERROR] 500 Internal Server Error: {original}")
+    logging.exception(f"[ERROR] 500 Internal Server Error (request_id={request_id}): {original}")
+    if request.path.startswith('/api/'):
+        return jsonify({
+            'status': 'error',
+            'message': 'Internal server error',
+            'request_id': request_id,
+        }), 500
+    return render_template('error.html', message='Internal server error. Please try again later.'), 500
+
+
+@app.errorhandler(Exception)
+def handle_unhandled_exception(e):
+    """
+    Global catch-all for any unhandled exception not covered by specific handlers.
+
+    Ensures a single bad request never crashes the app for other users.
+    - Re-raises HTTPExceptions so Flask's built-in handlers (400, 401, etc.) still work
+    - Logs the full traceback server-side for debugging
+    - Returns JSON for API routes, HTML for browser routes
+    - Never exposes internal error details to the client
+    """
+    # Let HTTP exceptions (400, 401, 403, 404, 405, 429, etc.) be returned
+    # as proper responses. Specific @app.errorhandler decorators (401, 403,
+    # 404, 429, 500) are checked first by Flask; this catch-all only fires
+    # for HTTP codes without a dedicated handler (e.g. 400, 405).
+    if isinstance(e, HTTPException):
+        return e
+
+    request_id = getattr(g, 'request_id', 'unknown')
+    logging.exception(
+        f"[UNHANDLED EXCEPTION] {request.method} {request.path} "
+        f"(request_id={request_id}): {type(e).__name__}"
+    )
+    if request.path.startswith('/api/'):
+        return jsonify({
+            'status': 'error',
+            'message': 'Internal server error',
+            'request_id': request_id,
+        }), 500
     return render_template('error.html', message='Internal server error. Please try again later.'), 500
 
 
