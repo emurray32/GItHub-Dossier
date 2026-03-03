@@ -392,6 +392,11 @@ def flask_app(test_db, monkeypatch):
 
     import app as flask_app_module
     flask_app_module.app.config['TESTING'] = True
+
+    # Disable rate limiter for tests — clear hit tracking before each test
+    from rate_limiter import limiter
+    limiter._hits.clear()
+
     with flask_app_module.app.test_client() as client:
         with flask_app_module.app.app_context():
             yield client

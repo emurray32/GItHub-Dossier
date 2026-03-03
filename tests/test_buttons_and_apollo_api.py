@@ -26,6 +26,13 @@ os.environ.setdefault('FLASK_SECRET_KEY', 'test-secret')
 from app import app
 
 
+@pytest.fixture(autouse=True)
+def _clear_rate_limiter():
+    """Clear rate limiter state before each test to prevent 429 errors."""
+    from rate_limiter import limiter
+    limiter._hits.clear()
+
+
 @pytest.fixture
 def client():
     """Create a Flask test client."""
