@@ -59,7 +59,7 @@ fi
 TMP_FILE=$(mktemp)
 HTTP_CODE=$(curl -sS -w "%{http_code}" -o "$TMP_FILE" \
     -H "X-Sync-Token: $SYNC_TOKEN" \
-    "$APP_URL/api/export-db")
+    "$APP_URL/sync/export-db")
 
 if [[ "$HTTP_CODE" != "200" ]]; then
     echo "ERROR: Download failed with HTTP $HTTP_CODE"

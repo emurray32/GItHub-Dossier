@@ -1590,7 +1590,7 @@ def search():
     return redirect(url_for('scan_page', company=company))
 
 
-@app.route('/api/export-db')
+@app.route('/sync/export-db')
 def export_db():
     """Download the SQLite database file for local development sync.
 
