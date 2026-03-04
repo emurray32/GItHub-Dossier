@@ -2244,6 +2244,69 @@ def api_campaign_personas_replace(campaign_id):
     return jsonify({'status': 'success', 'count': count})
 
 
+@app.route('/api/campaigns/<int:campaign_id>/suggest-personas', methods=['POST'])
+def api_campaign_suggest_personas(campaign_id):
+    """Use AI to suggest target buyer personas based on campaign context.
+
+    Reads campaign prompt, assets, and tone, then calls GPT-5 mini to suggest
+    3-5 relevant personas with job titles and seniority levels.
+
+    Returns JSON: { suggestions: [ { persona_name, titles, seniorities, reasoning } ] }
+    """
+    from openai import OpenAI
+
+    campaign = get_campaign(campaign_id)
+    if not campaign:
+        return jsonify({'status': 'error', 'message': 'Campaign not found'}), 404
+
+    api_key = os.environ.get('AI_INTEGRATIONS_OPENAI_API_KEY', '')
+    base_url = os.environ.get('AI_INTEGRATIONS_OPENAI_BASE_URL', '')
+    if not api_key or not base_url:
+        return jsonify({'status': 'error', 'message': 'AI not configured'}), 500
+
+    prompt_text = campaign.get('prompt', '')
+    tone = campaign.get('tone', '')
+    assets = campaign.get('assets', '')
+
+    system_msg = (
+        "You are a B2B sales strategist specializing in localization and internationalization software. "
+        "Based on the campaign context below, suggest 3-5 target buyer personas for cold email outreach. "
+        "For each persona, provide:\n"
+        "- persona_name: A clear role title (e.g., 'Head of Localization')\n"
+        "- titles: Array of 2-4 job title search terms for Apollo People Search\n"
+        "- seniorities: Array from ['director', 'vp', 'c_suite', 'manager', 'senior']\n"
+        "- reasoning: One sentence explaining why this persona is a good target\n\n"
+        "Respond with a JSON array only, no markdown."
+    )
+
+    user_msg = f"Campaign prompt: {prompt_text}\n"
+    if tone:
+        user_msg += f"Tone: {tone}\n"
+    if assets:
+        user_msg += f"Assets/links: {assets}\n"
+
+    try:
+        client = OpenAI(api_key=api_key, base_url=base_url)
+        response = client.chat.completions.create(
+            model='gpt-5-mini',
+            messages=[
+                {'role': 'system', 'content': system_msg},
+                {'role': 'user', 'content': user_msg},
+            ],
+        )
+        raw = response.choices[0].message.content.strip()
+        # Parse JSON from response (may be wrapped in ```json blocks)
+        if raw.startswith('```'):
+            raw = raw.split('\n', 1)[1].rsplit('```', 1)[0].strip()
+        suggestions = json.loads(raw)
+        if not isinstance(suggestions, list):
+            suggestions = [suggestions]
+        return jsonify({'status': 'success', 'suggestions': suggestions})
+    except Exception as e:
+        logging.error(f"[CAMPAIGN PERSONAS] AI suggestion failed: {e}")
+        return jsonify({'status': 'error', 'message': f'AI suggestion failed: {str(e)[:200]}'}), 500
+
+
 # ---------------------------------------------------------------------------
 # Enrollment Pipeline: Discovery, Email Generation, Apollo Enrollment
 # ---------------------------------------------------------------------------
