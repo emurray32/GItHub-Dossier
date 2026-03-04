@@ -1610,44 +1610,40 @@ def export_db():
     if not provided or not hmac.compare_digest(provided, sync_token):
         return jsonify({'status': 'error', 'message': 'Unauthorized: invalid or missing sync token'}), 401
 
-    from database import _USE_POSTGRES
+    try:
+        import traceback as _tb
+        from database import _USE_POSTGRES
 
-    if _USE_POSTGRES:
-        # --- PostgreSQL → SQLite export ---
-        tmp_path = tempfile.mktemp(suffix='.db')
-        try:
+        if _USE_POSTGRES:
+            # --- PostgreSQL → SQLite export ---
+            tmp_path = tempfile.mktemp(suffix='.db')
             _pg_to_sqlite(tmp_path)
-        except Exception as e:
-            if os.path.exists(tmp_path):
-                os.unlink(tmp_path)
-            logging.error("export-db: PostgreSQL→SQLite failed: %s", e)
-            return jsonify({'status': 'error', 'message': f'Export failed: {e}'}), 500
-    else:
-        # --- SQLite → copy to temp to avoid lock conflicts ---
-        db_path = Config.DATABASE_PATH
-        if not os.path.exists(db_path):
-            return jsonify({'status': 'error', 'message': f'Database file not found at {db_path}'}), 404
-        tmp_path = tempfile.mktemp(suffix='.db')
-        shutil.copy2(db_path, tmp_path)
+        else:
+            # --- SQLite → copy to temp to avoid lock conflicts ---
+            db_path = Config.DATABASE_PATH
+            if not os.path.exists(db_path):
+                return jsonify({'status': 'error', 'message': f'Database file not found at {db_path}'}), 404
+            tmp_path = tempfile.mktemp(suffix='.db')
+            shutil.copy2(db_path, tmp_path)
 
-    # Stream the temp file and clean up after
-    size = os.path.getsize(tmp_path)
+        # Read entire file into memory (avoids streaming issues with Replit proxy)
+        with open(tmp_path, 'rb') as f:
+            data = f.read()
+        os.unlink(tmp_path)
 
-    def generate():
-        try:
-            with open(tmp_path, 'rb') as f:
-                while True:
-                    chunk = f.read(8192)
-                    if not chunk:
-                        break
-                    yield chunk
-        finally:
-            os.unlink(tmp_path)
+        response = Response(data, mimetype='application/octet-stream')
+        response.headers['Content-Disposition'] = 'attachment; filename=lead_machine.db'
+        response.headers['Content-Length'] = len(data)
+        return response
 
-    response = Response(stream_with_context(generate()), mimetype='application/octet-stream')
-    response.headers['Content-Disposition'] = 'attachment; filename=lead_machine.db'
-    response.headers['Content-Length'] = size
-    return response
+    except Exception as e:
+        logging.error("export-db failed: %s\n%s", e, _tb.format_exc())
+        # Return the full traceback so we can debug remotely
+        return jsonify({
+            'status': 'error',
+            'message': str(e),
+            'traceback': _tb.format_exc(),
+        }), 500
 
 
 # --- PostgreSQL → SQLite helper (used by export_db) ---
