@@ -7,6 +7,7 @@ import atexit
 import hmac
 import json
 import shutil
+import sqlite3 as _sqlite3
 import tempfile
 import re
 import time
@@ -1594,10 +1595,12 @@ def search():
 
 @app.route('/sync/export-db')
 def export_db():
-    """Download the SQLite database file for local development sync.
+    """Download the database as a SQLite file for local development sync.
 
-    Requires DOSSIER_SYNC_TOKEN (separate from API key) as a query param
-    or X-Sync-Token header. Returns the raw .db file as an attachment.
+    When running on PostgreSQL (Replit), exports all tables into a fresh
+    SQLite file.  When running on SQLite (local), copies the file directly.
+
+    Requires DOSSIER_SYNC_TOKEN as X-Sync-Token header or query param.
     """
     sync_token = os.environ.get('DOSSIER_SYNC_TOKEN', '')
     if not sync_token:
@@ -1607,31 +1610,146 @@ def export_db():
     if not provided or not hmac.compare_digest(provided, sync_token):
         return jsonify({'status': 'error', 'message': 'Unauthorized: invalid or missing sync token'}), 401
 
-    db_path = Config.DATABASE_PATH
-    if not os.path.exists(db_path):
-        return jsonify({'status': 'error', 'message': f'Database file not found at {db_path}'}), 404
+    from database import _USE_POSTGRES
 
-    # Copy to temp file to avoid SQLite file lock conflicts
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix='.db')
-    tmp.close()
-    shutil.copy2(db_path, tmp.name)
+    if _USE_POSTGRES:
+        # --- PostgreSQL → SQLite export ---
+        tmp_path = tempfile.mktemp(suffix='.db')
+        try:
+            _pg_to_sqlite(tmp_path)
+        except Exception as e:
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+            logging.error("export-db: PostgreSQL→SQLite failed: %s", e)
+            return jsonify({'status': 'error', 'message': f'Export failed: {e}'}), 500
+    else:
+        # --- SQLite → copy to temp to avoid lock conflicts ---
+        db_path = Config.DATABASE_PATH
+        if not os.path.exists(db_path):
+            return jsonify({'status': 'error', 'message': f'Database file not found at {db_path}'}), 404
+        tmp_path = tempfile.mktemp(suffix='.db')
+        shutil.copy2(db_path, tmp_path)
+
+    # Stream the temp file and clean up after
+    size = os.path.getsize(tmp_path)
 
     def generate():
         try:
-            with open(tmp.name, 'rb') as f:
+            with open(tmp_path, 'rb') as f:
                 while True:
                     chunk = f.read(8192)
                     if not chunk:
                         break
                     yield chunk
         finally:
-            os.unlink(tmp.name)
+            os.unlink(tmp_path)
 
-    size = os.path.getsize(tmp.name)
     response = Response(stream_with_context(generate()), mimetype='application/octet-stream')
     response.headers['Content-Disposition'] = 'attachment; filename=lead_machine.db'
     response.headers['Content-Length'] = size
     return response
+
+
+# --- PostgreSQL → SQLite helper (used by export_db) ---
+
+_PG_TYPE_MAP = {
+    'integer': 'INTEGER', 'bigint': 'INTEGER', 'smallint': 'INTEGER',
+    'serial': 'INTEGER', 'bigserial': 'INTEGER',
+    'boolean': 'INTEGER',
+    'real': 'REAL', 'double precision': 'REAL', 'numeric': 'REAL',
+    'text': 'TEXT', 'character varying': 'TEXT', 'varchar': 'TEXT', 'char': 'TEXT',
+    'json': 'TEXT', 'jsonb': 'TEXT',
+    'timestamp without time zone': 'TEXT', 'timestamp with time zone': 'TEXT',
+    'date': 'TEXT', 'time without time zone': 'TEXT',
+    'bytea': 'BLOB',
+}
+
+
+def _pg_to_sqlite(sqlite_path: str) -> None:
+    """Copy all public tables from PostgreSQL into a new SQLite file."""
+    import psycopg2
+    import psycopg2.extras
+
+    pg_conn = psycopg2.connect(dsn=Config.DATABASE_URL)
+    sl_conn = _sqlite3.connect(sqlite_path)
+    try:
+        pg_cur = pg_conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+
+        # Get all user tables in public schema
+        pg_cur.execute("""
+            SELECT table_name FROM information_schema.tables
+            WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+            ORDER BY table_name
+        """)
+        tables = [row[0] for row in pg_cur.fetchall()]
+
+        for table in tables:
+            # Get column info
+            pg_cur.execute("""
+                SELECT column_name, data_type, is_nullable,
+                       column_default, character_maximum_length
+                FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = %s
+                ORDER BY ordinal_position
+            """, (table,))
+            columns = pg_cur.fetchall()
+
+            if not columns:
+                continue
+
+            # Build CREATE TABLE for SQLite
+            col_defs = []
+            col_names = []
+            for col in columns:
+                name = col['column_name']
+                pg_type = col['data_type']
+                sl_type = _PG_TYPE_MAP.get(pg_type, 'TEXT')
+                nullable = col['is_nullable'] == 'YES'
+                default = col['column_default']
+
+                col_names.append(name)
+
+                # Detect primary key (serial columns have nextval default)
+                if default and 'nextval' in str(default):
+                    col_defs.append(f'"{name}" INTEGER PRIMARY KEY AUTOINCREMENT')
+                else:
+                    parts = [f'"{name}" {sl_type}']
+                    if not nullable:
+                        parts.append('NOT NULL')
+                    if default and 'nextval' not in str(default):
+                        clean = str(default).replace("::text", "").replace("::integer", "")
+                        parts.append(f'DEFAULT {clean}')
+                    col_defs.append(' '.join(parts))
+
+            create_sql = f'CREATE TABLE IF NOT EXISTS "{table}" ({", ".join(col_defs)})'
+            sl_conn.execute(create_sql)
+
+            # Copy data
+            pg_cur.execute(f'SELECT * FROM "{table}"')
+            rows = pg_cur.fetchall()
+            if rows:
+                placeholders = ', '.join(['?'] * len(col_names))
+                quoted_cols = ', '.join(f'"{c}"' for c in col_names)
+                insert_sql = f'INSERT INTO "{table}" ({quoted_cols}) VALUES ({placeholders})'
+
+                converted = []
+                for row in rows:
+                    vals = []
+                    for c in col_names:
+                        v = row[c]
+                        if isinstance(v, (dict, list)):
+                            v = json.dumps(v)
+                        elif isinstance(v, bool):
+                            v = int(v)
+                        vals.append(v)
+                    converted.append(tuple(vals))
+
+                sl_conn.executemany(insert_sql, converted)
+
+        sl_conn.commit()
+    finally:
+        sl_conn.close()
+        pg_conn.close()
 
 
 @app.route('/api/health')
