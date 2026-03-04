@@ -213,8 +213,30 @@ def auto_discover_contacts(account_id, batch_id=None, personas=None,
 
             people = resp.json().get('people', [])
             for person in people:
-                email = _filter_personal_email(person.get('email') or '')
+                raw_email = person.get('email') or ''
+                email = _filter_personal_email(raw_email)
                 if not email:
+                    # EC-008: Track contacts with no email instead of silently skipping
+                    if person.get('first_name') or person.get('last_name'):
+                        no_email_contact = {
+                            'account_id': account_id,
+                            'company_name': company_name,
+                            'company_domain': domain,
+                            'persona_name': persona.get('persona_name', ''),
+                            'sequence_id': persona.get('sequence_id', ''),
+                            'sequence_name': persona.get('sequence_name', ''),
+                            'apollo_person_id': person.get('id', ''),
+                            'first_name': person.get('first_name', ''),
+                            'last_name': person.get('last_name', ''),
+                            'email': '',
+                            'title': person.get('title', ''),
+                            'seniority': person.get('seniority', ''),
+                            'linkedin_url': person.get('linkedin_url', ''),
+                            'status': 'email_not_available',
+                        }
+                        if batch_id:
+                            no_email_contact['batch_id'] = batch_id
+                        all_contacts.append(no_email_contact)
                     continue
 
                 if email.lower() in existing_emails:
@@ -491,12 +513,15 @@ def bulk_enroll_contacts(batch_id, contact_ids=None, limit=25):
     # Update batch counters
     db.update_enrollment_batch(batch_id, enrolled=enrolled, failed=failed, skipped=skipped)
 
-    # Check if batch is complete
+    # Check if batch is complete (EC-023: distinguish completed vs completed_with_errors)
     summary = db.get_enrollment_batch_summary(batch_id)
     remaining = summary.get('discovered', 0) + summary.get('generated', 0)
     if remaining == 0:
+        total_failed = summary.get('failed', 0)
+        total_enrolled = summary.get('enrolled', 0)
+        final_status = 'completed_with_errors' if total_failed > 0 and total_enrolled > 0 else 'completed'
         db.update_enrollment_batch(
-            batch_id, status='completed', current_phase='done',
+            batch_id, status=final_status, current_phase='done',
             completed_at=datetime.utcnow().isoformat()
         )
 

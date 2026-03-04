@@ -1413,7 +1413,7 @@ def stream_scan(company: str):
     """
     valid, company = validate_company_name(company)
     if not valid:
-        return jsonify({'error': company}), 400
+        return jsonify({'status': 'error', 'message': company}), 400
 
     def generate():
         start_time = time.time()
@@ -1697,13 +1697,61 @@ def health_check():
     return jsonify(payload), status_code
 
 
+@app.route('/api/system-alerts')
+def api_system_alerts():
+    """Return active system alerts for the global banner (EC-021, EC-022).
+
+    Checks GitHub token pool, cache connectivity, and Apollo rate limits.
+    Returns only active alerts — empty list means all clear.
+    """
+    alerts = []
+
+    # Check GitHub token pool
+    try:
+        from utils import get_token_pool
+        pool = get_token_pool()
+        pool_status = pool.get_pool_status()
+        available = pool_status.get('tokens_available', 0)
+        total_remaining = pool_status.get('total_remaining', 0)
+        if available == 0:
+            alerts.append({
+                'type': 'github_rate_limit',
+                'message': 'GitHub API tokens exhausted — scans are paused until limits reset.',
+                'severity': 'error'
+            })
+        elif total_remaining < 500:
+            alerts.append({
+                'type': 'github_rate_limit',
+                'message': f'GitHub API rate limit low ({total_remaining} remaining) — scans may be delayed.',
+                'severity': 'warning'
+            })
+    except Exception:
+        pass
+
+    # Check cache connectivity
+    try:
+        from cache import get_cache_stats
+        stats = get_cache_stats()
+        backend = stats.get('backend', 'none')
+        if backend in ('disabled', 'none'):
+            alerts.append({
+                'type': 'cache_down',
+                'message': 'Cache is disabled — scan performance may be degraded.',
+                'severity': 'warning'
+            })
+    except Exception:
+        pass
+
+    return jsonify({'alerts': alerts})
+
+
 @app.route('/api/reports')
 def api_reports():
     """API endpoint to get recent reports."""
     limit = request.args.get('limit', 20, type=int)
     valid, limit = validate_positive_int(limit, name='limit', max_val=500)
     if not valid:
-        return jsonify({'error': limit}), 400
+        return jsonify({'status': 'error', 'message': limit}), 400
     reports = get_recent_reports(limit=limit)
     return jsonify(reports)
 
@@ -1715,7 +1763,7 @@ def api_search_reports():
     if query:
         valid, query = validate_search_query(query)
         if not valid:
-            return jsonify({'error': query}), 400
+            return jsonify({'status': 'error', 'message': query}), 400
     reports = search_reports(query)
     return jsonify(reports)
 
@@ -1739,20 +1787,20 @@ def api_reports_paginated():
     # Validate pagination parameters
     valid, page = validate_positive_int(page, name='page', max_val=10000)
     if not valid:
-        return jsonify({'error': page}), 400
+        return jsonify({'status': 'error', 'message': page}), 400
     valid, limit = validate_positive_int(limit, name='limit', max_val=100)
     if not valid:
-        return jsonify({'error': limit}), 400
+        return jsonify({'status': 'error', 'message': limit}), 400
     if search:
         valid, search = validate_search_query(search)
         if not valid:
-            return jsonify({'error': search}), 400
+            return jsonify({'status': 'error', 'message': search}), 400
     # Whitelist sort_by to prevent SQL injection
     if sort_by not in ('created_at', 'company_name', 'signal_count', 'github_org'):
         sort_by = 'created_at'
     valid, sort_order = validate_sort_direction(sort_order)
     if not valid:
-        return jsonify({'error': sort_order}), 400
+        return jsonify({'status': 'error', 'message': sort_order}), 400
 
     result = get_paginated_reports(
         page=page,
@@ -1800,7 +1848,7 @@ def api_report_preview(report_id):
     preview = get_report_preview(report_id)
     if preview:
         return jsonify(preview)
-    return jsonify({'error': 'Report not found'}), 404
+    return jsonify({'status': 'error', 'message': 'Report not found'}), 404
 
 
 @app.route('/api/agentmail/status')
@@ -1871,7 +1919,7 @@ def api_deep_dive(report_id: int):
     # Get the report
     report = get_report(report_id)
     if not report:
-        return jsonify({'error': 'Report not found'}), 404
+        return jsonify({'status': 'error', 'message': 'Report not found'}), 404
 
     scan_data = report.get('scan_data', {})
     ai_analysis = report.get('ai_analysis', {})
@@ -1910,7 +1958,7 @@ def api_deep_dive(report_id: int):
         })
     except Exception as e:
         logging.error(f"[API] Deep Dive error for report {report_id}: {str(e)}")
-        return jsonify({'error': 'Failed to generate Deep Dive'}), 500
+        return jsonify({'status': 'error', 'message': 'Failed to generate Deep Dive'}), 500
 
 
 @app.route('/history')
@@ -2995,17 +3043,17 @@ def api_enrollment_batch_contacts(batch_id):
     try:
         limit = min(int(request.args.get('limit', 500)), 1000)
     except (ValueError, TypeError):
-        return jsonify({'error': 'limit must be an integer'}), 400
+        return jsonify({'status': 'error', 'message': 'limit must be an integer'}), 400
     try:
         offset = int(request.args.get('offset', 0))
     except (ValueError, TypeError):
-        return jsonify({'error': 'offset must be an integer'}), 400
+        return jsonify({'status': 'error', 'message': 'offset must be an integer'}), 400
     valid, limit = validate_positive_int(limit, name='limit', max_val=1000)
     if not valid:
-        return jsonify({'error': limit}), 400
+        return jsonify({'status': 'error', 'message': limit}), 400
     valid, offset = validate_positive_int(offset, name='offset', max_val=100000)
     if not valid:
-        return jsonify({'error': offset}), 400
+        return jsonify({'status': 'error', 'message': offset}), 400
     contacts = get_enrollment_contacts(batch_id, status=status_filter, limit=limit, offset=offset)
     return jsonify({'status': 'success', 'contacts': contacts})
 
@@ -3800,7 +3848,7 @@ def api_delete_account(account_id: int):
     """Delete a monitored account by ID."""
     deleted = delete_account(account_id)
     if not deleted:
-        return jsonify({'error': 'Account not found'}), 404
+        return jsonify({'status': 'error', 'message': 'Account not found'}), 404
     return jsonify({'status': 'success'})
 
 
@@ -3813,11 +3861,11 @@ def api_update_account_notes(account_id: int):
     if notes:
         valid, notes = validate_notes(notes)
         if not valid:
-            return jsonify({'error': notes}), 400
+            return jsonify({'status': 'error', 'message': notes}), 400
 
     updated = update_account_notes(account_id, notes)
     if not updated:
-        return jsonify({'error': 'Account not found'}), 404
+        return jsonify({'status': 'error', 'message': 'Account not found'}), 404
     return jsonify({'status': 'success', 'notes': notes})
 
 
@@ -3826,7 +3874,7 @@ def api_account_contributors(account_id):
     """Get contributors for an account (used by RepoRadar detail panel)."""
     account = get_account(account_id)
     if not account:
-        return jsonify({'error': 'Not found'}), 404
+        return jsonify({'status': 'error', 'message': 'Not found'}), 404
     github_org = account.get('github_org') or ''
     company = account.get('company_name') or ''
     # Try github_org first, fall back to company name
@@ -4069,7 +4117,7 @@ def api_archive_account(account_id: int):
     """Archive an account (hide from main list but retain for periodic re-scan)."""
     archived = archive_account(account_id)
     if not archived:
-        return jsonify({'error': 'Account not found or already archived'}), 404
+        return jsonify({'status': 'error', 'message': 'Account not found or already archived'}), 404
     return jsonify({'status': 'success', 'message': 'Account archived'})
 
 
@@ -4078,7 +4126,7 @@ def api_unarchive_account(account_id: int):
     """Unarchive an account (restore to main accounts list)."""
     unarchived = unarchive_account(account_id)
     if not unarchived:
-        return jsonify({'error': 'Account not found or not archived'}), 404
+        return jsonify({'status': 'error', 'message': 'Account not found or not archived'}), 404
     return jsonify({'status': 'success', 'message': 'Account unarchived'})
 
 
@@ -4241,7 +4289,7 @@ def api_update_contributor_apollo(contributor_id: int):
 
     updated = update_contributor_apollo_status(contributor_id, status, sequence_name)
     if not updated:
-        return jsonify({'error': 'Contributor not found'}), 404
+        return jsonify({'status': 'error', 'message': 'Contributor not found'}), 404
     return jsonify({'status': 'success'})
 
 
@@ -4251,11 +4299,11 @@ def api_update_contributor_email(contributor_id: int):
     data = request.get_json() or {}
     email = _filter_personal_email(data.get('email', '').strip())
     if not email:
-        return jsonify({'error': 'No valid work email provided'}), 400
+        return jsonify({'status': 'error', 'message': 'No valid work email provided'}), 400
 
     updated = update_contributor_email(contributor_id, email)
     if not updated:
-        return jsonify({'error': 'Contributor not found'}), 404
+        return jsonify({'status': 'error', 'message': 'Contributor not found'}), 404
     return jsonify({'status': 'success', 'email': email})
 
 
@@ -4264,7 +4312,7 @@ def api_contributor_send_email(contributor_id: int):
     """Send an outreach email to a contributor via AgentMail."""
     contributor = get_contributor_by_id(contributor_id)
     if not contributor:
-        return jsonify({'error': 'Contributor not found'}), 404
+        return jsonify({'status': 'error', 'message': 'Contributor not found'}), 404
 
     data = request.get_json() or {}
     to_email = data.get('to_email', contributor.get('email', ''))
@@ -4272,10 +4320,10 @@ def api_contributor_send_email(contributor_id: int):
     body = data.get('body', '')
 
     if not to_email:
-        return jsonify({'error': 'No email address available for this contributor'}), 400
+        return jsonify({'status': 'error', 'message': 'No email address available for this contributor'}), 400
     valid, to_email = validate_email(to_email)
     if not valid:
-        return jsonify({'error': to_email}), 400
+        return jsonify({'status': 'error', 'message': to_email}), 400
 
     result = send_email_draft(
         to_email=to_email,
@@ -4296,7 +4344,7 @@ def api_delete_contributor(contributor_id: int):
     """Delete a contributor."""
     deleted = delete_contributor(contributor_id)
     if not deleted:
-        return jsonify({'error': 'Contributor not found'}), 404
+        return jsonify({'status': 'error', 'message': 'Contributor not found'}), 404
     return jsonify({'status': 'success'})
 
 
@@ -4315,10 +4363,10 @@ def api_fetch_contributors():
     if specific_org:
         valid, specific_org = validate_github_org(specific_org)
         if not valid:
-            return jsonify({'error': specific_org}), 400
+            return jsonify({'status': 'error', 'message': specific_org}), 400
     valid, limit_per_repo = validate_positive_int(limit_per_repo, name='limit', max_val=50)
     if not valid:
-        return jsonify({'error': limit_per_repo}), 400
+        return jsonify({'status': 'error', 'message': limit_per_repo}), 400
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -4829,32 +4877,32 @@ def api_webscraper_analyze():
         data = request.get_json()
 
         if not data:
-            return jsonify({'error': 'Invalid JSON payload'}), 400
+            return jsonify({'status': 'error', 'message': 'Invalid JSON payload'}), 400
 
         url = data.get('url', '').strip()
         prompt = data.get('prompt', '').strip()
 
         if not url:
-            return jsonify({'error': 'Missing required field: url'}), 400
+            return jsonify({'status': 'error', 'message': 'Missing required field: url'}), 400
         valid, url = validate_url(url)
         if not valid:
-            return jsonify({'error': url}), 400
+            return jsonify({'status': 'error', 'message': url}), 400
 
         if not prompt:
-            return jsonify({'error': 'Missing required field: prompt'}), 400
+            return jsonify({'status': 'error', 'message': 'Missing required field: prompt'}), 400
 
         # Analyze the website
         result = analyze_website(url, prompt)
 
         if not result.get('success'):
             error_msg = result.get('error', 'Analysis failed')
-            return jsonify({'error': error_msg}), 500
+            return jsonify({'status': 'error', 'message': error_msg}), 500
 
         return jsonify(result), 200
 
     except Exception as e:
         logging.error(f"[ERROR] Website analysis failed: {e}")
-        return jsonify({'error': 'Analysis failed'}), 500
+        return jsonify({'status': 'error', 'message': 'Analysis failed'}), 500
 
 
 @app.route('/api/webscraper/accounts-with-websites', methods=['GET'])
@@ -4879,7 +4927,7 @@ def api_webscraper_accounts():
 
     except Exception as e:
         logging.error(f"[ERROR] Failed to fetch accounts with websites: {e}")
-        return jsonify({'error': 'Failed to fetch accounts'}), 500
+        return jsonify({'status': 'error', 'message': 'Failed to fetch accounts'}), 500
 
 
 @app.route('/api/webscraper/analyze-batch', methods=['POST'])
@@ -4896,19 +4944,19 @@ def api_webscraper_analyze_batch():
         data = request.get_json()
 
         if not data:
-            return jsonify({'error': 'Invalid JSON payload'}), 400
+            return jsonify({'status': 'error', 'message': 'Invalid JSON payload'}), 400
 
         account_ids = data.get('account_ids', [])
 
         if not account_ids:
-            return jsonify({'error': 'Missing required field: account_ids'}), 400
+            return jsonify({'status': 'error', 'message': 'Missing required field: account_ids'}), 400
 
         if not isinstance(account_ids, list):
-            return jsonify({'error': 'account_ids must be a list'}), 400
+            return jsonify({'status': 'error', 'message': 'account_ids must be a list'}), 400
         for aid in account_ids:
             valid, _ = validate_positive_int(aid, name='account_id')
             if not valid:
-                return jsonify({'error': f'Invalid account_id: {aid}'}), 400
+                return jsonify({'status': 'error', 'message': f'Invalid account_id: {aid}'}), 400
 
         # Get accounts
         conn = get_db_connection()
@@ -4977,7 +5025,7 @@ def api_webscraper_analyze_batch():
 
     except Exception as e:
         logging.error(f"[ERROR] Batch analysis failed: {e}")
-        return jsonify({'error': 'Batch analysis failed'}), 500
+        return jsonify({'status': 'error', 'message': 'Batch analysis failed'}), 500
 
 
 @app.route('/api/webscraper/analyses', methods=['GET'])
@@ -4997,10 +5045,10 @@ def api_webscraper_analyses():
 
         valid, limit = validate_positive_int(limit, name='limit', max_val=500)
         if not valid:
-            return jsonify({'error': limit}), 400
+            return jsonify({'status': 'error', 'message': limit}), 400
         valid, offset = validate_positive_int(offset, name='offset', max_val=100000)
         if not valid:
-            return jsonify({'error': offset}), 400
+            return jsonify({'status': 'error', 'message': offset}), 400
 
         analyses = get_all_website_analyses(limit=limit, offset=offset)
 
@@ -5012,7 +5060,7 @@ def api_webscraper_analyses():
 
     except Exception as e:
         logging.error(f"[ERROR] Failed to fetch analyses: {e}")
-        return jsonify({'error': 'Failed to fetch analyses'}), 500
+        return jsonify({'status': 'error', 'message': 'Failed to fetch analyses'}), 500
 
 
 @app.route('/api/webscraper/analysis/<int:analysis_id>', methods=['GET'])
@@ -5026,7 +5074,7 @@ def api_webscraper_analysis_detail(analysis_id):
         analysis = get_website_analysis(analysis_id)
 
         if not analysis:
-            return jsonify({'error': 'Analysis not found'}), 404
+            return jsonify({'status': 'error', 'message': 'Analysis not found'}), 404
 
         return jsonify({
             'success': True,
@@ -5035,7 +5083,7 @@ def api_webscraper_analysis_detail(analysis_id):
 
     except Exception as e:
         logging.error(f"[ERROR] Failed to fetch analysis {analysis_id}: {e}")
-        return jsonify({'error': 'Failed to fetch analysis'}), 500
+        return jsonify({'status': 'error', 'message': 'Failed to fetch analysis'}), 500
 
 
 @app.route('/api/webscraper/analysis/<int:analysis_id>', methods=['DELETE'])
@@ -5049,7 +5097,7 @@ def api_webscraper_analysis_delete(analysis_id):
         deleted = delete_website_analysis(analysis_id)
 
         if not deleted:
-            return jsonify({'error': 'Analysis not found'}), 404
+            return jsonify({'status': 'error', 'message': 'Analysis not found'}), 404
 
         return jsonify({
             'success': True,
@@ -5058,7 +5106,7 @@ def api_webscraper_analysis_delete(analysis_id):
 
     except Exception as e:
         logging.error(f"[ERROR] Failed to delete analysis: {e}")
-        return jsonify({'error': 'Failed to delete analysis'}), 500
+        return jsonify({'status': 'error', 'message': 'Failed to delete analysis'}), 500
 
 
 # =============================================================================
@@ -5152,7 +5200,7 @@ def api_webscraper_populate():
         })
     except Exception as e:
         logging.error(f"[ERROR] Failed to create webscraper accounts: {e}")
-        return jsonify({'error': 'Failed to create accounts'}), 500
+        return jsonify({'status': 'error', 'message': 'Failed to create accounts'}), 500
 
 
 @app.route('/api/webscraper/accounts/populate-from-reporadar', methods=['POST'])
@@ -5169,7 +5217,7 @@ def api_webscraper_populate_from_reporadar():
         })
     except Exception as e:
         logging.error(f"[ERROR] Failed to populate from RepoRadar: {e}")
-        return jsonify({'error': 'Failed to populate accounts'}), 500
+        return jsonify({'status': 'error', 'message': 'Failed to populate accounts'}), 500
 
 
 @app.route('/api/webscraper/ruleset')
@@ -5235,7 +5283,7 @@ def api_webscraper_history():
     limit = request.args.get('limit', 20, type=int)
     valid, limit = validate_positive_int(limit, name='limit', max_val=100)
     if not valid:
-        return jsonify({'error': limit}), 400
+        return jsonify({'status': 'error', 'message': limit}), 400
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -5287,11 +5335,11 @@ def api_webscraper_scan_account(account_id):
     # Verify account exists
     account = get_webscraper_account(account_id)
     if not account:
-        return jsonify({'error': 'Account not found'}), 404
+        return jsonify({'status': 'error', 'message': 'Account not found'}), 404
 
     website_url = account.get('website_url')
     if not website_url:
-        return jsonify({'error': 'Account has no website URL'}), 400
+        return jsonify({'status': 'error', 'message': 'Account has no website URL'}), 400
 
     try:
         # Perform technical website analysis
@@ -5398,20 +5446,20 @@ def api_webscraper_bulk_action():
         account_ids = data.get('account_ids', [])
 
         if not action:
-            return jsonify({'error': 'Missing required field: action'}), 400
+            return jsonify({'status': 'error', 'message': 'Missing required field: action'}), 400
 
         if not account_ids:
-            return jsonify({'error': 'Missing required field: account_ids'}), 400
+            return jsonify({'status': 'error', 'message': 'Missing required field: account_ids'}), 400
 
         if not isinstance(account_ids, list):
-            return jsonify({'error': 'account_ids must be a list'}), 400
+            return jsonify({'status': 'error', 'message': 'account_ids must be a list'}), 400
         for aid in account_ids:
             valid, _ = validate_positive_int(aid, name='account_id')
             if not valid:
-                return jsonify({'error': f'Invalid account_id: {aid}'}), 400
+                return jsonify({'status': 'error', 'message': f'Invalid account_id: {aid}'}), 400
 
         if action not in ('archive', 'unarchive', 'delete', 'change_tier', 'scan'):
-            return jsonify({'error': f'Unknown action: {action}'}), 400
+            return jsonify({'status': 'error', 'message': f'Unknown action: {action}'}), 400
 
         if action == 'archive':
             affected = webscraper_bulk_archive(account_ids)
@@ -5432,9 +5480,9 @@ def api_webscraper_bulk_action():
         elif action == 'change_tier':
             new_tier = data.get('tier')
             if new_tier is None:
-                return jsonify({'error': 'Missing required field: tier'}), 400
+                return jsonify({'status': 'error', 'message': 'Missing required field: tier'}), 400
             if new_tier not in [1, 2, 3, 4]:
-                return jsonify({'error': 'Invalid tier. Must be 1, 2, 3, or 4'}), 400
+                return jsonify({'status': 'error', 'message': 'Invalid tier. Must be 1, 2, 3, or 4'}), 400
             affected = webscraper_bulk_change_tier(account_ids, new_tier)
             return jsonify({'success': True, 'action': 'change_tier', 'tier': new_tier, 'affected': affected})
 
@@ -5529,11 +5577,11 @@ def api_webscraper_bulk_action():
             })
 
         else:
-            return jsonify({'error': f'Unknown action: {action}'}), 400
+            return jsonify({'status': 'error', 'message': f'Unknown action: {action}'}), 400
 
     except Exception as e:
         logging.error(f"[ERROR] Bulk action failed: {e}")
-        return jsonify({'error': 'Bulk action failed'}), 500
+        return jsonify({'status': 'error', 'message': 'Bulk action failed'}), 500
 
 
 @app.route('/api/webscraper/accounts/<int:account_id>/notes', methods=['PUT'])
@@ -5553,11 +5601,11 @@ def api_webscraper_update_notes(account_id):
     if notes:
         valid, notes = validate_notes(notes)
         if not valid:
-            return jsonify({'error': notes}), 400
+            return jsonify({'status': 'error', 'message': notes}), 400
 
     updated = update_webscraper_notes(account_id, notes)
     if not updated:
-        return jsonify({'error': 'Account not found'}), 404
+        return jsonify({'status': 'error', 'message': 'Account not found'}), 404
 
     return jsonify({'success': True, 'notes': notes})
 
@@ -5567,7 +5615,7 @@ def api_webscraper_archive_account(account_id):
     """Archive a webscraper account."""
     archived = archive_webscraper_account(account_id)
     if not archived:
-        return jsonify({'error': 'Account not found or already archived'}), 404
+        return jsonify({'status': 'error', 'message': 'Account not found or already archived'}), 404
     return jsonify({'success': True, 'message': 'Account archived'})
 
 
@@ -5576,7 +5624,7 @@ def api_webscraper_unarchive_account(account_id):
     """Unarchive a webscraper account."""
     unarchived = unarchive_webscraper_account(account_id)
     if not unarchived:
-        return jsonify({'error': 'Account not found or not archived'}), 404
+        return jsonify({'status': 'error', 'message': 'Account not found or not archived'}), 404
     return jsonify({'success': True, 'message': 'Account unarchived'})
 
 
@@ -5585,7 +5633,7 @@ def api_webscraper_delete_account(account_id):
     """Delete a webscraper account."""
     deleted = delete_webscraper_account(account_id)
     if not deleted:
-        return jsonify({'error': 'Account not found'}), 404
+        return jsonify({'status': 'error', 'message': 'Account not found'}), 404
     return jsonify({'success': True, 'message': 'Account deleted'})
 
 
@@ -5594,7 +5642,7 @@ def api_webscraper_get_account(account_id):
     """Get a single webscraper account by ID."""
     account = get_webscraper_account(account_id)
     if not account:
-        return jsonify({'error': 'Account not found'}), 404
+        return jsonify({'status': 'error', 'message': 'Account not found'}), 404
     return jsonify({'success': True, 'account': account})
 
 
@@ -5613,13 +5661,13 @@ def api_discover():
     limit = request.args.get('limit', 20, type=int)
 
     if not keyword:
-        return jsonify({'error': 'Missing query parameter: q'}), 400
+        return jsonify({'status': 'error', 'message': 'Missing query parameter: q'}), 400
     valid, keyword = validate_search_query(keyword)
     if not valid:
-        return jsonify({'error': keyword}), 400
+        return jsonify({'status': 'error', 'message': keyword}), 400
     valid, limit = validate_positive_int(limit, name='limit', max_val=100)
     if not valid:
-        return jsonify({'error': limit}), 400
+        return jsonify({'status': 'error', 'message': limit}), 400
 
     # Search for orgs matching the keyword
     results = search_github_orgs(keyword, limit=limit)
@@ -5665,13 +5713,13 @@ def api_ai_discover():
     limit = request.args.get('limit', 15, type=int)
 
     if not keyword:
-        return jsonify({'error': 'Missing query parameter: q'}), 400
+        return jsonify({'status': 'error', 'message': 'Missing query parameter: q'}), 400
     valid, keyword = validate_search_query(keyword)
     if not valid:
-        return jsonify({'error': keyword}), 400
+        return jsonify({'status': 'error', 'message': keyword}), 400
     valid, limit = validate_positive_int(limit, name='limit', max_val=50)
     if not valid:
-        return jsonify({'error': limit}), 400
+        return jsonify({'status': 'error', 'message': limit}), 400
 
     # Use AI to discover companies in this sector
     companies = discover_companies_via_ai(keyword, limit=limit)
@@ -5711,10 +5759,10 @@ def api_lead_stream():
 
     valid, offset = validate_positive_int(offset, name='offset', max_val=10000)
     if not valid:
-        return jsonify({'error': offset}), 400
+        return jsonify({'status': 'error', 'message': offset}), 400
     valid, limit = validate_positive_int(limit, name='limit', max_val=30)
     if not valid:
-        return jsonify({'error': limit}), 400
+        return jsonify({'status': 'error', 'message': limit}), 400
 
     try:
         # Discover Technology companies
@@ -5758,7 +5806,7 @@ def api_lead_stream():
 
     except Exception as e:
         logging.error(f"[ERROR] Lead stream failed: {e}")
-        return jsonify({'error': 'Failed to generate lead stream'}), 500
+        return jsonify({'status': 'error', 'message': 'Failed to generate lead stream'}), 500
 
 
 @app.route('/api/import', methods=['POST'])
@@ -5793,7 +5841,7 @@ def api_import():
     skip_duplicates = data.get('skip_duplicates', False)
 
     if not isinstance(companies, list) or not companies:
-        return jsonify({'error': 'Invalid payload: expected {"companies": [...]}'}), 400
+        return jsonify({'status': 'error', 'message': 'Invalid payload: expected {"companies": [...]}'}), 400
 
     # For large imports (> 100 companies), skip synchronous duplicate checking
     # The batch worker will handle duplicates during processing
@@ -5899,7 +5947,7 @@ def api_import_batch_status(batch_id):
     """
     batch = get_import_batch(batch_id)
     if not batch:
-        return jsonify({'error': 'Batch not found'}), 404
+        return jsonify({'status': 'error', 'message': 'Batch not found'}), 404
 
     total = batch.get('total_count', 0)
     processed = batch.get('processed_count', 0)
@@ -5952,14 +6000,14 @@ def api_check_import_duplicates():
     companies = data.get('companies', [])
 
     if not isinstance(companies, list) or not companies:
-        return jsonify({'error': 'Invalid payload: expected {"companies": [...]}'}), 400
+        return jsonify({'status': 'error', 'message': 'Invalid payload: expected {"companies": [...]}'}), 400
 
     try:
         results = get_import_duplicates_summary(companies)
         return jsonify(results)
     except Exception as e:
         logging.error(f"[ERROR] Failed to check duplicates: {e}")
-        return jsonify({'error': 'Failed to check duplicates'}), 500
+        return jsonify({'status': 'error', 'message': 'Failed to check duplicates'}), 500
 
 
 @app.route('/api/track', methods=['POST'])
@@ -5980,14 +6028,14 @@ def api_track():
     company_name = data.get('company_name', '').strip()
 
     if not org_login or not company_name:
-        return jsonify({'error': 'Missing required fields: org_login, company_name'}), 400
+        return jsonify({'status': 'error', 'message': 'Missing required fields: org_login, company_name'}), 400
 
     valid, org_login = validate_github_org(org_login)
     if not valid:
-        return jsonify({'error': org_login}), 400
+        return jsonify({'status': 'error', 'message': org_login}), 400
     valid, company_name = validate_company_name(company_name)
     if not valid:
-        return jsonify({'error': company_name}), 400
+        return jsonify({'status': 'error', 'message': company_name}), 400
 
     try:
         existing = get_account_by_company_case_insensitive(company_name)
@@ -6006,7 +6054,7 @@ def api_track():
         return jsonify(result)
     except Exception as e:
         logging.error(f"[ERROR] Failed to track organization {org_login}: {e}")
-        return jsonify({'error': 'Failed to track organization'}), 500
+        return jsonify({'status': 'error', 'message': 'Failed to track organization'}), 500
 
 
 @app.route('/api/update-org', methods=['POST'])
@@ -6080,7 +6128,7 @@ def api_rescan(company_name: str):
     """
     valid, company_name = validate_company_name(company_name)
     if not valid:
-        return jsonify({'error': company_name}), 400
+        return jsonify({'status': 'error', 'message': company_name}), 400
 
     # Check if already scanning
     current_status = get_scan_status(company_name)
@@ -6793,7 +6841,7 @@ def api_sheets_config():
 def api_sheets_sync():
     """Trigger a Google Sheets sync - reads accounts, resolves GitHub orgs, queues for scanning."""
     if sheets_sync_in_progress():
-        return jsonify({'status': 'error', 'error': 'A sync is already in progress'}), 409
+        return jsonify({'status': 'error', 'message': 'A sync is already in progress'}), 409
     data = request.get_json() or {}
     result = sheets_run_sync(
         limit=data.get('limit'),
@@ -7551,7 +7599,7 @@ def api_stats():
     days = request.args.get('days', 30, type=int)
     valid, days = validate_positive_int(days, name='days', max_val=365)
     if not valid:
-        return jsonify({'error': days}), 400
+        return jsonify({'status': 'error', 'message': days}), 400
     stats = get_stats_last_n_days(days)
 
     return jsonify({
@@ -7717,7 +7765,7 @@ def api_cache_invalidate_org(org_login):
     """
     valid, org_login = validate_github_org(org_login)
     if not valid:
-        return jsonify({'error': org_login}), 400
+        return jsonify({'status': 'error', 'message': org_login}), 400
     from cache import invalidate_org_cache
     deleted = invalidate_org_cache(org_login)
     return jsonify({
@@ -7739,7 +7787,7 @@ def api_webhook_logs():
     limit = request.args.get('limit', 50, type=int)
     valid, limit = validate_positive_int(limit, name='limit', max_val=500)
     if not valid:
-        return jsonify({'error': limit}), 400
+        return jsonify({'status': 'error', 'message': limit}), 400
     logs = get_recent_webhook_logs(limit)
 
     return jsonify({
@@ -8093,13 +8141,13 @@ def api_rules_explain():
     """
     openai_key = os.environ.get('AI_INTEGRATIONS_OPENAI_API_KEY', '')
     if not openai_key:
-        return jsonify({'error': 'No AI API key configured (OpenAI)'}), 500
+        return jsonify({'status': 'error', 'message': 'No AI API key configured (OpenAI)'}), 500
 
     data = request.get_json() or {}
     rule_names = data.get('rules', [])
 
     if not rule_names:
-        return jsonify({'error': 'No rules specified'}), 400
+        return jsonify({'status': 'error', 'message': 'No rules specified'}), 400
 
     explanations = {}
     rules_to_generate = []
@@ -8220,7 +8268,7 @@ def api_rules_explain_all():
     """
     openai_key = os.environ.get('AI_INTEGRATIONS_OPENAI_API_KEY', '')
     if not openai_key:
-        return jsonify({'error': 'No AI API key configured (OpenAI)'}), 500
+        return jsonify({'status': 'error', 'message': 'No AI API key configured (OpenAI)'}), 500
 
     all_rule_names = [
         'rfc_keywords', 'smoking_gun_libs', 'smoking_gun_fork_repos',
