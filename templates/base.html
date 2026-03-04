@@ -35,14 +35,6 @@
                     <i data-lucide="radar" class="sidebar-icon"></i>
                     <span class="sidebar-label">RepoRadar</span>
                 </a>
-                <a href="{{ url_for('campaigns') }}" class="sidebar-item {% if request.endpoint == 'campaigns' %}active{% endif %}">
-                    <i data-lucide="send" class="sidebar-icon"></i>
-                    <span class="sidebar-label">Campaigns</span>
-                </a>
-                <a href="{{ url_for('mapping_sequences') }}" class="sidebar-item {% if request.endpoint == 'mapping_sequences' %}active{% endif %}">
-                    <i data-lucide="link" class="sidebar-icon"></i>
-                    <span class="sidebar-label">Mapping Sequences</span>
-                </a>
                 <a href="{{ url_for('contributors') }}" class="sidebar-item {% if request.endpoint == 'contributors' %}active{% endif %}">
                     <i data-lucide="users" class="sidebar-icon"></i>
                     <span class="sidebar-label">Contributors</span>
@@ -50,6 +42,14 @@
                 <a href="{{ url_for('grow') }}" class="sidebar-item {% if request.endpoint == 'grow' %}active{% endif %}">
                     <i data-lucide="trending-up" class="sidebar-icon"></i>
                     <span class="sidebar-label">Grow</span>
+                </a>
+                <a href="{{ url_for('campaigns') }}" class="sidebar-item {% if request.endpoint == 'campaigns' %}active{% endif %}">
+                    <i data-lucide="send" class="sidebar-icon"></i>
+                    <span class="sidebar-label">Campaigns</span>
+                </a>
+                <a href="{{ url_for('mapping_sequences') }}" class="sidebar-item {% if request.endpoint == 'mapping_sequences' %}active{% endif %}">
+                    <i data-lucide="link" class="sidebar-icon"></i>
+                    <span class="sidebar-label">Mapping Sequences</span>
                 </a>
                 <a href="{{ url_for('linkedin_prospector') }}" class="sidebar-item {% if request.endpoint == 'linkedin_prospector' %}active{% endif %}">
                     <i data-lucide="linkedin" class="sidebar-icon"></i>
