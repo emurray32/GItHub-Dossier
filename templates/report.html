@@ -546,7 +546,7 @@
                     sendBtn.textContent = 'Send Email';
                 }, 1500);
             } else {
-                throw new Error(data.error || 'Failed to send email');
+                throw new Error(data.message || 'Failed to send email');
             }
         } catch (error) {
             console.error('Send error:', error);
@@ -914,8 +914,8 @@
 
             const sequences = await loadApolloSequences();
 
-            if (sequences.error) {
-                dropdown.innerHTML = `<div class="sequence-error">${sequences.error}</div>`;
+            if (sequences.status === 'error') {
+                dropdown.innerHTML = `<div class="sequence-error">${sequences.message || 'Failed to load sequences'}</div>`;
                 return;
             }
 

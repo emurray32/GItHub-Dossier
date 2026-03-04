@@ -543,7 +543,7 @@
             const response = await fetch(`/api/accounts/${accountId}`, { method: 'DELETE' });
             const data = await response.json();
             if (!response.ok) {
-                throw new Error(data.error || 'Failed to remove account.');
+                throw new Error(data.message || 'Failed to remove account.');
             }
             row.remove();
             showNotification(`${company} removed from monitored accounts.`, 'success');
@@ -1572,7 +1572,7 @@
                 const response = await fetch(`/api/accounts/${accountId}`, { method: 'DELETE' });
                 if (!response.ok) {
                     const data = await response.json();
-                    throw new Error(data.error || 'Failed to remove account.');
+                    throw new Error(data.message || 'Failed to remove account.');
                 }
                 row.remove();
             } catch (error) {
@@ -1605,7 +1605,7 @@
                 const response = await fetch(`/api/accounts/${accountId}/archive`, { method: 'POST' });
                 if (!response.ok) {
                     const data = await response.json();
-                    throw new Error(data.error || 'Failed to archive account.');
+                    throw new Error(data.message || 'Failed to archive account.');
                 }
                 row.remove();
                 successCount++;
@@ -1747,7 +1747,7 @@
             const data = await response.json();
 
             if (!response.ok || data.status !== 'success') {
-                throw new Error(data.error || 'Failed to save notes');
+                throw new Error(data.message || 'Failed to save notes');
             }
 
             // Update display and hide edit container
@@ -2600,7 +2600,7 @@
                 }
             } else {
                 const data = await response.json();
-                showToast(data.error || 'Failed to unarchive account', 'error');
+                showToast(data.message || 'Failed to unarchive account', 'error');
             }
         } catch (error) {
             console.error('Error unarchiving account:', error);
@@ -2627,7 +2627,7 @@
                 updateArchivedCount(-1);
             } else {
                 const data = await response.json();
-                showToast(data.error || 'Failed to delete account', 'error');
+                showToast(data.message || 'Failed to delete account', 'error');
             }
         } catch (error) {
             console.error('Error deleting account:', error);

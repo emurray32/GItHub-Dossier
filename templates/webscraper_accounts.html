@@ -662,7 +662,7 @@ async function bulkScan() {
             loadAccounts();
             loadTierCounts();
         } else {
-            alert(`Bulk scan failed: ${result.error || 'Unknown error'}`);
+            alert(`Bulk scan failed: ${result.message || 'Unknown error'}`);
         }
     } catch (error) {
         alert('Failed to perform bulk scan: ' + error.message);
@@ -748,7 +748,7 @@ async function growFromRepoRadar() {
             loadAccounts();
             loadTierCounts();
         } else {
-            alert('Failed to populate: ' + (result.error || 'Unknown error'));
+            alert('Failed to populate: ' + (result.message || 'Unknown error'));
         }
     } catch (error) {
         alert('Failed to populate from RepoRadar: ' + error.message);

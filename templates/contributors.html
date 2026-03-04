@@ -510,7 +510,7 @@
             } else {
                 btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg> Not found';
                 btn.disabled = false;
-                showToast(data.error || 'No email found via Apollo', 'error');
+                showToast(data.message || 'No email found via Apollo', 'error');
             }
         })
         .catch(() => {
@@ -733,7 +733,7 @@
                     loadTable();
                     if (selectedContributorId === id) openSidebar(id);
                 } else {
-                    showToast(data.error || 'Failed to update', 'error');
+                    showToast(data.message || 'Failed to update', 'error');
                 }
             })
             .catch(() => showToast('Network error', 'error'));

@@ -688,7 +688,7 @@ GOOGLE_SHEETS_CREDENTIALS_JSON=&lt;your-service-account-json&gt;</pre>
                     }
                 }
             } else {
-                addConsoleEntry(`Error: ${data.error}`, 'error');
+                addConsoleEntry(`Error: ${data.message || 'Unknown error'}`, 'error');
             }
         } catch (error) {
             addConsoleEntry(`Network Error: ${error.message}`, 'error');
@@ -709,7 +709,7 @@ GOOGLE_SHEETS_CREDENTIALS_JSON=&lt;your-service-account-json&gt;</pre>
                 const data = await response.json();
 
                 if (!response.ok) {
-                    addConsoleEntry(`Error checking batch status: ${data.error}`, 'error');
+                    addConsoleEntry(`Error checking batch status: ${data.message || 'Unknown error'}`, 'error');
                     return;
                 }
 
@@ -854,7 +854,7 @@ GOOGLE_SHEETS_CREDENTIALS_JSON=&lt;your-service-account-json&gt;</pre>
                     addConsoleEntry('Tip: Enable "Auto-skip duplicates" to import only new companies', 'info');
                 }
             } else {
-                addConsoleEntry(`Error: ${data.error}`, 'error');
+                addConsoleEntry(`Error: ${data.message || 'Unknown error'}`, 'error');
             }
         } catch (error) {
             addConsoleEntry(`Network Error: ${error.message}`, 'error');
@@ -945,7 +945,7 @@ GOOGLE_SHEETS_CREDENTIALS_JSON=&lt;your-service-account-json&gt;</pre>
                     }
                 }
             } else {
-                addConsoleEntry(`Error: ${data.error}`, 'error');
+                addConsoleEntry(`Error: ${data.message || 'Unknown error'}`, 'error');
             }
         } catch (error) {
             addConsoleEntry(`Network Error: ${error.message}`, 'error');
@@ -1061,7 +1061,7 @@ GOOGLE_SHEETS_CREDENTIALS_JSON=&lt;your-service-account-json&gt;</pre>
                     if (data.preview.length > 10) addConsoleEntry(`  ... and ${data.preview.length - 10} more`, 'info');
                 }
             } else {
-                addConsoleEntry(`Error: ${data.error || 'Unknown error'}`, 'error');
+                addConsoleEntry(`Error: ${data.message || 'Unknown error'}`, 'error');
             }
         } catch (error) {
             addConsoleEntry(`Network Error: ${error.message}`, 'error');
