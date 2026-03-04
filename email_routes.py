@@ -13,7 +13,7 @@ from database import (
     get_signals_by_company, get_account_by_company, get_scorecard_score,
     update_enrollment_contact, get_db_connection,
 )
-from email_engine import generate_batch_emails, preview_email
+from email_engine import generate_batch_emails, preview_email, generate_email_sequence
 
 email_bp = Blueprint('email_engine', __name__)
 
@@ -187,3 +187,76 @@ def api_pipeline_email_preview():
     result = preview_email(contact=mock_contact, signals=signals,
                            variant=variant, account_data=account_data)
     return jsonify({'status': 'success', 'email': result, 'generated_live': True})
+
+
+@email_bp.route('/api/pipeline/email-sequence', methods=['POST'])
+def api_pipeline_email_sequence():
+    """Generate a full 4-email sequence for a contact or company.
+
+    Request JSON:
+        contact_id: int (optional) — enrollment contact ID
+        company_name: str (optional) — company name for fresh generation
+        title: str (optional) — contact title for persona detection
+        campaign_id: int (optional) — campaign for instructions/links
+        campaign_prompt: str (optional) — override campaign prompt
+        campaign_links: list (optional) — links for hyperlinking in email body
+
+    Returns JSON with full email sequence (all 4 emails).
+    """
+    data = request.get_json() or {}
+    contact_id = data.get('contact_id')
+    campaign_links = data.get('campaign_links')
+
+    # Get campaign context if campaign_id provided
+    campaign_prompt = data.get('campaign_prompt', '')
+    campaign_id = data.get('campaign_id')
+    if campaign_id and not campaign_prompt:
+        campaign = get_campaign(campaign_id)
+        if campaign:
+            campaign_prompt = campaign.get('prompt', '')
+            if not campaign_links:
+                try:
+                    assets = json.loads(campaign.get('assets', '{}') or '{}')
+                    campaign_links = assets.get('links', [])
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+    # Build contact from enrollment_contacts if ID provided
+    if contact_id:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM enrollment_contacts WHERE id = ?', (contact_id,))
+        row = cursor.fetchone()
+        conn.close()
+        if not row:
+            return jsonify({'status': 'error', 'message': 'Contact not found'}), 404
+        contact = dict(row)
+    else:
+        raw_company = data.get('company_name', '')
+        is_valid, company_name = validate_company_name(raw_company)
+        if not is_valid:
+            return jsonify({'status': 'error', 'message': company_name or 'company_name is required'}), 400
+        contact = {
+            'company_name': company_name,
+            'first_name': '{{first_name}}',
+            'title': data.get('title', ''),
+        }
+
+    company_name = contact.get('company_name', '')
+    signals = get_signals_by_company(company_name, limit=50)
+    account = get_account_by_company(company_name)
+    account_data = None
+    if account:
+        score = get_scorecard_score(account['id']) if account.get('id') else None
+        account_data = score or {}
+        account_data['evidence_summary'] = account.get('evidence_summary', '')
+
+    result = generate_email_sequence(
+        contact=contact,
+        signals=signals,
+        campaign_prompt=campaign_prompt,
+        account_data=account_data,
+        campaign_links=campaign_links,
+    )
+
+    return jsonify({'status': 'success', 'sequence': result})
