@@ -6,12 +6,13 @@ Routes:
     GET  /api/pipeline/email-preview   — Preview generated email for a contact
 """
 import json
+import logging
 from flask import Blueprint, request, jsonify
 from validators import validate_positive_int, validate_company_name
 from database import (
     get_enrollment_batch, get_campaign, get_next_contacts_for_phase,
     get_signals_by_company, get_account_by_company, get_scorecard_score,
-    update_enrollment_contact, get_db_connection,
+    update_enrollment_contact, get_db_connection, db_connection,
 )
 from email_engine import generate_batch_emails, preview_email, generate_email_sequence
 
@@ -111,11 +112,10 @@ def api_pipeline_email_preview():
 
     # If contact_id provided, try to return stored email first
     if contact_id:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute('SELECT * FROM enrollment_contacts WHERE id = ?', (contact_id,))
-        row = cursor.fetchone()
-        conn.close()
+        with db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT * FROM enrollment_contacts WHERE id = ?', (contact_id,))
+            row = cursor.fetchone()
         if not row:
             return jsonify({'status': 'error', 'message': 'Contact not found'}), 404
 
@@ -146,8 +146,8 @@ def api_pipeline_email_preview():
                     }})
                 # Legacy format (subject_1, email_1, etc.) — return as-is
                 return jsonify({'status': 'success', 'email': email_data, 'format': 'legacy'})
-            except (json.JSONDecodeError, TypeError):
-                pass
+            except (json.JSONDecodeError, TypeError) as e:
+                logging.warning(f"[EMAIL PREVIEW] Corrupt stored email JSON for contact {contact_id}: {e}")
 
         # No stored email — generate fresh preview
         signals = get_signals_by_company(contact['company_name'], limit=50)
@@ -223,11 +223,10 @@ def api_pipeline_email_sequence():
 
     # Build contact from enrollment_contacts if ID provided
     if contact_id:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute('SELECT * FROM enrollment_contacts WHERE id = ?', (contact_id,))
-        row = cursor.fetchone()
-        conn.close()
+        with db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT * FROM enrollment_contacts WHERE id = ?', (contact_id,))
+            row = cursor.fetchone()
         if not row:
             return jsonify({'status': 'error', 'message': 'Contact not found'}), 404
         contact = dict(row)

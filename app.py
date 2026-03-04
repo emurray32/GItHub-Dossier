@@ -1621,12 +1621,12 @@ def export_db():
             if os.path.exists(tmp_path):
                 os.unlink(tmp_path)
             logging.error("export-db: PostgreSQL→SQLite failed: %s", e)
-            return jsonify({'status': 'error', 'message': f'Export failed: {e}'}), 500
+            return jsonify({'status': 'error', 'message': 'Export failed. Check server logs.'}), 500
     else:
         # --- SQLite → copy to temp to avoid lock conflicts ---
         db_path = Config.DATABASE_PATH
         if not os.path.exists(db_path):
-            return jsonify({'status': 'error', 'message': f'Database file not found at {db_path}'}), 404
+            return jsonify({'status': 'error', 'message': 'Database file not found'}), 404
         tmp_path = tempfile.mktemp(suffix='.db')
         shutil.copy2(db_path, tmp_path)
 
@@ -1809,7 +1809,8 @@ def sync_debug():
 
         return jsonify(info)
     except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e), 'traceback': _tb.format_exc()}), 500
+        logging.error("sync-debug failed: %s", _tb.format_exc())
+        return jsonify({'status': 'error', 'message': 'Debug endpoint failed. Check server logs.'}), 500
 
 
 @app.route('/api/health')

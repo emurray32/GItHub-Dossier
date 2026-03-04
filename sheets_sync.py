@@ -36,7 +36,8 @@ from database import (
     get_setting,
     set_setting,
     increment_daily_stat,
-    get_db_connection
+    get_db_connection,
+    db_connection,
 )
 from monitors.discovery import resolve_org_fast
 
@@ -337,8 +338,8 @@ def _perform_sync(
     # Step 6: Update stats
     try:
         increment_daily_stat('scans_run', len(sync_result['added']))
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[SHEETS-SYNC] Stats tracking failed (non-fatal): {e}")
 
     # Save sync result to settings
     _save_sync_result(sync_result)
@@ -362,21 +363,20 @@ def _store_account_metadata(company_name: str, account: dict) -> None:
                        'city', 'state', 'country']
 
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
+        with db_connection() as conn:
+            cursor = conn.cursor()
 
-        # Legacy: store in system_settings for backward compatibility
-        key_prefix = f'account_meta:{company_name.lower().strip()}'
-        for field in metadata_fields:
-            value = account.get(field, '')
-            if value:
-                cursor.execute('''
-                    INSERT OR REPLACE INTO system_settings (key, value)
-                    VALUES (?, ?)
-                ''', (f'{key_prefix}:{field}', value))
+            # Legacy: store in system_settings for backward compatibility
+            key_prefix = f'account_meta:{company_name.lower().strip()}'
+            for field in metadata_fields:
+                value = account.get(field, '')
+                if value:
+                    cursor.execute('''
+                        INSERT OR REPLACE INTO system_settings (key, value)
+                        VALUES (?, ?)
+                    ''', (f'{key_prefix}:{field}', value))
 
-        conn.commit()
-        conn.close()
+            conn.commit()
     except Exception as e:
         print(f"[SHEETS-SYNC] Error storing metadata to system_settings for {company_name}: {e}")
 
@@ -403,20 +403,18 @@ def get_account_metadata(company_name: str) -> dict:
     """
     metadata = {}
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
+        with db_connection() as conn:
+            cursor = conn.cursor()
 
-        key_prefix = f'account_meta:{company_name.lower().strip()}'
-        cursor.execute(
-            'SELECT key, value FROM system_settings WHERE key LIKE ?',
-            (f'{key_prefix}:%',)
-        )
+            key_prefix = f'account_meta:{company_name.lower().strip()}'
+            cursor.execute(
+                'SELECT key, value FROM system_settings WHERE key LIKE ?',
+                (f'{key_prefix}:%',)
+            )
 
-        for row in cursor.fetchall():
-            field = row['key'].split(':')[-1]
-            metadata[field] = row['value']
-
-        conn.close()
+            for row in cursor.fetchall():
+                field = row['key'].split(':')[-1]
+                metadata[field] = row['value']
     except Exception as e:
         print(f"[SHEETS-SYNC] Error reading metadata for {company_name}: {e}")
 

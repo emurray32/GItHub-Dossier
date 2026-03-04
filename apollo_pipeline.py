@@ -598,8 +598,8 @@ def _enroll_single_contact(contact, contact_db_id, email, company_name,
             for field_key, field_val in gen_emails.items():
                 if field_key in field_id_map and field_val:
                     typed_custom_fields[field_id_map[field_key]] = field_val
-    except (json.JSONDecodeError, TypeError):
-        pass
+    except (json.JSONDecodeError, TypeError) as e:
+        logger.warning(f"[PIPELINE ENROLL] Malformed generated_emails_json for contact {contact_db_id}: {e}")
 
     # Create or update Apollo contact
     if not apollo_contact_id:
