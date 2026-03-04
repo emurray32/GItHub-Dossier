@@ -401,6 +401,32 @@
             </div>
 
             <div class="form-group">
+                <label for="campaign-tone">Tone</label>
+                <input type="text" id="campaign-tone" class="form-input" placeholder="e.g. Professional but warm, concise">
+                <p class="form-help">Formality/tone guidance for AI-generated emails.</p>
+            </div>
+
+            <div style="display:flex;gap:1rem;flex-wrap:wrap;">
+                <div class="form-group" style="flex:1;min-width:140px;">
+                    <label for="campaign-contact-cap">Contact Cap</label>
+                    <input type="number" id="campaign-contact-cap" class="form-input" value="20" min="1" max="200" style="width:80px;">
+                    <p class="form-help">Max contacts per account.</p>
+                </div>
+                <div class="form-group" style="flex:1;min-width:140px;">
+                    <label style="display:flex;align-items:center;gap:0.4rem;">
+                        <input type="checkbox" id="campaign-verified-only"> Verified emails only
+                    </label>
+                    <p class="form-help">Filter to Apollo-verified emails.</p>
+                </div>
+                <div class="form-group" style="flex:1;min-width:140px;">
+                    <label style="display:flex;align-items:center;gap:0.4rem;">
+                        <input type="checkbox" id="campaign-review-in-tool" checked> Review in tool
+                    </label>
+                    <p class="form-help">Review emails before enrollment.</p>
+                </div>
+            </div>
+
+            <div class="form-group">
                 <label>Apollo Sequence</label>
                 <div class="seq-picker">
                     <select id="campaign-sequence" class="form-select">
@@ -423,7 +449,10 @@
                 <label>Personas <span style="font-weight:400;color:var(--color-text-secondary);font-size:0.75rem;">(optional)</span></label>
                 <p class="form-help" style="margin-bottom:0.4rem;">Target personas with title/seniority filters for batch enrollment.</p>
                 <div id="personas-list"></div>
-                <button type="button" class="btn-detect" style="margin-top:0.35rem;" onclick="addPersonaRow()">+ Add Persona</button>
+                <div style="display:flex;gap:0.5rem;margin-top:0.35rem;">
+                    <button type="button" class="btn-detect" onclick="addPersonaRow()">+ Add Persona</button>
+                    <button type="button" class="btn-detect" id="btn-suggest-personas" onclick="suggestPersonas()" style="background:var(--color-bg-tertiary);">AI Suggest</button>
+                </div>
             </div>
         </div>
         <div class="campaign-modal-footer">
@@ -648,6 +677,39 @@
         list.appendChild(row);
     };
 
+    window.suggestPersonas = async function() {
+        const btn = document.getElementById('btn-suggest-personas');
+        if (!editingId) {
+            showToast('Save the campaign first, then use AI Suggest', 'error');
+            return;
+        }
+        btn.disabled = true;
+        btn.textContent = 'Suggesting...';
+        try {
+            const resp = await fetch('/api/campaigns/' + editingId + '/suggest-personas', {
+                method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'
+            });
+            const data = await resp.json();
+            if (data.status === 'success' && data.suggestions) {
+                for (const s of data.suggestions) {
+                    addPersonaRow({
+                        persona_name: s.persona_name || '',
+                        titles: s.titles || [],
+                        seniorities: s.seniorities || [],
+                    });
+                }
+                showToast('Added ' + data.suggestions.length + ' persona suggestions', 'success');
+            } else {
+                showToast(data.message || 'No suggestions returned', 'error');
+            }
+        } catch(e) {
+            showToast('AI suggestion failed', 'error');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'AI Suggest';
+        }
+    };
+
     function renderPersonaRows(personas) {
         document.getElementById('personas-list').innerHTML = '';
         if (!personas || !personas.length) return;
@@ -733,9 +795,16 @@
         }
 
         const personas = getPersonasFromForm();
+        const tone = document.getElementById('campaign-tone').value.trim();
+        const contactCap = parseInt(document.getElementById('campaign-contact-cap').value) || 20;
+        const verifiedOnly = document.getElementById('campaign-verified-only').checked ? 1 : 0;
+        const reviewInTool = document.getElementById('campaign-review-in-tool').checked ? 1 : 0;
 
         const payload = {
-            name, prompt, assets,
+            name, prompt, assets, tone,
+            contact_cap: contactCap,
+            verified_emails_only: verifiedOnly,
+            review_in_tool: reviewInTool,
             sequence_id: seqId,
             sequence_name: seqName,
             sequence_config: seqConfig,
@@ -787,6 +856,10 @@
             document.getElementById('campaign-name').value = c.name || '';
             document.getElementById('campaign-prompt').value = c.prompt || '';
             document.getElementById('campaign-assets').value = (c.assets || []).join('\n');
+            document.getElementById('campaign-tone').value = c.tone || '';
+            document.getElementById('campaign-contact-cap').value = c.contact_cap || 20;
+            document.getElementById('campaign-verified-only').checked = !!c.verified_emails_only;
+            document.getElementById('campaign-review-in-tool').checked = c.review_in_tool !== 0;
             document.getElementById('campaign-modal').classList.add('open');
 
             await loadApolloSequences();

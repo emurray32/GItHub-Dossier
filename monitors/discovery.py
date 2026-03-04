@@ -293,7 +293,9 @@ def score_repository(repo: dict) -> int:
 
     Scoring Logic:
         - Base score: stargazers_count
+        - +10000 points if name/description contains i18n keywords (highest priority)
         - +1000 points if name contains a HIGH_VALUE pattern (core product)
+        - +500 points if description contains a HIGH_VALUE pattern
         - -500 points if name contains a LOW_VALUE pattern (non-core)
         - -1000 points if fork is True
         - +500 points if language is TypeScript, JavaScript, Swift, or Kotlin
@@ -305,17 +307,31 @@ def score_repository(repo: dict) -> int:
         Integer score (higher = more valuable for scanning).
     """
     name_lower = repo.get('name', '').lower()
+    desc_lower = (repo.get('description') or '').lower()
     language = repo.get('language') or ''
     is_fork = repo.get('fork', False)
 
     # Start with stargazers_count as base score
     score = repo.get('stargazers_count', 0)
 
-    # +1000 for high-value patterns (core product repos)
+    # +10000 for i18n keyword match — this is the exact signal we're looking for
+    i18n_keywords = getattr(Config, 'I18N_REPO_KEYWORDS', [])
+    for keyword in i18n_keywords:
+        if keyword in name_lower or keyword in desc_lower:
+            score += 10000
+            break
+
+    # +1000 for high-value patterns in name (core product repos)
     for pattern in Config.HIGH_VALUE_PATTERNS:
         if pattern.lower() in name_lower:
             score += 1000
             break  # Only apply bonus once
+
+    # +500 for high-value patterns in description
+    for pattern in Config.HIGH_VALUE_PATTERNS:
+        if pattern.lower() in desc_lower:
+            score += 500
+            break
 
     # -500 for low-value patterns (docs, tools, demos, etc.)
     for pattern in Config.LOW_VALUE_PATTERNS:
@@ -336,25 +352,41 @@ def score_repository(repo: dict) -> int:
 
 def _prioritize_repos(repos: list) -> list:
     """
-    Sort repositories by priority score (descending).
+    3-tier repo prioritization by org size.
 
-    Uses score_repository() to calculate a composite score based on:
-    - Star count (base score)
-    - High-value name patterns (+1000)
-    - Low-value name patterns (-500)
-    - Fork status (-1000)
-    - High-value languages (+500)
+    - Small orgs (under 30 repos): scan ALL repos
+    - Mid-size orgs (30-100 repos): scan top 40, prioritized by score
+    - Large orgs (100+ repos): scan top 25, exclude forks and 2yr-inactive repos
 
-    This ensures the scanner focuses on core product repos first,
-    deprioritizing docs, forks, tools, and demos.
+    Within each tier, repos with i18n keywords in name/description are always
+    prioritized first (via the +10000 score boost in score_repository).
 
     Args:
-        repos: List of repository data dicts.
+        repos: List of repository data dicts (already filtered for archived/inactive).
 
     Returns:
-        List of repos sorted by priority score (highest first).
+        List of repos sorted by priority score, capped by org size tier.
     """
-    return sorted(repos, key=score_repository, reverse=True)
+    total = len(repos)
+    small_threshold = getattr(Config, 'REPO_TIER_SMALL_THRESHOLD', 30)
+    mid_threshold = getattr(Config, 'REPO_TIER_MID_THRESHOLD', 100)
+    mid_cap = getattr(Config, 'REPO_TIER_MID_SCAN_CAP', 40)
+    large_cap = getattr(Config, 'REPO_TIER_LARGE_SCAN_CAP', 25)
+
+    # Sort all repos by score (i18n keyword repos float to top via +10000)
+    scored = sorted(repos, key=score_repository, reverse=True)
+
+    if total < small_threshold:
+        # Small org: scan ALL repos
+        return scored
+    elif total < mid_threshold:
+        # Mid-size org: top 40, skip forks and archived
+        filtered = [r for r in scored if not r.get('fork', False)]
+        return filtered[:mid_cap]
+    else:
+        # Large org: top 25, exclude forks and check inactivity
+        filtered = [r for r in scored if not r.get('fork', False)]
+        return filtered[:large_cap]
 
 
 def search_github_orgs(keyword: str, limit: int = 20) -> list:

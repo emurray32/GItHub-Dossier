@@ -99,7 +99,7 @@ from validators import (
     validate_company_name, validate_github_org, validate_email,
     validate_url, validate_search_query, validate_notes,
     validate_positive_int, validate_tier, validate_sort_direction,
-    validate_scope, sanitize_for_log,
+    validate_scope, sanitize_for_log, validate_csv_upload,
     MAX_URL_LENGTH, MAX_COMPANY_NAME_LENGTH,
 )
 import logging
@@ -151,7 +151,7 @@ _PUBLIC_ENDPOINTS = {
     'inject_cache_buster', 'add_security_headers',
     'auth.login', 'auth.logout',
     'health_check',
-    'export_db',
+    'export_db', 'sync_debug',
 }
 
 
@@ -1416,7 +1416,7 @@ def stream_scan(company: str):
     """
     valid, company = validate_company_name(company)
     if not valid:
-        return jsonify({'error': company}), 400
+        return jsonify({'status': 'error', 'message': company}), 400
 
     def generate():
         start_time = time.time()
@@ -1610,44 +1610,49 @@ def export_db():
     if not provided or not hmac.compare_digest(provided, sync_token):
         return jsonify({'status': 'error', 'message': 'Unauthorized: invalid or missing sync token'}), 401
 
-    try:
-        import traceback as _tb
-        from database import _USE_POSTGRES
+    from database import _USE_POSTGRES
 
-        if _USE_POSTGRES:
-            # --- PostgreSQL → SQLite export ---
-            tmp_path = tempfile.mktemp(suffix='.db')
+    if _USE_POSTGRES:
+        # --- PostgreSQL → SQLite export ---
+        tmp_path = tempfile.mktemp(suffix='.db')
+        try:
             _pg_to_sqlite(tmp_path)
-        else:
-            # --- SQLite → copy to temp to avoid lock conflicts ---
-            db_path = Config.DATABASE_PATH
-            if not os.path.exists(db_path):
-                return jsonify({'status': 'error', 'message': f'Database file not found at {db_path}'}), 404
-            tmp_path = tempfile.mktemp(suffix='.db')
-            shutil.copy2(db_path, tmp_path)
+        except Exception as e:
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+            logging.error("export-db: PostgreSQL→SQLite failed: %s", e)
+            return jsonify({'status': 'error', 'message': f'Export failed: {e}'}), 500
+    else:
+        # --- SQLite → copy to temp to avoid lock conflicts ---
+        db_path = Config.DATABASE_PATH
+        if not os.path.exists(db_path):
+            return jsonify({'status': 'error', 'message': f'Database file not found at {db_path}'}), 404
+        tmp_path = tempfile.mktemp(suffix='.db')
+        shutil.copy2(db_path, tmp_path)
 
-        # Read entire file into memory (avoids streaming issues with Replit proxy)
-        with open(tmp_path, 'rb') as f:
-            data = f.read()
-        os.unlink(tmp_path)
+    # Stream the temp file and clean up after
+    size = os.path.getsize(tmp_path)
 
-        response = Response(data, mimetype='application/octet-stream')
-        response.headers['Content-Disposition'] = 'attachment; filename=lead_machine.db'
-        response.headers['Content-Length'] = len(data)
-        return response
+    def generate():
+        try:
+            with open(tmp_path, 'rb') as f:
+                while True:
+                    chunk = f.read(8192)
+                    if not chunk:
+                        break
+                    yield chunk
+        finally:
+            os.unlink(tmp_path)
 
-    except Exception as e:
-        logging.error("export-db failed: %s\n%s", e, _tb.format_exc())
-        # Return the full traceback so we can debug remotely
-        return jsonify({
-            'status': 'error',
-            'message': str(e),
-            'traceback': _tb.format_exc(),
-        }), 500
+    response = Response(stream_with_context(generate()), mimetype='application/octet-stream')
+    response.headers['Content-Disposition'] = 'attachment; filename=lead_machine.db'
+    response.headers['Content-Length'] = size
+    return response
 
 
 # --- PostgreSQL → SQLite helper (used by export_db) ---
 
+# Map PostgreSQL type names to SQLite type affinities
 _PG_TYPE_MAP = {
     'integer': 'INTEGER', 'bigint': 'INTEGER', 'smallint': 'INTEGER',
     'serial': 'INTEGER', 'bigserial': 'INTEGER',
@@ -1662,7 +1667,14 @@ _PG_TYPE_MAP = {
 
 
 def _pg_to_sqlite(sqlite_path: str) -> None:
-    """Copy all public tables from PostgreSQL into a new SQLite file."""
+    """Copy all public tables from PostgreSQL into a new SQLite file.
+
+    Keeps schema minimal (no NOT NULL, no DEFAULT) since this is a
+    read-only data export for local development. Only preserves column
+    names, types, and primary keys.
+    """
+    from datetime import datetime as _dt, date as _date, time as _time
+    from decimal import Decimal as _Decimal
     import psycopg2
     import psycopg2.extras
 
@@ -1682,8 +1694,7 @@ def _pg_to_sqlite(sqlite_path: str) -> None:
         for table in tables:
             # Get column info
             pg_cur.execute("""
-                SELECT column_name, data_type, is_nullable,
-                       column_default, character_maximum_length
+                SELECT column_name, data_type, column_default
                 FROM information_schema.columns
                 WHERE table_schema = 'public' AND table_name = %s
                 ORDER BY ordinal_position
@@ -1693,50 +1704,58 @@ def _pg_to_sqlite(sqlite_path: str) -> None:
             if not columns:
                 continue
 
-            # Build CREATE TABLE for SQLite
+            # Build CREATE TABLE — minimal schema, no constraints
             col_defs = []
             col_names = []
             for col in columns:
                 name = col['column_name']
                 pg_type = col['data_type']
                 sl_type = _PG_TYPE_MAP.get(pg_type, 'TEXT')
-                nullable = col['is_nullable'] == 'YES'
                 default = col['column_default']
 
                 col_names.append(name)
+                parts = [f'"{name}" {sl_type}']
 
-                # Detect primary key (serial columns have nextval default)
+                # Detect serial primary key (nextval in default)
                 if default and 'nextval' in str(default):
-                    col_defs.append(f'"{name}" INTEGER PRIMARY KEY AUTOINCREMENT')
+                    col_defs.append(f'"{name}" INTEGER PRIMARY KEY')
                 else:
-                    parts = [f'"{name}" {sl_type}']
-                    if not nullable:
-                        parts.append('NOT NULL')
-                    if default and 'nextval' not in str(default):
-                        clean = str(default).replace("::text", "").replace("::integer", "")
-                        parts.append(f'DEFAULT {clean}')
-                    col_defs.append(' '.join(parts))
+                    col_defs.append(f'"{name}" {sl_type}')
 
             create_sql = f'CREATE TABLE IF NOT EXISTS "{table}" ({", ".join(col_defs)})'
             sl_conn.execute(create_sql)
 
-            # Copy data
+            # Copy data in batches to limit memory usage
             pg_cur.execute(f'SELECT * FROM "{table}"')
-            rows = pg_cur.fetchall()
-            if rows:
+            while True:
+                rows = pg_cur.fetchmany(1000)
+                if not rows:
+                    break
+
                 placeholders = ', '.join(['?'] * len(col_names))
                 quoted_cols = ', '.join(f'"{c}"' for c in col_names)
                 insert_sql = f'INSERT INTO "{table}" ({quoted_cols}) VALUES ({placeholders})'
 
+                # Convert rows: DictRow → tuple, and handle special PG types
                 converted = []
                 for row in rows:
                     vals = []
                     for c in col_names:
                         v = row[c]
-                        if isinstance(v, (dict, list)):
-                            v = json.dumps(v)
+                        if v is None:
+                            pass  # keep None
                         elif isinstance(v, bool):
                             v = int(v)
+                        elif isinstance(v, (dict, list)):
+                            v = json.dumps(v)
+                        elif isinstance(v, _Decimal):
+                            v = float(v)
+                        elif isinstance(v, (_dt, _date, _time)):
+                            v = str(v)
+                        elif isinstance(v, memoryview):
+                            v = bytes(v)
+                        elif isinstance(v, bytes):
+                            pass  # sqlite3 handles bytes
                         vals.append(v)
                     converted.append(tuple(vals))
 
@@ -1746,6 +1765,51 @@ def _pg_to_sqlite(sqlite_path: str) -> None:
     finally:
         sl_conn.close()
         pg_conn.close()
+
+
+@app.route('/sync/debug')
+def sync_debug():
+    """Diagnostic endpoint — returns DB backend info and table stats.
+
+    Uses the same auth as export-db. Lightweight, no heavy processing.
+    """
+    sync_token = os.environ.get('DOSSIER_SYNC_TOKEN', '')
+    if not sync_token:
+        return jsonify({'status': 'error', 'message': 'DOSSIER_SYNC_TOKEN not configured'}), 503
+    provided = request.headers.get('X-Sync-Token') or request.args.get('sync_token')
+    if not provided or not hmac.compare_digest(provided, sync_token):
+        return jsonify({'status': 'error', 'message': 'Unauthorized'}), 401
+
+    try:
+        import traceback as _tb
+        from database import _USE_POSTGRES, db_connection
+
+        info = {
+            'backend': 'postgresql' if _USE_POSTGRES else 'sqlite',
+            'database_url_set': bool(Config.DATABASE_URL),
+            'database_path': Config.DATABASE_PATH,
+            'tables': {},
+        }
+
+        with db_connection() as conn:
+            cur = conn.cursor()
+            if _USE_POSTGRES:
+                cur.execute("""
+                    SELECT table_name FROM information_schema.tables
+                    WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+                """)
+                tables = [r[0] for r in cur.fetchall()]
+            else:
+                cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
+                tables = [r[0] for r in cur.fetchall()]
+
+            for t in sorted(tables):
+                cur.execute(f'SELECT COUNT(*) FROM "{t}"')
+                info['tables'][t] = cur.fetchone()[0]
+
+        return jsonify(info)
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e), 'traceback': _tb.format_exc()}), 500
 
 
 @app.route('/api/health')
@@ -1827,13 +1891,71 @@ def health_check():
     return jsonify(payload), status_code
 
 
+@app.route('/api/system-alerts')
+def api_system_alerts():
+    """Return active system alerts for the global banner (EC-021, EC-022).
+
+    Checks GitHub token pool, cache connectivity, and Apollo rate limits.
+    Returns only active alerts — empty list means all clear.
+    """
+    alerts = []
+
+    # Check GitHub token pool
+    try:
+        from utils import get_token_pool
+        pool = get_token_pool()
+        pool_status = pool.get_pool_status()
+        available = pool_status.get('tokens_available', 0)
+        total_remaining = pool_status.get('total_remaining', 0)
+        if available == 0:
+            alerts.append({
+                'type': 'github_rate_limit',
+                'message': 'GitHub API tokens exhausted — scans are paused until limits reset.',
+                'severity': 'error'
+            })
+        elif total_remaining < 500:
+            alerts.append({
+                'type': 'github_rate_limit',
+                'message': f'GitHub API rate limit low ({total_remaining} remaining) — scans may be delayed.',
+                'severity': 'warning'
+            })
+    except Exception as e:
+        logging.warning(f'[SYSTEM-ALERTS] GitHub token pool check failed: {e}')
+        alerts.append({
+            'type': 'github_rate_limit',
+            'message': 'GitHub health check unavailable.',
+            'severity': 'warning'
+        })
+
+    # Check cache connectivity
+    try:
+        from cache import get_cache_stats
+        stats = get_cache_stats()
+        backend = stats.get('backend', 'none')
+        if backend in ('disabled', 'none'):
+            alerts.append({
+                'type': 'cache_down',
+                'message': 'Cache is disabled — scan performance may be degraded.',
+                'severity': 'warning'
+            })
+    except Exception as e:
+        logging.warning(f'[SYSTEM-ALERTS] Cache connectivity check failed: {e}')
+        alerts.append({
+            'type': 'cache_down',
+            'message': 'Cache health check unavailable.',
+            'severity': 'warning'
+        })
+
+    return jsonify({'alerts': alerts})
+
+
 @app.route('/api/reports')
 def api_reports():
     """API endpoint to get recent reports."""
     limit = request.args.get('limit', 20, type=int)
     valid, limit = validate_positive_int(limit, name='limit', max_val=500)
     if not valid:
-        return jsonify({'error': limit}), 400
+        return jsonify({'status': 'error', 'message': limit}), 400
     reports = get_recent_reports(limit=limit)
     return jsonify(reports)
 
@@ -1845,7 +1967,7 @@ def api_search_reports():
     if query:
         valid, query = validate_search_query(query)
         if not valid:
-            return jsonify({'error': query}), 400
+            return jsonify({'status': 'error', 'message': query}), 400
     reports = search_reports(query)
     return jsonify(reports)
 
@@ -1869,20 +1991,20 @@ def api_reports_paginated():
     # Validate pagination parameters
     valid, page = validate_positive_int(page, name='page', max_val=10000)
     if not valid:
-        return jsonify({'error': page}), 400
+        return jsonify({'status': 'error', 'message': page}), 400
     valid, limit = validate_positive_int(limit, name='limit', max_val=100)
     if not valid:
-        return jsonify({'error': limit}), 400
+        return jsonify({'status': 'error', 'message': limit}), 400
     if search:
         valid, search = validate_search_query(search)
         if not valid:
-            return jsonify({'error': search}), 400
+            return jsonify({'status': 'error', 'message': search}), 400
     # Whitelist sort_by to prevent SQL injection
     if sort_by not in ('created_at', 'company_name', 'signal_count', 'github_org'):
         sort_by = 'created_at'
     valid, sort_order = validate_sort_direction(sort_order)
     if not valid:
-        return jsonify({'error': sort_order}), 400
+        return jsonify({'status': 'error', 'message': sort_order}), 400
 
     result = get_paginated_reports(
         page=page,
@@ -1930,7 +2052,7 @@ def api_report_preview(report_id):
     preview = get_report_preview(report_id)
     if preview:
         return jsonify(preview)
-    return jsonify({'error': 'Report not found'}), 404
+    return jsonify({'status': 'error', 'message': 'Report not found'}), 404
 
 
 @app.route('/api/agentmail/status')
@@ -2001,7 +2123,7 @@ def api_deep_dive(report_id: int):
     # Get the report
     report = get_report(report_id)
     if not report:
-        return jsonify({'error': 'Report not found'}), 404
+        return jsonify({'status': 'error', 'message': 'Report not found'}), 404
 
     scan_data = report.get('scan_data', {})
     ai_analysis = report.get('ai_analysis', {})
@@ -2040,7 +2162,7 @@ def api_deep_dive(report_id: int):
         })
     except Exception as e:
         logging.error(f"[API] Deep Dive error for report {report_id}: {str(e)}")
-        return jsonify({'error': 'Failed to generate Deep Dive'}), 500
+        return jsonify({'status': 'error', 'message': 'Failed to generate Deep Dive'}), 500
 
 
 @app.route('/history')
@@ -2239,7 +2361,19 @@ def api_campaigns_create():
     sequence_name = (data.get('sequence_name') or '').strip() or None
     sequence_config = (data.get('sequence_config') or '').strip() or None
 
-    result = create_campaign(name, prompt, assets, sequence_id, sequence_name, sequence_config)
+    tone = (data.get('tone') or '').strip() or None
+    try:
+        contact_cap = int(data.get('contact_cap', 20))
+    except (TypeError, ValueError):
+        contact_cap = 20
+    if contact_cap < 1 or contact_cap > 200:
+        return jsonify({'status': 'error', 'message': 'contact_cap must be between 1 and 200'}), 400
+    verified_emails_only = data.get('verified_emails_only', 0)
+    review_in_tool = data.get('review_in_tool', 1)
+
+    result = create_campaign(name, prompt, assets, sequence_id, sequence_name, sequence_config,
+                             contact_cap=contact_cap, verified_emails_only=verified_emails_only,
+                             review_in_tool=review_in_tool, tone=tone)
 
     # If personas provided, save them
     personas_data = data.get('personas', [])
@@ -2521,6 +2655,10 @@ def _discovery_worker(batch_id: int):
         accounts = [dict(r) for r in cursor.fetchall()]
         conn.close()
 
+        # Campaign-level filters
+        verified_only = bool(campaign.get('verified_emails_only'))
+        contact_cap = campaign.get('contact_cap') or 20
+
         seen_emails = set()
         contacts_to_insert = []
         total_discovered = 0
@@ -2529,8 +2667,11 @@ def _discovery_worker(batch_id: int):
             domain = _derive_domain(acct.get('website', ''), acct.get('company_name', ''))
             update_enrollment_batch(batch_id,
                 current_phase=f'Discovering at {acct["company_name"]} ({i+1}/{len(accounts)})...')
+            acct_contacts = 0  # Track per-account contact count for cap
 
             for persona in personas:
+                if acct_contacts >= contact_cap:
+                    break  # EC-009: enforce contact cap per account
                 titles = persona.get('titles', [])
                 seniorities = persona.get('seniorities', [])
                 if not titles and not seniorities:
@@ -2547,6 +2688,8 @@ def _discovery_worker(batch_id: int):
                         search_payload['person_titles'] = titles
                     if seniorities:
                         search_payload['person_seniorities'] = seniorities
+                    if verified_only:
+                        search_payload['email_status'] = ['verified']
 
                     resp = req.post(
                         'https://api.apollo.io/v1/mixed_people/search',
@@ -2562,10 +2705,13 @@ def _discovery_worker(batch_id: int):
                     people = data.get('people', [])
 
                     for person in people:
+                        if acct_contacts >= contact_cap:
+                            break
                         email = (person.get('email') or '').lower().strip()
                         if not email or email in seen_emails:
                             continue
                         seen_emails.add(email)
+                        acct_contacts += 1
 
                         contacts_to_insert.append({
                             'batch_id': batch_id,
@@ -2919,6 +3065,122 @@ Return ONLY valid JSON: {{"subject_1": "...", "subject_2": "...", "email_1": "..
         update_enrollment_batch(batch_id, status='failed', error_message=str(e)[:500])
 
 
+# --- CSV Upload for Campaign Accounts ---
+
+@app.route('/api/campaigns/<int:campaign_id>/upload-accounts', methods=['POST'])
+def api_campaign_upload_accounts(campaign_id):
+    """Upload a CSV of target accounts for a campaign.
+
+    Accepts multipart form data with a CSV file.
+    Required CSV columns: company_name (or company/name), website (or domain/url).
+    Optional columns: annual_revenue, industry, employee_count, hq_location,
+    funding_stage, github_org, notes.
+    Accounts missing website/domain are rejected (EC-018).
+    All fields are saved to real database columns.
+    """
+    campaign = get_campaign(campaign_id)
+    if not campaign:
+        return jsonify({'status': 'error', 'message': 'Campaign not found'}), 404
+
+    if 'file' not in request.files:
+        return jsonify({'status': 'error', 'message': 'No file uploaded. Use form field name "file".'}), 400
+
+    file = request.files['file']
+    is_valid, result = validate_csv_upload(file)
+    if not is_valid:
+        return jsonify({'status': 'error', 'message': result}), 400
+
+    valid_rows = result['valid_rows']
+    rejected_rows = result['rejected_rows']
+
+    if not valid_rows:
+        return jsonify({
+            'status': 'error',
+            'message': f'No valid accounts found. {len(rejected_rows)} rejected (missing website/domain).',
+            'rejected': rejected_rows,
+        }), 400
+
+    # Column mapping from CSV headers to database columns
+    COLUMN_MAP = {
+        'annual_revenue': 'annual_revenue',
+        'revenue': 'annual_revenue',
+        'industry': 'industry',
+        'employee_count': 'employee_count',
+        'employees': 'employee_count',
+        'hq_location': 'hq_location',
+        'headquarters': 'hq_location',
+        'location': 'hq_location',
+        'funding_stage': 'funding_stage',
+        'funding': 'funding_stage',
+        'github_org': 'github_org',
+        'github': 'github_org',
+        'notes': 'notes',
+    }
+
+    saved = 0
+    skipped_archived = 0
+    row_failures = []
+
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        for row in valid_rows:
+            company_name = row['company_name']
+            website = row['website']
+
+            try:
+                # EC-024: Skip previously archived accounts
+                existing = get_account_by_company(company_name)
+                if existing and existing.get('archived_at'):
+                    skipped_archived += 1
+                    rejected_rows.append({
+                        'company_name': company_name,
+                        'reason': 'Account is archived — skipped re-import',
+                    })
+                    continue
+
+                # Extract known optional fields
+                annual_revenue = row.get('annual_revenue') or row.get('revenue') or ''
+                github_org = row.get('github_org') or row.get('github') or ''
+
+                # Create/update account via existing function
+                add_account_to_tier_0(
+                    company_name=company_name,
+                    github_org=github_org,
+                    annual_revenue=annual_revenue or None,
+                    website=website,
+                )
+
+                # Update extra columns that add_account_to_tier_0 doesn't handle
+                extra_updates = {}
+                for csv_key, db_col in COLUMN_MAP.items():
+                    if csv_key in row and db_col not in ('annual_revenue', 'github_org'):
+                        extra_updates[db_col] = row[csv_key]
+
+                if extra_updates:
+                    set_parts = [f'{col} = ?' for col in extra_updates.keys()]
+                    values = list(extra_updates.values()) + [company_name.lower().strip()]
+                    cursor.execute(
+                        f'UPDATE monitored_accounts SET {", ".join(set_parts)} WHERE LOWER(company_name) = ?',
+                        values
+                    )
+                    conn.commit()
+
+                saved += 1
+            except Exception as e:
+                logging.warning(f'[CSV-UPLOAD] Failed to import row {company_name}: {e}')
+                row_failures.append({'company_name': company_name, 'reason': str(e)[:200]})
+
+    return jsonify({
+        'status': 'success',
+        'saved': saved,
+        'rejected': len(rejected_rows),
+        'skipped_archived': skipped_archived,
+        'row_failures': row_failures[:50],
+        'rejected_accounts': rejected_rows[:50],  # Cap at 50 to avoid huge responses
+        'total_in_csv': len(valid_rows) + len(rejected_rows) - skipped_archived,
+    })
+
+
 # --- Enrollment API Routes ---
 
 @app.route('/api/campaigns/<int:campaign_id>/discover-contacts', methods=['POST'])
@@ -2996,17 +3258,17 @@ def api_enrollment_batch_contacts(batch_id):
     try:
         limit = min(int(request.args.get('limit', 500)), 1000)
     except (ValueError, TypeError):
-        return jsonify({'error': 'limit must be an integer'}), 400
+        return jsonify({'status': 'error', 'message': 'limit must be an integer'}), 400
     try:
         offset = int(request.args.get('offset', 0))
     except (ValueError, TypeError):
-        return jsonify({'error': 'offset must be an integer'}), 400
+        return jsonify({'status': 'error', 'message': 'offset must be an integer'}), 400
     valid, limit = validate_positive_int(limit, name='limit', max_val=1000)
     if not valid:
-        return jsonify({'error': limit}), 400
+        return jsonify({'status': 'error', 'message': limit}), 400
     valid, offset = validate_positive_int(offset, name='offset', max_val=100000)
     if not valid:
-        return jsonify({'error': offset}), 400
+        return jsonify({'status': 'error', 'message': offset}), 400
     contacts = get_enrollment_contacts(batch_id, status=status_filter, limit=limit, offset=offset)
     return jsonify({'status': 'success', 'contacts': contacts})
 
@@ -3801,7 +4063,7 @@ def api_delete_account(account_id: int):
     """Delete a monitored account by ID."""
     deleted = delete_account(account_id)
     if not deleted:
-        return jsonify({'error': 'Account not found'}), 404
+        return jsonify({'status': 'error', 'message': 'Account not found'}), 404
     return jsonify({'status': 'success'})
 
 
@@ -3814,11 +4076,11 @@ def api_update_account_notes(account_id: int):
     if notes:
         valid, notes = validate_notes(notes)
         if not valid:
-            return jsonify({'error': notes}), 400
+            return jsonify({'status': 'error', 'message': notes}), 400
 
     updated = update_account_notes(account_id, notes)
     if not updated:
-        return jsonify({'error': 'Account not found'}), 404
+        return jsonify({'status': 'error', 'message': 'Account not found'}), 404
     return jsonify({'status': 'success', 'notes': notes})
 
 
@@ -3827,7 +4089,7 @@ def api_account_contributors(account_id):
     """Get contributors for an account (used by RepoRadar detail panel)."""
     account = get_account(account_id)
     if not account:
-        return jsonify({'error': 'Not found'}), 404
+        return jsonify({'status': 'error', 'message': 'Not found'}), 404
     github_org = account.get('github_org') or ''
     company = account.get('company_name') or ''
     # Try github_org first, fall back to company name
@@ -4070,7 +4332,7 @@ def api_archive_account(account_id: int):
     """Archive an account (hide from main list but retain for periodic re-scan)."""
     archived = archive_account(account_id)
     if not archived:
-        return jsonify({'error': 'Account not found or already archived'}), 404
+        return jsonify({'status': 'error', 'message': 'Account not found or already archived'}), 404
     return jsonify({'status': 'success', 'message': 'Account archived'})
 
 
@@ -4079,7 +4341,7 @@ def api_unarchive_account(account_id: int):
     """Unarchive an account (restore to main accounts list)."""
     unarchived = unarchive_account(account_id)
     if not unarchived:
-        return jsonify({'error': 'Account not found or not archived'}), 404
+        return jsonify({'status': 'error', 'message': 'Account not found or not archived'}), 404
     return jsonify({'status': 'success', 'message': 'Account unarchived'})
 
 
@@ -4188,6 +4450,9 @@ def api_contributors_datatable():
 
     tier_names = {0: 'Tracking', 1: 'Thinking', 2: 'Preparing', 3: 'Launched', 4: 'Not Found'}
 
+    from datetime import datetime, timedelta
+    stale_cutoff = (datetime.utcnow() - timedelta(days=730)).isoformat()  # 2 years
+
     for row in result.get('data', []):
         # Filter out personal and domain-mismatched emails before exposing to frontend
         raw_email = row.get('email', '')
@@ -4198,6 +4463,10 @@ def api_contributors_datatable():
         row['company_tier'] = tier
         row['company_tier_name'] = tier_names.get(tier, '') if tier is not None else ''
 
+        # Staleness: flag contributors with no GitHub activity in 2+ years
+        last_activity = row.get('last_activity_at') or ''
+        row['is_stale'] = bool(last_activity and last_activity < stale_cutoff)
+
         # Compute priority_score: contributions weight + tier bonus + i18n bonus
         score = min(row.get('contributions', 0), 100)  # cap at 100
         if tier in (1, 2):
@@ -4207,6 +4476,9 @@ def api_contributors_datatable():
         insight = (row.get('insight') or '').lower()
         if 'i18n' in insight or 'internationalization' in insight or 'locale' in insight:
             score += 20
+        # Deprioritize stale contributors
+        if row['is_stale']:
+            score -= 40
         row['priority_score'] = score
 
     # Sort by priority_score descending if no explicit sort requested (default)
@@ -4232,7 +4504,7 @@ def api_update_contributor_apollo(contributor_id: int):
 
     updated = update_contributor_apollo_status(contributor_id, status, sequence_name)
     if not updated:
-        return jsonify({'error': 'Contributor not found'}), 404
+        return jsonify({'status': 'error', 'message': 'Contributor not found'}), 404
     return jsonify({'status': 'success'})
 
 
@@ -4242,11 +4514,11 @@ def api_update_contributor_email(contributor_id: int):
     data = request.get_json() or {}
     email = _filter_personal_email(data.get('email', '').strip())
     if not email:
-        return jsonify({'error': 'No valid work email provided'}), 400
+        return jsonify({'status': 'error', 'message': 'No valid work email provided'}), 400
 
     updated = update_contributor_email(contributor_id, email)
     if not updated:
-        return jsonify({'error': 'Contributor not found'}), 404
+        return jsonify({'status': 'error', 'message': 'Contributor not found'}), 404
     return jsonify({'status': 'success', 'email': email})
 
 
@@ -4255,7 +4527,7 @@ def api_contributor_send_email(contributor_id: int):
     """Send an outreach email to a contributor via AgentMail."""
     contributor = get_contributor_by_id(contributor_id)
     if not contributor:
-        return jsonify({'error': 'Contributor not found'}), 404
+        return jsonify({'status': 'error', 'message': 'Contributor not found'}), 404
 
     data = request.get_json() or {}
     to_email = data.get('to_email', contributor.get('email', ''))
@@ -4263,10 +4535,10 @@ def api_contributor_send_email(contributor_id: int):
     body = data.get('body', '')
 
     if not to_email:
-        return jsonify({'error': 'No email address available for this contributor'}), 400
+        return jsonify({'status': 'error', 'message': 'No email address available for this contributor'}), 400
     valid, to_email = validate_email(to_email)
     if not valid:
-        return jsonify({'error': to_email}), 400
+        return jsonify({'status': 'error', 'message': to_email}), 400
 
     result = send_email_draft(
         to_email=to_email,
@@ -4287,7 +4559,7 @@ def api_delete_contributor(contributor_id: int):
     """Delete a contributor."""
     deleted = delete_contributor(contributor_id)
     if not deleted:
-        return jsonify({'error': 'Contributor not found'}), 404
+        return jsonify({'status': 'error', 'message': 'Contributor not found'}), 404
     return jsonify({'status': 'success'})
 
 
@@ -4306,10 +4578,10 @@ def api_fetch_contributors():
     if specific_org:
         valid, specific_org = validate_github_org(specific_org)
         if not valid:
-            return jsonify({'error': specific_org}), 400
+            return jsonify({'status': 'error', 'message': specific_org}), 400
     valid, limit_per_repo = validate_positive_int(limit_per_repo, name='limit', max_val=50)
     if not valid:
-        return jsonify({'error': limit_per_repo}), 400
+        return jsonify({'status': 'error', 'message': limit_per_repo}), 400
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -4358,6 +4630,7 @@ def api_fetch_contributors():
             repos = response.json()
             for repo in repos[:3]:
                 repo_name = repo['name']
+                repo_pushed_at = repo.get('pushed_at', '')  # ISO 8601 timestamp
                 contributors_list = get_top_contributors(org, repo_name, limit=limit_per_repo)
 
                 batch = []
@@ -4391,7 +4664,8 @@ def api_fetch_contributors():
                         'contributions': c.get('contributions', 0),
                         'insight': f"Top contributor to {org}/{repo_name} — active in {company}'s codebase.",
                         'is_org_member': is_member,
-                        'github_profile_company': profile_company
+                        'github_profile_company': profile_company,
+                        'last_activity_at': repo_pushed_at
                     })
 
                 if batch:
@@ -4818,32 +5092,32 @@ def api_webscraper_analyze():
         data = request.get_json()
 
         if not data:
-            return jsonify({'error': 'Invalid JSON payload'}), 400
+            return jsonify({'status': 'error', 'message': 'Invalid JSON payload'}), 400
 
         url = data.get('url', '').strip()
         prompt = data.get('prompt', '').strip()
 
         if not url:
-            return jsonify({'error': 'Missing required field: url'}), 400
+            return jsonify({'status': 'error', 'message': 'Missing required field: url'}), 400
         valid, url = validate_url(url)
         if not valid:
-            return jsonify({'error': url}), 400
+            return jsonify({'status': 'error', 'message': url}), 400
 
         if not prompt:
-            return jsonify({'error': 'Missing required field: prompt'}), 400
+            return jsonify({'status': 'error', 'message': 'Missing required field: prompt'}), 400
 
         # Analyze the website
         result = analyze_website(url, prompt)
 
         if not result.get('success'):
             error_msg = result.get('error', 'Analysis failed')
-            return jsonify({'error': error_msg}), 500
+            return jsonify({'status': 'error', 'message': error_msg}), 500
 
         return jsonify(result), 200
 
     except Exception as e:
         logging.error(f"[ERROR] Website analysis failed: {e}")
-        return jsonify({'error': 'Analysis failed'}), 500
+        return jsonify({'status': 'error', 'message': 'Analysis failed'}), 500
 
 
 @app.route('/api/webscraper/accounts-with-websites', methods=['GET'])
@@ -4868,7 +5142,7 @@ def api_webscraper_accounts():
 
     except Exception as e:
         logging.error(f"[ERROR] Failed to fetch accounts with websites: {e}")
-        return jsonify({'error': 'Failed to fetch accounts'}), 500
+        return jsonify({'status': 'error', 'message': 'Failed to fetch accounts'}), 500
 
 
 @app.route('/api/webscraper/analyze-batch', methods=['POST'])
@@ -4885,19 +5159,19 @@ def api_webscraper_analyze_batch():
         data = request.get_json()
 
         if not data:
-            return jsonify({'error': 'Invalid JSON payload'}), 400
+            return jsonify({'status': 'error', 'message': 'Invalid JSON payload'}), 400
 
         account_ids = data.get('account_ids', [])
 
         if not account_ids:
-            return jsonify({'error': 'Missing required field: account_ids'}), 400
+            return jsonify({'status': 'error', 'message': 'Missing required field: account_ids'}), 400
 
         if not isinstance(account_ids, list):
-            return jsonify({'error': 'account_ids must be a list'}), 400
+            return jsonify({'status': 'error', 'message': 'account_ids must be a list'}), 400
         for aid in account_ids:
             valid, _ = validate_positive_int(aid, name='account_id')
             if not valid:
-                return jsonify({'error': f'Invalid account_id: {aid}'}), 400
+                return jsonify({'status': 'error', 'message': f'Invalid account_id: {aid}'}), 400
 
         # Get accounts
         conn = get_db_connection()
@@ -4966,7 +5240,7 @@ def api_webscraper_analyze_batch():
 
     except Exception as e:
         logging.error(f"[ERROR] Batch analysis failed: {e}")
-        return jsonify({'error': 'Batch analysis failed'}), 500
+        return jsonify({'status': 'error', 'message': 'Batch analysis failed'}), 500
 
 
 @app.route('/api/webscraper/analyses', methods=['GET'])
@@ -4986,10 +5260,10 @@ def api_webscraper_analyses():
 
         valid, limit = validate_positive_int(limit, name='limit', max_val=500)
         if not valid:
-            return jsonify({'error': limit}), 400
+            return jsonify({'status': 'error', 'message': limit}), 400
         valid, offset = validate_positive_int(offset, name='offset', max_val=100000)
         if not valid:
-            return jsonify({'error': offset}), 400
+            return jsonify({'status': 'error', 'message': offset}), 400
 
         analyses = get_all_website_analyses(limit=limit, offset=offset)
 
@@ -5001,7 +5275,7 @@ def api_webscraper_analyses():
 
     except Exception as e:
         logging.error(f"[ERROR] Failed to fetch analyses: {e}")
-        return jsonify({'error': 'Failed to fetch analyses'}), 500
+        return jsonify({'status': 'error', 'message': 'Failed to fetch analyses'}), 500
 
 
 @app.route('/api/webscraper/analysis/<int:analysis_id>', methods=['GET'])
@@ -5015,7 +5289,7 @@ def api_webscraper_analysis_detail(analysis_id):
         analysis = get_website_analysis(analysis_id)
 
         if not analysis:
-            return jsonify({'error': 'Analysis not found'}), 404
+            return jsonify({'status': 'error', 'message': 'Analysis not found'}), 404
 
         return jsonify({
             'success': True,
@@ -5024,7 +5298,7 @@ def api_webscraper_analysis_detail(analysis_id):
 
     except Exception as e:
         logging.error(f"[ERROR] Failed to fetch analysis {analysis_id}: {e}")
-        return jsonify({'error': 'Failed to fetch analysis'}), 500
+        return jsonify({'status': 'error', 'message': 'Failed to fetch analysis'}), 500
 
 
 @app.route('/api/webscraper/analysis/<int:analysis_id>', methods=['DELETE'])
@@ -5038,7 +5312,7 @@ def api_webscraper_analysis_delete(analysis_id):
         deleted = delete_website_analysis(analysis_id)
 
         if not deleted:
-            return jsonify({'error': 'Analysis not found'}), 404
+            return jsonify({'status': 'error', 'message': 'Analysis not found'}), 404
 
         return jsonify({
             'success': True,
@@ -5047,7 +5321,7 @@ def api_webscraper_analysis_delete(analysis_id):
 
     except Exception as e:
         logging.error(f"[ERROR] Failed to delete analysis: {e}")
-        return jsonify({'error': 'Failed to delete analysis'}), 500
+        return jsonify({'status': 'error', 'message': 'Failed to delete analysis'}), 500
 
 
 # =============================================================================
@@ -5141,7 +5415,7 @@ def api_webscraper_populate():
         })
     except Exception as e:
         logging.error(f"[ERROR] Failed to create webscraper accounts: {e}")
-        return jsonify({'error': 'Failed to create accounts'}), 500
+        return jsonify({'status': 'error', 'message': 'Failed to create accounts'}), 500
 
 
 @app.route('/api/webscraper/accounts/populate-from-reporadar', methods=['POST'])
@@ -5158,7 +5432,7 @@ def api_webscraper_populate_from_reporadar():
         })
     except Exception as e:
         logging.error(f"[ERROR] Failed to populate from RepoRadar: {e}")
-        return jsonify({'error': 'Failed to populate accounts'}), 500
+        return jsonify({'status': 'error', 'message': 'Failed to populate accounts'}), 500
 
 
 @app.route('/api/webscraper/ruleset')
@@ -5224,7 +5498,7 @@ def api_webscraper_history():
     limit = request.args.get('limit', 20, type=int)
     valid, limit = validate_positive_int(limit, name='limit', max_val=100)
     if not valid:
-        return jsonify({'error': limit}), 400
+        return jsonify({'status': 'error', 'message': limit}), 400
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -5276,11 +5550,11 @@ def api_webscraper_scan_account(account_id):
     # Verify account exists
     account = get_webscraper_account(account_id)
     if not account:
-        return jsonify({'error': 'Account not found'}), 404
+        return jsonify({'status': 'error', 'message': 'Account not found'}), 404
 
     website_url = account.get('website_url')
     if not website_url:
-        return jsonify({'error': 'Account has no website URL'}), 400
+        return jsonify({'status': 'error', 'message': 'Account has no website URL'}), 400
 
     try:
         # Perform technical website analysis
@@ -5387,20 +5661,20 @@ def api_webscraper_bulk_action():
         account_ids = data.get('account_ids', [])
 
         if not action:
-            return jsonify({'error': 'Missing required field: action'}), 400
+            return jsonify({'status': 'error', 'message': 'Missing required field: action'}), 400
 
         if not account_ids:
-            return jsonify({'error': 'Missing required field: account_ids'}), 400
+            return jsonify({'status': 'error', 'message': 'Missing required field: account_ids'}), 400
 
         if not isinstance(account_ids, list):
-            return jsonify({'error': 'account_ids must be a list'}), 400
+            return jsonify({'status': 'error', 'message': 'account_ids must be a list'}), 400
         for aid in account_ids:
             valid, _ = validate_positive_int(aid, name='account_id')
             if not valid:
-                return jsonify({'error': f'Invalid account_id: {aid}'}), 400
+                return jsonify({'status': 'error', 'message': f'Invalid account_id: {aid}'}), 400
 
         if action not in ('archive', 'unarchive', 'delete', 'change_tier', 'scan'):
-            return jsonify({'error': f'Unknown action: {action}'}), 400
+            return jsonify({'status': 'error', 'message': f'Unknown action: {action}'}), 400
 
         if action == 'archive':
             affected = webscraper_bulk_archive(account_ids)
@@ -5421,9 +5695,9 @@ def api_webscraper_bulk_action():
         elif action == 'change_tier':
             new_tier = data.get('tier')
             if new_tier is None:
-                return jsonify({'error': 'Missing required field: tier'}), 400
+                return jsonify({'status': 'error', 'message': 'Missing required field: tier'}), 400
             if new_tier not in [1, 2, 3, 4]:
-                return jsonify({'error': 'Invalid tier. Must be 1, 2, 3, or 4'}), 400
+                return jsonify({'status': 'error', 'message': 'Invalid tier. Must be 1, 2, 3, or 4'}), 400
             affected = webscraper_bulk_change_tier(account_ids, new_tier)
             return jsonify({'success': True, 'action': 'change_tier', 'tier': new_tier, 'affected': affected})
 
@@ -5518,11 +5792,11 @@ def api_webscraper_bulk_action():
             })
 
         else:
-            return jsonify({'error': f'Unknown action: {action}'}), 400
+            return jsonify({'status': 'error', 'message': f'Unknown action: {action}'}), 400
 
     except Exception as e:
         logging.error(f"[ERROR] Bulk action failed: {e}")
-        return jsonify({'error': 'Bulk action failed'}), 500
+        return jsonify({'status': 'error', 'message': 'Bulk action failed'}), 500
 
 
 @app.route('/api/webscraper/accounts/<int:account_id>/notes', methods=['PUT'])
@@ -5542,11 +5816,11 @@ def api_webscraper_update_notes(account_id):
     if notes:
         valid, notes = validate_notes(notes)
         if not valid:
-            return jsonify({'error': notes}), 400
+            return jsonify({'status': 'error', 'message': notes}), 400
 
     updated = update_webscraper_notes(account_id, notes)
     if not updated:
-        return jsonify({'error': 'Account not found'}), 404
+        return jsonify({'status': 'error', 'message': 'Account not found'}), 404
 
     return jsonify({'success': True, 'notes': notes})
 
@@ -5556,7 +5830,7 @@ def api_webscraper_archive_account(account_id):
     """Archive a webscraper account."""
     archived = archive_webscraper_account(account_id)
     if not archived:
-        return jsonify({'error': 'Account not found or already archived'}), 404
+        return jsonify({'status': 'error', 'message': 'Account not found or already archived'}), 404
     return jsonify({'success': True, 'message': 'Account archived'})
 
 
@@ -5565,7 +5839,7 @@ def api_webscraper_unarchive_account(account_id):
     """Unarchive a webscraper account."""
     unarchived = unarchive_webscraper_account(account_id)
     if not unarchived:
-        return jsonify({'error': 'Account not found or not archived'}), 404
+        return jsonify({'status': 'error', 'message': 'Account not found or not archived'}), 404
     return jsonify({'success': True, 'message': 'Account unarchived'})
 
 
@@ -5574,7 +5848,7 @@ def api_webscraper_delete_account(account_id):
     """Delete a webscraper account."""
     deleted = delete_webscraper_account(account_id)
     if not deleted:
-        return jsonify({'error': 'Account not found'}), 404
+        return jsonify({'status': 'error', 'message': 'Account not found'}), 404
     return jsonify({'success': True, 'message': 'Account deleted'})
 
 
@@ -5583,7 +5857,7 @@ def api_webscraper_get_account(account_id):
     """Get a single webscraper account by ID."""
     account = get_webscraper_account(account_id)
     if not account:
-        return jsonify({'error': 'Account not found'}), 404
+        return jsonify({'status': 'error', 'message': 'Account not found'}), 404
     return jsonify({'success': True, 'account': account})
 
 
@@ -5602,13 +5876,13 @@ def api_discover():
     limit = request.args.get('limit', 20, type=int)
 
     if not keyword:
-        return jsonify({'error': 'Missing query parameter: q'}), 400
+        return jsonify({'status': 'error', 'message': 'Missing query parameter: q'}), 400
     valid, keyword = validate_search_query(keyword)
     if not valid:
-        return jsonify({'error': keyword}), 400
+        return jsonify({'status': 'error', 'message': keyword}), 400
     valid, limit = validate_positive_int(limit, name='limit', max_val=100)
     if not valid:
-        return jsonify({'error': limit}), 400
+        return jsonify({'status': 'error', 'message': limit}), 400
 
     # Search for orgs matching the keyword
     results = search_github_orgs(keyword, limit=limit)
@@ -5654,13 +5928,13 @@ def api_ai_discover():
     limit = request.args.get('limit', 15, type=int)
 
     if not keyword:
-        return jsonify({'error': 'Missing query parameter: q'}), 400
+        return jsonify({'status': 'error', 'message': 'Missing query parameter: q'}), 400
     valid, keyword = validate_search_query(keyword)
     if not valid:
-        return jsonify({'error': keyword}), 400
+        return jsonify({'status': 'error', 'message': keyword}), 400
     valid, limit = validate_positive_int(limit, name='limit', max_val=50)
     if not valid:
-        return jsonify({'error': limit}), 400
+        return jsonify({'status': 'error', 'message': limit}), 400
 
     # Use AI to discover companies in this sector
     companies = discover_companies_via_ai(keyword, limit=limit)
@@ -5700,10 +5974,10 @@ def api_lead_stream():
 
     valid, offset = validate_positive_int(offset, name='offset', max_val=10000)
     if not valid:
-        return jsonify({'error': offset}), 400
+        return jsonify({'status': 'error', 'message': offset}), 400
     valid, limit = validate_positive_int(limit, name='limit', max_val=30)
     if not valid:
-        return jsonify({'error': limit}), 400
+        return jsonify({'status': 'error', 'message': limit}), 400
 
     try:
         # Discover Technology companies
@@ -5747,7 +6021,7 @@ def api_lead_stream():
 
     except Exception as e:
         logging.error(f"[ERROR] Lead stream failed: {e}")
-        return jsonify({'error': 'Failed to generate lead stream'}), 500
+        return jsonify({'status': 'error', 'message': 'Failed to generate lead stream'}), 500
 
 
 @app.route('/api/import', methods=['POST'])
@@ -5782,7 +6056,7 @@ def api_import():
     skip_duplicates = data.get('skip_duplicates', False)
 
     if not isinstance(companies, list) or not companies:
-        return jsonify({'error': 'Invalid payload: expected {"companies": [...]}'}), 400
+        return jsonify({'status': 'error', 'message': 'Invalid payload: expected {"companies": [...]}'}), 400
 
     # For large imports (> 100 companies), skip synchronous duplicate checking
     # The batch worker will handle duplicates during processing
@@ -5888,7 +6162,7 @@ def api_import_batch_status(batch_id):
     """
     batch = get_import_batch(batch_id)
     if not batch:
-        return jsonify({'error': 'Batch not found'}), 404
+        return jsonify({'status': 'error', 'message': 'Batch not found'}), 404
 
     total = batch.get('total_count', 0)
     processed = batch.get('processed_count', 0)
@@ -5941,14 +6215,14 @@ def api_check_import_duplicates():
     companies = data.get('companies', [])
 
     if not isinstance(companies, list) or not companies:
-        return jsonify({'error': 'Invalid payload: expected {"companies": [...]}'}), 400
+        return jsonify({'status': 'error', 'message': 'Invalid payload: expected {"companies": [...]}'}), 400
 
     try:
         results = get_import_duplicates_summary(companies)
         return jsonify(results)
     except Exception as e:
         logging.error(f"[ERROR] Failed to check duplicates: {e}")
-        return jsonify({'error': 'Failed to check duplicates'}), 500
+        return jsonify({'status': 'error', 'message': 'Failed to check duplicates'}), 500
 
 
 @app.route('/api/track', methods=['POST'])
@@ -5969,14 +6243,14 @@ def api_track():
     company_name = data.get('company_name', '').strip()
 
     if not org_login or not company_name:
-        return jsonify({'error': 'Missing required fields: org_login, company_name'}), 400
+        return jsonify({'status': 'error', 'message': 'Missing required fields: org_login, company_name'}), 400
 
     valid, org_login = validate_github_org(org_login)
     if not valid:
-        return jsonify({'error': org_login}), 400
+        return jsonify({'status': 'error', 'message': org_login}), 400
     valid, company_name = validate_company_name(company_name)
     if not valid:
-        return jsonify({'error': company_name}), 400
+        return jsonify({'status': 'error', 'message': company_name}), 400
 
     try:
         existing = get_account_by_company_case_insensitive(company_name)
@@ -5995,7 +6269,7 @@ def api_track():
         return jsonify(result)
     except Exception as e:
         logging.error(f"[ERROR] Failed to track organization {org_login}: {e}")
-        return jsonify({'error': 'Failed to track organization'}), 500
+        return jsonify({'status': 'error', 'message': 'Failed to track organization'}), 500
 
 
 @app.route('/api/update-org', methods=['POST'])
@@ -6069,7 +6343,7 @@ def api_rescan(company_name: str):
     """
     valid, company_name = validate_company_name(company_name)
     if not valid:
-        return jsonify({'error': company_name}), 400
+        return jsonify({'status': 'error', 'message': company_name}), 400
 
     # Check if already scanning
     current_status = get_scan_status(company_name)
@@ -6782,7 +7056,7 @@ def api_sheets_config():
 def api_sheets_sync():
     """Trigger a Google Sheets sync - reads accounts, resolves GitHub orgs, queues for scanning."""
     if sheets_sync_in_progress():
-        return jsonify({'status': 'error', 'error': 'A sync is already in progress'}), 409
+        return jsonify({'status': 'error', 'message': 'A sync is already in progress'}), 409
     data = request.get_json() or {}
     result = sheets_run_sync(
         limit=data.get('limit'),
@@ -7540,7 +7814,7 @@ def api_stats():
     days = request.args.get('days', 30, type=int)
     valid, days = validate_positive_int(days, name='days', max_val=365)
     if not valid:
-        return jsonify({'error': days}), 400
+        return jsonify({'status': 'error', 'message': days}), 400
     stats = get_stats_last_n_days(days)
 
     return jsonify({
@@ -7706,7 +7980,7 @@ def api_cache_invalidate_org(org_login):
     """
     valid, org_login = validate_github_org(org_login)
     if not valid:
-        return jsonify({'error': org_login}), 400
+        return jsonify({'status': 'error', 'message': org_login}), 400
     from cache import invalidate_org_cache
     deleted = invalidate_org_cache(org_login)
     return jsonify({
@@ -7728,7 +8002,7 @@ def api_webhook_logs():
     limit = request.args.get('limit', 50, type=int)
     valid, limit = validate_positive_int(limit, name='limit', max_val=500)
     if not valid:
-        return jsonify({'error': limit}), 400
+        return jsonify({'status': 'error', 'message': limit}), 400
     logs = get_recent_webhook_logs(limit)
 
     return jsonify({
@@ -8082,13 +8356,13 @@ def api_rules_explain():
     """
     openai_key = os.environ.get('AI_INTEGRATIONS_OPENAI_API_KEY', '')
     if not openai_key:
-        return jsonify({'error': 'No AI API key configured (OpenAI)'}), 500
+        return jsonify({'status': 'error', 'message': 'No AI API key configured (OpenAI)'}), 500
 
     data = request.get_json() or {}
     rule_names = data.get('rules', [])
 
     if not rule_names:
-        return jsonify({'error': 'No rules specified'}), 400
+        return jsonify({'status': 'error', 'message': 'No rules specified'}), 400
 
     explanations = {}
     rules_to_generate = []
@@ -8209,7 +8483,7 @@ def api_rules_explain_all():
     """
     openai_key = os.environ.get('AI_INTEGRATIONS_OPENAI_API_KEY', '')
     if not openai_key:
-        return jsonify({'error': 'No AI API key configured (OpenAI)'}), 500
+        return jsonify({'status': 'error', 'message': 'No AI API key configured (OpenAI)'}), 500
 
     all_rule_names = [
         'rfc_keywords', 'smoking_gun_libs', 'smoking_gun_fork_repos',

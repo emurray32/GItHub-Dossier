@@ -779,7 +779,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const response = await fetch(`/api/reports/${id}/preview`);
             const data = await response.json();
 
-            if (data.error) {
+            if (data.status === 'error') {
                 alert('Report not found');
                 return;
             }

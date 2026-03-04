@@ -1203,3 +1203,26 @@
         align-items: flex-start;
     }
 }
+
+/* ============================================================
+   Staleness indicators (Phase 5)
+   ============================================================ */
+.stale-badge {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: #fef3c7;
+    color: #92400e;
+    border: 1px solid #fcd34d;
+    margin-left: 6px;
+    vertical-align: middle;
+    letter-spacing: 0.02em;
+}
+.stale-row {
+    opacity: 0.65;
+}
+.stale-row:hover {
+    opacity: 0.85;
+}
