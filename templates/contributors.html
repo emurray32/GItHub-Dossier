@@ -43,6 +43,7 @@
             <button class="filter-chip" id="filter-warm-hot" onclick="toggleFilter('warm_hot')">Warm/Hot leads</button>
             <button class="filter-chip" id="filter-not-contacted" onclick="toggleFilter('not_contacted')">Not contacted</button>
             <button class="filter-chip" id="filter-enrolled" onclick="toggleFilter('enrolled')">Already enrolled</button>
+            <button class="filter-chip" id="filter-hide-stale" onclick="toggleFilter('hide_stale')">Hide stale (2yr+)</button>
         </div>
 
         <!-- Table -->
@@ -151,7 +152,7 @@
         } else {
             activeFilters[filterName] = '1';
         }
-        const chipMap = { warm_hot: 'filter-warm-hot', not_contacted: 'filter-not-contacted', enrolled: 'filter-enrolled' };
+        const chipMap = { warm_hot: 'filter-warm-hot', not_contacted: 'filter-not-contacted', enrolled: 'filter-enrolled', hide_stale: 'filter-hide-stale' };
         Object.entries(chipMap).forEach(([key, id]) => {
             const el = document.getElementById(id);
             if (el) el.classList.toggle('active', !!activeFilters[key]);
@@ -195,6 +196,11 @@
     }
 
     function renderTable(rows) {
+        // Client-side filter: hide stale contributors if filter active
+        if (activeFilters['hide_stale']) {
+            rows = rows.filter(c => !c.is_stale);
+        }
+
         if (!rows || rows.length === 0) {
             tbody.innerHTML = `
                 <tr><td colspan="8">
@@ -228,16 +234,18 @@
             const hasEmail = c.email && c.email.trim();
             const isEnrolled = c.enrolled_in_sequence === 1;
             const isChecked = selectedIds.has(c.id);
+            const isStale = c.is_stale;
+            const staleBadge = isStale ? '<span class="stale-badge" title="No GitHub activity in 2+ years">Stale</span>' : '';
 
             html += `
-            <tr data-id="${c.id}" class="contrib-row ${isSelected ? 'selected' : ''}">
+            <tr data-id="${c.id}" class="contrib-row ${isSelected ? 'selected' : ''} ${isStale ? 'stale-row' : ''}">
                 <td class="col-check" onclick="event.stopPropagation()">
                     <input type="checkbox" class="row-checkbox" data-id="${c.id}" ${isEnrolled ? 'disabled title="Already enrolled"' : ''} ${isChecked ? 'checked' : ''} onchange="onRowCheckChange(${c.id}, this.checked)">
                 </td>
                 <td class="col-name" onclick="openSidebar(${c.id})">
                     <div class="name-cell">
                         <div class="name-stack">
-                            <span class="name-primary">${escapeHtml(displayName)}</span>
+                            <span class="name-primary">${escapeHtml(displayName)}${staleBadge}</span>
                             <span class="name-handle">@${escapeHtml(c.github_login)}</span>
                         </div>
                     </div>
@@ -350,6 +358,10 @@
                     <div class="detail-row">
                         <span class="detail-label">Sequence</span>
                         <span class="detail-value">${c.sequence_name ? escapeHtml(c.sequence_name) : '<span class="text-muted">Not enrolled</span>'}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Last Activity</span>
+                        <span class="detail-value">${c.last_activity_at ? formatActivityDate(c.last_activity_at) : '<span class="text-muted">Unknown</span>'}${c.is_stale ? ' <span class="stale-badge">Stale</span>' : ''}</span>
                     </div>
                 </div>
             </div>
@@ -1040,6 +1052,20 @@
         // Clean Python/JS array notation: "['a', 'b']" → "a, b"
         var cleaned = String(raw).replace(/^\[|\]$/g, '').replace(/'/g, '').replace(/"/g, '').trim();
         return cleaned || '-';
+    }
+
+    function formatActivityDate(dateStr) {
+        if (!dateStr) return 'Unknown';
+        try {
+            var d = new Date(dateStr);
+            if (isNaN(d.getTime())) return dateStr;
+            var now = new Date();
+            var diffMs = now - d;
+            var diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+            if (diffDays < 30) return diffDays + 'd ago';
+            if (diffDays < 365) return Math.floor(diffDays / 30) + 'mo ago';
+            return Math.floor(diffDays / 365) + 'yr ago';
+        } catch(e) { return dateStr; }
     }
 
     // Escape for JS string literals in onclick attributes

@@ -4105,6 +4105,9 @@ def api_contributors_datatable():
 
     tier_names = {0: 'Tracking', 1: 'Thinking', 2: 'Preparing', 3: 'Launched', 4: 'Not Found'}
 
+    from datetime import datetime, timedelta
+    stale_cutoff = (datetime.utcnow() - timedelta(days=730)).isoformat()  # 2 years
+
     for row in result.get('data', []):
         # Filter out personal and domain-mismatched emails before exposing to frontend
         raw_email = row.get('email', '')
@@ -4115,6 +4118,10 @@ def api_contributors_datatable():
         row['company_tier'] = tier
         row['company_tier_name'] = tier_names.get(tier, '') if tier is not None else ''
 
+        # Staleness: flag contributors with no GitHub activity in 2+ years
+        last_activity = row.get('last_activity_at') or ''
+        row['is_stale'] = bool(last_activity and last_activity < stale_cutoff)
+
         # Compute priority_score: contributions weight + tier bonus + i18n bonus
         score = min(row.get('contributions', 0), 100)  # cap at 100
         if tier in (1, 2):
@@ -4124,6 +4131,9 @@ def api_contributors_datatable():
         insight = (row.get('insight') or '').lower()
         if 'i18n' in insight or 'internationalization' in insight or 'locale' in insight:
             score += 20
+        # Deprioritize stale contributors
+        if row['is_stale']:
+            score -= 40
         row['priority_score'] = score
 
     # Sort by priority_score descending if no explicit sort requested (default)
@@ -4275,6 +4285,7 @@ def api_fetch_contributors():
             repos = response.json()
             for repo in repos[:3]:
                 repo_name = repo['name']
+                repo_pushed_at = repo.get('pushed_at', '')  # ISO 8601 timestamp
                 contributors_list = get_top_contributors(org, repo_name, limit=limit_per_repo)
 
                 batch = []
@@ -4308,7 +4319,8 @@ def api_fetch_contributors():
                         'contributions': c.get('contributions', 0),
                         'insight': f"Top contributor to {org}/{repo_name} — active in {company}'s codebase.",
                         'is_org_member': is_member,
-                        'github_profile_company': profile_company
+                        'github_profile_company': profile_company,
+                        'last_activity_at': repo_pushed_at
                     })
 
                 if batch:

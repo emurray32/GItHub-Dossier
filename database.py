@@ -658,6 +658,8 @@ def init_db() -> None:
     # Migrate contributors table: add org membership classification columns
     _safe_add_column(cursor, 'contributors', 'is_org_member INTEGER DEFAULT NULL')
     _safe_add_column(cursor, 'contributors', 'github_profile_company TEXT')
+    # Phase 5: Staleness tracking — last contribution activity date
+    _safe_add_column(cursor, 'contributors', 'last_activity_at TIMESTAMP')
 
     cursor.execute('''
         CREATE INDEX IF NOT EXISTS idx_contributors_org_member
@@ -5551,8 +5553,8 @@ def save_contributor(contributor_data: dict) -> Optional[int]:
                 github_login, github_url, name, email, blog,
                 company, company_size, annual_revenue, repo_source,
                 github_org, contributions, insight,
-                is_org_member, github_profile_company
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                is_org_member, github_profile_company, last_activity_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(github_login, github_org) DO UPDATE SET
                 name = COALESCE(NULLIF(excluded.name, ''), contributors.name),
                 email = COALESCE(NULLIF(excluded.email, ''), contributors.email),
@@ -5565,6 +5567,7 @@ def save_contributor(contributor_data: dict) -> Optional[int]:
                 insight = COALESCE(NULLIF(excluded.insight, ''), contributors.insight),
                 is_org_member = excluded.is_org_member,
                 github_profile_company = COALESCE(NULLIF(excluded.github_profile_company, ''), contributors.github_profile_company),
+                last_activity_at = COALESCE(excluded.last_activity_at, contributors.last_activity_at),
                 updated_at = CURRENT_TIMESTAMP
         ''', (
             contributor_data.get('github_login', ''),
@@ -5580,7 +5583,8 @@ def save_contributor(contributor_data: dict) -> Optional[int]:
             contributor_data.get('contributions', 0),
             contributor_data.get('insight', ''),
             contributor_data.get('is_org_member'),
-            contributor_data.get('github_profile_company', '')
+            contributor_data.get('github_profile_company', ''),
+            contributor_data.get('last_activity_at')
         ))
         conn.commit()
         return contributor_id
@@ -5612,8 +5616,8 @@ def save_contributors_batch(contributors: list) -> int:
                     github_login, github_url, name, email, blog,
                     company, company_size, annual_revenue, repo_source,
                     github_org, contributions, insight,
-                    is_org_member, github_profile_company
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    is_org_member, github_profile_company, last_activity_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(github_login, github_org) DO UPDATE SET
                     name = COALESCE(NULLIF(excluded.name, ''), contributors.name),
                     email = COALESCE(NULLIF(excluded.email, ''), contributors.email),
@@ -5626,6 +5630,7 @@ def save_contributors_batch(contributors: list) -> int:
                     insight = COALESCE(NULLIF(excluded.insight, ''), contributors.insight),
                     is_org_member = excluded.is_org_member,
                     github_profile_company = COALESCE(NULLIF(excluded.github_profile_company, ''), contributors.github_profile_company),
+                    last_activity_at = COALESCE(excluded.last_activity_at, contributors.last_activity_at),
                     updated_at = CURRENT_TIMESTAMP
             ''', (
                 c.get('github_login', ''),
@@ -5641,7 +5646,8 @@ def save_contributors_batch(contributors: list) -> int:
                 c.get('contributions', 0),
                 c.get('insight', ''),
                 c.get('is_org_member'),
-                c.get('github_profile_company', '')
+                c.get('github_profile_company', ''),
+                c.get('last_activity_at')
             ))
             saved += 1
 

@@ -326,6 +326,7 @@ def _fetch_top_contributors(org_login: str, repos: List[Dict], limit: int = 5) -
         repo_name = repo.get('name')
         if not repo_name:
             continue
+        repo_pushed_at = repo.get('pushed_at', '')  # ISO 8601 timestamp
 
         try:
             url = f"{Config.GITHUB_API_BASE}/repos/{org_login}/{repo_name}/contributors"
@@ -344,6 +345,9 @@ def _fetch_top_contributors(org_login: str, repos: List[Dict], limit: int = 5) -
                         # Aggregate contributions
                         contributor_map[login]['contributions'] += contributions
                         contributor_map[login]['repos'].append(repo_name)
+                        # Keep the most recent pushed_at across repos
+                        if repo_pushed_at > (contributor_map[login].get('last_activity_at') or ''):
+                            contributor_map[login]['last_activity_at'] = repo_pushed_at
                     else:
                         contributor_map[login] = {
                             'login': login,
@@ -355,7 +359,8 @@ def _fetch_top_contributors(org_login: str, repos: List[Dict], limit: int = 5) -
                             'email': '',
                             'blog': '',
                             'bio': '',
-                            'company': ''
+                            'company': '',
+                            'last_activity_at': repo_pushed_at
                         }
         except Exception as e:
             print(f"[SCANNER] Failed to fetch contributors for {org_login}/{repo_name}: {e}")
