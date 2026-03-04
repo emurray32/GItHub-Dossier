@@ -96,7 +96,7 @@ from validators import (
     validate_company_name, validate_github_org, validate_email,
     validate_url, validate_search_query, validate_notes,
     validate_positive_int, validate_tier, validate_sort_direction,
-    validate_scope, sanitize_for_log,
+    validate_scope, sanitize_for_log, validate_csv_upload,
     MAX_URL_LENGTH, MAX_COMPANY_NAME_LENGTH,
 )
 import logging
@@ -1609,21 +1609,13 @@ def export_db():
     if not os.path.exists(db_path):
         return jsonify({'status': 'error', 'message': f'Database file not found at {db_path}'}), 404
 
-    try:
-        return send_file(
-            db_path,
-            mimetype='application/octet-stream',
-            as_attachment=True,
-            download_name='lead_machine.db',
-        )
-    except TypeError:
-        # Older Flask versions use attachment_filename instead of download_name
-        return send_file(
-            db_path,
-            mimetype='application/octet-stream',
-            as_attachment=True,
-            attachment_filename='lead_machine.db',
-        )
+    with open(db_path, 'rb') as f:
+        data = f.read()
+
+    response = Response(data, mimetype='application/octet-stream')
+    response.headers['Content-Disposition'] = 'attachment; filename=lead_machine.db'
+    response.headers['Content-Length'] = len(data)
+    return response
 
 
 @app.route('/api/health')
@@ -2732,6 +2724,116 @@ Return ONLY valid JSON: {{"subject_1": "...", "subject_2": "...", "email_1": "..
     except Exception as e:
         app.logger.error(f'Enrollment pipeline error for batch {batch_id}: {e}')
         update_enrollment_batch(batch_id, status='failed', error_message=str(e)[:500])
+
+
+# --- CSV Upload for Campaign Accounts ---
+
+@app.route('/api/campaigns/<int:campaign_id>/upload-accounts', methods=['POST'])
+def api_campaign_upload_accounts(campaign_id):
+    """Upload a CSV of target accounts for a campaign.
+
+    Accepts multipart form data with a CSV file.
+    Required CSV columns: company_name (or company/name), website (or domain/url).
+    Optional columns: annual_revenue, industry, employee_count, hq_location,
+    funding_stage, github_org, notes.
+    Accounts missing website/domain are rejected (EC-018).
+    All fields are saved to real database columns.
+    """
+    campaign = get_campaign(campaign_id)
+    if not campaign:
+        return jsonify({'status': 'error', 'message': 'Campaign not found'}), 404
+
+    if 'file' not in request.files:
+        return jsonify({'status': 'error', 'message': 'No file uploaded. Use form field name "file".'}), 400
+
+    file = request.files['file']
+    is_valid, result = validate_csv_upload(file)
+    if not is_valid:
+        return jsonify({'status': 'error', 'message': result}), 400
+
+    valid_rows = result['valid_rows']
+    rejected_rows = result['rejected_rows']
+
+    if not valid_rows:
+        return jsonify({
+            'status': 'error',
+            'message': f'No valid accounts found. {len(rejected_rows)} rejected (missing website/domain).',
+            'rejected': rejected_rows,
+        }), 400
+
+    # Column mapping from CSV headers to database columns
+    COLUMN_MAP = {
+        'annual_revenue': 'annual_revenue',
+        'revenue': 'annual_revenue',
+        'industry': 'industry',
+        'employee_count': 'employee_count',
+        'employees': 'employee_count',
+        'hq_location': 'hq_location',
+        'headquarters': 'hq_location',
+        'location': 'hq_location',
+        'funding_stage': 'funding_stage',
+        'funding': 'funding_stage',
+        'github_org': 'github_org',
+        'github': 'github_org',
+        'notes': 'notes',
+    }
+
+    saved = 0
+    skipped_archived = 0
+    for row in valid_rows:
+        company_name = row['company_name']
+        website = row['website']
+
+        # EC-024: Skip previously archived accounts
+        existing = get_account_by_company(company_name)
+        if existing and existing.get('archived_at'):
+            skipped_archived += 1
+            rejected_rows.append({
+                'company_name': company_name,
+                'reason': 'Account is archived — skipped re-import',
+            })
+            continue
+
+        # Extract known optional fields
+        annual_revenue = row.get('annual_revenue') or row.get('revenue') or ''
+        github_org = row.get('github_org') or row.get('github') or ''
+
+        # Create/update account via existing function
+        add_account_to_tier_0(
+            company_name=company_name,
+            github_org=github_org,
+            annual_revenue=annual_revenue or None,
+            website=website,
+        )
+
+        # Update extra columns that add_account_to_tier_0 doesn't handle
+        extra_updates = {}
+        for csv_key, db_col in COLUMN_MAP.items():
+            if csv_key in row and db_col not in ('annual_revenue', 'github_org'):
+                extra_updates[db_col] = row[csv_key]
+
+        if extra_updates:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            set_parts = [f'{col} = ?' for col in extra_updates.keys()]
+            values = list(extra_updates.values()) + [company_name.lower().strip()]
+            cursor.execute(
+                f'UPDATE monitored_accounts SET {", ".join(set_parts)} WHERE LOWER(company_name) = ?',
+                values
+            )
+            conn.commit()
+            conn.close()
+
+        saved += 1
+
+    return jsonify({
+        'status': 'success',
+        'saved': saved,
+        'rejected': len(rejected_rows),
+        'skipped_archived': skipped_archived,
+        'rejected_accounts': rejected_rows[:50],  # Cap at 50 to avoid huge responses
+        'total_in_csv': len(valid_rows) + len(rejected_rows) - skipped_archived,
+    })
 
 
 # --- Enrollment API Routes ---

@@ -334,6 +334,11 @@ def init_db() -> None:
     _safe_add_column(cursor, 'monitored_accounts', 'previous_tier INTEGER')
     _safe_add_column(cursor, 'monitored_accounts', 'imported_at TIMESTAMP')
     _safe_add_column(cursor, 'monitored_accounts', 'import_source TEXT')
+    # Extended account columns for CSV import (Phase 2)
+    _safe_add_column(cursor, 'monitored_accounts', 'industry TEXT')
+    _safe_add_column(cursor, 'monitored_accounts', 'employee_count TEXT')
+    _safe_add_column(cursor, 'monitored_accounts', 'hq_location TEXT')
+    _safe_add_column(cursor, 'monitored_accounts', 'funding_stage TEXT')
     _safe_add_column(cursor, 'reports', 'is_favorite INTEGER DEFAULT 0')
 
     cursor.execute('''
@@ -722,6 +727,12 @@ def init_db() -> None:
         CREATE INDEX IF NOT EXISTS idx_campaigns_status
         ON campaigns(status)
     ''')
+    # Campaign extensions for AE workflow (Phase 2)
+    _safe_add_column(cursor, 'campaigns', 'contact_cap INTEGER DEFAULT 20')
+    _safe_add_column(cursor, 'campaigns', 'verified_emails_only INTEGER DEFAULT 0')
+    _safe_add_column(cursor, 'campaigns', 'review_in_tool INTEGER DEFAULT 1')
+    _safe_add_column(cursor, 'campaigns', 'links_json TEXT')
+    _safe_add_column(cursor, 'campaigns', 'tone TEXT')
 
     # Sequence mappings table - central view of Apollo sequences and their campaign assignments
     cursor.execute(_adapt_ddl('''
