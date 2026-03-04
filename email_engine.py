@@ -579,6 +579,10 @@ def generate_email_sequence(
         }
 
     except Exception as e:
+        # Propagate auth/rate-limit errors instead of falling back silently
+        err_str = str(e).lower()
+        if any(k in err_str for k in ('401', '403', 'unauthorized', 'authentication', '429', 'rate limit')):
+            raise
         logger.error(f'Email sequence generation failed: {e}')
         return _fallback_sequence(contact, signals, num_emails)
 
@@ -866,19 +870,19 @@ def _fallback_sequence(contact: dict, signals: list, num_emails: int = 4) -> dic
         {
             'position': 2,
             'subject': f'Quick follow-up — {{{{company}}}}',
-            'body': 'Hey {{first_name}},\n\nCircling back on my last note. Teams at your stage typically spend 40% of their i18n time on manual file handoffs.\n\nPhrase eliminates that with GitHub Sync — locale files stay in lockstep with your branches.\n\nOpen to a quick look?\n\n{{sender_first_name}}',
+            'body': f'Hey {{{{first_name}}}},\n\nCircling back on my last note. Teams at your stage typically spend 40% of their i18n time on manual file handoffs.\n\nPhrase eliminates that with GitHub Sync — locale files stay in lockstep with your branches.\n\nOpen to a quick look?\n\n{{{{sender_first_name}}}}',
             'score': 10,
         },
         {
             'position': 3,
             'subject': f'Thought this might help — {{{{company}}}}',
-            'body': 'Hey {{first_name}},\n\nOne thing I see teams overlook early: setting up continuous localization before launch saves weeks of catch-up later.\n\nHappy to share what that looks like in practice if it is useful.\n\n{{sender_first_name}}',
+            'body': f'Hey {{{{first_name}}}},\n\nOne thing I see teams overlook early: setting up continuous localization before launch saves weeks of catch-up later.\n\nHappy to share what that looks like in practice if it is useful.\n\n{{{{sender_first_name}}}}',
             'score': 10,
         },
         {
             'position': 4,
             'subject': f'Closing the loop — {{{{company}}}}',
-            'body': 'Hey {{first_name}},\n\nJust want to make sure I am not cluttering your inbox. If localization tooling is not on the radar right now, no worries at all.\n\nEither way, happy to help whenever timing is right.\n\n{{sender_first_name}}',
+            'body': f'Hey {{{{first_name}}}},\n\nJust want to make sure I am not cluttering your inbox. If localization tooling is not on the radar right now, no worries at all.\n\nEither way, happy to help whenever timing is right.\n\n{{{{sender_first_name}}}}',
             'score': 10,
         },
     ]
@@ -890,6 +894,7 @@ def _fallback_sequence(contact: dict, signals: list, num_emails: int = 4) -> dic
         'signal_details': details,
         'specificity_score': 12,
         'canspam_footer': _build_canspam_footer(),
+        'is_fallback': True,
     }
 
 

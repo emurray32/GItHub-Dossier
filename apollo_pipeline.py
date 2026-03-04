@@ -519,7 +519,12 @@ def bulk_enroll_contacts(batch_id, contact_ids=None, limit=25):
     if remaining == 0:
         total_failed = summary.get('failed', 0)
         total_enrolled = summary.get('enrolled', 0)
-        final_status = 'completed_with_errors' if total_failed > 0 and total_enrolled > 0 else 'completed'
+        if total_failed > 0 and total_enrolled == 0:
+            final_status = 'failed'
+        elif total_failed > 0:
+            final_status = 'completed_with_errors'
+        else:
+            final_status = 'completed'
         db.update_enrollment_batch(
             batch_id, status=final_status, current_phase='done',
             completed_at=datetime.utcnow().isoformat()

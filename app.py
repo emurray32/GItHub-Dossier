@@ -1609,13 +1609,8 @@ def export_db():
     if not os.path.exists(db_path):
         return jsonify({'status': 'error', 'message': f'Database file not found at {db_path}'}), 404
 
-    with open(db_path, 'rb') as f:
-        data = f.read()
-
-    response = Response(data, mimetype='application/octet-stream')
-    response.headers['Content-Disposition'] = 'attachment; filename=lead_machine.db'
-    response.headers['Content-Length'] = len(data)
-    return response
+    return send_file(db_path, mimetype='application/octet-stream',
+                     as_attachment=True, download_name='lead_machine.db')
 
 
 @app.route('/api/health')
@@ -1725,8 +1720,13 @@ def api_system_alerts():
                 'message': f'GitHub API rate limit low ({total_remaining} remaining) — scans may be delayed.',
                 'severity': 'warning'
             })
-    except Exception:
-        pass
+    except Exception as e:
+        logging.warning(f'[SYSTEM-ALERTS] GitHub token pool check failed: {e}')
+        alerts.append({
+            'type': 'github_rate_limit',
+            'message': 'GitHub health check unavailable.',
+            'severity': 'warning'
+        })
 
     # Check cache connectivity
     try:
@@ -1739,8 +1739,13 @@ def api_system_alerts():
                 'message': 'Cache is disabled — scan performance may be degraded.',
                 'severity': 'warning'
             })
-    except Exception:
-        pass
+    except Exception as e:
+        logging.warning(f'[SYSTEM-ALERTS] Cache connectivity check failed: {e}')
+        alerts.append({
+            'type': 'cache_down',
+            'message': 'Cache health check unavailable.',
+            'severity': 'warning'
+        })
 
     return jsonify({'alerts': alerts})
 
@@ -2158,7 +2163,12 @@ def api_campaigns_create():
     sequence_config = (data.get('sequence_config') or '').strip() or None
 
     tone = (data.get('tone') or '').strip() or None
-    contact_cap = data.get('contact_cap', 20)
+    try:
+        contact_cap = int(data.get('contact_cap', 20))
+    except (TypeError, ValueError):
+        contact_cap = 20
+    if contact_cap < 1 or contact_cap > 200:
+        return jsonify({'status': 'error', 'message': 'contact_cap must be between 1 and 200'}), 400
     verified_emails_only = data.get('verified_emails_only', 0)
     review_in_tool = data.get('review_in_tool', 1)
 
@@ -2910,57 +2920,63 @@ def api_campaign_upload_accounts(campaign_id):
 
     saved = 0
     skipped_archived = 0
-    for row in valid_rows:
-        company_name = row['company_name']
-        website = row['website']
+    row_failures = []
 
-        # EC-024: Skip previously archived accounts
-        existing = get_account_by_company(company_name)
-        if existing and existing.get('archived_at'):
-            skipped_archived += 1
-            rejected_rows.append({
-                'company_name': company_name,
-                'reason': 'Account is archived — skipped re-import',
-            })
-            continue
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        for row in valid_rows:
+            company_name = row['company_name']
+            website = row['website']
 
-        # Extract known optional fields
-        annual_revenue = row.get('annual_revenue') or row.get('revenue') or ''
-        github_org = row.get('github_org') or row.get('github') or ''
+            try:
+                # EC-024: Skip previously archived accounts
+                existing = get_account_by_company(company_name)
+                if existing and existing.get('archived_at'):
+                    skipped_archived += 1
+                    rejected_rows.append({
+                        'company_name': company_name,
+                        'reason': 'Account is archived — skipped re-import',
+                    })
+                    continue
 
-        # Create/update account via existing function
-        add_account_to_tier_0(
-            company_name=company_name,
-            github_org=github_org,
-            annual_revenue=annual_revenue or None,
-            website=website,
-        )
+                # Extract known optional fields
+                annual_revenue = row.get('annual_revenue') or row.get('revenue') or ''
+                github_org = row.get('github_org') or row.get('github') or ''
 
-        # Update extra columns that add_account_to_tier_0 doesn't handle
-        extra_updates = {}
-        for csv_key, db_col in COLUMN_MAP.items():
-            if csv_key in row and db_col not in ('annual_revenue', 'github_org'):
-                extra_updates[db_col] = row[csv_key]
+                # Create/update account via existing function
+                add_account_to_tier_0(
+                    company_name=company_name,
+                    github_org=github_org,
+                    annual_revenue=annual_revenue or None,
+                    website=website,
+                )
 
-        if extra_updates:
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            set_parts = [f'{col} = ?' for col in extra_updates.keys()]
-            values = list(extra_updates.values()) + [company_name.lower().strip()]
-            cursor.execute(
-                f'UPDATE monitored_accounts SET {", ".join(set_parts)} WHERE LOWER(company_name) = ?',
-                values
-            )
-            conn.commit()
-            conn.close()
+                # Update extra columns that add_account_to_tier_0 doesn't handle
+                extra_updates = {}
+                for csv_key, db_col in COLUMN_MAP.items():
+                    if csv_key in row and db_col not in ('annual_revenue', 'github_org'):
+                        extra_updates[db_col] = row[csv_key]
 
-        saved += 1
+                if extra_updates:
+                    set_parts = [f'{col} = ?' for col in extra_updates.keys()]
+                    values = list(extra_updates.values()) + [company_name.lower().strip()]
+                    cursor.execute(
+                        f'UPDATE monitored_accounts SET {", ".join(set_parts)} WHERE LOWER(company_name) = ?',
+                        values
+                    )
+                    conn.commit()
+
+                saved += 1
+            except Exception as e:
+                logging.warning(f'[CSV-UPLOAD] Failed to import row {company_name}: {e}')
+                row_failures.append({'company_name': company_name, 'reason': str(e)[:200]})
 
     return jsonify({
         'status': 'success',
         'saved': saved,
         'rejected': len(rejected_rows),
         'skipped_archived': skipped_archived,
+        'row_failures': row_failures[:50],
         'rejected_accounts': rejected_rows[:50],  # Cap at 50 to avoid huge responses
         'total_in_csv': len(valid_rows) + len(rejected_rows) - skipped_archived,
     })
