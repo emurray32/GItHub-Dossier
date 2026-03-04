@@ -1549,7 +1549,7 @@
             const lastScannedFormatted = account.last_scanned_at ? formatSmartDate(account.last_scanned_at) : 'Never';
 
             return `
-                <tr id="row-${account.id}" data-company="${escapeHtml(account.company_name)}" data-account-id="${account.id}" data-tier="${account.current_tier}" data-last-scanned="${account.last_scanned_at || ''}" data-website="${escapeHtml(account.website || '')}" data-status="idle" data-report-id="${account.latest_report_id || ''}">`;
+                <tr id="row-${account.id}" data-company="${escapeHtml(account.company_name)}" data-account-id="${account.id}" data-tier="${account.current_tier}" data-last-scanned="${account.last_scanned_at || ''}" data-website="${escapeHtml(account.website || '')}" data-status="idle" data-report-id="${account.latest_report_id || ''}">
                     <td class="select-col">
                         <input type="checkbox" class="select-account-checkbox row-select" data-account-id="${account.id}" aria-label="Select ${escapeHtml(account.company_name)}">
                     </td>
@@ -1847,7 +1847,7 @@
         const lastScannedFormatted = account.last_scanned_at ? formatSmartDate(account.last_scanned_at) : 'Never';
 
         return `
-            <tr id="row-${account.id}" data-company="${escapeHtml(account.company_name)}" data-account-id="${account.id}" data-tier="${account.current_tier}" data-last-scanned="${account.last_scanned_at || ''}" data-website="${escapeHtml(account.website || '')}" data-status="idle" data-report-id="${account.latest_report_id || ''}">`;
+            <tr id="row-${account.id}" data-company="${escapeHtml(account.company_name)}" data-account-id="${account.id}" data-tier="${account.current_tier}" data-last-scanned="${account.last_scanned_at || ''}" data-website="${escapeHtml(account.website || '')}" data-status="idle" data-report-id="${account.latest_report_id || ''}">
                 <td class="select-col">
                     <input type="checkbox" class="select-account-checkbox row-select" data-account-id="${account.id}" aria-label="Select ${escapeHtml(account.company_name)}">
                 </td>

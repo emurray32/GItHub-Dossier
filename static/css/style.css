@@ -1994,11 +1994,9 @@ textarea,
 /* ============================================================
    RESPONSIVE
    ============================================================ */
-@media (max-width: 480px) {
-    :root {
-        --container-padding: 1rem;
-    }
 
+/* --- Below 1024px: Sidebar collapses to icon-only (tablet + mobile) -------- */
+@media (max-width: 1023px) {
     .sidebar {
         width: var(--sidebar-collapsed);
     }
@@ -2023,6 +2021,44 @@ textarea,
 
     .main-area {
         margin-left: var(--sidebar-collapsed);
+    }
+}
+
+/* --- Below 768px: Mobile-specific layout ----------------------------------- */
+@media (max-width: 767px) {
+    :root {
+        --container-padding: 1rem;
+    }
+
+    /* Hide sidebar completely on mobile, use hamburger toggle */
+    .sidebar {
+        width: 0;
+        min-width: 0;
+        overflow: hidden;
+        position: fixed;
+        z-index: 1050;
+        height: 100vh;
+        transition: width 0.3s ease;
+    }
+
+    .sidebar.mobile-open {
+        width: 240px;
+        overflow-y: auto;
+    }
+
+    .sidebar.mobile-open .sidebar-label,
+    .sidebar.mobile-open .sidebar-brand-text,
+    .sidebar.mobile-open .sidebar-section-label {
+        display: inline;
+    }
+
+    .sidebar.mobile-open .sidebar-item {
+        justify-content: flex-start;
+        padding: 10px 16px;
+    }
+
+    .main-area {
+        margin-left: 0;
     }
 
     .hero-title {
@@ -2076,6 +2112,13 @@ textarea,
     .rules-scoring-grid,
     .rules-config-grid {
         grid-template-columns: 1fr;
+    }
+}
+
+/* --- Legacy 480px breakpoint (subset of mobile, kept for compatibility) ---- */
+@media (max-width: 480px) {
+    :root {
+        --container-padding: 0.75rem;
     }
 }
 

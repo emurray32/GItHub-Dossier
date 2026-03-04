@@ -148,6 +148,7 @@ _PUBLIC_ENDPOINTS = {
     'inject_cache_buster', 'add_security_headers',
     'auth.login', 'auth.logout',
     'health_check',
+    'export_db',
 }
 
 
@@ -1587,6 +1588,33 @@ def search():
     if not company:
         return redirect(url_for('index'))
     return redirect(url_for('scan_page', company=company))
+
+
+@app.route('/api/export-db')
+def export_db():
+    """Download the SQLite database file for local development sync.
+
+    Requires DOSSIER_SYNC_TOKEN (separate from API key) as a query param
+    or X-Sync-Token header. Returns the raw .db file as an attachment.
+    """
+    sync_token = os.environ.get('DOSSIER_SYNC_TOKEN', '')
+    if not sync_token:
+        return jsonify({'status': 'error', 'message': 'DOSSIER_SYNC_TOKEN not configured on server'}), 503
+
+    provided = request.headers.get('X-Sync-Token') or request.args.get('sync_token')
+    if not provided or not hmac.compare_digest(provided, sync_token):
+        return jsonify({'status': 'error', 'message': 'Unauthorized: invalid or missing sync token'}), 401
+
+    db_path = Config.DATABASE_PATH
+    if not os.path.exists(db_path):
+        return jsonify({'status': 'error', 'message': 'Database file not found'}), 404
+
+    return send_file(
+        db_path,
+        mimetype='application/x-sqlite3',
+        as_attachment=True,
+        download_name='lead_machine.db',
+    )
 
 
 @app.route('/api/health')

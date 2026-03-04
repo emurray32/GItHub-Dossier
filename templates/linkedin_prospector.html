@@ -489,7 +489,11 @@
     if (urlLookupInProgress) return;
     urlLookupInProgress = true;
     var lookupBtn = $('url-btn');
-    if (lookupBtn) lookupBtn.disabled = true;
+    var lookupBtnOriginalHTML = lookupBtn ? lookupBtn.innerHTML : '';
+    if (lookupBtn) {
+      lookupBtn.disabled = true;
+      lookupBtn.innerHTML = '<span class="lp-spinner"></span> Searching...';
+    }
 
     var urlInput = $('url-input');
     var rawUrl = (urlInput.value || '').trim();
@@ -499,7 +503,10 @@
     if (!match) {
       showToast('Enter a valid LinkedIn URL (linkedin.com/in/...)', 'error');
       urlLookupInProgress = false;
-      if (lookupBtn) lookupBtn.disabled = false;
+      if (lookupBtn) {
+        lookupBtn.disabled = false;
+        lookupBtn.innerHTML = lookupBtnOriginalHTML;
+      }
       return;
     }
 
@@ -529,7 +536,10 @@
     // Go directly to Apollo with linkedin_url
     await findInApollo(currentLinkedinUrl);
     urlLookupInProgress = false;
-    if (lookupBtn) lookupBtn.disabled = false;
+    if (lookupBtn) {
+      lookupBtn.disabled = false;
+      lookupBtn.innerHTML = lookupBtnOriginalHTML;
+    }
   };
 
   // Allow Enter key in URL input

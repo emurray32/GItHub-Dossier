@@ -25,8 +25,8 @@
 
             <!-- Tabs for different import methods -->
             <div class="bulk-import-tabs">
-                <button class="bulk-import-tab active" onclick="switchImportTab('csv')">Upload CSV</button>
-                <button class="bulk-import-tab" onclick="switchImportTab('sheets')">Google Sheets</button>
+                <button class="bulk-import-tab active" data-tab="csv" onclick="switchImportTab('csv')">Upload CSV</button>
+                <button class="bulk-import-tab" data-tab="sheets" onclick="switchImportTab('sheets')">Google Sheets</button>
             </div>
 
             <!-- CSV Upload Tab -->
@@ -317,8 +317,10 @@ GOOGLE_SHEETS_CREDENTIALS_JSON=&lt;your-service-account-json&gt;</pre>
 
     function switchImportTab(tab) {
         // Update tab buttons
-        document.querySelectorAll('.bulk-import-tab').forEach(btn => btn.classList.remove('active'));
-        event.target.classList.add('active');
+        document.querySelectorAll('.bulk-import-tab').forEach(btn => {
+            btn.classList.remove('active');
+            if (btn.dataset.tab === tab) btn.classList.add('active');
+        });
 
         // Update tab contents
         document.getElementById('csvTab').classList.remove('active');

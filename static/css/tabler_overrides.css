@@ -776,3 +776,215 @@ tr:hover .github-org-edit { opacity: 1; }
     from { transform: translateX(100%); opacity: 0; }
     to { transform: translateX(0); opacity: 1; }
 }
+
+/* =============================================================================
+   RESPONSIVE LAYOUT FIXES
+   ============================================================================= */
+
+/* --- Below 1024px: Collapse Tabler sidebar to icon-only -------------------- */
+@media (max-width: 1023px) {
+    /* Override Tabler's navbar-expand-lg so sidebar collapses below 1024px */
+    .navbar.navbar-vertical.navbar-expand-lg {
+        width: 56px;
+        overflow: hidden;
+    }
+    .navbar.navbar-vertical.navbar-expand-lg .navbar-brand .ms-2,
+    .navbar.navbar-vertical.navbar-expand-lg .nav-link-title {
+        display: none;
+    }
+    .navbar.navbar-vertical.navbar-expand-lg .nav-link {
+        justify-content: center;
+        padding-left: 0;
+        padding-right: 0;
+    }
+    .navbar.navbar-vertical.navbar-expand-lg .nav-link-icon {
+        margin-right: 0;
+    }
+    .navbar.navbar-vertical.navbar-expand-lg .navbar-brand {
+        justify-content: center;
+        padding-left: 0;
+        padding-right: 0;
+    }
+    .navbar.navbar-vertical.navbar-expand-lg .navbar-brand a {
+        justify-content: center;
+    }
+    /* Ensure the collapse is shown (icon-only, not hidden) */
+    .navbar.navbar-vertical.navbar-expand-lg .navbar-collapse {
+        display: flex !important;
+    }
+    .navbar.navbar-vertical.navbar-expand-lg .navbar-toggler {
+        display: none;
+    }
+    /* Adjust page wrapper to account for narrower sidebar */
+    .page-wrapper {
+        margin-left: 56px;
+    }
+    /* Also collapse the custom sidebar from style.css if present */
+    .sidebar {
+        width: 56px !important;
+    }
+    .sidebar .sidebar-label,
+    .sidebar .sidebar-brand-text,
+    .sidebar .sidebar-section-label {
+        display: none;
+    }
+    .sidebar .sidebar-item {
+        justify-content: center;
+        padding: 8px;
+    }
+    .main-area {
+        margin-left: 56px;
+    }
+}
+
+/* --- Below 768px: Detail panels become full-screen overlays ---------------- */
+@media (max-width: 767px) {
+    /* Account detail panel (accounts page) — full-screen overlay */
+    .account-detail-panel {
+        width: 100vw !important;
+        max-width: 100vw !important;
+        left: 0;
+        right: 0;
+    }
+
+    /* Report drawer — full-screen overlay */
+    #report-drawer {
+        width: 100vw !important;
+        right: -100vw;
+    }
+    #report-drawer.drawer-open {
+        right: 0;
+    }
+
+    /* Contributors sidebar — full-screen overlay */
+    .contrib-sidebar {
+        width: 100vw !important;
+        max-width: 100vw !important;
+    }
+
+    /* Tables get horizontal scroll */
+    .accounts-table-container,
+    .contrib-table-container,
+    .table-responsive,
+    .card .table-responsive {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    /* Enrollment toolbar — make it fit mobile width */
+    .enrollment-toolbar {
+        left: 1rem;
+        right: 1rem;
+        transform: none;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        padding: 0.5rem 0.75rem;
+    }
+    @keyframes toolbar-slide-up {
+        from { opacity: 0; transform: translateY(16px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    .toolbar-select {
+        min-width: 0;
+        flex: 1;
+    }
+
+    /* Sidebar fully collapsed on mobile */
+    .navbar.navbar-vertical.navbar-expand-lg {
+        width: 0;
+        min-width: 0;
+        overflow: hidden;
+        border: none;
+    }
+    .navbar.navbar-vertical.navbar-expand-lg .navbar-collapse {
+        display: none !important;
+    }
+    .navbar.navbar-vertical.navbar-expand-lg .navbar-toggler {
+        display: block;
+        position: fixed;
+        top: 0.5rem;
+        left: 0.5rem;
+        z-index: 1060;
+        background: var(--tblr-bg-surface, #fff);
+        border: 1px solid var(--tblr-border-color, #e2e8f0);
+        border-radius: 6px;
+        padding: 0.35rem;
+    }
+    /* When sidebar menu is expanded on mobile, show as overlay */
+    .navbar.navbar-vertical.navbar-expand-lg .navbar-collapse.show {
+        display: flex !important;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 240px;
+        height: 100vh;
+        background: var(--tblr-bg-surface-dark, #1a237e);
+        z-index: 1055;
+        flex-direction: column;
+        overflow-y: auto;
+        box-shadow: 4px 0 24px rgba(0, 0, 0, 0.2);
+    }
+    .navbar.navbar-vertical.navbar-expand-lg .navbar-collapse.show .nav-link-title,
+    .navbar.navbar-vertical.navbar-expand-lg .navbar-collapse.show .navbar-brand .ms-2 {
+        display: inline;
+    }
+    .page-wrapper {
+        margin-left: 0 !important;
+    }
+    .main-area {
+        margin-left: 0 !important;
+    }
+
+    /* Bulk command bar — stack on mobile */
+    .bulk-command-bar {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.5rem;
+        left: 0.5rem;
+        right: 0.5rem;
+        width: auto;
+    }
+}
+
+/* --- Between 768px and 1023px (tablet): panel adjustments ------------------ */
+@media (min-width: 768px) and (max-width: 1023px) {
+    /* Account detail panel — narrower for tablet */
+    .account-detail-panel {
+        width: 380px;
+        max-width: 50vw;
+    }
+
+    /* Contributors sidebar — narrower for tablet */
+    .contrib-sidebar {
+        width: 360px;
+        max-width: 50vw;
+    }
+
+    /* Report drawer — cap at 60vw on tablet */
+    #report-drawer {
+        width: 60vw;
+        right: -60vw;
+    }
+    #report-drawer.drawer-open {
+        right: 0;
+    }
+}
+
+/* --- Ensure table containers always allow horizontal scroll on small screens */
+@media (max-width: 1023px) {
+    .accounts-table-container {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    .contrib-table-container {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    /* Prevent table text from wrapping oddly */
+    .accounts-table {
+        min-width: 700px;
+    }
+    .contrib-table {
+        min-width: 600px;
+    }
+}
