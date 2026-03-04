@@ -2109,7 +2109,14 @@ def api_campaigns_create():
     sequence_name = (data.get('sequence_name') or '').strip() or None
     sequence_config = (data.get('sequence_config') or '').strip() or None
 
-    result = create_campaign(name, prompt, assets, sequence_id, sequence_name, sequence_config)
+    tone = (data.get('tone') or '').strip() or None
+    contact_cap = data.get('contact_cap', 20)
+    verified_emails_only = data.get('verified_emails_only', 0)
+    review_in_tool = data.get('review_in_tool', 1)
+
+    result = create_campaign(name, prompt, assets, sequence_id, sequence_name, sequence_config,
+                             contact_cap=contact_cap, verified_emails_only=verified_emails_only,
+                             review_in_tool=review_in_tool, tone=tone)
 
     # If personas provided, save them
     personas_data = data.get('personas', [])
@@ -2391,6 +2398,10 @@ def _discovery_worker(batch_id: int):
         accounts = [dict(r) for r in cursor.fetchall()]
         conn.close()
 
+        # Campaign-level filters
+        verified_only = bool(campaign.get('verified_emails_only'))
+        contact_cap = campaign.get('contact_cap') or 20
+
         seen_emails = set()
         contacts_to_insert = []
         total_discovered = 0
@@ -2399,8 +2410,11 @@ def _discovery_worker(batch_id: int):
             domain = _derive_domain(acct.get('website', ''), acct.get('company_name', ''))
             update_enrollment_batch(batch_id,
                 current_phase=f'Discovering at {acct["company_name"]} ({i+1}/{len(accounts)})...')
+            acct_contacts = 0  # Track per-account contact count for cap
 
             for persona in personas:
+                if acct_contacts >= contact_cap:
+                    break  # EC-009: enforce contact cap per account
                 titles = persona.get('titles', [])
                 seniorities = persona.get('seniorities', [])
                 if not titles and not seniorities:
@@ -2417,6 +2431,8 @@ def _discovery_worker(batch_id: int):
                         search_payload['person_titles'] = titles
                     if seniorities:
                         search_payload['person_seniorities'] = seniorities
+                    if verified_only:
+                        search_payload['email_status'] = ['verified']
 
                     resp = req.post(
                         'https://api.apollo.io/v1/mixed_people/search',
@@ -2432,10 +2448,13 @@ def _discovery_worker(batch_id: int):
                     people = data.get('people', [])
 
                     for person in people:
+                        if acct_contacts >= contact_cap:
+                            break
                         email = (person.get('email') or '').lower().strip()
                         if not email or email in seen_emails:
                             continue
                         seen_emails.add(email)
+                        acct_contacts += 1
 
                         contacts_to_insert.append({
                             'batch_id': batch_id,

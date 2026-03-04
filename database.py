@@ -6109,14 +6109,18 @@ def get_reporadar_campaign_id() -> Optional[int]:
 
 
 def create_campaign(name: str, prompt: str, assets: list, sequence_id: str = None,
-                    sequence_name: str = None, sequence_config: str = None) -> dict:
+                    sequence_name: str = None, sequence_config: str = None,
+                    contact_cap: int = 20, verified_emails_only: int = 0,
+                    review_in_tool: int = 1, tone: str = None) -> dict:
     """Create a new campaign."""
     conn = get_db_connection()
     cursor = conn.cursor()
     campaign_id = _insert_returning_id(cursor, '''
-        INSERT INTO campaigns (name, prompt, assets, sequence_id, sequence_name, sequence_config, status)
-        VALUES (?, ?, ?, ?, ?, ?, 'draft')
-    ''', (name, prompt, json.dumps(assets), sequence_id, sequence_name, sequence_config))
+        INSERT INTO campaigns (name, prompt, assets, sequence_id, sequence_name, sequence_config,
+                               contact_cap, verified_emails_only, review_in_tool, tone, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft')
+    ''', (name, prompt, json.dumps(assets), sequence_id, sequence_name, sequence_config,
+          contact_cap, verified_emails_only, review_in_tool, tone))
     conn.commit()
     conn.close()
     return {'id': campaign_id, 'name': name}
@@ -6124,7 +6128,8 @@ def create_campaign(name: str, prompt: str, assets: list, sequence_id: str = Non
 
 def update_campaign(campaign_id: int, **kwargs) -> bool:
     """Update a campaign's fields. Only provided kwargs are updated."""
-    allowed = {'name', 'prompt', 'assets', 'sequence_id', 'sequence_name', 'sequence_config', 'status'}
+    allowed = {'name', 'prompt', 'assets', 'sequence_id', 'sequence_name', 'sequence_config',
+               'status', 'contact_cap', 'verified_emails_only', 'review_in_tool', 'links_json', 'tone'}
     updates = {k: v for k, v in kwargs.items() if k in allowed}
     if not updates:
         return False
