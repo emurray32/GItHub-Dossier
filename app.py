@@ -6,6 +6,8 @@ A Flask application for analyzing GitHub organizations for localization signals.
 import atexit
 import hmac
 import json
+import shutil
+import tempfile
 import re
 import time
 import os
@@ -1609,17 +1611,26 @@ def export_db():
     if not os.path.exists(db_path):
         return jsonify({'status': 'error', 'message': f'Database file not found at {db_path}'}), 404
 
-    def generate():
-        with open(db_path, 'rb') as f:
-            while True:
-                chunk = f.read(8192)
-                if not chunk:
-                    break
-                yield chunk
+    # Copy to temp file to avoid SQLite file lock conflicts
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix='.db')
+    tmp.close()
+    shutil.copy2(db_path, tmp.name)
 
+    def generate():
+        try:
+            with open(tmp.name, 'rb') as f:
+                while True:
+                    chunk = f.read(8192)
+                    if not chunk:
+                        break
+                    yield chunk
+        finally:
+            os.unlink(tmp.name)
+
+    size = os.path.getsize(tmp.name)
     response = Response(stream_with_context(generate()), mimetype='application/octet-stream')
     response.headers['Content-Disposition'] = 'attachment; filename=lead_machine.db'
-    response.headers['Content-Length'] = os.path.getsize(db_path)
+    response.headers['Content-Length'] = size
     return response
 
 
