@@ -489,7 +489,7 @@
                     enrolledEls.forEach(el => { el.textContent = data.total_enrolled; });
                     generatedEls.forEach(el => { el.textContent = data.total_generated; });
                 })
-                .catch(() => {});
+                .catch(err => console.warn('Campaign stats fetch failed:', err));
         });
     })();
     const SENIORITY_OPTIONS = [

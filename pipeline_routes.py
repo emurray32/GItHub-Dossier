@@ -5,6 +5,7 @@ Register this blueprint in app.py:
     from pipeline_routes import pipeline_bp
     app.register_blueprint(pipeline_bp)
 """
+import logging
 import threading
 from flask import Blueprint, jsonify, request
 from validators import validate_positive_int, validate_company_name, validate_apollo_id
@@ -22,7 +23,8 @@ def api_pipeline_status():
     except ImportError:
         return jsonify({'status': 'error', 'message': 'Pipeline module not available'}), 503
     except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
+        logging.error("[PIPELINE] %s: %s", request.path, e)
+        return jsonify({'status': 'error', 'message': 'Internal error. Check server logs.'}), 500
 
 
 @pipeline_bp.route('/api/pipeline/health', methods=['GET'])
@@ -37,7 +39,8 @@ def api_pipeline_health():
     except ImportError:
         return jsonify({'status': 'unhealthy', 'message': 'Pipeline module not available'}), 503
     except Exception as e:
-        return jsonify({'status': 'unhealthy', 'message': str(e)}), 503
+        logging.error("[PIPELINE] Health check failed: %s", e)
+        return jsonify({'status': 'unhealthy', 'message': 'Health check failed. Check server logs.'}), 503
 
 
 @pipeline_bp.route('/api/pipeline/trigger', methods=['POST'])
@@ -59,7 +62,8 @@ def api_pipeline_trigger():
     except ImportError:
         return jsonify({'status': 'error', 'message': 'Pipeline module not available'}), 503
     except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
+        logging.error("[PIPELINE] %s: %s", request.path, e)
+        return jsonify({'status': 'error', 'message': 'Internal error. Check server logs.'}), 500
 
 
 @pipeline_bp.route('/api/pipeline/pause', methods=['POST'])
@@ -80,7 +84,8 @@ def api_pipeline_pause():
     except ImportError:
         return jsonify({'status': 'error', 'message': 'Pipeline module not available'}), 503
     except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
+        logging.error("[PIPELINE] %s: %s", request.path, e)
+        return jsonify({'status': 'error', 'message': 'Internal error. Check server logs.'}), 500
 
 
 @pipeline_bp.route('/api/pipeline/runs', methods=['GET'])
@@ -104,7 +109,8 @@ def api_pipeline_runs():
     except ImportError:
         return jsonify({'status': 'error', 'message': 'Pipeline module not available'}), 503
     except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
+        logging.error("[PIPELINE] %s: %s", request.path, e)
+        return jsonify({'status': 'error', 'message': 'Internal error. Check server logs.'}), 500
 
 
 @pipeline_bp.route('/api/pipeline/circuit-breakers', methods=['GET'])
@@ -120,7 +126,8 @@ def api_circuit_breakers():
     except ImportError:
         return jsonify({'status': 'error', 'message': 'Circuit breaker module not available'}), 503
     except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
+        logging.error("[PIPELINE] %s: %s", request.path, e)
+        return jsonify({'status': 'error', 'message': 'Internal error. Check server logs.'}), 500
 
 
 @pipeline_bp.route('/api/pipeline/circuit-breakers/<service>/reset', methods=['POST'])
@@ -140,7 +147,8 @@ def api_circuit_breaker_reset(service):
     except ImportError:
         return jsonify({'status': 'error', 'message': 'Circuit breaker module not available'}), 503
     except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
+        logging.error("[PIPELINE] %s: %s", request.path, e)
+        return jsonify({'status': 'error', 'message': 'Internal error. Check server logs.'}), 500
 
 
 @pipeline_bp.route('/api/pipeline/config', methods=['GET', 'POST'])
@@ -177,7 +185,8 @@ def api_pipeline_config():
     except ImportError:
         return jsonify({'status': 'error', 'message': 'Pipeline module not available'}), 503
     except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
+        logging.error("[PIPELINE] %s: %s", request.path, e)
+        return jsonify({'status': 'error', 'message': 'Internal error. Check server logs.'}), 500
 
 
 # ---------------------------------------------------------------------------
@@ -233,13 +242,19 @@ def api_pipeline_discover_contacts():
 
     if run_async:
         def _run_discovery():
-            total_new = 0
-            for aid in account_ids:
-                result = auto_discover_contacts(aid, batch_id=batch_id, personas=personas)
-                total_new += result.get('new', 0)
-            if batch_id:
-                update_enrollment_batch(batch_id, discovered=total_new,
-                                        current_phase='discovery_complete')
+            try:
+                total_new = 0
+                for aid in account_ids:
+                    result = auto_discover_contacts(aid, batch_id=batch_id, personas=personas)
+                    total_new += result.get('new', 0)
+                if batch_id:
+                    update_enrollment_batch(batch_id, discovered=total_new,
+                                            current_phase='discovery_complete')
+            except Exception as e:
+                logging.error("[PIPELINE] Background discovery failed: %s", e)
+                if batch_id:
+                    update_enrollment_batch(batch_id, status='failed',
+                                            error_message=str(e)[:500])
 
         t = threading.Thread(target=_run_discovery, daemon=True)
         t.start()
@@ -307,7 +322,12 @@ def api_pipeline_bulk_enroll():
 
     if run_async:
         def _run_enrollment():
-            bulk_enroll_contacts(batch_id, contact_ids=contact_ids, limit=limit)
+            try:
+                bulk_enroll_contacts(batch_id, contact_ids=contact_ids, limit=limit)
+            except Exception as e:
+                logging.error("[PIPELINE] Background enrollment failed: %s", e)
+                update_enrollment_batch(batch_id, status='failed',
+                                        error_message=str(e)[:500])
 
         t = threading.Thread(target=_run_enrollment, daemon=True)
         t.start()

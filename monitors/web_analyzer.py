@@ -8,8 +8,10 @@ This module provides comprehensive website analysis including:
 - Quality assessment metrics
 """
 
+import ipaddress
 import requests
 from bs4 import BeautifulSoup
+import socket
 import time
 import re
 from typing import Dict, Any, Optional, List
@@ -443,6 +445,19 @@ class WebAnalyzer:
         }
         self.timeout = 15
 
+    @staticmethod
+    def _is_private_ip(hostname: str) -> bool:
+        """Check if hostname resolves to a private/reserved IP (SSRF protection)."""
+        try:
+            addr = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
+            for family, _, _, _, sockaddr in addr:
+                ip = ipaddress.ip_address(sockaddr[0])
+                if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+                    return True
+        except (socket.gaierror, ValueError):
+            return True  # unresolvable = block
+        return False
+
     def fetch_website(self, url: str) -> Dict[str, Any]:
         """
         Fetch website content and extract comprehensive information.
@@ -459,6 +474,12 @@ class WebAnalyzer:
         # Ensure URL has protocol
         if not url.startswith(('http://', 'https://')):
             url = 'https://' + url
+
+        # SSRF protection: block private/internal IPs
+        from urllib.parse import urlparse
+        hostname = urlparse(url).hostname
+        if hostname and self._is_private_ip(hostname):
+            raise ValueError(f"URL resolves to private/reserved IP — blocked for security")
 
         try:
             start_time = time.time()

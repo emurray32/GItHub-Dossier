@@ -190,7 +190,7 @@
         {% for contact in report.ai_analysis.key_engineering_contacts %}
         {% set details = report.scan_data.contributors.get(contact.login, {}) if report.scan_data.contributors else {} %}
         <div class="contact-card contributor-card" data-contributor-login="{{ contact.login }}"
-             onclick="selectContributor(this, {{ contact.name|tojson }}, {{ contact.login|tojson }}, {{ report.company_name|tojson }})">
+             onclick='selectContributor(this, {{ contact.name|tojson }}, {{ contact.login|tojson }}, {{ report.company_name|tojson }})'>
           <img src="{{ details.avatar_url or 'https://github.com/identicons/' ~ contact.login ~ '.png' }}"
                class="contact-avatar" alt="{{ contact.name }}">
           <div class="contact-body">
@@ -202,7 +202,7 @@
             <div class="contact-reason">{{ contact.outreach_reason }}</div>
           </div>
           <div class="contact-actions">
-            <button class="btn-sm btn-fetch-email" onclick="event.stopPropagation(); fetchApolloEmail(this, {{ contact.name|tojson }}, {{ report.company_name|tojson }})" data-login="{{ contact.login }}">
+            <button class="btn-sm btn-fetch-email" onclick='event.stopPropagation(); fetchApolloEmail(this, {{ contact.name|tojson }}, {{ report.company_name|tojson }})' data-login="{{ contact.login }}">
               Find Email
             </button>
           </div>
