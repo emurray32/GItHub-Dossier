@@ -491,19 +491,30 @@ def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[obje
         yield _sse_log("No active repositories found. Organization may have private repos only.")
         repos = []  # Continue with empty list
 
-    # Select top repos for deep scan
-    # NEW HEURISTIC: Mega-Corp check to handle massive orgs (PostHog, etc)
-    is_mega_corp = False
+    # Select top repos for deep scan using 3-tier prioritization
+    total_repos = len(repos)
+    small_threshold = getattr(Config, 'REPO_TIER_SMALL_THRESHOLD', 30)
+    mid_threshold = getattr(Config, 'REPO_TIER_MID_THRESHOLD', 100)
+    mid_cap = getattr(Config, 'REPO_TIER_MID_SCAN_CAP', 40)
+    large_cap = getattr(Config, 'REPO_TIER_LARGE_SCAN_CAP', 25)
+
+    if total_repos < small_threshold:
+        repos_to_scan = repos  # Small org: scan ALL
+        yield _sse_log(f"Small org ({total_repos} repos): scanning all repositories")
+    elif total_repos < mid_threshold:
+        repos_to_scan = repos[:mid_cap]
+        yield _sse_log(f"Mid-size org ({total_repos} repos): scanning top {mid_cap} repositories")
+    else:
+        repos_to_scan = repos[:large_cap]
+        yield _sse_log(f"Large org ({total_repos} repos): scanning top {large_cap} repositories")
+
+    # Enforce hard cap
+    repos_to_scan = repos_to_scan[:Config.MAX_REPOS_TO_SCAN]
+
+    # Detect mega-corp for signal weighting (used later in tier calculation)
     total_stars_top_10 = sum(r.get('stargazers_count', 0) for r in repos[:10])
     public_repos_count = org_data.get('public_repos', 0)
-
-    if public_repos_count > 200 or total_stars_top_10 > 5000:
-        is_mega_corp = True
-        yield _sse_log(f"⚠️ MEGA-CORP DETECTED: {org_login} has {public_repos_count} repos and {total_stars_top_10} stars in top 10.")
-        yield _sse_log("Limiting scan to top 30 highest-value repositories to prevent timeout.")
-        repos_to_scan = repos[:30]
-    else:
-        repos_to_scan = repos[:Config.MAX_REPOS_TO_SCAN]
+    is_mega_corp = public_repos_count > 200 or total_stars_top_10 > 5000
 
     original_repos_to_scan = repos_to_scan.copy()  # Keep original list for tier calculation
     last_scanned_at = _parse_timestamp(last_scanned_timestamp)

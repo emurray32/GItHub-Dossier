@@ -185,10 +185,19 @@ class Config:
     WEBHOOK_URL = os.getenv('WEBHOOK_URL')
 
     # Scan Configuration
-    MAX_REPOS_TO_SCAN = 50  # Top N most active repos to consider
+    MAX_REPOS_TO_SCAN = 50  # Hard cap: never scan more than 50 repos per org
     REPOS_PER_PHASE = 5     # Top N repos to scan deeply per phase (full 10-signal deep scan)
     REPO_INACTIVITY_DAYS = 730  # Skip repos not pushed in this many days (2 years)
     REPO_INACTIVITY_FALLBACK = 10  # If all repos filtered, take top N anyway
+
+    # 3-tier repo prioritization by org size
+    REPO_TIER_SMALL_THRESHOLD = 30   # Under 30 repos: scan ALL
+    REPO_TIER_MID_THRESHOLD = 100    # 30-100 repos: scan top 40
+    REPO_TIER_MID_SCAN_CAP = 40
+    REPO_TIER_LARGE_SCAN_CAP = 25    # 100+ repos: scan top 25
+
+    # i18n keyword override — repos matching these jump to top of scan queue
+    I18N_REPO_KEYWORDS = ['i18n', 'l10n', 'locale', 'translation', 'internationalization']
 
     # Priority keywords for repo selection
     PRIORITY_KEYWORDS = [
@@ -201,7 +210,8 @@ class Config:
     HIGH_VALUE_PATTERNS = [
         'web', 'app', 'frontend', 'mobile', 'ios', 'android',
         'server', 'api', 'ui', 'client', 'monorepo',
-        'website', 'marketing', 'dashboard', 'console'
+        'website', 'marketing', 'dashboard', 'console',
+        'platform', 'backend', 'core', 'main'
     ]
 
     # Low-value repository patterns (non-core repos to deprioritize)
