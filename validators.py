@@ -280,6 +280,105 @@ def validate_scope(scope: str, allowed: tuple) -> Tuple[bool, str]:
     return True, scope
 
 
+def validate_csv_upload(file_storage, max_size_mb: int = 5) -> tuple:
+    """Validate a CSV file upload for campaign account import.
+
+    Args:
+        file_storage: werkzeug FileStorage object from request.files
+        max_size_mb: maximum file size in MB
+
+    Returns:
+        (is_valid, result) where result is error message string on failure,
+        or dict {'valid_rows': [...], 'rejected_rows': [...]} on success.
+    """
+    import csv
+    import io
+
+    if not file_storage or not file_storage.filename:
+        return False, 'No file provided'
+
+    filename = file_storage.filename.lower()
+    if not filename.endswith('.csv'):
+        return False, 'File must be a .csv file'
+
+    # Read file content
+    try:
+        content = file_storage.read()
+        file_storage.seek(0)  # Reset for potential re-read
+    except Exception as e:
+        return False, f'Failed to read file: {str(e)[:100]}'
+
+    if len(content) > max_size_mb * 1024 * 1024:
+        return False, f'File exceeds {max_size_mb}MB limit'
+
+    if len(content) == 0:
+        return False, 'File is empty'
+
+    # Parse CSV
+    try:
+        text = content.decode('utf-8-sig')  # Handle BOM
+    except UnicodeDecodeError:
+        try:
+            text = content.decode('latin-1')
+        except UnicodeDecodeError:
+            return False, 'File encoding not supported (use UTF-8)'
+
+    reader = csv.DictReader(io.StringIO(text))
+    headers = reader.fieldnames or []
+    headers_lower = [h.lower().strip() for h in headers]
+
+    # Check required columns
+    has_company = any(h in ('company_name', 'company', 'name', 'account_name') for h in headers_lower)
+    has_domain = any(h in ('website', 'domain', 'website_url', 'company_website', 'url') for h in headers_lower)
+
+    if not has_company:
+        return False, 'CSV must have a company_name column (also accepts: company, name, account_name)'
+    if not has_domain:
+        return False, 'CSV must have a website/domain column (also accepts: website_url, company_website, url)'
+
+    # Map headers to canonical names
+    company_col = next(h for h, hl in zip(headers, headers_lower) if hl in ('company_name', 'company', 'name', 'account_name'))
+    domain_col = next(h for h, hl in zip(headers, headers_lower) if hl in ('website', 'domain', 'website_url', 'company_website', 'url'))
+
+    valid_rows = []
+    rejected_rows = []
+
+    for i, row in enumerate(reader, start=2):  # start=2 because row 1 is header
+        company_name = (row.get(company_col) or '').strip()
+        domain = (row.get(domain_col) or '').strip()
+
+        if not company_name:
+            rejected_rows.append({'row': i, 'company_name': '', 'reason': 'Missing company name'})
+            continue
+
+        if not domain:
+            rejected_rows.append({'row': i, 'company_name': company_name, 'reason': 'Missing website/domain'})
+            continue
+
+        # Clean domain: strip protocol and trailing slash
+        clean_domain = domain.lower().replace('https://', '').replace('http://', '').rstrip('/')
+
+        # Build row dict with all columns
+        parsed = {
+            'company_name': company_name,
+            'website': clean_domain,
+        }
+        # Map remaining columns
+        for header in headers:
+            hl = header.lower().strip()
+            if hl in ('company_name', 'company', 'name', 'account_name'):
+                continue  # Already mapped
+            if hl in ('website', 'domain', 'website_url', 'company_website', 'url'):
+                continue  # Already mapped
+            val = (row.get(header) or '').strip()
+            if val:
+                parsed[hl] = val
+
+        valid_rows.append(parsed)
+
+    return True, {'valid_rows': valid_rows, 'rejected_rows': rejected_rows, 'headers': headers}
+
+
 def sanitize_for_log(value: str, max_length: int = 200) -> str:
     """Sanitize a string for safe inclusion in log messages.
 

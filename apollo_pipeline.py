@@ -119,7 +119,8 @@ def apollo_api_call(method, url, **kwargs):
 # ---------------------------------------------------------------------------
 
 def auto_discover_contacts(account_id, batch_id=None, personas=None,
-                           existing_emails=None):
+                           existing_emails=None, verified_emails_only=False,
+                           contact_cap=None):
     """Discover contacts for a monitored account via Apollo People Search.
 
     Args:
@@ -129,6 +130,8 @@ def auto_discover_contacts(account_id, batch_id=None, personas=None,
                   If None, looks up campaign_personas for active campaigns.
         existing_emails: optional set of lowercase emails for dedup. If provided,
                          skips the DB query to load enrollment emails.
+        verified_emails_only: if True, only return contacts with verified emails
+        contact_cap: max contacts to return per account (default unlimited)
 
     Returns:
         dict with 'contacts' (list of dicts), 'total', 'new', 'skipped_dedup'
@@ -194,6 +197,8 @@ def auto_discover_contacts(account_id, batch_id=None, personas=None,
         }
         if seniorities:
             search_payload['person_seniorities'] = seniorities
+        if verified_emails_only:
+            search_payload['email_status'] = ['verified']
 
         try:
             resp = apollo_api_call('post',
@@ -208,8 +213,30 @@ def auto_discover_contacts(account_id, batch_id=None, personas=None,
 
             people = resp.json().get('people', [])
             for person in people:
-                email = _filter_personal_email(person.get('email') or '')
+                raw_email = person.get('email') or ''
+                email = _filter_personal_email(raw_email)
                 if not email:
+                    # EC-008: Track contacts with no email instead of silently skipping
+                    if person.get('first_name') or person.get('last_name'):
+                        no_email_contact = {
+                            'account_id': account_id,
+                            'company_name': company_name,
+                            'company_domain': domain,
+                            'persona_name': persona.get('persona_name', ''),
+                            'sequence_id': persona.get('sequence_id', ''),
+                            'sequence_name': persona.get('sequence_name', ''),
+                            'apollo_person_id': person.get('id', ''),
+                            'first_name': person.get('first_name', ''),
+                            'last_name': person.get('last_name', ''),
+                            'email': '',
+                            'title': person.get('title', ''),
+                            'seniority': person.get('seniority', ''),
+                            'linkedin_url': person.get('linkedin_url', ''),
+                            'status': 'email_not_available',
+                        }
+                        if batch_id:
+                            no_email_contact['batch_id'] = batch_id
+                        all_contacts.append(no_email_contact)
                     continue
 
                 if email.lower() in existing_emails:
@@ -252,6 +279,14 @@ def auto_discover_contacts(account_id, batch_id=None, personas=None,
             )
             continue
 
+    # Enforce contact cap per account (EC-009: sort by seniority before truncating)
+    capped = 0
+    if contact_cap and len(all_contacts) > contact_cap:
+        seniority_rank = {'c_suite': 0, 'vp': 1, 'director': 2, 'manager': 3, 'senior': 4}
+        all_contacts.sort(key=lambda c: seniority_rank.get(c.get('seniority', ''), 9))
+        capped = len(all_contacts) - contact_cap
+        all_contacts = all_contacts[:contact_cap]
+
     # Persist discovered contacts
     if batch_id and all_contacts:
         db.bulk_create_enrollment_contacts(all_contacts)
@@ -259,9 +294,10 @@ def auto_discover_contacts(account_id, batch_id=None, personas=None,
 
     return {
         'contacts': all_contacts,
-        'total': len(all_contacts) + skipped_dedup,
+        'total': len(all_contacts) + skipped_dedup + capped,
         'new': len(all_contacts),
         'skipped_dedup': skipped_dedup,
+        'capped': capped,
     }
 
 
@@ -385,9 +421,21 @@ def bulk_enroll_contacts(batch_id, contact_ids=None, limit=25):
 
     db.update_enrollment_batch(batch_id, status='in_progress', current_phase='enrolling')
 
-    # Resolve sending email account
-    # TODO: Use sequence_mappings.owner_email_account_id when set, falling back to global _resolve_email_account()
-    email_account_id = _resolve_email_account()
+    # Resolve sending email account — prefer per-sequence override, fall back to global
+    email_account_id = None
+    if contacts:
+        seq_id = contacts[0].get('sequence_id', '')
+        if seq_id:
+            with db.db_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    'SELECT owner_email_account_id FROM sequence_mappings WHERE sequence_id = ?',
+                    (seq_id,))
+                row = cursor.fetchone()
+                if row and row['owner_email_account_id']:
+                    email_account_id = row['owner_email_account_id']
+    if not email_account_id:
+        email_account_id = _resolve_email_account()
     if not email_account_id:
         db.update_enrollment_batch(batch_id, current_phase='error',
                                    error_message='No active Apollo email account found')
@@ -465,12 +513,20 @@ def bulk_enroll_contacts(batch_id, contact_ids=None, limit=25):
     # Update batch counters
     db.update_enrollment_batch(batch_id, enrolled=enrolled, failed=failed, skipped=skipped)
 
-    # Check if batch is complete
+    # Check if batch is complete (EC-023: distinguish completed vs completed_with_errors)
     summary = db.get_enrollment_batch_summary(batch_id)
     remaining = summary.get('discovered', 0) + summary.get('generated', 0)
     if remaining == 0:
+        total_failed = summary.get('failed', 0)
+        total_enrolled = summary.get('enrolled', 0)
+        if total_failed > 0 and total_enrolled == 0:
+            final_status = 'failed'
+        elif total_failed > 0:
+            final_status = 'completed_with_errors'
+        else:
+            final_status = 'completed'
         db.update_enrollment_batch(
-            batch_id, status='completed', current_phase='done',
+            batch_id, status=final_status, current_phase='done',
             completed_at=datetime.utcnow().isoformat()
         )
 

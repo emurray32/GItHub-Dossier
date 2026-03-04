@@ -221,6 +221,17 @@ def _perform_sync(
         # Check if already exists in database
         existing = get_account_by_company_case_insensitive(company_name)
         if existing:
+            # EC-024: Skip archived accounts — do not re-import
+            if existing.get('archived_at'):
+                sync_result['skipped_existing'].append({
+                    'company': company_name,
+                    'row': row_idx,
+                    'reason': 'archived'
+                })
+                added_rows.append(row_idx)
+                print(f"[SHEETS-SYNC] Skipping archived account: {company_name}")
+                continue
+
             sync_result['skipped_existing'].append({
                 'company': company_name,
                 'row': row_idx,

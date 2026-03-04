@@ -334,6 +334,11 @@ def init_db() -> None:
     _safe_add_column(cursor, 'monitored_accounts', 'previous_tier INTEGER')
     _safe_add_column(cursor, 'monitored_accounts', 'imported_at TIMESTAMP')
     _safe_add_column(cursor, 'monitored_accounts', 'import_source TEXT')
+    # Extended account columns for CSV import (Phase 2)
+    _safe_add_column(cursor, 'monitored_accounts', 'industry TEXT')
+    _safe_add_column(cursor, 'monitored_accounts', 'employee_count TEXT')
+    _safe_add_column(cursor, 'monitored_accounts', 'hq_location TEXT')
+    _safe_add_column(cursor, 'monitored_accounts', 'funding_stage TEXT')
     _safe_add_column(cursor, 'reports', 'is_favorite INTEGER DEFAULT 0')
 
     cursor.execute('''
@@ -653,6 +658,8 @@ def init_db() -> None:
     # Migrate contributors table: add org membership classification columns
     _safe_add_column(cursor, 'contributors', 'is_org_member INTEGER DEFAULT NULL')
     _safe_add_column(cursor, 'contributors', 'github_profile_company TEXT')
+    # Phase 5: Staleness tracking — last contribution activity date
+    _safe_add_column(cursor, 'contributors', 'last_activity_at TIMESTAMP')
 
     cursor.execute('''
         CREATE INDEX IF NOT EXISTS idx_contributors_org_member
@@ -722,6 +729,12 @@ def init_db() -> None:
         CREATE INDEX IF NOT EXISTS idx_campaigns_status
         ON campaigns(status)
     ''')
+    # Campaign extensions for AE workflow (Phase 2)
+    _safe_add_column(cursor, 'campaigns', 'contact_cap INTEGER DEFAULT 20')
+    _safe_add_column(cursor, 'campaigns', 'verified_emails_only INTEGER DEFAULT 0')
+    _safe_add_column(cursor, 'campaigns', 'review_in_tool INTEGER DEFAULT 1')
+    _safe_add_column(cursor, 'campaigns', 'links_json TEXT')
+    _safe_add_column(cursor, 'campaigns', 'tone TEXT')
 
     # Sequence mappings table - central view of Apollo sequences and their campaign assignments
     cursor.execute(_adapt_ddl('''
@@ -1413,13 +1426,13 @@ TIER_CONFIG = {
 }
 
 # Tier-based automatic rescan intervals (in days)
-# Hot leads get scanned most frequently, cold/invalid much less
+# Aggressive cadence: ~50 Tier 2 accounts max, manageable GitHub API budget
 TIER_SCAN_INTERVALS = {
-    TIER_PREPARING: 3,     # Hot leads: every 3 days (catch momentum fast)
-    TIER_THINKING:  7,     # Warm leads: weekly (watch for progression)
-    TIER_LAUNCHED:  14,    # Already launched: biweekly (monitor for growth pain)
-    TIER_TRACKING:  30,    # No signals: monthly (check-in for new activity)
-    TIER_INVALID:   90,    # Not found: quarterly (maybe they created a GitHub org)
+    TIER_PREPARING: 1,     # Hot leads: daily (catch momentum fast)
+    TIER_THINKING:  2,     # Warm leads: every 2 days (watch for progression)
+    TIER_TRACKING:  3,     # No signals: every 3 days (check for new activity)
+    TIER_LAUNCHED:  7,     # Already launched: weekly (monitor for growth pain)
+    # TIER_INVALID excluded: Tier 4 (Not Found) accounts are never auto-rescanned
 }
 
 
@@ -1877,7 +1890,7 @@ def update_account_status(scan_data: dict, report_id: Optional[int] = None) -> d
 
     now = datetime.now().isoformat()
     # Set next scan due based on the tier-specific interval
-    scan_interval_days = TIER_SCAN_INTERVALS.get(new_tier, 7)
+    scan_interval_days = TIER_SCAN_INTERVALS.get(new_tier, 3)
     next_scan = datetime.now() + timedelta(days=scan_interval_days)
     next_scan_iso = next_scan.isoformat()
 
@@ -2008,7 +2021,7 @@ def add_account_to_tier_0(company_name: str, github_org: str, annual_revenue: Op
 
     now = datetime.now().isoformat()
     # New accounts start at Tier 0, use that interval for next scan
-    scan_interval_days = TIER_SCAN_INTERVALS.get(TIER_TRACKING, 30)
+    scan_interval_days = TIER_SCAN_INTERVALS.get(TIER_TRACKING, 3)
     next_scan = datetime.now() + timedelta(days=scan_interval_days)
     next_scan_iso = next_scan.isoformat()
 
@@ -3315,14 +3328,14 @@ def get_refreshable_accounts() -> list:
     Get accounts eligible for refresh based on tier-specific intervals.
 
     Each tier has its own rescan cadence (see TIER_SCAN_INTERVALS):
-    - Tier 2 (Preparing/Hot):  every 3 days
-    - Tier 1 (Thinking/Warm):  every 7 days
-    - Tier 3 (Launched):       every 14 days
-    - Tier 0 (Tracking/Cold):  every 30 days
-    - Tier 4 (Not Found):      every 90 days
+    - Tier 2 (Preparing/Hot):  daily
+    - Tier 1 (Thinking/Warm):  every 2 days
+    - Tier 0 (Tracking/Cold):  every 3 days
+    - Tier 3 (Launched):       weekly
+    - Tier 4 (Not Found):      never (excluded from auto-rescan)
 
-    Selection: accounts whose last_scanned_at exceeds their tier's interval,
-    or have never been scanned. Archived accounts are included only for Tier 4.
+    Selection: non-archived accounts (excluding Tier 4) whose last_scanned_at
+    exceeds their tier's interval, or have never been scanned.
 
     Returns:
         List of account dictionaries eligible for refresh, ordered by priority.
@@ -3337,22 +3350,18 @@ def get_refreshable_accounts() -> list:
     dt_thinking = _adapt_datetime(f'-{TIER_SCAN_INTERVALS[TIER_THINKING]} days')
     dt_launched = _adapt_datetime(f'-{TIER_SCAN_INTERVALS[TIER_LAUNCHED]} days')
     dt_tracking = _adapt_datetime(f'-{TIER_SCAN_INTERVALS[TIER_TRACKING]} days')
-    dt_invalid = _adapt_datetime(f'-{TIER_SCAN_INTERVALS[TIER_INVALID]} days')
 
     cursor.execute(f'''
         SELECT ma.*
         FROM monitored_accounts ma
-        WHERE (
-              ma.archived_at IS NULL
-              OR ma.current_tier = 4
-          )
+        WHERE ma.archived_at IS NULL
+          AND ma.current_tier != 4
           AND (
               ma.last_scanned_at IS NULL
               OR (ma.current_tier = 2 AND ma.last_scanned_at < {dt_preparing})
               OR (ma.current_tier = 1 AND ma.last_scanned_at < {dt_thinking})
               OR (ma.current_tier = 3 AND ma.last_scanned_at < {dt_launched})
               OR (ma.current_tier = 0 AND ma.last_scanned_at < {dt_tracking})
-              OR (ma.current_tier = 4 AND ma.last_scanned_at < {dt_invalid})
           )
           AND (ma.scan_status IS NULL OR ma.scan_status = 'idle')
           AND ma.github_org IS NOT NULL
@@ -3363,7 +3372,6 @@ def get_refreshable_accounts() -> list:
                 WHEN 1 THEN 2  -- Then warm
                 WHEN 3 THEN 3  -- Then launched
                 WHEN 0 THEN 4  -- Then tracking
-                WHEN 4 THEN 5  -- Not found last
             END,
             ma.last_scanned_at ASC  -- Oldest scans first within each tier
     ''')
@@ -3398,49 +3406,25 @@ def get_scheduled_rescan_summary() -> dict:
     for tier, interval_days in TIER_SCAN_INTERVALS.items():
         tier_config = TIER_CONFIG.get(tier, TIER_CONFIG[TIER_TRACKING])
 
-        # Total accounts in this tier (include archived for tier 4)
-        if tier == TIER_INVALID:
-            cursor.execute(
-                'SELECT COUNT(*) as cnt FROM monitored_accounts WHERE current_tier = ?',
-                (tier,)
-            )
-        else:
-            cursor.execute(
-                'SELECT COUNT(*) as cnt FROM monitored_accounts WHERE current_tier = ? AND archived_at IS NULL',
-                (tier,)
-            )
+        cursor.execute(
+            'SELECT COUNT(*) as cnt FROM monitored_accounts WHERE current_tier = ? AND archived_at IS NULL',
+            (tier,)
+        )
         total = cursor.fetchone()['cnt']
 
         # How many are overdue (past their interval)
         dt_threshold = _adapt_datetime(f'-{interval_days} days')
-        if tier == TIER_INVALID:
-            cursor.execute(f'''
-                SELECT COUNT(*) as cnt FROM monitored_accounts
-                WHERE current_tier = ?
-                  AND github_org IS NOT NULL AND github_org != ''
-                  AND (last_scanned_at IS NULL OR last_scanned_at < {dt_threshold})
-                  AND (scan_status IS NULL OR scan_status = 'idle')
-            ''', (tier,))
-        else:
-            cursor.execute(f'''
-                SELECT COUNT(*) as cnt FROM monitored_accounts
-                WHERE current_tier = ? AND archived_at IS NULL
-                  AND github_org IS NOT NULL AND github_org != ''
-                  AND (last_scanned_at IS NULL OR last_scanned_at < {dt_threshold})
-                  AND (scan_status IS NULL OR scan_status = 'idle')
-            ''', (tier,))
+        cursor.execute(f'''
+            SELECT COUNT(*) as cnt FROM monitored_accounts
+            WHERE current_tier = ? AND archived_at IS NULL
+              AND github_org IS NOT NULL AND github_org != ''
+              AND (last_scanned_at IS NULL OR last_scanned_at < {dt_threshold})
+              AND (scan_status IS NULL OR scan_status = 'idle')
+        ''', (tier,))
         due_now = cursor.fetchone()['cnt']
 
         # Soonest upcoming scan in this tier
-        if tier == TIER_INVALID:
-            cursor.execute('''
-                SELECT MIN(next_scan_due) as soonest FROM monitored_accounts
-                WHERE current_tier = ?
-                  AND github_org IS NOT NULL AND github_org != ''
-                  AND next_scan_due IS NOT NULL
-            ''', (tier,))
-        else:
-            cursor.execute('''
+        cursor.execute('''
                 SELECT MIN(next_scan_due) as soonest FROM monitored_accounts
                 WHERE current_tier = ? AND archived_at IS NULL
                   AND github_org IS NOT NULL AND github_org != ''
@@ -3457,6 +3441,22 @@ def get_scheduled_rescan_summary() -> dict:
             'interval_days': interval_days,
             'next_due_at': next_due_at,
         }
+
+    # Tier 4 (Not Found): never auto-rescanned, but include count for visibility
+    tier4_config = TIER_CONFIG.get(TIER_INVALID, TIER_CONFIG[TIER_TRACKING])
+    cursor.execute(
+        'SELECT COUNT(*) as cnt FROM monitored_accounts WHERE current_tier = ?',
+        (TIER_INVALID,)
+    )
+    tier4_total = cursor.fetchone()['cnt']
+    summary[TIER_INVALID] = {
+        'tier_name': tier4_config['name'],
+        'tier_status': tier4_config['status'],
+        'total': tier4_total,
+        'due_now': 0,
+        'interval_days': None,
+        'next_due_at': None,
+    }
 
     conn.close()
     return summary
@@ -5553,8 +5553,8 @@ def save_contributor(contributor_data: dict) -> Optional[int]:
                 github_login, github_url, name, email, blog,
                 company, company_size, annual_revenue, repo_source,
                 github_org, contributions, insight,
-                is_org_member, github_profile_company
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                is_org_member, github_profile_company, last_activity_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(github_login, github_org) DO UPDATE SET
                 name = COALESCE(NULLIF(excluded.name, ''), contributors.name),
                 email = COALESCE(NULLIF(excluded.email, ''), contributors.email),
@@ -5567,6 +5567,7 @@ def save_contributor(contributor_data: dict) -> Optional[int]:
                 insight = COALESCE(NULLIF(excluded.insight, ''), contributors.insight),
                 is_org_member = excluded.is_org_member,
                 github_profile_company = COALESCE(NULLIF(excluded.github_profile_company, ''), contributors.github_profile_company),
+                last_activity_at = COALESCE(excluded.last_activity_at, contributors.last_activity_at),
                 updated_at = CURRENT_TIMESTAMP
         ''', (
             contributor_data.get('github_login', ''),
@@ -5582,7 +5583,8 @@ def save_contributor(contributor_data: dict) -> Optional[int]:
             contributor_data.get('contributions', 0),
             contributor_data.get('insight', ''),
             contributor_data.get('is_org_member'),
-            contributor_data.get('github_profile_company', '')
+            contributor_data.get('github_profile_company', ''),
+            contributor_data.get('last_activity_at')
         ))
         conn.commit()
         return contributor_id
@@ -5614,8 +5616,8 @@ def save_contributors_batch(contributors: list) -> int:
                     github_login, github_url, name, email, blog,
                     company, company_size, annual_revenue, repo_source,
                     github_org, contributions, insight,
-                    is_org_member, github_profile_company
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    is_org_member, github_profile_company, last_activity_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(github_login, github_org) DO UPDATE SET
                     name = COALESCE(NULLIF(excluded.name, ''), contributors.name),
                     email = COALESCE(NULLIF(excluded.email, ''), contributors.email),
@@ -5628,6 +5630,7 @@ def save_contributors_batch(contributors: list) -> int:
                     insight = COALESCE(NULLIF(excluded.insight, ''), contributors.insight),
                     is_org_member = excluded.is_org_member,
                     github_profile_company = COALESCE(NULLIF(excluded.github_profile_company, ''), contributors.github_profile_company),
+                    last_activity_at = COALESCE(excluded.last_activity_at, contributors.last_activity_at),
                     updated_at = CURRENT_TIMESTAMP
             ''', (
                 c.get('github_login', ''),
@@ -5643,7 +5646,8 @@ def save_contributors_batch(contributors: list) -> int:
                 c.get('contributions', 0),
                 c.get('insight', ''),
                 c.get('is_org_member'),
-                c.get('github_profile_company', '')
+                c.get('github_profile_company', ''),
+                c.get('last_activity_at')
             ))
             saved += 1
 
@@ -6105,14 +6109,18 @@ def get_reporadar_campaign_id() -> Optional[int]:
 
 
 def create_campaign(name: str, prompt: str, assets: list, sequence_id: str = None,
-                    sequence_name: str = None, sequence_config: str = None) -> dict:
+                    sequence_name: str = None, sequence_config: str = None,
+                    contact_cap: int = 20, verified_emails_only: int = 0,
+                    review_in_tool: int = 1, tone: str = None) -> dict:
     """Create a new campaign."""
     conn = get_db_connection()
     cursor = conn.cursor()
     campaign_id = _insert_returning_id(cursor, '''
-        INSERT INTO campaigns (name, prompt, assets, sequence_id, sequence_name, sequence_config, status)
-        VALUES (?, ?, ?, ?, ?, ?, 'draft')
-    ''', (name, prompt, json.dumps(assets), sequence_id, sequence_name, sequence_config))
+        INSERT INTO campaigns (name, prompt, assets, sequence_id, sequence_name, sequence_config,
+                               contact_cap, verified_emails_only, review_in_tool, tone, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft')
+    ''', (name, prompt, json.dumps(assets), sequence_id, sequence_name, sequence_config,
+          contact_cap, verified_emails_only, review_in_tool, tone))
     conn.commit()
     conn.close()
     return {'id': campaign_id, 'name': name}
@@ -6120,7 +6128,8 @@ def create_campaign(name: str, prompt: str, assets: list, sequence_id: str = Non
 
 def update_campaign(campaign_id: int, **kwargs) -> bool:
     """Update a campaign's fields. Only provided kwargs are updated."""
-    allowed = {'name', 'prompt', 'assets', 'sequence_id', 'sequence_name', 'sequence_config', 'status'}
+    allowed = {'name', 'prompt', 'assets', 'sequence_id', 'sequence_name', 'sequence_config',
+               'status', 'contact_cap', 'verified_emails_only', 'review_in_tool', 'links_json', 'tone'}
     updates = {k: v for k, v in kwargs.items() if k in allowed}
     if not updates:
         return False
