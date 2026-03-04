@@ -151,7 +151,7 @@ _PUBLIC_ENDPOINTS = {
     'inject_cache_buster', 'add_security_headers',
     'auth.login', 'auth.logout',
     'health_check',
-    'export_db',
+    'export_db', 'sync_debug',
 }
 
 
@@ -1662,7 +1662,14 @@ _PG_TYPE_MAP = {
 
 
 def _pg_to_sqlite(sqlite_path: str) -> None:
-    """Copy all public tables from PostgreSQL into a new SQLite file."""
+    """Copy all public tables from PostgreSQL into a new SQLite file.
+
+    Keeps schema minimal (no NOT NULL, no DEFAULT) since this is a
+    read-only data export for local development. Only preserves column
+    names, types, and primary keys.
+    """
+    from datetime import datetime as _dt, date as _date, time as _time
+    from decimal import Decimal as _Decimal
     import psycopg2
     import psycopg2.extras
 
@@ -1682,8 +1689,7 @@ def _pg_to_sqlite(sqlite_path: str) -> None:
         for table in tables:
             # Get column info
             pg_cur.execute("""
-                SELECT column_name, data_type, is_nullable,
-                       column_default, character_maximum_length
+                SELECT column_name, data_type, column_default
                 FROM information_schema.columns
                 WHERE table_schema = 'public' AND table_name = %s
                 ORDER BY ordinal_position
@@ -1693,37 +1699,33 @@ def _pg_to_sqlite(sqlite_path: str) -> None:
             if not columns:
                 continue
 
-            # Build CREATE TABLE for SQLite
+            # Build CREATE TABLE — minimal schema, no constraints
             col_defs = []
             col_names = []
             for col in columns:
                 name = col['column_name']
                 pg_type = col['data_type']
                 sl_type = _PG_TYPE_MAP.get(pg_type, 'TEXT')
-                nullable = col['is_nullable'] == 'YES'
                 default = col['column_default']
 
                 col_names.append(name)
 
-                # Detect primary key (serial columns have nextval default)
+                # Detect serial primary key (nextval in default)
                 if default and 'nextval' in str(default):
-                    col_defs.append(f'"{name}" INTEGER PRIMARY KEY AUTOINCREMENT')
+                    col_defs.append(f'"{name}" INTEGER PRIMARY KEY')
                 else:
-                    parts = [f'"{name}" {sl_type}']
-                    if not nullable:
-                        parts.append('NOT NULL')
-                    if default and 'nextval' not in str(default):
-                        clean = str(default).replace("::text", "").replace("::integer", "")
-                        parts.append(f'DEFAULT {clean}')
-                    col_defs.append(' '.join(parts))
+                    col_defs.append(f'"{name}" {sl_type}')
 
             create_sql = f'CREATE TABLE IF NOT EXISTS "{table}" ({", ".join(col_defs)})'
             sl_conn.execute(create_sql)
 
-            # Copy data
+            # Copy data in batches to limit memory usage
             pg_cur.execute(f'SELECT * FROM "{table}"')
-            rows = pg_cur.fetchall()
-            if rows:
+            while True:
+                rows = pg_cur.fetchmany(1000)
+                if not rows:
+                    break
+
                 placeholders = ', '.join(['?'] * len(col_names))
                 quoted_cols = ', '.join(f'"{c}"' for c in col_names)
                 insert_sql = f'INSERT INTO "{table}" ({quoted_cols}) VALUES ({placeholders})'
@@ -1733,10 +1735,20 @@ def _pg_to_sqlite(sqlite_path: str) -> None:
                     vals = []
                     for c in col_names:
                         v = row[c]
-                        if isinstance(v, (dict, list)):
-                            v = json.dumps(v)
+                        if v is None:
+                            pass  # keep None
                         elif isinstance(v, bool):
                             v = int(v)
+                        elif isinstance(v, (dict, list)):
+                            v = json.dumps(v)
+                        elif isinstance(v, _Decimal):
+                            v = float(v)
+                        elif isinstance(v, (_dt, _date, _time)):
+                            v = str(v)
+                        elif isinstance(v, memoryview):
+                            v = bytes(v)
+                        elif isinstance(v, bytes):
+                            pass  # sqlite3 handles bytes
                         vals.append(v)
                     converted.append(tuple(vals))
 
@@ -1746,6 +1758,51 @@ def _pg_to_sqlite(sqlite_path: str) -> None:
     finally:
         sl_conn.close()
         pg_conn.close()
+
+
+@app.route('/sync/debug')
+def sync_debug():
+    """Diagnostic endpoint — returns DB backend info and table stats.
+
+    Uses the same auth as export-db. Lightweight, no heavy processing.
+    """
+    sync_token = os.environ.get('DOSSIER_SYNC_TOKEN', '')
+    if not sync_token:
+        return jsonify({'status': 'error', 'message': 'DOSSIER_SYNC_TOKEN not configured'}), 503
+    provided = request.headers.get('X-Sync-Token') or request.args.get('sync_token')
+    if not provided or not hmac.compare_digest(provided, sync_token):
+        return jsonify({'status': 'error', 'message': 'Unauthorized'}), 401
+
+    try:
+        import traceback as _tb
+        from database import _USE_POSTGRES, db_connection
+
+        info = {
+            'backend': 'postgresql' if _USE_POSTGRES else 'sqlite',
+            'database_url_set': bool(Config.DATABASE_URL),
+            'database_path': Config.DATABASE_PATH,
+            'tables': {},
+        }
+
+        with db_connection() as conn:
+            cur = conn.cursor()
+            if _USE_POSTGRES:
+                cur.execute("""
+                    SELECT table_name FROM information_schema.tables
+                    WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+                """)
+                tables = [r[0] for r in cur.fetchall()]
+            else:
+                cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
+                tables = [r[0] for r in cur.fetchall()]
+
+            for t in sorted(tables):
+                cur.execute(f'SELECT COUNT(*) FROM "{t}"')
+                info['tables'][t] = cur.fetchone()[0]
+
+        return jsonify(info)
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e), 'traceback': _tb.format_exc()}), 500
 
 
 @app.route('/api/health')

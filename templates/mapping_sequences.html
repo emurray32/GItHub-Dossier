@@ -305,11 +305,12 @@
     window.syncFromApollo = async function() {
         const btn = document.getElementById('btn-sync');
         const icon = document.getElementById('sync-icon');
-        const originalText = btn.textContent.trim();
+        const setBtnText = (text) => btn.childNodes.forEach(n => { if (n.nodeType === 3) n.textContent = text; });
+        const resetBtn = () => { btn.disabled = false; icon.classList.remove('spin'); setBtnText(' Sync from Apollo'); };
+
         btn.disabled = true;
         icon.classList.add('spin');
-        // Replace button text with "Syncing..." (keep the SVG icon)
-        btn.childNodes.forEach(n => { if (n.nodeType === 3) n.textContent = ' Syncing…'; });
+        setBtnText(' Syncing…');
 
         try {
             const resp = await fetch('/api/sequence-mappings/sync', { method: 'POST' });
@@ -319,15 +320,11 @@
                 setTimeout(() => window.location.reload(), 600);
             } else {
                 showToast(data.message || 'Sync failed', 'error');
-                btn.disabled = false;
-                icon.classList.remove('spin');
-                btn.childNodes.forEach(n => { if (n.nodeType === 3) n.textContent = ' Sync from Apollo'; });
+                resetBtn();
             }
         } catch(e) {
             showToast('Network error during sync', 'error');
-            btn.disabled = false;
-            icon.classList.remove('spin');
-            btn.childNodes.forEach(n => { if (n.nodeType === 3) n.textContent = ' Sync from Apollo'; });
+            resetBtn();
         }
     };
 
