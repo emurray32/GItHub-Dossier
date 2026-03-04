@@ -1609,21 +1609,18 @@ def export_db():
     if not os.path.exists(db_path):
         return jsonify({'status': 'error', 'message': f'Database file not found at {db_path}'}), 404
 
-    try:
-        return send_file(
-            db_path,
-            mimetype='application/octet-stream',
-            as_attachment=True,
-            download_name='lead_machine.db',
-        )
-    except TypeError:
-        # Older Flask versions use attachment_filename instead of download_name
-        return send_file(
-            db_path,
-            mimetype='application/octet-stream',
-            as_attachment=True,
-            attachment_filename='lead_machine.db',
-        )
+    def generate():
+        with open(db_path, 'rb') as f:
+            while True:
+                chunk = f.read(8192)
+                if not chunk:
+                    break
+                yield chunk
+
+    response = Response(stream_with_context(generate()), mimetype='application/octet-stream')
+    response.headers['Content-Disposition'] = 'attachment; filename=lead_machine.db'
+    response.headers['Content-Length'] = os.path.getsize(db_path)
+    return response
 
 
 @app.route('/api/health')
