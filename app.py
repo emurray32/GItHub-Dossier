@@ -947,9 +947,10 @@ MAX_PENDING_BATCH = int(os.environ.get('MAX_PENDING_BATCH', 100))
 
 # Maximum number of concurrent scans allowed to prevent GitHub API token exhaustion
 # When this many scans are actively running, new scans will be deferred
-MAX_CONCURRENT_SCANS = int(os.environ.get('MAX_CONCURRENT_SCANS', 5))
+MAX_CONCURRENT_SCANS = int(os.environ.get('MAX_CONCURRENT_SCANS', 2))
 # Minimum token pool remaining before we stop queuing new scans
-MIN_TOKEN_REMAINING_FOR_SCAN = int(os.environ.get('MIN_TOKEN_REMAINING_FOR_SCAN', 50))
+# Set high to prevent token exhaustion — each scan now checks up to 25 repos
+MIN_TOKEN_REMAINING_FOR_SCAN = int(os.environ.get('MIN_TOKEN_REMAINING_FOR_SCAN', 500))
 _scan_semaphore = threading.Semaphore(MAX_CONCURRENT_SCANS)
 _active_scan_count = 0
 _active_scan_lock = threading.Lock()
@@ -6617,6 +6618,16 @@ def _batch_rescan_worker(accounts, batch_size, delay_seconds):
             with _batch_rescan_lock:
                 should_delay = batch_idx < total_batches - 1 and not state['cancelled']
             if should_delay:
+                # Wait for tokens to recover before next batch
+                token_wait = 0
+                while not _can_queue_scan() and token_wait < 300:
+                    with _batch_rescan_lock:
+                        if state['cancelled']:
+                            break
+                    logging.info(f"[BATCH-RESCAN] Waiting for GitHub tokens to recover...")
+                    time.sleep(10)
+                    token_wait += 10
+
                 logging.info(f"[BATCH-RESCAN] Waiting {delay_seconds}s before next batch...")
                 # Sleep in small increments so cancel is responsive
                 for _ in range(delay_seconds):
