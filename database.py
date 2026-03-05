@@ -271,757 +271,756 @@ def db_connection():
 
 def init_db() -> None:
     """Initialize the database schema."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    cursor.execute(_adapt_ddl('''
-        CREATE TABLE IF NOT EXISTS reports (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            company_name TEXT NOT NULL,
-            github_org TEXT,
-            scan_data JSON,
-            ai_analysis JSON,
-            signals_found INTEGER DEFAULT 0,
-            repos_scanned INTEGER DEFAULT 0,
-            commits_analyzed INTEGER DEFAULT 0,
-            prs_analyzed INTEGER DEFAULT 0,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            scan_duration_seconds REAL
-        )
-    '''))
+        cursor.execute(_adapt_ddl('''
+            CREATE TABLE IF NOT EXISTS reports (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                company_name TEXT NOT NULL,
+                github_org TEXT,
+                scan_data JSON,
+                ai_analysis JSON,
+                signals_found INTEGER DEFAULT 0,
+                repos_scanned INTEGER DEFAULT 0,
+                commits_analyzed INTEGER DEFAULT 0,
+                prs_analyzed INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                scan_duration_seconds REAL
+            )
+        '''))
 
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_reports_company
-        ON reports(company_name)
-    ''')
-
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_reports_created
-        ON reports(created_at DESC)
-    ''')
-
-    # Monitored Accounts table for CRM-style tracking
-    cursor.execute(_adapt_ddl('''
-        CREATE TABLE IF NOT EXISTS monitored_accounts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            company_name TEXT NOT NULL UNIQUE,
-            github_org TEXT,
-            annual_revenue TEXT,
-            website TEXT,
-            notes TEXT,
-            current_tier INTEGER DEFAULT 0,
-            last_scanned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            status_changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            evidence_summary TEXT,
-            next_scan_due TIMESTAMP,
-            scan_status TEXT DEFAULT 'idle',
-            scan_progress TEXT,
-            scan_start_time TIMESTAMP
-        )
-    '''))
-
-    # Migrations: add columns if they don't exist (works for both SQLite and PostgreSQL)
-    _safe_add_column(cursor, 'monitored_accounts', 'annual_revenue TEXT')
-    _safe_add_column(cursor, 'monitored_accounts', 'notes TEXT')
-    _safe_add_column(cursor, 'monitored_accounts', 'website TEXT')
-    _safe_add_column(cursor, 'monitored_accounts', "scan_status TEXT DEFAULT 'idle'")
-    _safe_add_column(cursor, 'monitored_accounts', 'scan_progress TEXT')
-    _safe_add_column(cursor, 'monitored_accounts', 'scan_start_time TIMESTAMP')
-    _safe_add_column(cursor, 'monitored_accounts', 'last_scan_error TEXT')
-    _safe_add_column(cursor, 'monitored_accounts', 'archived_at TIMESTAMP')
-    _safe_add_column(cursor, 'monitored_accounts', 'metadata TEXT')
-    _safe_add_column(cursor, 'monitored_accounts', 'latest_report_id INTEGER')
-    _safe_add_column(cursor, 'monitored_accounts', 'previous_tier INTEGER')
-    _safe_add_column(cursor, 'monitored_accounts', 'imported_at TIMESTAMP')
-    _safe_add_column(cursor, 'monitored_accounts', 'import_source TEXT')
-    # Extended account columns for CSV import (Phase 2)
-    _safe_add_column(cursor, 'monitored_accounts', 'industry TEXT')
-    _safe_add_column(cursor, 'monitored_accounts', 'employee_count TEXT')
-    _safe_add_column(cursor, 'monitored_accounts', 'hq_location TEXT')
-    _safe_add_column(cursor, 'monitored_accounts', 'funding_stage TEXT')
-    _safe_add_column(cursor, 'reports', 'is_favorite INTEGER DEFAULT 0')
-
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_accounts_tier
-        ON monitored_accounts(current_tier DESC)
-    ''')
-
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_accounts_company
-        ON monitored_accounts(company_name)
-    ''')
-
-    # Index for archived accounts (efficient filtering by archive status)
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_accounts_archived
-        ON monitored_accounts(archived_at)
-    ''')
-
-    # Case-insensitive indices for faster JOINs and lookups
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_accounts_company_lower
-        ON monitored_accounts(LOWER(company_name))
-    ''')
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_accounts_org_lower
-        ON monitored_accounts(LOWER(github_org))
-    ''')
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_reports_company_lower
-        ON reports(LOWER(company_name))
-    ''')
-
-    # Index for fast latest_report_id lookups
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_accounts_latest_report
-        ON monitored_accounts(latest_report_id)
-    ''')
-
-    # Backfill latest_report_id for existing accounts (runs once, fast due to index)
-    cursor.execute('''
-        UPDATE monitored_accounts
-        SET latest_report_id = (
-            SELECT r.id FROM reports r
-            WHERE LOWER(r.company_name) = LOWER(monitored_accounts.company_name)
-            ORDER BY r.created_at DESC LIMIT 1
-        )
-        WHERE latest_report_id IS NULL
-    ''')
-
-    # System Settings table - key-value store
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS system_settings (
-            key TEXT PRIMARY KEY,
-            value TEXT
-        )
-    ''')
-
-    # Tier Audit Log - tracks before/after tier counts when auto-retier runs
-    cursor.execute(_adapt_ddl('''
-        CREATE TABLE IF NOT EXISTS tier_audit_log (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            triggered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            old_fingerprint TEXT,
-            new_fingerprint TEXT,
-            total_accounts INTEGER DEFAULT 0,
-            accounts_changed INTEGER DEFAULT 0,
-            tier_counts_before TEXT,
-            tier_counts_after TEXT,
-            changes_detail TEXT,
-            mass_change_blocked INTEGER DEFAULT 0
-        )
-    '''))
-
-    # System Stats table - daily usage tracking
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS system_stats (
-            date TEXT PRIMARY KEY,
-            scans_run INTEGER DEFAULT 0,
-            api_calls_estimated INTEGER DEFAULT 0,
-            webhooks_fired INTEGER DEFAULT 0
-        )
-    ''')
-
-    # Hourly API Stats table - tracks API calls per hour for rate limit display
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS hourly_api_stats (
-            hour_key TEXT PRIMARY KEY,
-            api_calls INTEGER DEFAULT 0
-        )
-    ''')
-
-    # Webhook Logs table - webhook delivery history
-    cursor.execute(_adapt_ddl('''
-        CREATE TABLE IF NOT EXISTS webhook_logs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            event_type TEXT NOT NULL,
-            company TEXT,
-            status TEXT NOT NULL
-        )
-    '''))
-
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_webhook_logs_timestamp
-        ON webhook_logs(timestamp DESC)
-    ''')
-
-    # Import Batches table - persistent queue for bulk imports
-    cursor.execute(_adapt_ddl('''
-        CREATE TABLE IF NOT EXISTS import_batches (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            status TEXT DEFAULT 'pending',
-            total_count INTEGER,
-            processed_count INTEGER DEFAULT 0,
-            companies_json TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    '''))
-
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_import_batches_status
-        ON import_batches(status)
-    ''')
-
-    # Scan Signals table - stores individual signals detected during scans
-    cursor.execute(_adapt_ddl('''
-        CREATE TABLE IF NOT EXISTS scan_signals (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            report_id INTEGER NOT NULL,
-            company_name TEXT NOT NULL,
-            signal_type TEXT NOT NULL,
-            description TEXT,
-            file_path TEXT,
-            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (report_id) REFERENCES reports(id) ON DELETE CASCADE
-        )
-    '''))
-
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_scan_signals_report
-        ON scan_signals(report_id)
-    ''')
-
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_scan_signals_company
-        ON scan_signals(company_name)
-    ''')
-
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_scan_signals_timestamp
-        ON scan_signals(timestamp DESC)
-    ''')
-
-    # Scoring V2: Add enrichment columns to scan_signals (idempotent)
-    for col_def in ['raw_strength REAL', 'age_in_days INTEGER', 'source_context TEXT', 'woe_value REAL', 'freshness_score REAL']:
-        _safe_add_column(cursor, 'scan_signals', col_def)
-
-    # Website Analyses table - stores website quality and localization assessments
-    cursor.execute(_adapt_ddl('''
-        CREATE TABLE IF NOT EXISTS website_analyses (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            account_id INTEGER,
-            company_name TEXT NOT NULL,
-            website_url TEXT NOT NULL,
-            localization_score INTEGER,
-            localization_grade TEXT,
-            quality_score INTEGER,
-            quality_grade TEXT,
-            tech_stack_json TEXT,
-            analysis_details_json TEXT,
-            ai_analysis TEXT,
-            analyzed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (account_id) REFERENCES monitored_accounts(id) ON DELETE SET NULL
-        )
-    '''))
-
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_website_analyses_account
-        ON website_analyses(account_id)
-    ''')
-
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_website_analyses_company
-        ON website_analyses(company_name)
-    ''')
-
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_website_analyses_analyzed_at
-        ON website_analyses(analyzed_at DESC)
-    ''')
-
-    # Set default webhook_enabled to false (paused) if not already set
-    if _USE_POSTGRES:
         cursor.execute('''
-            INSERT INTO system_settings (key, value)
-            VALUES (%s, %s)
-            ON CONFLICT DO NOTHING
-        ''', ('webhook_enabled', 'false'))
-    else:
-        cursor.execute('''
-            INSERT OR IGNORE INTO system_settings (key, value)
-            VALUES (?, ?)
-        ''', ('webhook_enabled', 'false'))
-
-    # WebScraper Accounts table - for website localization analysis at scale
-    cursor.execute(_adapt_ddl('''
-        CREATE TABLE IF NOT EXISTS webscraper_accounts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            company_name TEXT NOT NULL,
-            website_url TEXT,
-
-            -- Tier system (1-4, default 4)
-            current_tier INTEGER DEFAULT 4,
-            tier_label TEXT DEFAULT 'Not Scanned',
-
-            -- Scores (null until scanned)
-            localization_coverage_score INTEGER,
-            quality_gap_score INTEGER,
-            enterprise_score INTEGER,
-
-            -- Localization metrics
-            locale_count INTEGER DEFAULT 0,
-            languages_detected TEXT,
-            hreflang_tags TEXT,
-            i18n_libraries TEXT,
-
-            -- Scan metadata
-            last_scanned_at TIMESTAMP,
-            scan_status TEXT DEFAULT 'not_scanned',
-            scan_error TEXT,
-
-            -- AI prompt results storage
-            last_prompt TEXT,
-            last_prompt_result TEXT,
-            prompt_history TEXT,
-
-            -- Evidence & signals
-            signals_json TEXT,
-            evidence_summary TEXT,
-
-            -- Linked RepoRadar account (foreign key)
-            monitored_account_id INTEGER,
-
-            -- Metadata
-            notes TEXT,
-            archived_at TIMESTAMP,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-
-            FOREIGN KEY (monitored_account_id) REFERENCES monitored_accounts(id) ON DELETE SET NULL
-        )
-    '''))
-
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_webscraper_tier
-        ON webscraper_accounts(current_tier)
-    ''')
-
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_webscraper_company
-        ON webscraper_accounts(company_name)
-    ''')
-
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_webscraper_monitored_account
-        ON webscraper_accounts(monitored_account_id)
-    ''')
-
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_webscraper_archived
-        ON webscraper_accounts(archived_at)
-    ''')
-
-    # Contributors table - tracks top GitHub contributors across scanned repos
-    cursor.execute(_adapt_ddl('''
-        CREATE TABLE IF NOT EXISTS contributors (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            github_login TEXT NOT NULL,
-            github_url TEXT,
-            name TEXT,
-            email TEXT,
-            blog TEXT,
-            company TEXT,
-            company_size TEXT,
-            annual_revenue TEXT,
-            repo_source TEXT,
-            github_org TEXT,
-            contributions INTEGER DEFAULT 0,
-            insight TEXT,
-            apollo_status TEXT DEFAULT 'not_sent',
-            emails_sent INTEGER DEFAULT 0,
-            enrolled_in_sequence INTEGER DEFAULT 0,
-            sequence_name TEXT,
-            enrolled_at TIMESTAMP,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(github_login, github_org)
-        )
-    '''))
-
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_contributors_login
-        ON contributors(github_login)
-    ''')
-
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_contributors_org
-        ON contributors(github_org)
-    ''')
-
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_contributors_apollo
-        ON contributors(apollo_status)
-    ''')
-
-    # Migrate contributors table: add org membership classification columns
-    _safe_add_column(cursor, 'contributors', 'is_org_member INTEGER DEFAULT NULL')
-    _safe_add_column(cursor, 'contributors', 'github_profile_company TEXT')
-    # Phase 5: Staleness tracking — last contribution activity date
-    _safe_add_column(cursor, 'contributors', 'last_activity_at TIMESTAMP')
-
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_contributors_org_member
-        ON contributors(is_org_member)
-    ''')
-
-    # ScoreCard Scores table - persists account scores for team pipeline
-    cursor.execute(_adapt_ddl('''
-        CREATE TABLE IF NOT EXISTS scorecard_scores (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            account_id INTEGER NOT NULL UNIQUE,
-            company_name TEXT NOT NULL,
-            annual_revenue TEXT,
-            revenue_raw REAL DEFAULT 0,
-            locale_count INTEGER DEFAULT 0,
-            total_score INTEGER DEFAULT 0,
-            lang_score INTEGER DEFAULT 0,
-            systems_score INTEGER DEFAULT 0,
-            revenue_score INTEGER DEFAULT 0,
-            cohort TEXT DEFAULT 'B',
-            systems_json TEXT,
-            has_loc_titles INTEGER DEFAULT 0,
-            has_app_loc INTEGER DEFAULT 0,
-            apollo_status TEXT DEFAULT 'not_enrolled',
-            sequence_name TEXT,
-            enrolled_at TIMESTAMP,
-            scored_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (account_id) REFERENCES monitored_accounts(id) ON DELETE CASCADE
-        )
-    '''))
-
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_scorecard_account_id
-        ON scorecard_scores(account_id)
-    ''')
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_scorecard_total_score
-        ON scorecard_scores(total_score DESC)
-    ''')
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_scorecard_cohort
-        ON scorecard_scores(cohort)
-    ''')
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_scorecard_apollo_status
-        ON scorecard_scores(apollo_status)
-    ''')
-
-    # Campaigns table - links a custom prompt + assets to a mapped Apollo sequence
-    cursor.execute(_adapt_ddl('''
-        CREATE TABLE IF NOT EXISTS campaigns (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            prompt TEXT NOT NULL DEFAULT '',
-            assets TEXT DEFAULT '[]',
-            sequence_id TEXT,
-            sequence_name TEXT,
-            sequence_config TEXT,
-            status TEXT DEFAULT 'draft',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    '''))
-
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_campaigns_status
-        ON campaigns(status)
-    ''')
-    # Campaign extensions for AE workflow (Phase 2)
-    _safe_add_column(cursor, 'campaigns', 'contact_cap INTEGER DEFAULT 20')
-    _safe_add_column(cursor, 'campaigns', 'verified_emails_only INTEGER DEFAULT 0')
-    _safe_add_column(cursor, 'campaigns', 'review_in_tool INTEGER DEFAULT 1')
-    _safe_add_column(cursor, 'campaigns', 'links_json TEXT')
-    _safe_add_column(cursor, 'campaigns', 'tone TEXT')
-
-    # Sequence mappings table - central view of Apollo sequences and their campaign assignments
-    cursor.execute(_adapt_ddl('''
-        CREATE TABLE IF NOT EXISTS sequence_mappings (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            sequence_id TEXT NOT NULL UNIQUE,
-            sequence_name TEXT NOT NULL,
-            sequence_config TEXT,
-            num_steps INTEGER DEFAULT 0,
-            active BOOLEAN DEFAULT 1,
-            enabled INTEGER DEFAULT 0,
-            campaign_id INTEGER,
-            owner_name TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE SET NULL
-        )
-    '''))
-
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_sequence_mappings_campaign
-        ON sequence_mappings(campaign_id)
-    ''')
-
-    # Migration: add enabled column if missing (existing DBs)
-    _safe_add_column(cursor, 'sequence_mappings', 'enabled INTEGER DEFAULT 0')
-    _safe_add_column(cursor, 'sequence_mappings', 'owner_email_account_id TEXT DEFAULT ""')
-
-    # Campaign personas table - maps campaigns to persona groups with sequence assignments
-    cursor.execute(_adapt_ddl('''
-        CREATE TABLE IF NOT EXISTS campaign_personas (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            campaign_id INTEGER NOT NULL,
-            persona_name TEXT NOT NULL,
-            titles_json TEXT DEFAULT '[]',
-            seniorities_json TEXT DEFAULT '[]',
-            sequence_id TEXT NOT NULL,
-            sequence_name TEXT,
-            priority INTEGER DEFAULT 0,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE
-        )
-    '''))
-
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_campaign_personas_campaign
-        ON campaign_personas(campaign_id)
-    ''')
-
-    cursor.execute('''
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_campaign_personas_unique
-        ON campaign_personas(campaign_id, persona_name)
-    ''')
-
-    # Enrollment batches table - tracks batch enrollment runs
-    cursor.execute(_adapt_ddl('''
-        CREATE TABLE IF NOT EXISTS enrollment_batches (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            campaign_id INTEGER NOT NULL,
-            status TEXT DEFAULT 'pending',
-            total_accounts INTEGER DEFAULT 0,
-            total_contacts INTEGER DEFAULT 0,
-            discovered INTEGER DEFAULT 0,
-            generated INTEGER DEFAULT 0,
-            enrolled INTEGER DEFAULT 0,
-            failed INTEGER DEFAULT 0,
-            skipped INTEGER DEFAULT 0,
-            current_phase TEXT DEFAULT 'idle',
-            error_message TEXT,
-            account_ids_json TEXT DEFAULT '[]',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            started_at TIMESTAMP,
-            completed_at TIMESTAMP,
-            FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE
-        )
-    '''))
-
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_enrollment_batches_campaign
-        ON enrollment_batches(campaign_id)
-    ''')
-
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_enrollment_batches_status
-        ON enrollment_batches(status)
-    ''')
-
-    # Enrollment contacts table - per-contact audit trail
-    cursor.execute(_adapt_ddl('''
-        CREATE TABLE IF NOT EXISTS enrollment_contacts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            batch_id INTEGER NOT NULL,
-            account_id INTEGER,
-            company_name TEXT NOT NULL,
-            company_domain TEXT,
-            persona_name TEXT,
-            sequence_id TEXT,
-            sequence_name TEXT,
-            apollo_person_id TEXT,
-            first_name TEXT,
-            last_name TEXT,
-            email TEXT,
-            title TEXT,
-            seniority TEXT,
-            linkedin_url TEXT,
-            generated_emails_json TEXT,
-            status TEXT DEFAULT 'discovered',
-            apollo_contact_id TEXT,
-            error_message TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            enrolled_at TIMESTAMP,
-            FOREIGN KEY (batch_id) REFERENCES enrollment_batches(id) ON DELETE CASCADE
-        )
-    '''))
-
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_enrollment_contacts_batch
-        ON enrollment_contacts(batch_id)
-    ''')
-
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_enrollment_contacts_status
-        ON enrollment_contacts(status)
-    ''')
-
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_enrollment_contacts_email
-        ON enrollment_contacts(email)
-    ''')
-
-    # Migration: backfill campaign_personas from existing campaigns.sequence_id
-    if _USE_POSTGRES:
-        cursor.execute('''
-            INSERT INTO campaign_personas (campaign_id, persona_name, titles_json, seniorities_json, sequence_id, sequence_name)
-            SELECT id, 'Default', '[]', '[]', sequence_id, sequence_name
-            FROM campaigns
-            WHERE sequence_id IS NOT NULL AND sequence_id != ''
-            ON CONFLICT DO NOTHING
-        ''')
-    else:
-        cursor.execute('''
-            INSERT OR IGNORE INTO campaign_personas (campaign_id, persona_name, titles_json, seniorities_json, sequence_id, sequence_name)
-            SELECT id, 'Default', '[]', '[]', sequence_id, sequence_name
-            FROM campaigns
-            WHERE sequence_id IS NOT NULL AND sequence_id != ''
+            CREATE INDEX IF NOT EXISTS idx_reports_company
+            ON reports(company_name)
         ''')
 
-    # Audit Log table - tracks security-relevant events
-    cursor.execute(_adapt_ddl('''
-        CREATE TABLE IF NOT EXISTS audit_log (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            action TEXT NOT NULL,
-            user_or_key TEXT,
-            details TEXT,
-            ip_address TEXT
-        )
-    '''))
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_reports_created
+            ON reports(created_at DESC)
+        ''')
 
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_audit_log_timestamp
-        ON audit_log(timestamp DESC)
-    ''')
+        # Monitored Accounts table for CRM-style tracking
+        cursor.execute(_adapt_ddl('''
+            CREATE TABLE IF NOT EXISTS monitored_accounts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                company_name TEXT NOT NULL UNIQUE,
+                github_org TEXT,
+                annual_revenue TEXT,
+                website TEXT,
+                notes TEXT,
+                current_tier INTEGER DEFAULT 0,
+                last_scanned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                status_changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                evidence_summary TEXT,
+                next_scan_due TIMESTAMP,
+                scan_status TEXT DEFAULT 'idle',
+                scan_progress TEXT,
+                scan_start_time TIMESTAMP
+            )
+        '''))
 
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_audit_log_action
-        ON audit_log(action)
-    ''')
+        # Migrations: add columns if they don't exist (works for both SQLite and PostgreSQL)
+        _safe_add_column(cursor, 'monitored_accounts', 'annual_revenue TEXT')
+        _safe_add_column(cursor, 'monitored_accounts', 'notes TEXT')
+        _safe_add_column(cursor, 'monitored_accounts', 'website TEXT')
+        _safe_add_column(cursor, 'monitored_accounts', "scan_status TEXT DEFAULT 'idle'")
+        _safe_add_column(cursor, 'monitored_accounts', 'scan_progress TEXT')
+        _safe_add_column(cursor, 'monitored_accounts', 'scan_start_time TIMESTAMP')
+        _safe_add_column(cursor, 'monitored_accounts', 'last_scan_error TEXT')
+        _safe_add_column(cursor, 'monitored_accounts', 'archived_at TIMESTAMP')
+        _safe_add_column(cursor, 'monitored_accounts', 'metadata TEXT')
+        _safe_add_column(cursor, 'monitored_accounts', 'latest_report_id INTEGER')
+        _safe_add_column(cursor, 'monitored_accounts', 'previous_tier INTEGER')
+        _safe_add_column(cursor, 'monitored_accounts', 'imported_at TIMESTAMP')
+        _safe_add_column(cursor, 'monitored_accounts', 'import_source TEXT')
+        # Extended account columns for CSV import (Phase 2)
+        _safe_add_column(cursor, 'monitored_accounts', 'industry TEXT')
+        _safe_add_column(cursor, 'monitored_accounts', 'employee_count TEXT')
+        _safe_add_column(cursor, 'monitored_accounts', 'hq_location TEXT')
+        _safe_add_column(cursor, 'monitored_accounts', 'funding_stage TEXT')
+        _safe_add_column(cursor, 'reports', 'is_favorite INTEGER DEFAULT 0')
 
-    # -----------------------------------------------------------------
-    # Additional indexes for scale (500+ orgs, concurrent operations)
-    # -----------------------------------------------------------------
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_accounts_tier
+            ON monitored_accounts(current_tier DESC)
+        ''')
 
-    # monitored_accounts — scan scheduling and status queries
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_accounts_scan_status
-        ON monitored_accounts(scan_status)
-    ''')
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_accounts_last_scanned
-        ON monitored_accounts(last_scanned_at)
-    ''')
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_accounts_next_scan_due
-        ON monitored_accounts(next_scan_due)
-    ''')
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_accounts_company
+            ON monitored_accounts(company_name)
+        ''')
 
-    # scan_signals — signal type filtering and composite lookups
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_scan_signals_type
-        ON scan_signals(signal_type)
-    ''')
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_scan_signals_report_type
-        ON scan_signals(report_id, signal_type)
-    ''')
+        # Index for archived accounts (efficient filtering by archive status)
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_accounts_archived
+            ON monitored_accounts(archived_at)
+        ''')
 
-    # enrollment_contacts — batch processing and dedup
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_enrollment_contacts_batch_status
-        ON enrollment_contacts(batch_id, status)
-    ''')
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_enrollment_contacts_apollo_person
-        ON enrollment_contacts(apollo_person_id)
-    ''')
+        # Case-insensitive indices for faster JOINs and lookups
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_accounts_company_lower
+            ON monitored_accounts(LOWER(company_name))
+        ''')
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_accounts_org_lower
+            ON monitored_accounts(LOWER(github_org))
+        ''')
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_reports_company_lower
+            ON reports(LOWER(company_name))
+        ''')
 
-    # Prevent duplicate enrollments at the DB level
-    cursor.execute('''
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_enrollment_contacts_domain_person
-        ON enrollment_contacts(company_domain, apollo_person_id)
-        WHERE company_domain IS NOT NULL AND apollo_person_id IS NOT NULL
-    ''')
+        # Index for fast latest_report_id lookups
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_accounts_latest_report
+            ON monitored_accounts(latest_report_id)
+        ''')
 
-    # enrollment_batches — campaign + status lookups and ordering
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_enrollment_batches_campaign_status
-        ON enrollment_batches(campaign_id, status)
-    ''')
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_enrollment_batches_created
-        ON enrollment_batches(created_at DESC)
-    ''')
+        # Backfill latest_report_id for existing accounts (runs once, fast due to index)
+        cursor.execute('''
+            UPDATE monitored_accounts
+            SET latest_report_id = (
+                SELECT r.id FROM reports r
+                WHERE LOWER(r.company_name) = LOWER(monitored_accounts.company_name)
+                ORDER BY r.created_at DESC LIMIT 1
+            )
+            WHERE latest_report_id IS NULL
+        ''')
 
-    # contributors — email lookup for dedup/enrichment
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_contributors_email
-        ON contributors(email)
-    ''')
+        # System Settings table - key-value store
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS system_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            )
+        ''')
 
-    # reports — github_org lookup
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_reports_org
-        ON reports(github_org)
-    ''')
+        # Tier Audit Log - tracks before/after tier counts when auto-retier runs
+        cursor.execute(_adapt_ddl('''
+            CREATE TABLE IF NOT EXISTS tier_audit_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                triggered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                old_fingerprint TEXT,
+                new_fingerprint TEXT,
+                total_accounts INTEGER DEFAULT 0,
+                accounts_changed INTEGER DEFAULT 0,
+                tier_counts_before TEXT,
+                tier_counts_after TEXT,
+                changes_detail TEXT,
+                mass_change_blocked INTEGER DEFAULT 0
+            )
+        '''))
 
-    # webhook_logs — event type filtering
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_webhook_logs_event_type
-        ON webhook_logs(event_type)
-    ''')
+        # System Stats table - daily usage tracking
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS system_stats (
+                date TEXT PRIMARY KEY,
+                scans_run INTEGER DEFAULT 0,
+                api_calls_estimated INTEGER DEFAULT 0,
+                webhooks_fired INTEGER DEFAULT 0
+            )
+        ''')
 
-    # -----------------------------------------------------------------
-    # Pipeline tables (centralised here so init_db() creates everything)
-    # -----------------------------------------------------------------
-    cursor.execute(_adapt_ddl('''
-        CREATE TABLE IF NOT EXISTS pipeline_runs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            completed_at TIMESTAMP,
-            status TEXT DEFAULT 'running',
-            trigger_type TEXT DEFAULT 'scheduled',
-            steps_completed INTEGER DEFAULT 0,
-            steps_failed INTEGER DEFAULT 0,
-            error_log TEXT,
-            summary_json TEXT
-        )
-    '''))
+        # Hourly API Stats table - tracks API calls per hour for rate limit display
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS hourly_api_stats (
+                hour_key TEXT PRIMARY KEY,
+                api_calls INTEGER DEFAULT 0
+            )
+        ''')
 
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_pipeline_runs_status
-        ON pipeline_runs(status)
-    ''')
+        # Webhook Logs table - webhook delivery history
+        cursor.execute(_adapt_ddl('''
+            CREATE TABLE IF NOT EXISTS webhook_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                event_type TEXT NOT NULL,
+                company TEXT,
+                status TEXT NOT NULL
+            )
+        '''))
 
-    cursor.execute(_adapt_ddl('''
-        CREATE TABLE IF NOT EXISTS pipeline_step_results (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            run_id INTEGER NOT NULL,
-            step_name TEXT NOT NULL,
-            status TEXT DEFAULT 'running',
-            records_processed INTEGER DEFAULT 0,
-            errors INTEGER DEFAULT 0,
-            duration_ms INTEGER DEFAULT 0,
-            detail_json TEXT,
-            started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            completed_at TIMESTAMP,
-            FOREIGN KEY (run_id) REFERENCES pipeline_runs(id) ON DELETE CASCADE
-        )
-    '''))
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_webhook_logs_timestamp
+            ON webhook_logs(timestamp DESC)
+        ''')
 
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_pipeline_steps_run
-        ON pipeline_step_results(run_id)
-    ''')
+        # Import Batches table - persistent queue for bulk imports
+        cursor.execute(_adapt_ddl('''
+            CREATE TABLE IF NOT EXISTS import_batches (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                status TEXT DEFAULT 'pending',
+                total_count INTEGER,
+                processed_count INTEGER DEFAULT 0,
+                companies_json TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        '''))
 
-    conn.commit()
-    conn.close()
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_import_batches_status
+            ON import_batches(status)
+        ''')
+
+        # Scan Signals table - stores individual signals detected during scans
+        cursor.execute(_adapt_ddl('''
+            CREATE TABLE IF NOT EXISTS scan_signals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                report_id INTEGER NOT NULL,
+                company_name TEXT NOT NULL,
+                signal_type TEXT NOT NULL,
+                description TEXT,
+                file_path TEXT,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (report_id) REFERENCES reports(id) ON DELETE CASCADE
+            )
+        '''))
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_scan_signals_report
+            ON scan_signals(report_id)
+        ''')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_scan_signals_company
+            ON scan_signals(company_name)
+        ''')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_scan_signals_timestamp
+            ON scan_signals(timestamp DESC)
+        ''')
+
+        # Scoring V2: Add enrichment columns to scan_signals (idempotent)
+        for col_def in ['raw_strength REAL', 'age_in_days INTEGER', 'source_context TEXT', 'woe_value REAL', 'freshness_score REAL']:
+            _safe_add_column(cursor, 'scan_signals', col_def)
+
+        # Website Analyses table - stores website quality and localization assessments
+        cursor.execute(_adapt_ddl('''
+            CREATE TABLE IF NOT EXISTS website_analyses (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                account_id INTEGER,
+                company_name TEXT NOT NULL,
+                website_url TEXT NOT NULL,
+                localization_score INTEGER,
+                localization_grade TEXT,
+                quality_score INTEGER,
+                quality_grade TEXT,
+                tech_stack_json TEXT,
+                analysis_details_json TEXT,
+                ai_analysis TEXT,
+                analyzed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (account_id) REFERENCES monitored_accounts(id) ON DELETE SET NULL
+            )
+        '''))
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_website_analyses_account
+            ON website_analyses(account_id)
+        ''')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_website_analyses_company
+            ON website_analyses(company_name)
+        ''')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_website_analyses_analyzed_at
+            ON website_analyses(analyzed_at DESC)
+        ''')
+
+        # Set default webhook_enabled to false (paused) if not already set
+        if _USE_POSTGRES:
+            cursor.execute('''
+                INSERT INTO system_settings (key, value)
+                VALUES (%s, %s)
+                ON CONFLICT DO NOTHING
+            ''', ('webhook_enabled', 'false'))
+        else:
+            cursor.execute('''
+                INSERT OR IGNORE INTO system_settings (key, value)
+                VALUES (?, ?)
+            ''', ('webhook_enabled', 'false'))
+
+        # WebScraper Accounts table - for website localization analysis at scale
+        cursor.execute(_adapt_ddl('''
+            CREATE TABLE IF NOT EXISTS webscraper_accounts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                company_name TEXT NOT NULL,
+                website_url TEXT,
+
+                -- Tier system (1-4, default 4)
+                current_tier INTEGER DEFAULT 4,
+                tier_label TEXT DEFAULT 'Not Scanned',
+
+                -- Scores (null until scanned)
+                localization_coverage_score INTEGER,
+                quality_gap_score INTEGER,
+                enterprise_score INTEGER,
+
+                -- Localization metrics
+                locale_count INTEGER DEFAULT 0,
+                languages_detected TEXT,
+                hreflang_tags TEXT,
+                i18n_libraries TEXT,
+
+                -- Scan metadata
+                last_scanned_at TIMESTAMP,
+                scan_status TEXT DEFAULT 'not_scanned',
+                scan_error TEXT,
+
+                -- AI prompt results storage
+                last_prompt TEXT,
+                last_prompt_result TEXT,
+                prompt_history TEXT,
+
+                -- Evidence & signals
+                signals_json TEXT,
+                evidence_summary TEXT,
+
+                -- Linked RepoRadar account (foreign key)
+                monitored_account_id INTEGER,
+
+                -- Metadata
+                notes TEXT,
+                archived_at TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+                FOREIGN KEY (monitored_account_id) REFERENCES monitored_accounts(id) ON DELETE SET NULL
+            )
+        '''))
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_webscraper_tier
+            ON webscraper_accounts(current_tier)
+        ''')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_webscraper_company
+            ON webscraper_accounts(company_name)
+        ''')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_webscraper_monitored_account
+            ON webscraper_accounts(monitored_account_id)
+        ''')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_webscraper_archived
+            ON webscraper_accounts(archived_at)
+        ''')
+
+        # Contributors table - tracks top GitHub contributors across scanned repos
+        cursor.execute(_adapt_ddl('''
+            CREATE TABLE IF NOT EXISTS contributors (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                github_login TEXT NOT NULL,
+                github_url TEXT,
+                name TEXT,
+                email TEXT,
+                blog TEXT,
+                company TEXT,
+                company_size TEXT,
+                annual_revenue TEXT,
+                repo_source TEXT,
+                github_org TEXT,
+                contributions INTEGER DEFAULT 0,
+                insight TEXT,
+                apollo_status TEXT DEFAULT 'not_sent',
+                emails_sent INTEGER DEFAULT 0,
+                enrolled_in_sequence INTEGER DEFAULT 0,
+                sequence_name TEXT,
+                enrolled_at TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(github_login, github_org)
+            )
+        '''))
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_contributors_login
+            ON contributors(github_login)
+        ''')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_contributors_org
+            ON contributors(github_org)
+        ''')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_contributors_apollo
+            ON contributors(apollo_status)
+        ''')
+
+        # Migrate contributors table: add org membership classification columns
+        _safe_add_column(cursor, 'contributors', 'is_org_member INTEGER DEFAULT NULL')
+        _safe_add_column(cursor, 'contributors', 'github_profile_company TEXT')
+        # Phase 5: Staleness tracking — last contribution activity date
+        _safe_add_column(cursor, 'contributors', 'last_activity_at TIMESTAMP')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_contributors_org_member
+            ON contributors(is_org_member)
+        ''')
+
+        # ScoreCard Scores table - persists account scores for team pipeline
+        cursor.execute(_adapt_ddl('''
+            CREATE TABLE IF NOT EXISTS scorecard_scores (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                account_id INTEGER NOT NULL UNIQUE,
+                company_name TEXT NOT NULL,
+                annual_revenue TEXT,
+                revenue_raw REAL DEFAULT 0,
+                locale_count INTEGER DEFAULT 0,
+                total_score INTEGER DEFAULT 0,
+                lang_score INTEGER DEFAULT 0,
+                systems_score INTEGER DEFAULT 0,
+                revenue_score INTEGER DEFAULT 0,
+                cohort TEXT DEFAULT 'B',
+                systems_json TEXT,
+                has_loc_titles INTEGER DEFAULT 0,
+                has_app_loc INTEGER DEFAULT 0,
+                apollo_status TEXT DEFAULT 'not_enrolled',
+                sequence_name TEXT,
+                enrolled_at TIMESTAMP,
+                scored_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (account_id) REFERENCES monitored_accounts(id) ON DELETE CASCADE
+            )
+        '''))
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_scorecard_account_id
+            ON scorecard_scores(account_id)
+        ''')
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_scorecard_total_score
+            ON scorecard_scores(total_score DESC)
+        ''')
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_scorecard_cohort
+            ON scorecard_scores(cohort)
+        ''')
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_scorecard_apollo_status
+            ON scorecard_scores(apollo_status)
+        ''')
+
+        # Campaigns table - links a custom prompt + assets to a mapped Apollo sequence
+        cursor.execute(_adapt_ddl('''
+            CREATE TABLE IF NOT EXISTS campaigns (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                prompt TEXT NOT NULL DEFAULT '',
+                assets TEXT DEFAULT '[]',
+                sequence_id TEXT,
+                sequence_name TEXT,
+                sequence_config TEXT,
+                status TEXT DEFAULT 'draft',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        '''))
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_campaigns_status
+            ON campaigns(status)
+        ''')
+        # Campaign extensions for AE workflow (Phase 2)
+        _safe_add_column(cursor, 'campaigns', 'contact_cap INTEGER DEFAULT 20')
+        _safe_add_column(cursor, 'campaigns', 'verified_emails_only INTEGER DEFAULT 0')
+        _safe_add_column(cursor, 'campaigns', 'review_in_tool INTEGER DEFAULT 1')
+        _safe_add_column(cursor, 'campaigns', 'links_json TEXT')
+        _safe_add_column(cursor, 'campaigns', 'tone TEXT')
+
+        # Sequence mappings table - central view of Apollo sequences and their campaign assignments
+        cursor.execute(_adapt_ddl('''
+            CREATE TABLE IF NOT EXISTS sequence_mappings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sequence_id TEXT NOT NULL UNIQUE,
+                sequence_name TEXT NOT NULL,
+                sequence_config TEXT,
+                num_steps INTEGER DEFAULT 0,
+                active BOOLEAN DEFAULT 1,
+                enabled INTEGER DEFAULT 0,
+                campaign_id INTEGER,
+                owner_name TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE SET NULL
+            )
+        '''))
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_sequence_mappings_campaign
+            ON sequence_mappings(campaign_id)
+        ''')
+
+        # Migration: add enabled column if missing (existing DBs)
+        _safe_add_column(cursor, 'sequence_mappings', 'enabled INTEGER DEFAULT 0')
+        _safe_add_column(cursor, 'sequence_mappings', 'owner_email_account_id TEXT DEFAULT ""')
+
+        # Campaign personas table - maps campaigns to persona groups with sequence assignments
+        cursor.execute(_adapt_ddl('''
+            CREATE TABLE IF NOT EXISTS campaign_personas (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                campaign_id INTEGER NOT NULL,
+                persona_name TEXT NOT NULL,
+                titles_json TEXT DEFAULT '[]',
+                seniorities_json TEXT DEFAULT '[]',
+                sequence_id TEXT NOT NULL,
+                sequence_name TEXT,
+                priority INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE
+            )
+        '''))
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_campaign_personas_campaign
+            ON campaign_personas(campaign_id)
+        ''')
+
+        cursor.execute('''
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_campaign_personas_unique
+            ON campaign_personas(campaign_id, persona_name)
+        ''')
+
+        # Enrollment batches table - tracks batch enrollment runs
+        cursor.execute(_adapt_ddl('''
+            CREATE TABLE IF NOT EXISTS enrollment_batches (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                campaign_id INTEGER NOT NULL,
+                status TEXT DEFAULT 'pending',
+                total_accounts INTEGER DEFAULT 0,
+                total_contacts INTEGER DEFAULT 0,
+                discovered INTEGER DEFAULT 0,
+                generated INTEGER DEFAULT 0,
+                enrolled INTEGER DEFAULT 0,
+                failed INTEGER DEFAULT 0,
+                skipped INTEGER DEFAULT 0,
+                current_phase TEXT DEFAULT 'idle',
+                error_message TEXT,
+                account_ids_json TEXT DEFAULT '[]',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                started_at TIMESTAMP,
+                completed_at TIMESTAMP,
+                FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE
+            )
+        '''))
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_enrollment_batches_campaign
+            ON enrollment_batches(campaign_id)
+        ''')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_enrollment_batches_status
+            ON enrollment_batches(status)
+        ''')
+
+        # Enrollment contacts table - per-contact audit trail
+        cursor.execute(_adapt_ddl('''
+            CREATE TABLE IF NOT EXISTS enrollment_contacts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                batch_id INTEGER NOT NULL,
+                account_id INTEGER,
+                company_name TEXT NOT NULL,
+                company_domain TEXT,
+                persona_name TEXT,
+                sequence_id TEXT,
+                sequence_name TEXT,
+                apollo_person_id TEXT,
+                first_name TEXT,
+                last_name TEXT,
+                email TEXT,
+                title TEXT,
+                seniority TEXT,
+                linkedin_url TEXT,
+                generated_emails_json TEXT,
+                status TEXT DEFAULT 'discovered',
+                apollo_contact_id TEXT,
+                error_message TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                enrolled_at TIMESTAMP,
+                FOREIGN KEY (batch_id) REFERENCES enrollment_batches(id) ON DELETE CASCADE
+            )
+        '''))
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_enrollment_contacts_batch
+            ON enrollment_contacts(batch_id)
+        ''')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_enrollment_contacts_status
+            ON enrollment_contacts(status)
+        ''')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_enrollment_contacts_email
+            ON enrollment_contacts(email)
+        ''')
+
+        # Migration: backfill campaign_personas from existing campaigns.sequence_id
+        if _USE_POSTGRES:
+            cursor.execute('''
+                INSERT INTO campaign_personas (campaign_id, persona_name, titles_json, seniorities_json, sequence_id, sequence_name)
+                SELECT id, 'Default', '[]', '[]', sequence_id, sequence_name
+                FROM campaigns
+                WHERE sequence_id IS NOT NULL AND sequence_id != ''
+                ON CONFLICT DO NOTHING
+            ''')
+        else:
+            cursor.execute('''
+                INSERT OR IGNORE INTO campaign_personas (campaign_id, persona_name, titles_json, seniorities_json, sequence_id, sequence_name)
+                SELECT id, 'Default', '[]', '[]', sequence_id, sequence_name
+                FROM campaigns
+                WHERE sequence_id IS NOT NULL AND sequence_id != ''
+            ''')
+
+        # Audit Log table - tracks security-relevant events
+        cursor.execute(_adapt_ddl('''
+            CREATE TABLE IF NOT EXISTS audit_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                action TEXT NOT NULL,
+                user_or_key TEXT,
+                details TEXT,
+                ip_address TEXT
+            )
+        '''))
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_audit_log_timestamp
+            ON audit_log(timestamp DESC)
+        ''')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_audit_log_action
+            ON audit_log(action)
+        ''')
+
+        # -----------------------------------------------------------------
+        # Additional indexes for scale (500+ orgs, concurrent operations)
+        # -----------------------------------------------------------------
+
+        # monitored_accounts — scan scheduling and status queries
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_accounts_scan_status
+            ON monitored_accounts(scan_status)
+        ''')
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_accounts_last_scanned
+            ON monitored_accounts(last_scanned_at)
+        ''')
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_accounts_next_scan_due
+            ON monitored_accounts(next_scan_due)
+        ''')
+
+        # scan_signals — signal type filtering and composite lookups
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_scan_signals_type
+            ON scan_signals(signal_type)
+        ''')
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_scan_signals_report_type
+            ON scan_signals(report_id, signal_type)
+        ''')
+
+        # enrollment_contacts — batch processing and dedup
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_enrollment_contacts_batch_status
+            ON enrollment_contacts(batch_id, status)
+        ''')
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_enrollment_contacts_apollo_person
+            ON enrollment_contacts(apollo_person_id)
+        ''')
+
+        # Prevent duplicate enrollments at the DB level
+        cursor.execute('''
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_enrollment_contacts_domain_person
+            ON enrollment_contacts(company_domain, apollo_person_id)
+            WHERE company_domain IS NOT NULL AND apollo_person_id IS NOT NULL
+        ''')
+
+        # enrollment_batches — campaign + status lookups and ordering
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_enrollment_batches_campaign_status
+            ON enrollment_batches(campaign_id, status)
+        ''')
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_enrollment_batches_created
+            ON enrollment_batches(created_at DESC)
+        ''')
+
+        # contributors — email lookup for dedup/enrichment
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_contributors_email
+            ON contributors(email)
+        ''')
+
+        # reports — github_org lookup
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_reports_org
+            ON reports(github_org)
+        ''')
+
+        # webhook_logs — event type filtering
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_webhook_logs_event_type
+            ON webhook_logs(event_type)
+        ''')
+
+        # -----------------------------------------------------------------
+        # Pipeline tables (centralised here so init_db() creates everything)
+        # -----------------------------------------------------------------
+        cursor.execute(_adapt_ddl('''
+            CREATE TABLE IF NOT EXISTS pipeline_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                completed_at TIMESTAMP,
+                status TEXT DEFAULT 'running',
+                trigger_type TEXT DEFAULT 'scheduled',
+                steps_completed INTEGER DEFAULT 0,
+                steps_failed INTEGER DEFAULT 0,
+                error_log TEXT,
+                summary_json TEXT
+            )
+        '''))
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_pipeline_runs_status
+            ON pipeline_runs(status)
+        ''')
+
+        cursor.execute(_adapt_ddl('''
+            CREATE TABLE IF NOT EXISTS pipeline_step_results (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id INTEGER NOT NULL,
+                step_name TEXT NOT NULL,
+                status TEXT DEFAULT 'running',
+                records_processed INTEGER DEFAULT 0,
+                errors INTEGER DEFAULT 0,
+                duration_ms INTEGER DEFAULT 0,
+                detail_json TEXT,
+                started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                completed_at TIMESTAMP,
+                FOREIGN KEY (run_id) REFERENCES pipeline_runs(id) ON DELETE CASCADE
+            )
+        '''))
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_pipeline_steps_run
+            ON pipeline_step_results(run_id)
+        ''')
+
+        conn.commit()
 
     # Run cleanup tasks on initialization
     cleanup_duplicate_accounts()
@@ -1036,82 +1035,80 @@ def cleanup_duplicate_accounts() -> dict:
     Returns:
         Dictionary with cleanup results: {deleted: int, kept: int, groups: list}
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    deleted_count = 0
-    kept_count = 0
-    groups_cleaned = []
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        deleted_count = 0
+        kept_count = 0
+        groups_cleaned = []
 
-    try:
-        # Step 1: Find duplicates by Company Name (case-insensitive)
-        cursor.execute('''
-            SELECT LOWER(company_name) as normalized_name, COUNT(*) as cnt
-            FROM monitored_accounts
-            GROUP BY LOWER(company_name)
-            HAVING COUNT(*) > 1
-        ''')
-        name_duplicates = cursor.fetchall()
-        
-        for row in name_duplicates:
-            name = row['normalized_name']
-            
+        try:
+            # Step 1: Find duplicates by Company Name (case-insensitive)
             cursor.execute('''
-                SELECT * FROM monitored_accounts 
-                WHERE LOWER(company_name) = ?
-                ORDER BY current_tier DESC, last_scanned_at DESC, id DESC
-            ''', (name,))
+                SELECT LOWER(company_name) as normalized_name, COUNT(*) as cnt
+                FROM monitored_accounts
+                GROUP BY LOWER(company_name)
+                HAVING COUNT(*) > 1
+            ''')
+            name_duplicates = cursor.fetchall()
+        
+            for row in name_duplicates:
+                name = row['normalized_name']
             
-            accounts = cursor.fetchall()
-            if len(accounts) > 1:
-                keep_id = accounts[0]['id']
-                remove_ids = [acc['id'] for acc in accounts[1:]]
+                cursor.execute('''
+                    SELECT * FROM monitored_accounts 
+                    WHERE LOWER(company_name) = ?
+                    ORDER BY current_tier DESC, last_scanned_at DESC, id DESC
+                ''', (name,))
+            
+                accounts = cursor.fetchall()
+                if len(accounts) > 1:
+                    keep_id = accounts[0]['id']
+                    remove_ids = [acc['id'] for acc in accounts[1:]]
                 
-                placeholders = ','.join('?' * len(remove_ids))
-                cursor.execute('DELETE FROM monitored_accounts WHERE id IN (' + placeholders + ')', remove_ids)
+                    placeholders = ','.join('?' * len(remove_ids))
+                    cursor.execute('DELETE FROM monitored_accounts WHERE id IN (' + placeholders + ')', remove_ids)
                 
-                deleted_count += len(remove_ids)
-                kept_count += 1
-                groups_cleaned.append({'name': name, 'type': 'name', 'kept_id': keep_id, 'removed_count': len(remove_ids)})
+                    deleted_count += len(remove_ids)
+                    kept_count += 1
+                    groups_cleaned.append({'name': name, 'type': 'name', 'kept_id': keep_id, 'removed_count': len(remove_ids)})
 
-        # Step 2: Find duplicates by GitHub Org (case-insensitive)
-        cursor.execute('''
-            SELECT LOWER(github_org) as normalized_org, COUNT(*) as cnt
-            FROM monitored_accounts
-            WHERE github_org IS NOT NULL AND github_org != ''
-            GROUP BY LOWER(github_org)
-            HAVING COUNT(*) > 1
-        ''')
-        org_duplicates = cursor.fetchall()
-        
-        for row in org_duplicates:
-            org = row['normalized_org']
-            
+            # Step 2: Find duplicates by GitHub Org (case-insensitive)
             cursor.execute('''
-                SELECT * FROM monitored_accounts 
-                WHERE LOWER(github_org) = LOWER(?)
-                ORDER BY current_tier DESC, last_scanned_at DESC, id DESC
-            ''', (org,))
+                SELECT LOWER(github_org) as normalized_org, COUNT(*) as cnt
+                FROM monitored_accounts
+                WHERE github_org IS NOT NULL AND github_org != ''
+                GROUP BY LOWER(github_org)
+                HAVING COUNT(*) > 1
+            ''')
+            org_duplicates = cursor.fetchall()
+        
+            for row in org_duplicates:
+                org = row['normalized_org']
             
-            accounts = cursor.fetchall()
-            if len(accounts) > 1:
-                keep_id = accounts[0]['id']
-                # Filter out accounts that might have already been deleted in Step 1
-                # (though usually they would have been deleted already if they shared a name)
-                remove_ids = [acc['id'] for acc in accounts[1:]]
+                cursor.execute('''
+                    SELECT * FROM monitored_accounts 
+                    WHERE LOWER(github_org) = LOWER(?)
+                    ORDER BY current_tier DESC, last_scanned_at DESC, id DESC
+                ''', (org,))
+            
+                accounts = cursor.fetchall()
+                if len(accounts) > 1:
+                    keep_id = accounts[0]['id']
+                    # Filter out accounts that might have already been deleted in Step 1
+                    # (though usually they would have been deleted already if they shared a name)
+                    remove_ids = [acc['id'] for acc in accounts[1:]]
                 
-                placeholders = ','.join('?' * len(remove_ids))
-                cursor.execute('DELETE FROM monitored_accounts WHERE id IN (' + placeholders + ')', remove_ids)
+                    placeholders = ','.join('?' * len(remove_ids))
+                    cursor.execute('DELETE FROM monitored_accounts WHERE id IN (' + placeholders + ')', remove_ids)
                 
-                deleted_count += len(remove_ids)
-                kept_count += 1
-                groups_cleaned.append({'org': org, 'type': 'org', 'kept_id': keep_id, 'removed_count': len(remove_ids)})
+                    deleted_count += len(remove_ids)
+                    kept_count += 1
+                    groups_cleaned.append({'org': org, 'type': 'org', 'kept_id': keep_id, 'removed_count': len(remove_ids)})
                 
-        conn.commit()
-    except Exception as e:
-        print(f"[CLEANUP] Error removing duplicates: {e}")
-        conn.rollback()
-    finally:
-        conn.close()
+            conn.commit()
+        except Exception as e:
+            print(f"[CLEANUP] Error removing duplicates: {e}")
+            conn.rollback()
         
     return {
         'deleted': deleted_count,
@@ -1128,35 +1125,33 @@ def cleanup_quote_characters() -> int:
     Returns:
         Number of records updated.
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    updated_count = 0
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        updated_count = 0
 
-    try:
-        # Find company names with leading or trailing quotes
-        cursor.execute('''
-            SELECT id, company_name FROM monitored_accounts
-            WHERE company_name LIKE '"%' OR company_name LIKE '%"'
-        ''')
-        rows = cursor.fetchall()
+        try:
+            # Find company names with leading or trailing quotes
+            cursor.execute('''
+                SELECT id, company_name FROM monitored_accounts
+                WHERE company_name LIKE '"%' OR company_name LIKE '%"'
+            ''')
+            rows = cursor.fetchall()
 
-        for row in rows:
-            old_name = row['company_name']
-            # Strip leading and trailing quotes
-            new_name = old_name.strip('"').strip()
-            if new_name != old_name:
-                cursor.execute('''
-                    UPDATE monitored_accounts SET company_name = ? WHERE id = ?
-                ''', (new_name, row['id']))
-                updated_count += 1
-                print(f"[CLEANUP] Fixed company name: '{old_name}' -> '{new_name}'")
+            for row in rows:
+                old_name = row['company_name']
+                # Strip leading and trailing quotes
+                new_name = old_name.strip('"').strip()
+                if new_name != old_name:
+                    cursor.execute('''
+                        UPDATE monitored_accounts SET company_name = ? WHERE id = ?
+                    ''', (new_name, row['id']))
+                    updated_count += 1
+                    print(f"[CLEANUP] Fixed company name: '{old_name}' -> '{new_name}'")
 
-        conn.commit()
-    except Exception as e:
-        print(f"[CLEANUP] Error cleaning quote characters: {e}")
-        conn.rollback()
-    finally:
-        conn.close()
+            conn.commit()
+        except Exception as e:
+            print(f"[CLEANUP] Error cleaning quote characters: {e}")
+            conn.rollback()
 
     return updated_count
 
@@ -1174,78 +1169,75 @@ def save_report(
     Returns:
         The ID of the newly created report.
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    # Calculate summary stats
-    signals_found = len(scan_data.get('signals', []))
-    repos_scanned = len(scan_data.get('repos_scanned', []))
-    commits_analyzed = scan_data.get('total_commits_analyzed', 0)
-    prs_analyzed = scan_data.get('total_prs_analyzed', 0)
+        # Calculate summary stats
+        signals_found = len(scan_data.get('signals', []))
+        repos_scanned = len(scan_data.get('repos_scanned', []))
+        commits_analyzed = scan_data.get('total_commits_analyzed', 0)
+        prs_analyzed = scan_data.get('total_prs_analyzed', 0)
 
-    report_id = _insert_returning_id(cursor, '''
-        INSERT INTO reports (
-            company_name, github_org, scan_data, ai_analysis,
-            signals_found, repos_scanned, commits_analyzed, prs_analyzed,
-            scan_duration_seconds
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (
-        company_name,
-        github_org,
-        json.dumps(scan_data),
-        json.dumps(ai_analysis),
-        signals_found,
-        repos_scanned,
-        commits_analyzed,
-        prs_analyzed,
-        scan_duration
-    ))
+        report_id = _insert_returning_id(cursor, '''
+            INSERT INTO reports (
+                company_name, github_org, scan_data, ai_analysis,
+                signals_found, repos_scanned, commits_analyzed, prs_analyzed,
+                scan_duration_seconds
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            company_name,
+            github_org,
+            json.dumps(scan_data),
+            json.dumps(ai_analysis),
+            signals_found,
+            repos_scanned,
+            commits_analyzed,
+            prs_analyzed,
+            scan_duration
+        ))
 
-    # Update latest_report_id in monitored_accounts for fast lookups
-    cursor.execute('''
-        UPDATE monitored_accounts
-        SET latest_report_id = ?
-        WHERE LOWER(company_name) = LOWER(?)
-    ''', (report_id, company_name))
+        # Update latest_report_id in monitored_accounts for fast lookups
+        cursor.execute('''
+            UPDATE monitored_accounts
+            SET latest_report_id = ?
+            WHERE LOWER(company_name) = LOWER(?)
+        ''', (report_id, company_name))
 
-    conn.commit()
-    conn.close()
+        conn.commit()
 
     return report_id
 
 
 def get_report(report_id: int) -> Optional[dict]:
     """Retrieve a report by ID, including associated signals and firmographics."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    # JOIN with monitored_accounts to get firmographics (website, annual_revenue)
-    cursor.execute('''
-        SELECT r.*, ma.website, ma.annual_revenue
-        FROM reports r
-        LEFT JOIN monitored_accounts ma ON LOWER(ma.company_name) = LOWER(r.company_name)
-        WHERE r.id = ?
-    ''', (report_id,))
-    row = cursor.fetchone()
-
-    if row:
-        report = _row_to_dict(row)
-
-        # Fetch associated signals for this report
+        # JOIN with monitored_accounts to get firmographics (website, annual_revenue)
         cursor.execute('''
-            SELECT id, signal_type, description, file_path, timestamp
-            FROM scan_signals
-            WHERE report_id = ?
-            ORDER BY timestamp DESC
+            SELECT r.*, ma.website, ma.annual_revenue
+            FROM reports r
+            LEFT JOIN monitored_accounts ma ON LOWER(ma.company_name) = LOWER(r.company_name)
+            WHERE r.id = ?
         ''', (report_id,))
+        row = cursor.fetchone()
 
-        signal_rows = cursor.fetchall()
-        report['signals'] = [dict(sig_row) for sig_row in signal_rows]
+        if row:
+            report = _row_to_dict(row)
 
-        conn.close()
-        return report
+            # Fetch associated signals for this report
+            cursor.execute('''
+                SELECT id, signal_type, description, file_path, timestamp
+                FROM scan_signals
+                WHERE report_id = ?
+                ORDER BY timestamp DESC
+            ''', (report_id,))
 
-    conn.close()
+            signal_rows = cursor.fetchall()
+            report['signals'] = [dict(sig_row) for sig_row in signal_rows]
+
+            return report
+
     return None
 
 
@@ -1264,80 +1256,77 @@ def save_signals(report_id: int, company_name: str, signals: list) -> int:
     if not signals:
         return 0
 
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    saved_count = 0
+        saved_count = 0
 
-    for signal in signals:
-        try:
-            # Extract relevant fields from signal dict
-            signal_type = signal.get('type', signal.get('Signal', 'unknown'))
-            # Use 'Evidence' field as description, falling back to 'Signal' field
-            description = signal.get('Evidence', signal.get('Signal', ''))
-            # Use 'Link' or 'file' as file_path
-            file_path = signal.get('Link', signal.get('file', signal.get('repo', '')))
+        for signal in signals:
+            try:
+                # Extract relevant fields from signal dict
+                signal_type = signal.get('type', signal.get('Signal', 'unknown'))
+                # Use 'Evidence' field as description, falling back to 'Signal' field
+                description = signal.get('Evidence', signal.get('Signal', ''))
+                # Use 'Link' or 'file' as file_path
+                file_path = signal.get('Link', signal.get('file', signal.get('repo', '')))
 
-            # Scoring V2 enrichment fields (optional)
-            raw_strength = signal.get('raw_strength')
-            age_in_days = signal.get('age_in_days')
-            source_context = signal.get('source_context')
-            woe_value = signal.get('woe_value')
-            freshness_score = signal.get('freshness_score')
+                # Scoring V2 enrichment fields (optional)
+                raw_strength = signal.get('raw_strength')
+                age_in_days = signal.get('age_in_days')
+                source_context = signal.get('source_context')
+                woe_value = signal.get('woe_value')
+                freshness_score = signal.get('freshness_score')
 
-            cursor.execute('''
-                INSERT INTO scan_signals (
-                    report_id, company_name, signal_type, description, file_path,
-                    raw_strength, age_in_days, source_context, woe_value, freshness_score
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (report_id, company_name, signal_type, description, file_path,
-                  raw_strength, age_in_days, source_context, woe_value, freshness_score))
+                cursor.execute('''
+                    INSERT INTO scan_signals (
+                        report_id, company_name, signal_type, description, file_path,
+                        raw_strength, age_in_days, source_context, woe_value, freshness_score
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (report_id, company_name, signal_type, description, file_path,
+                      raw_strength, age_in_days, source_context, woe_value, freshness_score))
 
-            saved_count += 1
-        except Exception as e:
-            # Log error but continue processing other signals
-            print(f"Error saving signal: {str(e)}")
-            continue
+                saved_count += 1
+            except Exception as e:
+                # Log error but continue processing other signals
+                print(f"Error saving signal: {str(e)}")
+                continue
 
-    conn.commit()
-    conn.close()
+        conn.commit()
 
     return saved_count
 
 
 def get_signals_for_report(report_id: int) -> list:
     """Retrieve all signals for a specific report."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    cursor.execute('''
-        SELECT id, signal_type, description, file_path, timestamp
-        FROM scan_signals
-        WHERE report_id = ?
-        ORDER BY timestamp DESC
-    ''', (report_id,))
+        cursor.execute('''
+            SELECT id, signal_type, description, file_path, timestamp
+            FROM scan_signals
+            WHERE report_id = ?
+            ORDER BY timestamp DESC
+        ''', (report_id,))
 
-    rows = cursor.fetchall()
-    conn.close()
+        rows = cursor.fetchall()
 
     return [dict(row) for row in rows]
 
 
 def get_signals_by_company(company_name: str, limit: int = 100) -> list:
     """Retrieve recent signals for a company across all reports."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    cursor.execute('''
-        SELECT id, report_id, signal_type, description, file_path, timestamp
-        FROM scan_signals
-        WHERE company_name = ?
-        ORDER BY timestamp DESC
-        LIMIT ?
-    ''', (company_name, limit))
+        cursor.execute('''
+            SELECT id, report_id, signal_type, description, file_path, timestamp
+            FROM scan_signals
+            WHERE company_name = ?
+            ORDER BY timestamp DESC
+            LIMIT ?
+        ''', (company_name, limit))
 
-    rows = cursor.fetchall()
-    conn.close()
+        rows = cursor.fetchall()
 
     return [dict(row) for row in rows]
 
@@ -1347,46 +1336,44 @@ def get_recent_reports(limit: int = 20) -> list:
 
     Only shows the latest report for each company to avoid duplicate entries.
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    # Use ROW_NUMBER() to get only the most recent report per company
-    cursor.execute('''
-        SELECT id, company_name, github_org, signals_found, repos_scanned,
-               commits_analyzed, prs_analyzed, created_at, scan_duration_seconds
-        FROM (
+        # Use ROW_NUMBER() to get only the most recent report per company
+        cursor.execute('''
             SELECT id, company_name, github_org, signals_found, repos_scanned,
-                   commits_analyzed, prs_analyzed, created_at, scan_duration_seconds,
-                   ROW_NUMBER() OVER (PARTITION BY LOWER(company_name) ORDER BY created_at DESC) as rn
-            FROM reports
-        )
-        WHERE rn = 1
-        ORDER BY created_at DESC
-        LIMIT ?
-    ''', (limit,))
+                   commits_analyzed, prs_analyzed, created_at, scan_duration_seconds
+            FROM (
+                SELECT id, company_name, github_org, signals_found, repos_scanned,
+                       commits_analyzed, prs_analyzed, created_at, scan_duration_seconds,
+                       ROW_NUMBER() OVER (PARTITION BY LOWER(company_name) ORDER BY created_at DESC) as rn
+                FROM reports
+            )
+            WHERE rn = 1
+            ORDER BY created_at DESC
+            LIMIT ?
+        ''', (limit,))
 
-    rows = cursor.fetchall()
-    conn.close()
+        rows = cursor.fetchall()
 
     return [dict(row) for row in rows]
 
 
 def search_reports(query: str) -> list:
     """Search reports by company name."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    cursor.execute('''
-        SELECT id, company_name, github_org, signals_found, repos_scanned,
-               created_at
-        FROM reports
-        WHERE company_name LIKE ?
-        ORDER BY created_at DESC
-        LIMIT 50
-    ''', (f'%{query}%',))
+        cursor.execute('''
+            SELECT id, company_name, github_org, signals_found, repos_scanned,
+                   created_at
+            FROM reports
+            WHERE company_name LIKE ?
+            ORDER BY created_at DESC
+            LIMIT 50
+        ''', (f'%{query}%',))
 
-    rows = cursor.fetchall()
-    conn.close()
+        rows = cursor.fetchall()
 
     return [dict(row) for row in rows]
 
@@ -1844,134 +1831,133 @@ def update_account_status(scan_data: dict, report_id: Optional[int] = None) -> d
         if gval is not None:
             scan_metadata[gkey] = gval
 
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    # Check if account exists (case-insensitive)
-    cursor.execute(
-        'SELECT * FROM monitored_accounts WHERE LOWER(company_name) = ?',
-        (company_name_normalized,)
-    )
-    existing = cursor.fetchone()
+        # Check if account exists (case-insensitive)
+        cursor.execute(
+            'SELECT * FROM monitored_accounts WHERE LOWER(company_name) = ?',
+            (company_name_normalized,)
+        )
+        existing = cursor.fetchone()
 
-    # Fetch website data for tier calculation (reuse existing cursor to avoid extra connection)
-    website_data = {}
-    cursor.execute('''
-        SELECT localization_score, analysis_details_json
-        FROM website_analyses
-        WHERE LOWER(company_name) = LOWER(?)
-        ORDER BY analyzed_at DESC
-        LIMIT 1
-    ''', (company_name,))
-    wa_row = cursor.fetchone()
-    if wa_row:
-        website_data['localization_score'] = wa_row['localization_score']
-        website_data['analysis_details_json'] = wa_row['analysis_details_json']
-    if existing:
+        # Fetch website data for tier calculation (reuse existing cursor to avoid extra connection)
+        website_data = {}
         cursor.execute('''
-            SELECT locale_count, hreflang_tags
-            FROM webscraper_accounts
-            WHERE monitored_account_id = ?
-              AND scan_status = 'completed' AND archived_at IS NULL
-            ORDER BY last_scanned_at DESC NULLS LAST
+            SELECT localization_score, analysis_details_json
+            FROM website_analyses
+            WHERE LOWER(company_name) = LOWER(?)
+            ORDER BY analyzed_at DESC
             LIMIT 1
-        ''', (existing['id'],))
-        ws_row = cursor.fetchone()
-        if ws_row:
-            website_data['locale_count'] = ws_row['locale_count']
-            website_data['hreflang_tags'] = ws_row['hreflang_tags']
-
-    # Calculate tier and evidence (with website data)
-    new_tier, evidence_summary = calculate_tier_from_scan(
-        scan_data, website_data=website_data or None
-    )
-    # Guard against None tier values to prevent comparison errors
-    new_tier = new_tier if new_tier is not None else 0
-
-    now = datetime.now().isoformat()
-    # Set next scan due based on the tier-specific interval
-    scan_interval_days = TIER_SCAN_INTERVALS.get(new_tier, 3)
-    next_scan = datetime.now() + timedelta(days=scan_interval_days)
-    next_scan_iso = next_scan.isoformat()
-
-    tier_changed = False
-
-    if existing:
-        existing_tier = existing['current_tier']
-        existing_tier = existing_tier if existing_tier is not None else 0
-        tier_changed = existing_tier != new_tier
-
-        # Merge scan metadata with any existing metadata (preserving CSV/Sheets fields)
-        merged_metadata = {}
-        if existing['metadata']:
-            try:
-                merged_metadata = json.loads(existing['metadata'])
-            except (json.JSONDecodeError, TypeError):
-                pass
-        merged_metadata.update(scan_metadata)
-        metadata_json = json.dumps(merged_metadata) if merged_metadata else None
-
-        if tier_changed:
-            # Tier changed - update status_changed_at
+        ''', (company_name,))
+        wa_row = cursor.fetchone()
+        if wa_row:
+            website_data['localization_score'] = wa_row['localization_score']
+            website_data['analysis_details_json'] = wa_row['analysis_details_json']
+        if existing:
             cursor.execute('''
-                UPDATE monitored_accounts
-                SET github_org = ?,
-                    current_tier = ?,
-                    last_scanned_at = ?,
-                    status_changed_at = ?,
-                    evidence_summary = ?,
-                    next_scan_due = ?,
-                    metadata = ?
-                WHERE LOWER(company_name) = ?
-            ''', (github_org, new_tier, now, now, evidence_summary, next_scan_iso, metadata_json, company_name_normalized))
+                SELECT locale_count, hreflang_tags
+                FROM webscraper_accounts
+                WHERE monitored_account_id = ?
+                  AND scan_status = 'completed' AND archived_at IS NULL
+                ORDER BY last_scanned_at DESC NULLS LAST
+                LIMIT 1
+            ''', (existing['id'],))
+            ws_row = cursor.fetchone()
+            if ws_row:
+                website_data['locale_count'] = ws_row['locale_count']
+                website_data['hreflang_tags'] = ws_row['hreflang_tags']
+
+        # Calculate tier and evidence (with website data)
+        new_tier, evidence_summary = calculate_tier_from_scan(
+            scan_data, website_data=website_data or None
+        )
+        # Guard against None tier values to prevent comparison errors
+        new_tier = new_tier if new_tier is not None else 0
+
+        now = datetime.now().isoformat()
+        # Set next scan due based on the tier-specific interval
+        scan_interval_days = TIER_SCAN_INTERVALS.get(new_tier, 3)
+        next_scan = datetime.now() + timedelta(days=scan_interval_days)
+        next_scan_iso = next_scan.isoformat()
+
+        tier_changed = False
+
+        if existing:
+            existing_tier = existing['current_tier']
+            existing_tier = existing_tier if existing_tier is not None else 0
+            tier_changed = existing_tier != new_tier
+
+            # Merge scan metadata with any existing metadata (preserving CSV/Sheets fields)
+            merged_metadata = {}
+            if existing['metadata']:
+                try:
+                    merged_metadata = json.loads(existing['metadata'])
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            merged_metadata.update(scan_metadata)
+            metadata_json = json.dumps(merged_metadata) if merged_metadata else None
+
+            if tier_changed:
+                # Tier changed - update status_changed_at
+                cursor.execute('''
+                    UPDATE monitored_accounts
+                    SET github_org = ?,
+                        current_tier = ?,
+                        last_scanned_at = ?,
+                        status_changed_at = ?,
+                        evidence_summary = ?,
+                        next_scan_due = ?,
+                        metadata = ?
+                    WHERE LOWER(company_name) = ?
+                ''', (github_org, new_tier, now, now, evidence_summary, next_scan_iso, metadata_json, company_name_normalized))
+            else:
+                # Same tier - only update scan timestamp, NOT status_changed_at
+                cursor.execute('''
+                    UPDATE monitored_accounts
+                    SET github_org = ?,
+                        last_scanned_at = ?,
+                        evidence_summary = ?,
+                        next_scan_due = ?,
+                        metadata = ?
+                    WHERE LOWER(company_name) = ?
+                ''', (github_org, now, evidence_summary, next_scan_iso, metadata_json, company_name_normalized))
+
+            account_id = existing['id']
         else:
-            # Same tier - only update scan timestamp, NOT status_changed_at
-            cursor.execute('''
-                UPDATE monitored_accounts
-                SET github_org = ?,
-                    last_scanned_at = ?,
-                    evidence_summary = ?,
-                    next_scan_due = ?,
-                    metadata = ?
-                WHERE LOWER(company_name) = ?
-            ''', (github_org, now, evidence_summary, next_scan_iso, metadata_json, company_name_normalized))
+            # New account - create record (use normalized name)
+            metadata_json = json.dumps(scan_metadata) if scan_metadata else None
+            account_id = _insert_returning_id(cursor, '''
+                INSERT INTO monitored_accounts (
+                    company_name, github_org, current_tier, last_scanned_at,
+                    status_changed_at, evidence_summary, next_scan_due, metadata
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (company_name_normalized, github_org, new_tier, now, now, evidence_summary, next_scan_iso, metadata_json))
+            tier_changed = True  # New account is considered a "change"
 
-        account_id = existing['id']
-    else:
-        # New account - create record (use normalized name)
-        metadata_json = json.dumps(scan_metadata) if scan_metadata else None
-        account_id = _insert_returning_id(cursor, '''
-            INSERT INTO monitored_accounts (
-                company_name, github_org, current_tier, last_scanned_at,
-                status_changed_at, evidence_summary, next_scan_due, metadata
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (company_name_normalized, github_org, new_tier, now, now, evidence_summary, next_scan_iso, metadata_json))
-        tier_changed = True  # New account is considered a "change"
+        # Auto-archive/unarchive based on tier
+        was_archived = existing['archived_at'] if existing else None
+        archived = False
+        unarchived = False
 
-    # Auto-archive/unarchive based on tier
-    was_archived = existing['archived_at'] if existing else None
-    archived = False
-    unarchived = False
+        if new_tier == TIER_INVALID:
+            # Auto-archive Tier 4 accounts
+            if not was_archived:
+                cursor.execute(
+                    'UPDATE monitored_accounts SET archived_at = ? WHERE id = ?',
+                    (now, account_id)
+                )
+                archived = True
+        else:
+            # Unarchive if account was archived but now has a valid tier
+            if was_archived:
+                cursor.execute(
+                    'UPDATE monitored_accounts SET archived_at = NULL WHERE id = ?',
+                    (account_id,)
+                )
+                unarchived = True
 
-    if new_tier == TIER_INVALID:
-        # Auto-archive Tier 4 accounts
-        if not was_archived:
-            cursor.execute(
-                'UPDATE monitored_accounts SET archived_at = ? WHERE id = ?',
-                (now, account_id)
-            )
-            archived = True
-    else:
-        # Unarchive if account was archived but now has a valid tier
-        if was_archived:
-            cursor.execute(
-                'UPDATE monitored_accounts SET archived_at = NULL WHERE id = ?',
-                (account_id,)
-            )
-            unarchived = True
-
-    conn.commit()
-    conn.close()
+        conn.commit()
 
     tier_config = TIER_CONFIG.get(new_tier, TIER_CONFIG[TIER_TRACKING])
 
@@ -2016,90 +2002,89 @@ def add_account_to_tier_0(company_name: str, github_org: str, annual_revenue: Op
     # Normalize company name to lowercase to prevent duplicates
     company_name_normalized = company_name.lower().strip()
 
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    now = datetime.now().isoformat()
-    # New accounts start at Tier 0, use that interval for next scan
-    scan_interval_days = TIER_SCAN_INTERVALS.get(TIER_TRACKING, 3)
-    next_scan = datetime.now() + timedelta(days=scan_interval_days)
-    next_scan_iso = next_scan.isoformat()
+        now = datetime.now().isoformat()
+        # New accounts start at Tier 0, use that interval for next scan
+        scan_interval_days = TIER_SCAN_INTERVALS.get(TIER_TRACKING, 3)
+        next_scan = datetime.now() + timedelta(days=scan_interval_days)
+        next_scan_iso = next_scan.isoformat()
 
-    # Check if account exists by COMPANY NAME (case-insensitive)
-    cursor.execute(
-        'SELECT * FROM monitored_accounts WHERE LOWER(company_name) = ?',
-        (company_name_normalized,)
-    )
-    existing_by_name = cursor.fetchone()
-
-    # Check if account exists by GITHUB ORG (case-insensitive)
-    existing_by_org = None
-    if github_org:
+        # Check if account exists by COMPANY NAME (case-insensitive)
         cursor.execute(
-            'SELECT * FROM monitored_accounts WHERE LOWER(github_org) = ?',
-            (github_org.lower(),)
+            'SELECT * FROM monitored_accounts WHERE LOWER(company_name) = ?',
+            (company_name_normalized,)
         )
-        existing_by_org = cursor.fetchone()
+        existing_by_name = cursor.fetchone()
 
-    # Determine which account to use (prioritize existing record)
-    existing = existing_by_name or existing_by_org
-
-    if existing:
-        # Update existing account - don't change last_scanned_at
-        # Only update annual_revenue/website/metadata if new values are provided
-        if annual_revenue or website or metadata:
-            # Build dynamic update based on what's provided
-            update_fields = ['github_org = ?', 'next_scan_due = ?']
-            update_params = [github_org, next_scan_iso]
-            if annual_revenue:
-                update_fields.append('annual_revenue = ?')
-                update_params.append(annual_revenue)
-            if website:
-                update_fields.append('website = ?')
-                update_params.append(website)
-            if metadata:
-                # Merge with existing metadata if present
-                existing_metadata = {}
-                if existing['metadata']:
-                    try:
-                        existing_metadata = json.loads(existing['metadata'])
-                    except (json.JSONDecodeError, TypeError):
-                        pass
-                existing_metadata.update(metadata)
-                update_fields.append('metadata = ?')
-                update_params.append(json.dumps(existing_metadata))
-            update_params.append(existing['id'])
+        # Check if account exists by GITHUB ORG (case-insensitive)
+        existing_by_org = None
+        if github_org:
             cursor.execute(
-                'UPDATE monitored_accounts SET ' + ', '.join(update_fields) + ' WHERE id = ?',
-                update_params)
+                'SELECT * FROM monitored_accounts WHERE LOWER(github_org) = ?',
+                (github_org.lower(),)
+            )
+            existing_by_org = cursor.fetchone()
+
+        # Determine which account to use (prioritize existing record)
+        existing = existing_by_name or existing_by_org
+
+        if existing:
+            # Update existing account - don't change last_scanned_at
+            # Only update annual_revenue/website/metadata if new values are provided
+            if annual_revenue or website or metadata:
+                # Build dynamic update based on what's provided
+                update_fields = ['github_org = ?', 'next_scan_due = ?']
+                update_params = [github_org, next_scan_iso]
+                if annual_revenue:
+                    update_fields.append('annual_revenue = ?')
+                    update_params.append(annual_revenue)
+                if website:
+                    update_fields.append('website = ?')
+                    update_params.append(website)
+                if metadata:
+                    # Merge with existing metadata if present
+                    existing_metadata = {}
+                    if existing['metadata']:
+                        try:
+                            existing_metadata = json.loads(existing['metadata'])
+                        except (json.JSONDecodeError, TypeError):
+                            pass
+                    existing_metadata.update(metadata)
+                    update_fields.append('metadata = ?')
+                    update_params.append(json.dumps(existing_metadata))
+                update_params.append(existing['id'])
+                cursor.execute(
+                    'UPDATE monitored_accounts SET ' + ', '.join(update_fields) + ' WHERE id = ?',
+                    update_params)
+            else:
+                cursor.execute('''
+                    UPDATE monitored_accounts
+                    SET github_org = ?,
+                        next_scan_due = ?
+                    WHERE id = ?
+                ''', (github_org, next_scan_iso, existing['id']))
+            account_id = existing['id']
+
+            # If we matched by org but name is different, we might want to log it or update name,
+            # but changing name could be risky if unique constraint on name validation fails.
+            # We'll just update the org / timestamps on the existing record.
         else:
-            cursor.execute('''
-                UPDATE monitored_accounts
-                SET github_org = ?,
-                    next_scan_due = ?
-                WHERE id = ?
-            ''', (github_org, next_scan_iso, existing['id']))
-        account_id = existing['id']
+            # Create new account at Tier 0 (use normalized name)
+            # Note: last_scanned_at is NULL until a scan actually completes
+            metadata_json = json.dumps(metadata) if metadata else None
+            account_id = _insert_returning_id(cursor, '''
+                INSERT INTO monitored_accounts (
+                    company_name, github_org, annual_revenue, website, current_tier, last_scanned_at,
+                    status_changed_at, evidence_summary, next_scan_due, metadata,
+                    imported_at, import_source
+                ) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)
+            ''', (company_name.strip(), github_org, annual_revenue, website, TIER_TRACKING, now,
+                  "Added via Grow pipeline", next_scan_iso, metadata_json,
+                  now, 'csv_import'))
 
-        # If we matched by org but name is different, we might want to log it or update name,
-        # but changing name could be risky if unique constraint on name validation fails.
-        # We'll just update the org / timestamps on the existing record.
-    else:
-        # Create new account at Tier 0 (use normalized name)
-        # Note: last_scanned_at is NULL until a scan actually completes
-        metadata_json = json.dumps(metadata) if metadata else None
-        account_id = _insert_returning_id(cursor, '''
-            INSERT INTO monitored_accounts (
-                company_name, github_org, annual_revenue, website, current_tier, last_scanned_at,
-                status_changed_at, evidence_summary, next_scan_due, metadata,
-                imported_at, import_source
-            ) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)
-        ''', (company_name.strip(), github_org, annual_revenue, website, TIER_TRACKING, now,
-              "Added via Grow pipeline", next_scan_iso, metadata_json,
-              now, 'csv_import'))
-
-    conn.commit()
-    conn.close()
+        conn.commit()
 
     tier_config = TIER_CONFIG[TIER_TRACKING]
 
@@ -2126,18 +2111,17 @@ def update_account_annual_revenue(company_name: str, annual_revenue: str) -> boo
     Returns:
         True if the update was successful, False if account not found.
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    cursor.execute('''
-        UPDATE monitored_accounts
-        SET annual_revenue = ?
-        WHERE LOWER(company_name) = LOWER(?)
-    ''', (annual_revenue, company_name.strip()))
+        cursor.execute('''
+            UPDATE monitored_accounts
+            SET annual_revenue = ?
+            WHERE LOWER(company_name) = LOWER(?)
+        ''', (annual_revenue, company_name.strip()))
 
-    updated = cursor.rowcount > 0
-    conn.commit()
-    conn.close()
+        updated = cursor.rowcount > 0
+        conn.commit()
 
     return updated
 
@@ -2155,18 +2139,17 @@ def update_account_website(company_name: str, website: str) -> bool:
     Returns:
         True if the update was successful, False if account not found.
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    cursor.execute('''
-        UPDATE monitored_accounts
-        SET website = ?
-        WHERE LOWER(company_name) = LOWER(?)
-    ''', (website, company_name.strip()))
+        cursor.execute('''
+            UPDATE monitored_accounts
+            SET website = ?
+            WHERE LOWER(company_name) = LOWER(?)
+        ''', (website, company_name.strip()))
 
-    updated = cursor.rowcount > 0
-    conn.commit()
-    conn.close()
+        updated = cursor.rowcount > 0
+        conn.commit()
 
     return updated
 
@@ -2185,39 +2168,37 @@ def update_account_metadata(company_name: str, metadata: dict) -> bool:
     Returns:
         True if the update was successful, False if account not found.
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    # First, fetch existing metadata to merge
-    cursor.execute('''
-        SELECT metadata FROM monitored_accounts
-        WHERE LOWER(company_name) = LOWER(?)
-    ''', (company_name.strip(),))
-    row = cursor.fetchone()
+        # First, fetch existing metadata to merge
+        cursor.execute('''
+            SELECT metadata FROM monitored_accounts
+            WHERE LOWER(company_name) = LOWER(?)
+        ''', (company_name.strip(),))
+        row = cursor.fetchone()
 
-    if not row:
-        conn.close()
-        return False
+        if not row:
+            return False
 
-    # Merge existing metadata with new metadata
-    existing_metadata = {}
-    if row['metadata']:
-        try:
-            existing_metadata = json.loads(row['metadata'])
-        except (json.JSONDecodeError, TypeError):
-            pass
+        # Merge existing metadata with new metadata
+        existing_metadata = {}
+        if row['metadata']:
+            try:
+                existing_metadata = json.loads(row['metadata'])
+            except (json.JSONDecodeError, TypeError):
+                pass
 
-    existing_metadata.update(metadata)
+        existing_metadata.update(metadata)
 
-    cursor.execute('''
-        UPDATE monitored_accounts
-        SET metadata = ?
-        WHERE LOWER(company_name) = LOWER(?)
-    ''', (json.dumps(existing_metadata), company_name.strip()))
+        cursor.execute('''
+            UPDATE monitored_accounts
+            SET metadata = ?
+            WHERE LOWER(company_name) = LOWER(?)
+        ''', (json.dumps(existing_metadata), company_name.strip()))
 
-    updated = cursor.rowcount > 0
-    conn.commit()
-    conn.close()
+        updated = cursor.rowcount > 0
+        conn.commit()
 
     return updated
 
@@ -2235,23 +2216,21 @@ def update_account_notes(account_id: int, notes: str) -> bool:
     Returns:
         True if the update was successful, False if account not found.
     """
-    conn = get_db_connection()
-    try:
-        cursor = conn.cursor()
-        cursor.execute('''
-            UPDATE monitored_accounts
-            SET notes = ?
-            WHERE id = ?
-        ''', (notes, account_id))
-        updated = cursor.rowcount > 0
-        conn.commit()
-        return updated
-    except Exception as e:
-        print(f"[DB] Error updating notes for account {account_id}: {e}")
-        conn.rollback()
-        return False
-    finally:
-        conn.close()
+    with db_connection() as conn:
+        try:
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE monitored_accounts
+                SET notes = ?
+                WHERE id = ?
+            ''', (notes, account_id))
+            updated = cursor.rowcount > 0
+            conn.commit()
+            return updated
+        except Exception as e:
+            print(f"[DB] Error updating notes for account {account_id}: {e}")
+            conn.rollback()
+            return False
 
 
 def enrich_existing_account(company_name: str, annual_revenue=None, website=None, metadata=None) -> bool:
@@ -2346,48 +2325,47 @@ def get_all_accounts(page: int = 1, limit: int = 50, tier_filter: Optional[list]
             - current_page: Current page number
             - limit: Items per page
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    # Build WHERE clause - always exclude archived accounts
-    where_clauses = ['ma.archived_at IS NULL']
-    params = []
+        # Build WHERE clause - always exclude archived accounts
+        where_clauses = ['ma.archived_at IS NULL']
+        params = []
 
-    if tier_filter:
-        placeholders = ','.join(['?'] * len(tier_filter))
-        where_clauses.append(f'ma.current_tier IN ({placeholders})')
-        params.extend(tier_filter)
+        if tier_filter:
+            placeholders = ','.join(['?'] * len(tier_filter))
+            where_clauses.append(f'ma.current_tier IN ({placeholders})')
+            params.extend(tier_filter)
 
-    if search_query:
-        where_clauses.append('ma.company_name LIKE ?')
-        params.append(f'%{search_query}%')
+        if search_query:
+            where_clauses.append('ma.company_name LIKE ?')
+            params.append(f'%{search_query}%')
 
-    where_sql = ' WHERE ' + ' AND '.join(where_clauses)
+        where_sql = ' WHERE ' + ' AND '.join(where_clauses)
 
-    # Get total count (where_sql uses ? placeholders, params passed separately)
-    count_query = 'SELECT COUNT(*) as total FROM monitored_accounts ma' + where_sql
-    cursor.execute(count_query, params)
-    total_items = cursor.fetchone()['total']
+        # Get total count (where_sql uses ? placeholders, params passed separately)
+        count_query = 'SELECT COUNT(*) as total FROM monitored_accounts ma' + where_sql
+        cursor.execute(count_query, params)
+        total_items = cursor.fetchone()['total']
 
-    # Calculate pagination
-    total_pages = (total_items + limit - 1) // limit  # Ceiling division
-    current_page = max(1, min(page, total_pages or 1))  # Clamp to valid range
-    offset = (current_page - 1) * limit
+        # Calculate pagination
+        total_pages = (total_items + limit - 1) // limit  # Ceiling division
+        current_page = max(1, min(page, total_pages or 1))  # Clamp to valid range
+        offset = (current_page - 1) * limit
 
-    # Custom sort: Tier 2 first, Tier 1, Tier 0, Tier 3, Tier 4 last
-    _TIER_ORDER = '''CASE ma.current_tier
-                WHEN 2 THEN 1 WHEN 1 THEN 2 WHEN 0 THEN 3
-                WHEN 3 THEN 4 WHEN 4 THEN 5 ELSE 6 END'''
-    select_query = 'SELECT ma.* FROM monitored_accounts ma' + where_sql + \
-                   ' ORDER BY ' + _TIER_ORDER + ', ma.status_changed_at DESC LIMIT ? OFFSET ?'
-    # We need to duplicate params for the second query execution or just reuse the list + limit/offset
-    # Since we execute a new query, we need to pass the params again + limit/offset
-    select_params = list(params) + [limit, offset]
+        # Custom sort: Tier 2 first, Tier 1, Tier 0, Tier 3, Tier 4 last
+        _TIER_ORDER = '''CASE ma.current_tier
+                    WHEN 2 THEN 1 WHEN 1 THEN 2 WHEN 0 THEN 3
+                    WHEN 3 THEN 4 WHEN 4 THEN 5 ELSE 6 END'''
+        select_query = 'SELECT ma.* FROM monitored_accounts ma' + where_sql + \
+                       ' ORDER BY ' + _TIER_ORDER + ', ma.status_changed_at DESC LIMIT ? OFFSET ?'
+        # We need to duplicate params for the second query execution or just reuse the list + limit/offset
+        # Since we execute a new query, we need to pass the params again + limit/offset
+        select_params = list(params) + [limit, offset]
     
-    cursor.execute(select_query, select_params)
+        cursor.execute(select_query, select_params)
 
-    rows = cursor.fetchall()
-    conn.close()
+        rows = cursor.fetchall()
 
     accounts = []
     for row in rows:
@@ -2413,19 +2391,18 @@ def get_tier_counts() -> dict:
         Dictionary with tier numbers as string keys and counts as values:
         {'0': count, '1': count, '2': count, '3': count, '4': count}
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    # Exclude archived accounts from tier counts
-    cursor.execute('''
-        SELECT current_tier, COUNT(*) as count
-        FROM monitored_accounts
-        WHERE archived_at IS NULL
-        GROUP BY current_tier
-    ''')
+        # Exclude archived accounts from tier counts
+        cursor.execute('''
+            SELECT current_tier, COUNT(*) as count
+            FROM monitored_accounts
+            WHERE archived_at IS NULL
+            GROUP BY current_tier
+        ''')
 
-    rows = cursor.fetchall()
-    conn.close()
+        rows = cursor.fetchall()
 
     # Initialize with zeros for all tiers
     tier_counts = {'0': 0, '1': 0, '2': 0, '3': 0, '4': 0}
@@ -2473,101 +2450,100 @@ def get_all_accounts_datatable(draw: int, start: int, length: int, search_value:
         - recordsFiltered: Total records after filtering
         - data: Array of account objects
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    # Column mapping for sorting (must match table column order)
-    column_map = {
-        0: 'company_name',
-        1: 'annual_revenue',
-        2: 'github_org',
-        3: 'current_tier',
-        4: 'last_scanned_at',
-        5: 'evidence_summary',
-    }
+        # Column mapping for sorting (must match table column order)
+        column_map = {
+            0: 'company_name',
+            1: 'annual_revenue',
+            2: 'github_org',
+            3: 'current_tier',
+            4: 'last_scanned_at',
+            5: 'evidence_summary',
+        }
 
-    # Get total count without filters (excluding archived)
-    cursor.execute('SELECT COUNT(*) as total FROM monitored_accounts WHERE archived_at IS NULL')
-    total_records = cursor.fetchone()['total']
+        # Get total count without filters (excluding archived)
+        cursor.execute('SELECT COUNT(*) as total FROM monitored_accounts WHERE archived_at IS NULL')
+        total_records = cursor.fetchone()['total']
 
-    # Build WHERE clause for filtering - always exclude archived accounts
-    where_clauses = ['archived_at IS NULL']
-    params = []
+        # Build WHERE clause for filtering - always exclude archived accounts
+        where_clauses = ['archived_at IS NULL']
+        params = []
 
-    # Tier filter
-    if tier_filter:
-        placeholders = ','.join(['?'] * len(tier_filter))
-        where_clauses.append(f'current_tier IN ({placeholders})')
-        params.extend(tier_filter)
+        # Tier filter
+        if tier_filter:
+            placeholders = ','.join(['?'] * len(tier_filter))
+            where_clauses.append(f'current_tier IN ({placeholders})')
+            params.extend(tier_filter)
 
-    # Global search - searches both company_name and github_org
-    if search_value:
-        where_clauses.append('(LOWER(company_name) LIKE ? OR LOWER(github_org) LIKE ?)')
-        search_param = f'%{search_value.lower()}%'
-        params.extend([search_param, search_param])
+        # Global search - searches both company_name and github_org
+        if search_value:
+            where_clauses.append('(LOWER(company_name) LIKE ? OR LOWER(github_org) LIKE ?)')
+            search_param = f'%{search_value.lower()}%'
+            params.extend([search_param, search_param])
 
-    # Last scanned filter
-    if last_scanned_filter:
-        if last_scanned_filter == 'never':
-            where_clauses.append('last_scanned_at IS NULL')
-        elif last_scanned_filter == '7d':
-            where_clauses.append(f"last_scanned_at >= {_adapt_datetime('-7 days')}")
-        elif last_scanned_filter == '30d':
-            where_clauses.append(f"last_scanned_at >= {_adapt_datetime('-30 days')}")
-        elif last_scanned_filter == '90d':
-            where_clauses.append(f"last_scanned_at >= {_adapt_datetime('-90 days')}")
-        elif last_scanned_filter == 'older':
-            where_clauses.append(f"last_scanned_at < {_adapt_datetime('-90 days')}")
+        # Last scanned filter
+        if last_scanned_filter:
+            if last_scanned_filter == 'never':
+                where_clauses.append('last_scanned_at IS NULL')
+            elif last_scanned_filter == '7d':
+                where_clauses.append(f"last_scanned_at >= {_adapt_datetime('-7 days')}")
+            elif last_scanned_filter == '30d':
+                where_clauses.append(f"last_scanned_at >= {_adapt_datetime('-30 days')}")
+            elif last_scanned_filter == '90d':
+                where_clauses.append(f"last_scanned_at >= {_adapt_datetime('-90 days')}")
+            elif last_scanned_filter == 'older':
+                where_clauses.append(f"last_scanned_at < {_adapt_datetime('-90 days')}")
 
-    # Revenue range filter (in millions)
-    # Revenue is stored as text, so we need to parse it for comparison
-    # Common formats: "$100M", "100000000", "$1.5B", "1500000000", etc.
-    if revenue_min is not None or revenue_max is not None:
-        # Use a subquery to parse the revenue and filter
-        # This handles formats like "$100M", "$1.5B", "100000000", etc.
-        revenue_clause = """
-            CASE
-                WHEN annual_revenue IS NULL OR annual_revenue = '' THEN NULL
-                WHEN annual_revenue LIKE '%B%' OR annual_revenue LIKE '%b%' THEN
-                    CAST(REPLACE(REPLACE(REPLACE(REPLACE(annual_revenue, '$', ''), 'B', ''), 'b', ''), ',', '') AS REAL) * 1000
-                WHEN annual_revenue LIKE '%M%' OR annual_revenue LIKE '%m%' THEN
-                    CAST(REPLACE(REPLACE(REPLACE(REPLACE(annual_revenue, '$', ''), 'M', ''), 'm', ''), ',', '') AS REAL)
-                WHEN annual_revenue LIKE '%K%' OR annual_revenue LIKE '%k%' THEN
-                    CAST(REPLACE(REPLACE(REPLACE(REPLACE(annual_revenue, '$', ''), 'K', ''), 'k', ''), ',', '') AS REAL) / 1000
-                ELSE
-                    CAST(REPLACE(REPLACE(annual_revenue, '$', ''), ',', '') AS REAL) / 1000000
-            END
-        """
-        if revenue_min is not None and revenue_max is not None:
-            where_clauses.append(f'({revenue_clause}) >= ? AND ({revenue_clause}) <= ?')
-            params.extend([revenue_min, revenue_max])
-        elif revenue_min is not None:
-            where_clauses.append(f'({revenue_clause}) >= ?')
-            params.append(revenue_min)
-        elif revenue_max is not None:
-            where_clauses.append(f'({revenue_clause}) <= ?')
-            params.append(revenue_max)
+        # Revenue range filter (in millions)
+        # Revenue is stored as text, so we need to parse it for comparison
+        # Common formats: "$100M", "100000000", "$1.5B", "1500000000", etc.
+        if revenue_min is not None or revenue_max is not None:
+            # Use a subquery to parse the revenue and filter
+            # This handles formats like "$100M", "$1.5B", "100000000", etc.
+            revenue_clause = """
+                CASE
+                    WHEN annual_revenue IS NULL OR annual_revenue = '' THEN NULL
+                    WHEN annual_revenue LIKE '%B%' OR annual_revenue LIKE '%b%' THEN
+                        CAST(REPLACE(REPLACE(REPLACE(REPLACE(annual_revenue, '$', ''), 'B', ''), 'b', ''), ',', '') AS REAL) * 1000
+                    WHEN annual_revenue LIKE '%M%' OR annual_revenue LIKE '%m%' THEN
+                        CAST(REPLACE(REPLACE(REPLACE(REPLACE(annual_revenue, '$', ''), 'M', ''), 'm', ''), ',', '') AS REAL)
+                    WHEN annual_revenue LIKE '%K%' OR annual_revenue LIKE '%k%' THEN
+                        CAST(REPLACE(REPLACE(REPLACE(REPLACE(annual_revenue, '$', ''), 'K', ''), 'k', ''), ',', '') AS REAL) / 1000
+                    ELSE
+                        CAST(REPLACE(REPLACE(annual_revenue, '$', ''), ',', '') AS REAL) / 1000000
+                END
+            """
+            if revenue_min is not None and revenue_max is not None:
+                where_clauses.append(f'({revenue_clause}) >= ? AND ({revenue_clause}) <= ?')
+                params.extend([revenue_min, revenue_max])
+            elif revenue_min is not None:
+                where_clauses.append(f'({revenue_clause}) >= ?')
+                params.append(revenue_min)
+            elif revenue_max is not None:
+                where_clauses.append(f'({revenue_clause}) <= ?')
+                params.append(revenue_max)
 
-    where_sql = ' WHERE ' + ' AND '.join(where_clauses)
+        where_sql = ' WHERE ' + ' AND '.join(where_clauses)
 
-    # Get filtered count (where_sql uses ? placeholders, params passed separately)
-    count_query = 'SELECT COUNT(*) as total FROM monitored_accounts' + where_sql
-    cursor.execute(count_query, params)
-    filtered_records = cursor.fetchone()['total']
+        # Get filtered count (where_sql uses ? placeholders, params passed separately)
+        count_query = 'SELECT COUNT(*) as total FROM monitored_accounts' + where_sql
+        cursor.execute(count_query, params)
+        filtered_records = cursor.fetchone()['total']
 
-    # Whitelist-validated sort column (column_map values are all hardcoded above)
-    sort_column = column_map.get(order_column, 'company_name')
-    assert sort_column in column_map.values(), f"sort_column must be in whitelist, got {sort_column!r}"
-    sort_order = 'DESC' if order_dir.lower() == 'desc' else 'ASC'
+        # Whitelist-validated sort column (column_map values are all hardcoded above)
+        sort_column = column_map.get(order_column, 'company_name')
+        assert sort_column in column_map.values(), f"sort_column must be in whitelist, got {sort_column!r}"
+        sort_order = 'DESC' if order_dir.lower() == 'desc' else 'ASC'
 
-    # Get paginated and sorted data
-    select_query = 'SELECT ma.* FROM monitored_accounts ma' + where_sql + \
-                   ' ORDER BY ma.' + sort_column + ' ' + sort_order + ' LIMIT ? OFFSET ?'
+        # Get paginated and sorted data
+        select_query = 'SELECT ma.* FROM monitored_accounts ma' + where_sql + \
+                       ' ORDER BY ma.' + sort_column + ' ' + sort_order + ' LIMIT ? OFFSET ?'
 
-    select_params = list(params) + [length, start]
-    cursor.execute(select_query, select_params)
-    rows = cursor.fetchall()
-    conn.close()
+        select_params = list(params) + [length, start]
+        cursor.execute(select_query, select_params)
+        rows = cursor.fetchall()
 
     accounts = []
     for row in rows:
@@ -2586,12 +2562,11 @@ def get_all_accounts_datatable(draw: int, start: int, length: int, search_value:
 
 def get_account(account_id: int) -> Optional[dict]:
     """Get a single account by ID."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    cursor.execute('SELECT * FROM monitored_accounts WHERE id = ?', (account_id,))
-    row = cursor.fetchone()
-    conn.close()
+        cursor.execute('SELECT * FROM monitored_accounts WHERE id = ?', (account_id,))
+        row = cursor.fetchone()
 
     if row:
         account = dict(row)
@@ -2603,12 +2578,11 @@ def get_account(account_id: int) -> Optional[dict]:
 
 def get_account_by_company(company_name: str) -> Optional[dict]:
     """Get a single account by company name."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    cursor.execute('SELECT * FROM monitored_accounts WHERE company_name = ?', (company_name,))
-    row = cursor.fetchone()
-    conn.close()
+        cursor.execute('SELECT * FROM monitored_accounts WHERE company_name = ?', (company_name,))
+        row = cursor.fetchone()
 
     if row:
         account = dict(row)
@@ -2620,15 +2594,14 @@ def get_account_by_company(company_name: str) -> Optional[dict]:
 
 def get_account_by_company_case_insensitive(company_name: str) -> Optional[dict]:
     """Get a single account by company name, ignoring case."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    cursor.execute(
-        'SELECT * FROM monitored_accounts WHERE LOWER(company_name) = LOWER(?)',
-        (company_name,)
-    )
-    row = cursor.fetchone()
-    conn.close()
+        cursor.execute(
+            'SELECT * FROM monitored_accounts WHERE LOWER(company_name) = LOWER(?)',
+            (company_name,)
+        )
+        row = cursor.fetchone()
 
     if row:
         account = dict(row)
@@ -2658,81 +2631,80 @@ def find_potential_duplicates(company_name: str, github_org: str = None, website
     """
     duplicates = []
     seen_ids = set()
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    # Normalize the input company name
-    company_normalized = _normalize_company_name(company_name)
+        # Normalize the input company name
+        company_normalized = _normalize_company_name(company_name)
 
-    # 1. Exact company name match (case-insensitive)
-    cursor.execute(
-        'SELECT * FROM monitored_accounts WHERE LOWER(company_name) = LOWER(?)',
-        (company_name.strip(),)
-    )
-    for row in cursor.fetchall():
-        account = dict(row)
-        account['match_reason'] = 'exact_name'
-        account['match_confidence'] = 100
-        duplicates.append(account)
-        seen_ids.add(account['id'])
-
-    # 2. Fuzzy company name match — use LIKE to narrow candidates instead of full scan
-    if company_normalized:
+        # 1. Exact company name match (case-insensitive)
         cursor.execute(
-            'SELECT * FROM monitored_accounts WHERE LOWER(company_name) LIKE ?',
-            (f'%{company_normalized}%',)
+            'SELECT * FROM monitored_accounts WHERE LOWER(company_name) = LOWER(?)',
+            (company_name.strip(),)
         )
         for row in cursor.fetchall():
             account = dict(row)
-            if account['id'] in seen_ids:
-                continue
-            existing_normalized = _normalize_company_name(account.get('company_name', ''))
-            if existing_normalized and existing_normalized == company_normalized:
-                account['match_reason'] = 'normalized_name'
-                account['match_confidence'] = 80
-                duplicates.append(account)
-                seen_ids.add(account['id'])
-            elif existing_normalized and (existing_normalized in company_normalized or company_normalized in existing_normalized):
-                account['match_reason'] = 'partial_name'
-                account['match_confidence'] = 50
-                duplicates.append(account)
-                seen_ids.add(account['id'])
-
-    # 3. GitHub org match (if provided)
-    if github_org:
-        cursor.execute(
-            'SELECT * FROM monitored_accounts WHERE LOWER(github_org) = LOWER(?)',
-            (github_org.strip(),)
-        )
-        for row in cursor.fetchall():
-            account = dict(row)
-            if account['id'] in seen_ids:
-                continue
-            account['match_reason'] = 'github_org'
+            account['match_reason'] = 'exact_name'
             account['match_confidence'] = 100
             duplicates.append(account)
             seen_ids.add(account['id'])
 
-    # 4. Website domain match — use LIKE to narrow candidates instead of full scan
-    if website:
-        website_domain = _extract_domain(website)
-        if website_domain:
+        # 2. Fuzzy company name match — use LIKE to narrow candidates instead of full scan
+        if company_normalized:
             cursor.execute(
-                'SELECT * FROM monitored_accounts WHERE website IS NOT NULL AND LOWER(website) LIKE ?',
-                (f'%{website_domain}%',)
+                'SELECT * FROM monitored_accounts WHERE LOWER(company_name) LIKE ?',
+                (f'%{company_normalized}%',)
             )
             for row in cursor.fetchall():
                 account = dict(row)
                 if account['id'] in seen_ids:
                     continue
-                existing_domain = _extract_domain(account.get('website', ''))
-                if existing_domain and existing_domain == website_domain:
-                    account['match_reason'] = 'website_domain'
-                    account['match_confidence'] = 100
+                existing_normalized = _normalize_company_name(account.get('company_name', ''))
+                if existing_normalized and existing_normalized == company_normalized:
+                    account['match_reason'] = 'normalized_name'
+                    account['match_confidence'] = 80
+                    duplicates.append(account)
+                    seen_ids.add(account['id'])
+                elif existing_normalized and (existing_normalized in company_normalized or company_normalized in existing_normalized):
+                    account['match_reason'] = 'partial_name'
+                    account['match_confidence'] = 50
                     duplicates.append(account)
                     seen_ids.add(account['id'])
 
-    conn.close()
+        # 3. GitHub org match (if provided)
+        if github_org:
+            cursor.execute(
+                'SELECT * FROM monitored_accounts WHERE LOWER(github_org) = LOWER(?)',
+                (github_org.strip(),)
+            )
+            for row in cursor.fetchall():
+                account = dict(row)
+                if account['id'] in seen_ids:
+                    continue
+                account['match_reason'] = 'github_org'
+                account['match_confidence'] = 100
+                duplicates.append(account)
+                seen_ids.add(account['id'])
+
+        # 4. Website domain match — use LIKE to narrow candidates instead of full scan
+        if website:
+            website_domain = _extract_domain(website)
+            if website_domain:
+                cursor.execute(
+                    'SELECT * FROM monitored_accounts WHERE website IS NOT NULL AND LOWER(website) LIKE ?',
+                    (f'%{website_domain}%',)
+                )
+                for row in cursor.fetchall():
+                    account = dict(row)
+                    if account['id'] in seen_ids:
+                        continue
+                    existing_domain = _extract_domain(account.get('website', ''))
+                    if existing_domain and existing_domain == website_domain:
+                        account['match_reason'] = 'website_domain'
+                        account['match_confidence'] = 100
+                        duplicates.append(account)
+                        seen_ids.add(account['id'])
+
 
     # Sort by confidence (highest first)
     duplicates.sort(key=lambda x: x.get('match_confidence', 0), reverse=True)
@@ -2768,13 +2740,12 @@ def find_potential_duplicates_bulk(companies: list) -> dict:
     if not companies:
         return {}
 
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    # Fetch only the columns needed for dedup matching
-    cursor.execute('SELECT id, company_name, github_org, website FROM monitored_accounts')
-    all_accounts = [dict(row) for row in cursor.fetchall()]
-    conn.close()
+        # Fetch only the columns needed for dedup matching
+        cursor.execute('SELECT id, company_name, github_org, website FROM monitored_accounts')
+        all_accounts = [dict(row) for row in cursor.fetchall()]
 
     # Build lookup indices for fast matching
     # Index by lowercase company name
@@ -3044,14 +3015,13 @@ def get_import_duplicates_summary(companies_list: list) -> dict:
 
 def delete_account(account_id: int) -> bool:
     """Delete a monitored account."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    cursor.execute('DELETE FROM monitored_accounts WHERE id = ?', (account_id,))
-    deleted = cursor.rowcount > 0
+        cursor.execute('DELETE FROM monitored_accounts WHERE id = ?', (account_id,))
+        deleted = cursor.rowcount > 0
 
-    conn.commit()
-    conn.close()
+        conn.commit()
 
     return deleted
 
@@ -3077,41 +3047,40 @@ def mark_account_as_invalid(company_name: str, reason: str) -> dict:
     # Normalize company name to lowercase to prevent duplicates
     company_name_normalized = company_name.lower().strip()
 
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    now = datetime.now().isoformat()
+        now = datetime.now().isoformat()
 
-    # Check if account exists (case-insensitive)
-    cursor.execute(
-        'SELECT * FROM monitored_accounts WHERE LOWER(company_name) = ?',
-        (company_name_normalized,)
-    )
-    existing = cursor.fetchone()
+        # Check if account exists (case-insensitive)
+        cursor.execute(
+            'SELECT * FROM monitored_accounts WHERE LOWER(company_name) = ?',
+            (company_name_normalized,)
+        )
+        existing = cursor.fetchone()
 
-    if existing:
-        # Update existing account to Tier 4 (keep on main table, do NOT auto-archive)
-        cursor.execute('''
-            UPDATE monitored_accounts
-            SET current_tier = ?,
-                last_scanned_at = ?,
-                status_changed_at = ?,
-                evidence_summary = ?,
-                next_scan_due = NULL
-            WHERE LOWER(company_name) = ?
-        ''', (TIER_INVALID, now, now, reason, company_name_normalized))
-        account_id = existing['id']
-    else:
-        # Create new account at Tier 4 (keep on main table, do NOT auto-archive) (use normalized name)
-        account_id = _insert_returning_id(cursor, '''
-            INSERT INTO monitored_accounts (
-                company_name, github_org, current_tier, last_scanned_at,
-                status_changed_at, evidence_summary, next_scan_due
-            ) VALUES (?, ?, ?, ?, ?, ?, NULL)
-        ''', (company_name_normalized, '', TIER_INVALID, now, now, reason))
+        if existing:
+            # Update existing account to Tier 4 (keep on main table, do NOT auto-archive)
+            cursor.execute('''
+                UPDATE monitored_accounts
+                SET current_tier = ?,
+                    last_scanned_at = ?,
+                    status_changed_at = ?,
+                    evidence_summary = ?,
+                    next_scan_due = NULL
+                WHERE LOWER(company_name) = ?
+            ''', (TIER_INVALID, now, now, reason, company_name_normalized))
+            account_id = existing['id']
+        else:
+            # Create new account at Tier 4 (keep on main table, do NOT auto-archive) (use normalized name)
+            account_id = _insert_returning_id(cursor, '''
+                INSERT INTO monitored_accounts (
+                    company_name, github_org, current_tier, last_scanned_at,
+                    status_changed_at, evidence_summary, next_scan_due
+                ) VALUES (?, ?, ?, ?, ?, ?, NULL)
+            ''', (company_name_normalized, '', TIER_INVALID, now, now, reason))
 
-    conn.commit()
-    conn.close()
+        conn.commit()
 
     tier_config = TIER_CONFIG[TIER_INVALID]
 
@@ -3138,18 +3107,17 @@ def archive_account(account_id: int) -> bool:
     Returns:
         True if account was archived, False if not found.
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    now = datetime.now().isoformat()
-    cursor.execute(
-        'UPDATE monitored_accounts SET archived_at = ? WHERE id = ? AND archived_at IS NULL',
-        (now, account_id)
-    )
+        now = datetime.now().isoformat()
+        cursor.execute(
+            'UPDATE monitored_accounts SET archived_at = ? WHERE id = ? AND archived_at IS NULL',
+            (now, account_id)
+        )
 
-    updated = cursor.rowcount > 0
-    conn.commit()
-    conn.close()
+        updated = cursor.rowcount > 0
+        conn.commit()
 
     return updated
 
@@ -3164,17 +3132,16 @@ def unarchive_account(account_id: int) -> bool:
     Returns:
         True if account was unarchived, False if not found or not archived.
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    cursor.execute(
-        'UPDATE monitored_accounts SET archived_at = NULL WHERE id = ? AND archived_at IS NOT NULL',
-        (account_id,)
-    )
+        cursor.execute(
+            'UPDATE monitored_accounts SET archived_at = NULL WHERE id = ? AND archived_at IS NOT NULL',
+            (account_id,)
+        )
 
-    updated = cursor.rowcount > 0
-    conn.commit()
-    conn.close()
+        updated = cursor.rowcount > 0
+        conn.commit()
 
     return updated
 
@@ -3192,19 +3159,18 @@ def auto_archive_tier4_accounts() -> int:
     # DISABLED: accounts should remain on main table
     return 0
 
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    now = datetime.now().isoformat()
-    cursor.execute('''
-        UPDATE monitored_accounts
-        SET archived_at = ?
-        WHERE current_tier = ? AND archived_at IS NULL
-    ''', (now, TIER_INVALID))
+        now = datetime.now().isoformat()
+        cursor.execute('''
+            UPDATE monitored_accounts
+            SET archived_at = ?
+            WHERE current_tier = ? AND archived_at IS NULL
+        ''', (now, TIER_INVALID))
 
-    archived_count = cursor.rowcount
-    conn.commit()
-    conn.close()
+        archived_count = cursor.rowcount
+        conn.commit()
 
     return archived_count
 
@@ -3221,42 +3187,41 @@ def get_archived_accounts(page: int = 1, limit: int = 50, search_query: Optional
     Returns:
         Dictionary with accounts, pagination info, and archive stats.
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    # Build WHERE clause
-    where_clauses = ['archived_at IS NOT NULL']
-    params = []
+        # Build WHERE clause
+        where_clauses = ['archived_at IS NOT NULL']
+        params = []
 
-    if search_query:
-        where_clauses.append('company_name LIKE ?')
-        params.append(f'%{search_query}%')
+        if search_query:
+            where_clauses.append('company_name LIKE ?')
+            params.append(f'%{search_query}%')
 
-    where_sql = ' WHERE ' + ' AND '.join(where_clauses)
+        where_sql = ' WHERE ' + ' AND '.join(where_clauses)
 
-    # Get total count
-    count_query = f'SELECT COUNT(*) as total FROM monitored_accounts{where_sql}'
-    cursor.execute(count_query, params)
-    total_items = cursor.fetchone()['total']
+        # Get total count
+        count_query = f'SELECT COUNT(*) as total FROM monitored_accounts{where_sql}'
+        cursor.execute(count_query, params)
+        total_items = cursor.fetchone()['total']
 
-    # Calculate pagination
-    total_pages = (total_items + limit - 1) // limit
-    current_page = max(1, min(page, total_pages or 1))
-    offset = (current_page - 1) * limit
+        # Calculate pagination
+        total_pages = (total_items + limit - 1) // limit
+        current_page = max(1, min(page, total_pages or 1))
+        offset = (current_page - 1) * limit
 
-    # Get archived accounts sorted by archive date (most recent first)
-    select_query = f'''
-        SELECT * FROM monitored_accounts
-        {where_sql}
-        ORDER BY archived_at DESC
-        LIMIT ? OFFSET ?
-    '''
+        # Get archived accounts sorted by archive date (most recent first)
+        select_query = f'''
+            SELECT * FROM monitored_accounts
+            {where_sql}
+            ORDER BY archived_at DESC
+            LIMIT ? OFFSET ?
+        '''
 
-    select_params = list(params) + [limit, offset]
-    cursor.execute(select_query, select_params)
+        select_params = list(params) + [limit, offset]
+        cursor.execute(select_query, select_params)
 
-    rows = cursor.fetchall()
-    conn.close()
+        rows = cursor.fetchall()
 
     accounts = []
     for row in rows:
@@ -3285,21 +3250,20 @@ def get_archived_accounts_for_rescan() -> list:
     Returns:
         List of account dictionaries eligible for re-scan.
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    cursor.execute(f'''
-        SELECT * FROM monitored_accounts
-        WHERE archived_at IS NOT NULL
-          AND (
-              last_scanned_at IS NULL
-              OR last_scanned_at < {_adapt_datetime('-28 days')}
-          )
-        ORDER BY last_scanned_at ASC
-    ''')
+        cursor.execute(f'''
+            SELECT * FROM monitored_accounts
+            WHERE archived_at IS NOT NULL
+              AND (
+                  last_scanned_at IS NULL
+                  OR last_scanned_at < {_adapt_datetime('-28 days')}
+              )
+            ORDER BY last_scanned_at ASC
+        ''')
 
-    rows = cursor.fetchall()
-    conn.close()
+        rows = cursor.fetchall()
 
     accounts = []
     for row in rows:
@@ -3313,13 +3277,12 @@ def get_archived_accounts_for_rescan() -> list:
 
 def get_archived_count() -> int:
     """Get the count of archived accounts."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    cursor.execute('SELECT COUNT(*) as count FROM monitored_accounts WHERE archived_at IS NOT NULL')
-    count = cursor.fetchone()['count']
+        cursor.execute('SELECT COUNT(*) as count FROM monitored_accounts WHERE archived_at IS NOT NULL')
+        count = cursor.fetchone()['count']
 
-    conn.close()
     return count
 
 
@@ -3340,44 +3303,43 @@ def get_refreshable_accounts() -> list:
     Returns:
         List of account dictionaries eligible for refresh, ordered by priority.
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    # Build a CASE expression for tier-specific staleness thresholds
-    # Each tier gets its own interval from TIER_SCAN_INTERVALS
-    # Intervals are hardcoded constants (not user input), safe to inline
-    dt_preparing = _adapt_datetime(f'-{TIER_SCAN_INTERVALS[TIER_PREPARING]} days')
-    dt_thinking = _adapt_datetime(f'-{TIER_SCAN_INTERVALS[TIER_THINKING]} days')
-    dt_launched = _adapt_datetime(f'-{TIER_SCAN_INTERVALS[TIER_LAUNCHED]} days')
-    dt_tracking = _adapt_datetime(f'-{TIER_SCAN_INTERVALS[TIER_TRACKING]} days')
+        # Build a CASE expression for tier-specific staleness thresholds
+        # Each tier gets its own interval from TIER_SCAN_INTERVALS
+        # Intervals are hardcoded constants (not user input), safe to inline
+        dt_preparing = _adapt_datetime(f'-{TIER_SCAN_INTERVALS[TIER_PREPARING]} days')
+        dt_thinking = _adapt_datetime(f'-{TIER_SCAN_INTERVALS[TIER_THINKING]} days')
+        dt_launched = _adapt_datetime(f'-{TIER_SCAN_INTERVALS[TIER_LAUNCHED]} days')
+        dt_tracking = _adapt_datetime(f'-{TIER_SCAN_INTERVALS[TIER_TRACKING]} days')
 
-    cursor.execute(f'''
-        SELECT ma.*
-        FROM monitored_accounts ma
-        WHERE ma.archived_at IS NULL
-          AND ma.current_tier != 4
-          AND (
-              ma.last_scanned_at IS NULL
-              OR (ma.current_tier = 2 AND ma.last_scanned_at < {dt_preparing})
-              OR (ma.current_tier = 1 AND ma.last_scanned_at < {dt_thinking})
-              OR (ma.current_tier = 3 AND ma.last_scanned_at < {dt_launched})
-              OR (ma.current_tier = 0 AND ma.last_scanned_at < {dt_tracking})
-          )
-          AND (ma.scan_status IS NULL OR ma.scan_status = 'idle')
-          AND ma.github_org IS NOT NULL
-          AND ma.github_org != ''
-        ORDER BY
-            CASE ma.current_tier
-                WHEN 2 THEN 1  -- Hot leads first
-                WHEN 1 THEN 2  -- Then warm
-                WHEN 3 THEN 3  -- Then launched
-                WHEN 0 THEN 4  -- Then tracking
-            END,
-            ma.last_scanned_at ASC  -- Oldest scans first within each tier
-    ''')
+        cursor.execute(f'''
+            SELECT ma.*
+            FROM monitored_accounts ma
+            WHERE ma.archived_at IS NULL
+              AND ma.current_tier != 4
+              AND (
+                  ma.last_scanned_at IS NULL
+                  OR (ma.current_tier = 2 AND ma.last_scanned_at < {dt_preparing})
+                  OR (ma.current_tier = 1 AND ma.last_scanned_at < {dt_thinking})
+                  OR (ma.current_tier = 3 AND ma.last_scanned_at < {dt_launched})
+                  OR (ma.current_tier = 0 AND ma.last_scanned_at < {dt_tracking})
+              )
+              AND (ma.scan_status IS NULL OR ma.scan_status = 'idle')
+              AND ma.github_org IS NOT NULL
+              AND ma.github_org != ''
+            ORDER BY
+                CASE ma.current_tier
+                    WHEN 2 THEN 1  -- Hot leads first
+                    WHEN 1 THEN 2  -- Then warm
+                    WHEN 3 THEN 3  -- Then launched
+                    WHEN 0 THEN 4  -- Then tracking
+                END,
+                ma.last_scanned_at ASC  -- Oldest scans first within each tier
+        ''')
 
-    rows = cursor.fetchall()
-    conn.close()
+        rows = cursor.fetchall()
 
     accounts = []
     for row in rows:
@@ -3399,66 +3361,65 @@ def get_scheduled_rescan_summary() -> dict:
     - interval_days: the configured interval for this tier
     - next_due_at: ISO timestamp of the soonest next_scan_due in this tier (or None)
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    summary = {}
-    for tier, interval_days in TIER_SCAN_INTERVALS.items():
-        tier_config = TIER_CONFIG.get(tier, TIER_CONFIG[TIER_TRACKING])
+        summary = {}
+        for tier, interval_days in TIER_SCAN_INTERVALS.items():
+            tier_config = TIER_CONFIG.get(tier, TIER_CONFIG[TIER_TRACKING])
 
-        cursor.execute(
-            'SELECT COUNT(*) as cnt FROM monitored_accounts WHERE current_tier = ? AND archived_at IS NULL',
-            (tier,)
-        )
-        total = cursor.fetchone()['cnt']
+            cursor.execute(
+                'SELECT COUNT(*) as cnt FROM monitored_accounts WHERE current_tier = ? AND archived_at IS NULL',
+                (tier,)
+            )
+            total = cursor.fetchone()['cnt']
 
-        # How many are overdue (past their interval)
-        dt_threshold = _adapt_datetime(f'-{interval_days} days')
-        cursor.execute(f'''
-            SELECT COUNT(*) as cnt FROM monitored_accounts
-            WHERE current_tier = ? AND archived_at IS NULL
-              AND github_org IS NOT NULL AND github_org != ''
-              AND (last_scanned_at IS NULL OR last_scanned_at < {dt_threshold})
-              AND (scan_status IS NULL OR scan_status = 'idle')
-        ''', (tier,))
-        due_now = cursor.fetchone()['cnt']
-
-        # Soonest upcoming scan in this tier
-        cursor.execute('''
-                SELECT MIN(next_scan_due) as soonest FROM monitored_accounts
+            # How many are overdue (past their interval)
+            dt_threshold = _adapt_datetime(f'-{interval_days} days')
+            cursor.execute(f'''
+                SELECT COUNT(*) as cnt FROM monitored_accounts
                 WHERE current_tier = ? AND archived_at IS NULL
                   AND github_org IS NOT NULL AND github_org != ''
-                  AND next_scan_due IS NOT NULL
+                  AND (last_scanned_at IS NULL OR last_scanned_at < {dt_threshold})
+                  AND (scan_status IS NULL OR scan_status = 'idle')
             ''', (tier,))
-        soonest_row = cursor.fetchone()
-        next_due_at = soonest_row['soonest'] if soonest_row else None
+            due_now = cursor.fetchone()['cnt']
 
-        summary[tier] = {
-            'tier_name': tier_config['name'],
-            'tier_status': tier_config['status'],
-            'total': total,
-            'due_now': due_now,
-            'interval_days': interval_days,
-            'next_due_at': next_due_at,
+            # Soonest upcoming scan in this tier
+            cursor.execute('''
+                    SELECT MIN(next_scan_due) as soonest FROM monitored_accounts
+                    WHERE current_tier = ? AND archived_at IS NULL
+                      AND github_org IS NOT NULL AND github_org != ''
+                      AND next_scan_due IS NOT NULL
+                ''', (tier,))
+            soonest_row = cursor.fetchone()
+            next_due_at = soonest_row['soonest'] if soonest_row else None
+
+            summary[tier] = {
+                'tier_name': tier_config['name'],
+                'tier_status': tier_config['status'],
+                'total': total,
+                'due_now': due_now,
+                'interval_days': interval_days,
+                'next_due_at': next_due_at,
+            }
+
+        # Tier 4 (Not Found): never auto-rescanned, but include count for visibility
+        tier4_config = TIER_CONFIG.get(TIER_INVALID, TIER_CONFIG[TIER_TRACKING])
+        cursor.execute(
+            'SELECT COUNT(*) as cnt FROM monitored_accounts WHERE current_tier = ?',
+            (TIER_INVALID,)
+        )
+        tier4_total = cursor.fetchone()['cnt']
+        summary[TIER_INVALID] = {
+            'tier_name': tier4_config['name'],
+            'tier_status': tier4_config['status'],
+            'total': tier4_total,
+            'due_now': 0,
+            'interval_days': None,
+            'next_due_at': None,
         }
 
-    # Tier 4 (Not Found): never auto-rescanned, but include count for visibility
-    tier4_config = TIER_CONFIG.get(TIER_INVALID, TIER_CONFIG[TIER_TRACKING])
-    cursor.execute(
-        'SELECT COUNT(*) as cnt FROM monitored_accounts WHERE current_tier = ?',
-        (TIER_INVALID,)
-    )
-    tier4_total = cursor.fetchone()['cnt']
-    summary[TIER_INVALID] = {
-        'tier_name': tier4_config['name'],
-        'tier_status': tier4_config['status'],
-        'total': tier4_total,
-        'due_now': 0,
-        'interval_days': None,
-        'next_due_at': None,
-    }
-
-    conn.close()
     return summary
 
 
@@ -3468,31 +3429,29 @@ def get_scheduled_rescan_summary() -> dict:
 
 def get_setting(key: str) -> Optional[str]:
     """Get a system setting value by key."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('SELECT value FROM system_settings WHERE key = ?', (key,))
-    row = cursor.fetchone()
-    conn.close()
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT value FROM system_settings WHERE key = ?', (key,))
+        row = cursor.fetchone()
     return row['value'] if row else None
 
 
 def set_setting(key: str, value: str) -> None:
     """Set a system setting value."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    if _USE_POSTGRES:
-        cursor.execute('''
-            INSERT INTO system_settings (key, value)
-            VALUES (%s, %s)
-            ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
-        ''', (key, value))
-    else:
-        cursor.execute('''
-            INSERT OR REPLACE INTO system_settings (key, value)
-            VALUES (?, ?)
-        ''', (key, value))
-    conn.commit()
-    conn.close()
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        if _USE_POSTGRES:
+            cursor.execute('''
+                INSERT INTO system_settings (key, value)
+                VALUES (%s, %s)
+                ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+            ''', (key, value))
+        else:
+            cursor.execute('''
+                INSERT OR REPLACE INTO system_settings (key, value)
+                VALUES (?, ?)
+            ''', (key, value))
+        conn.commit()
 
 
 def auto_retier_if_version_changed() -> int:
@@ -3736,29 +3695,28 @@ def increment_daily_stat(stat_name: str, amount: int = 1) -> None:
         raise ValueError('Invalid stat_name: ' + stat_name)
     assert stat_name in ALLOWED_STAT_COLUMNS  # Whitelist-validated column name
 
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    today = datetime.now().strftime('%Y-%m-%d')
+        today = datetime.now().strftime('%Y-%m-%d')
 
-    # Column name is whitelist-validated above; SQLite does not support parameterized column names
-    _UPDATE_TEMPLATES = {
-        'scans_run': 'UPDATE system_stats SET scans_run = scans_run + ? WHERE date = ?',
-        'api_calls_estimated': 'UPDATE system_stats SET api_calls_estimated = api_calls_estimated + ? WHERE date = ?',
-        'webhooks_fired': 'UPDATE system_stats SET webhooks_fired = webhooks_fired + ? WHERE date = ?',
-    }
-    query = _UPDATE_TEMPLATES[stat_name]
-    cursor.execute(query, (amount, today))
-    
-    if cursor.rowcount == 0:
-        cursor.execute('''
-            INSERT INTO system_stats (date, scans_run, api_calls_estimated, webhooks_fired)
-            VALUES (?, 0, 0, 0)
-        ''', (today,))
+        # Column name is whitelist-validated above; SQLite does not support parameterized column names
+        _UPDATE_TEMPLATES = {
+            'scans_run': 'UPDATE system_stats SET scans_run = scans_run + ? WHERE date = ?',
+            'api_calls_estimated': 'UPDATE system_stats SET api_calls_estimated = api_calls_estimated + ? WHERE date = ?',
+            'webhooks_fired': 'UPDATE system_stats SET webhooks_fired = webhooks_fired + ? WHERE date = ?',
+        }
+        query = _UPDATE_TEMPLATES[stat_name]
         cursor.execute(query, (amount, today))
     
-    conn.commit()
-    conn.close()
+        if cursor.rowcount == 0:
+            cursor.execute('''
+                INSERT INTO system_stats (date, scans_run, api_calls_estimated, webhooks_fired)
+                VALUES (?, 0, 0, 0)
+            ''', (today,))
+            cursor.execute(query, (amount, today))
+    
+        conn.commit()
 
 
 def get_stats_last_n_days(days: int = 30) -> list:
@@ -3768,19 +3726,18 @@ def get_stats_last_n_days(days: int = 30) -> list:
     Returns:
         List of dicts with date, scans_run, api_calls_estimated, webhooks_fired
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
     
-    date_threshold = _adapt_date(f'-{days} days')
-    cursor.execute(f'''
-        SELECT date, scans_run, api_calls_estimated, webhooks_fired
-        FROM system_stats
-        WHERE date >= {date_threshold}
-        ORDER BY date ASC
-    ''')
+        date_threshold = _adapt_date(f'-{days} days')
+        cursor.execute(f'''
+            SELECT date, scans_run, api_calls_estimated, webhooks_fired
+            FROM system_stats
+            WHERE date >= {date_threshold}
+            ORDER BY date ASC
+        ''')
     
-    rows = cursor.fetchall()
-    conn.close()
+        rows = cursor.fetchall()
     
     return [dict(row) for row in rows]
 
@@ -3795,28 +3752,27 @@ def increment_hourly_api_calls(amount: int = 1) -> None:
     Args:
         amount: Number of API calls to add (default 1)
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    # Generate hour key in format: YYYY-MM-DD-HH
-    hour_key = datetime.now().strftime('%Y-%m-%d-%H')
+        # Generate hour key in format: YYYY-MM-DD-HH
+        hour_key = datetime.now().strftime('%Y-%m-%d-%H')
 
-    # Try to update existing row for this hour
-    cursor.execute('''
-        UPDATE hourly_api_stats
-        SET api_calls = api_calls + ?
-        WHERE hour_key = ?
-    ''', (amount, hour_key))
-
-    if cursor.rowcount == 0:
-        # No row for this hour yet, create one
+        # Try to update existing row for this hour
         cursor.execute('''
-            INSERT INTO hourly_api_stats (hour_key, api_calls)
-            VALUES (?, ?)
-        ''', (hour_key, amount))
+            UPDATE hourly_api_stats
+            SET api_calls = api_calls + ?
+            WHERE hour_key = ?
+        ''', (amount, hour_key))
 
-    conn.commit()
-    conn.close()
+        if cursor.rowcount == 0:
+            # No row for this hour yet, create one
+            cursor.execute('''
+                INSERT INTO hourly_api_stats (hour_key, api_calls)
+                VALUES (?, ?)
+            ''', (hour_key, amount))
+
+        conn.commit()
 
 
 def get_current_hour_api_calls() -> int:
@@ -3826,19 +3782,18 @@ def get_current_hour_api_calls() -> int:
     Returns:
         Number of API calls this hour (0 if no calls yet)
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    # Generate hour key for current hour
-    hour_key = datetime.now().strftime('%Y-%m-%d-%H')
+        # Generate hour key for current hour
+        hour_key = datetime.now().strftime('%Y-%m-%d-%H')
 
-    cursor.execute('''
-        SELECT api_calls FROM hourly_api_stats
-        WHERE hour_key = ?
-    ''', (hour_key,))
+        cursor.execute('''
+            SELECT api_calls FROM hourly_api_stats
+            WHERE hour_key = ?
+        ''', (hour_key,))
 
-    row = cursor.fetchone()
-    conn.close()
+        row = cursor.fetchone()
 
     return row['api_calls'] if row else 0
 
@@ -3853,21 +3808,20 @@ def cleanup_old_hourly_stats(hours_to_keep: int = 24) -> int:
     Returns:
         Number of rows deleted
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    # Calculate cutoff hour_key
-    cutoff_time = datetime.now() - timedelta(hours=hours_to_keep)
-    cutoff_key = cutoff_time.strftime('%Y-%m-%d-%H')
+        # Calculate cutoff hour_key
+        cutoff_time = datetime.now() - timedelta(hours=hours_to_keep)
+        cutoff_key = cutoff_time.strftime('%Y-%m-%d-%H')
 
-    cursor.execute('''
-        DELETE FROM hourly_api_stats
-        WHERE hour_key < ?
-    ''', (cutoff_key,))
+        cursor.execute('''
+            DELETE FROM hourly_api_stats
+            WHERE hour_key < ?
+        ''', (cutoff_key,))
 
-    deleted = cursor.rowcount
-    conn.commit()
-    conn.close()
+        deleted = cursor.rowcount
+        conn.commit()
 
     return deleted
 
@@ -3884,33 +3838,31 @@ def log_webhook(event_type: str, company: str, status: str) -> int:
     Returns:
         ID of the log entry
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
     
-    log_id = _insert_returning_id(cursor, '''
-        INSERT INTO webhook_logs (event_type, company, status)
-        VALUES (?, ?, ?)
-    ''', (event_type, company, status))
-    conn.commit()
-    conn.close()
+        log_id = _insert_returning_id(cursor, '''
+            INSERT INTO webhook_logs (event_type, company, status)
+            VALUES (?, ?, ?)
+        ''', (event_type, company, status))
+        conn.commit()
     
     return log_id
 
 
 def get_recent_webhook_logs(limit: int = 50) -> list:
     """Get recent webhook logs."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
     
-    cursor.execute('''
-        SELECT id, timestamp, event_type, company, status
-        FROM webhook_logs
-        ORDER BY timestamp DESC
-        LIMIT ?
-    ''', (limit,))
+        cursor.execute('''
+            SELECT id, timestamp, event_type, company, status
+            FROM webhook_logs
+            ORDER BY timestamp DESC
+            LIMIT ?
+        ''', (limit,))
     
-    rows = cursor.fetchall()
-    conn.close()
+        rows = cursor.fetchall()
     
     return [dict(row) for row in rows]
 
@@ -3942,58 +3894,55 @@ def set_scan_status(company_name: str, status: str, progress: str = None, error:
         True if the update was successful, False if another worker already
         claimed the row or the row was not found.
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    # Track time for both 'processing' and 'queued' statuses for watchdog recovery
-    now = datetime.now().isoformat() if status in (SCAN_STATUS_PROCESSING, SCAN_STATUS_QUEUED) else None
+        # Track time for both 'processing' and 'queued' statuses for watchdog recovery
+        now = datetime.now().isoformat() if status in (SCAN_STATUS_PROCESSING, SCAN_STATUS_QUEUED) else None
 
-    if status == SCAN_STATUS_PROCESSING:
-        # Only claim if currently queued OR already processing (progress update)
-        cursor.execute('''
-            UPDATE monitored_accounts
-            SET scan_status = ?, scan_progress = ?, scan_start_time = ?, last_scan_error = NULL
-            WHERE company_name = ? AND scan_status IN (?, ?)
-        ''', (status, progress, now, company_name, SCAN_STATUS_QUEUED, SCAN_STATUS_PROCESSING))
-        if cursor.rowcount == 0:
-            conn.close()
-            print(f"[SCAN_STATUS] Could not set {company_name} to processing (already claimed or not queued)")
-            return False
-    elif status == SCAN_STATUS_IDLE:
-        # Always allow reset to idle (cleanup path)
-        if error:
+        if status == SCAN_STATUS_PROCESSING:
+            # Only claim if currently queued OR already processing (progress update)
             cursor.execute('''
                 UPDATE monitored_accounts
-                SET scan_status = ?, scan_progress = NULL, scan_start_time = NULL, last_scan_error = ?
-                WHERE company_name = ?
-            ''', (status, error, company_name))
+                SET scan_status = ?, scan_progress = ?, scan_start_time = ?, last_scan_error = NULL
+                WHERE company_name = ? AND scan_status IN (?, ?)
+            ''', (status, progress, now, company_name, SCAN_STATUS_QUEUED, SCAN_STATUS_PROCESSING))
+            if cursor.rowcount == 0:
+                print(f"[SCAN_STATUS] Could not set {company_name} to processing (already claimed or not queued)")
+                return False
+        elif status == SCAN_STATUS_IDLE:
+            # Always allow reset to idle (cleanup path)
+            if error:
+                cursor.execute('''
+                    UPDATE monitored_accounts
+                    SET scan_status = ?, scan_progress = NULL, scan_start_time = NULL, last_scan_error = ?
+                    WHERE company_name = ?
+                ''', (status, error, company_name))
+            else:
+                cursor.execute('''
+                    UPDATE monitored_accounts
+                    SET scan_status = ?, scan_progress = NULL, scan_start_time = NULL, last_scan_error = NULL
+                    WHERE company_name = ?
+                ''', (status, company_name))
+        elif status == SCAN_STATUS_QUEUED:
+            # Only queue if currently idle (prevents double-queuing)
+            cursor.execute('''
+                UPDATE monitored_accounts
+                SET scan_status = ?, scan_progress = ?, scan_start_time = ?
+                WHERE company_name = ? AND scan_status = ?
+            ''', (status, progress, now, company_name, SCAN_STATUS_IDLE))
+            if cursor.rowcount == 0:
+                print(f"[SCAN_STATUS] Could not queue {company_name} (already queued or processing)")
+                return False
         else:
             cursor.execute('''
                 UPDATE monitored_accounts
-                SET scan_status = ?, scan_progress = NULL, scan_start_time = NULL, last_scan_error = NULL
+                SET scan_status = ?, scan_progress = ?
                 WHERE company_name = ?
-            ''', (status, company_name))
-    elif status == SCAN_STATUS_QUEUED:
-        # Only queue if currently idle (prevents double-queuing)
-        cursor.execute('''
-            UPDATE monitored_accounts
-            SET scan_status = ?, scan_progress = ?, scan_start_time = ?
-            WHERE company_name = ? AND scan_status = ?
-        ''', (status, progress, now, company_name, SCAN_STATUS_IDLE))
-        if cursor.rowcount == 0:
-            conn.close()
-            print(f"[SCAN_STATUS] Could not queue {company_name} (already queued or processing)")
-            return False
-    else:
-        cursor.execute('''
-            UPDATE monitored_accounts
-            SET scan_status = ?, scan_progress = ?
-            WHERE company_name = ?
-        ''', (status, progress, company_name))
+            ''', (status, progress, company_name))
 
-    updated = cursor.rowcount > 0
-    conn.commit()
-    conn.close()
+        updated = cursor.rowcount > 0
+        conn.commit()
 
     return updated
 
@@ -4008,17 +3957,16 @@ def get_scan_status(company_name: str) -> Optional[dict]:
     Returns:
         Dictionary with scan_status, scan_progress, scan_start_time, last_scan_error or None.
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    cursor.execute('''
-        SELECT scan_status, scan_progress, scan_start_time, last_scan_error
-        FROM monitored_accounts
-        WHERE company_name = ?
-    ''', (company_name,))
+        cursor.execute('''
+            SELECT scan_status, scan_progress, scan_start_time, last_scan_error
+            FROM monitored_accounts
+            WHERE company_name = ?
+        ''', (company_name,))
 
-    row = cursor.fetchone()
-    conn.close()
+        row = cursor.fetchone()
 
     if row:
         return {
@@ -4037,17 +3985,16 @@ def get_queued_and_processing_accounts() -> dict:
     Returns:
         Dictionary with 'queued' and 'processing' lists of company names.
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    cursor.execute('''
-        SELECT company_name, scan_status, scan_start_time
-        FROM monitored_accounts
-        WHERE scan_status IN (?, ?)
-    ''', (SCAN_STATUS_QUEUED, SCAN_STATUS_PROCESSING))
+        cursor.execute('''
+            SELECT company_name, scan_status, scan_start_time
+            FROM monitored_accounts
+            WHERE scan_status IN (?, ?)
+        ''', (SCAN_STATUS_QUEUED, SCAN_STATUS_PROCESSING))
 
-    rows = cursor.fetchall()
-    conn.close()
+        rows = cursor.fetchall()
 
     result = {'queued': [], 'processing': []}
     for row in rows:
@@ -4069,24 +4016,23 @@ def get_queue_account_details() -> dict:
     Returns:
         Dictionary with 'queued' and 'processing' lists containing full account details.
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    cursor.execute('''
-        SELECT *
-        FROM monitored_accounts
-        WHERE scan_status IN (?, ?)
-        ORDER BY
-            CASE
-                WHEN scan_status = ? THEN 1
-                WHEN scan_status = ? THEN 2
-            END,
-            scan_start_time ASC
-    ''', (SCAN_STATUS_QUEUED, SCAN_STATUS_PROCESSING,
-          SCAN_STATUS_PROCESSING, SCAN_STATUS_QUEUED))
+        cursor.execute('''
+            SELECT *
+            FROM monitored_accounts
+            WHERE scan_status IN (?, ?)
+            ORDER BY
+                CASE
+                    WHEN scan_status = ? THEN 1
+                    WHEN scan_status = ? THEN 2
+                END,
+                scan_start_time ASC
+        ''', (SCAN_STATUS_QUEUED, SCAN_STATUS_PROCESSING,
+              SCAN_STATUS_PROCESSING, SCAN_STATUS_QUEUED))
 
-    rows = cursor.fetchall()
-    conn.close()
+        rows = cursor.fetchall()
 
     result = {'queued': [], 'processing': []}
     for row in rows:
@@ -4109,51 +4055,50 @@ def get_status_counts(stuck_timeout_minutes: int = 5) -> dict:
     Returns:
         Dictionary with counts for each status: idle, queued, processing, stuck.
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    # Get counts for all statuses
-    cursor.execute('''
-        SELECT scan_status, COUNT(*) as count
-        FROM monitored_accounts
-        GROUP BY scan_status
-    ''')
+        # Get counts for all statuses
+        cursor.execute('''
+            SELECT scan_status, COUNT(*) as count
+            FROM monitored_accounts
+            GROUP BY scan_status
+        ''')
 
-    rows = cursor.fetchall()
+        rows = cursor.fetchall()
 
-    # Initialize counts
-    counts = {
-        'idle': 0,
-        'queued': 0,
-        'processing': 0,
-        'stuck': 0
-    }
+        # Initialize counts
+        counts = {
+            'idle': 0,
+            'queued': 0,
+            'processing': 0,
+            'stuck': 0
+        }
 
-    # Populate basic counts
-    for row in rows:
-        status = row['scan_status'] or SCAN_STATUS_IDLE
-        if status in counts:
-            counts[status] = row['count']
+        # Populate basic counts
+        for row in rows:
+            status = row['scan_status'] or SCAN_STATUS_IDLE
+            if status in counts:
+                counts[status] = row['count']
 
-    # Calculate stuck accounts (processing for too long)
-    from datetime import datetime, timedelta
-    stuck_threshold = (datetime.now() - timedelta(minutes=stuck_timeout_minutes)).isoformat()
+        # Calculate stuck accounts (processing for too long)
+        from datetime import datetime, timedelta
+        stuck_threshold = (datetime.now() - timedelta(minutes=stuck_timeout_minutes)).isoformat()
 
-    cursor.execute('''
-        SELECT COUNT(*) as count
-        FROM monitored_accounts
-        WHERE scan_status = ?
-        AND scan_start_time IS NOT NULL
-        AND scan_start_time < ?
-    ''', (SCAN_STATUS_PROCESSING, stuck_threshold))
+        cursor.execute('''
+            SELECT COUNT(*) as count
+            FROM monitored_accounts
+            WHERE scan_status = ?
+            AND scan_start_time IS NOT NULL
+            AND scan_start_time < ?
+        ''', (SCAN_STATUS_PROCESSING, stuck_threshold))
 
-    stuck_row = cursor.fetchone()
-    if stuck_row:
-        counts['stuck'] = stuck_row['count']
-        # Subtract stuck from processing count
-        counts['processing'] = max(0, counts['processing'] - counts['stuck'])
+        stuck_row = cursor.fetchone()
+        if stuck_row:
+            counts['stuck'] = stuck_row['count']
+            # Subtract stuck from processing count
+            counts['processing'] = max(0, counts['processing'] - counts['stuck'])
 
-    conn.close()
 
     return counts
 
@@ -4170,22 +4115,21 @@ def clear_stale_scan_statuses(timeout_minutes: int = 30) -> int:
     Returns:
         Number of accounts reset.
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    # Reset processing scans that have been running too long
-    dt_threshold = _adapt_datetime(f'-{timeout_minutes} minutes')
-    cursor.execute(f'''
-        UPDATE monitored_accounts
-        SET scan_status = ?, scan_progress = NULL, scan_start_time = NULL
-        WHERE scan_status = ?
-          AND scan_start_time < {dt_threshold}
-    ''', (SCAN_STATUS_IDLE, SCAN_STATUS_PROCESSING))
+        # Reset processing scans that have been running too long
+        dt_threshold = _adapt_datetime(f'-{timeout_minutes} minutes')
+        cursor.execute(f'''
+            UPDATE monitored_accounts
+            SET scan_status = ?, scan_progress = NULL, scan_start_time = NULL
+            WHERE scan_status = ?
+              AND scan_start_time < {dt_threshold}
+        ''', (SCAN_STATUS_IDLE, SCAN_STATUS_PROCESSING))
 
-    reset_count = cursor.rowcount
+        reset_count = cursor.rowcount
 
-    conn.commit()
-    conn.close()
+        conn.commit()
 
     return reset_count
 
@@ -4197,18 +4141,17 @@ def reset_all_scan_statuses() -> int:
     Returns:
         Number of accounts reset.
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    cursor.execute('''
-        UPDATE monitored_accounts
-        SET scan_status = ?, scan_progress = NULL, scan_start_time = NULL
-        WHERE scan_status != ?
-    ''', (SCAN_STATUS_IDLE, SCAN_STATUS_IDLE))
+        cursor.execute('''
+            UPDATE monitored_accounts
+            SET scan_status = ?, scan_progress = NULL, scan_start_time = NULL
+            WHERE scan_status != ?
+        ''', (SCAN_STATUS_IDLE, SCAN_STATUS_IDLE))
 
-    reset_count = cursor.rowcount
-    conn.commit()
-    conn.close()
+        reset_count = cursor.rowcount
+        conn.commit()
 
     return reset_count
 
@@ -4223,29 +4166,28 @@ def clear_misclassified_errors() -> int:
     Returns:
         Number of accounts cleared.
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    # Clear errors that look like tier evidence (not actual errors)
-    # Actual errors have prefixes like "Failed to", "Tier classification failed:", etc.
-    cursor.execute('''
-        UPDATE monitored_accounts
-        SET last_scan_error = NULL
-        WHERE last_scan_error IS NOT NULL
-          AND (
-            last_scan_error LIKE 'INFRASTRUCTURE READY:%'
-            OR last_scan_error LIKE 'STRATEGY SIGNAL:%'
-            OR last_scan_error LIKE 'ACTIVE BUILD:%'
-            OR last_scan_error LIKE 'Too Late:%'
-            OR last_scan_error LIKE 'No active signals%'
-            OR last_scan_error LIKE 'DISQUALIFIED:%'
-            OR last_scan_error LIKE 'Organization found%'
-          )
-    ''')
+        # Clear errors that look like tier evidence (not actual errors)
+        # Actual errors have prefixes like "Failed to", "Tier classification failed:", etc.
+        cursor.execute('''
+            UPDATE monitored_accounts
+            SET last_scan_error = NULL
+            WHERE last_scan_error IS NOT NULL
+              AND (
+                last_scan_error LIKE 'INFRASTRUCTURE READY:%'
+                OR last_scan_error LIKE 'STRATEGY SIGNAL:%'
+                OR last_scan_error LIKE 'ACTIVE BUILD:%'
+                OR last_scan_error LIKE 'Too Late:%'
+                OR last_scan_error LIKE 'No active signals%'
+                OR last_scan_error LIKE 'DISQUALIFIED:%'
+                OR last_scan_error LIKE 'Organization found%'
+              )
+        ''')
 
-    cleared_count = cursor.rowcount
-    conn.commit()
-    conn.close()
+        cleared_count = cursor.rowcount
+        conn.commit()
 
     return cleared_count
 
@@ -4265,21 +4207,20 @@ def batch_set_scan_status_queued(company_names: list) -> int:
     if not company_names:
         return 0
 
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    # Track queue time for watchdog recovery of stale queued accounts
-    now = datetime.now().isoformat()
+        # Track queue time for watchdog recovery of stale queued accounts
+        now = datetime.now().isoformat()
 
-    # Use parameterized query with placeholders for all company names
-    placeholders = ','.join(['?' for _ in company_names])
-    cursor.execute(
-        'UPDATE monitored_accounts SET scan_status = ?, scan_progress = NULL, scan_start_time = ? WHERE company_name IN (' + placeholders + ')',
-        [SCAN_STATUS_QUEUED, now] + list(company_names))
+        # Use parameterized query with placeholders for all company names
+        placeholders = ','.join(['?' for _ in company_names])
+        cursor.execute(
+            'UPDATE monitored_accounts SET scan_status = ?, scan_progress = NULL, scan_start_time = ? WHERE company_name IN (' + placeholders + ')',
+            [SCAN_STATUS_QUEUED, now] + list(company_names))
 
-    updated_count = cursor.rowcount
-    conn.commit()
-    conn.close()
+        updated_count = cursor.rowcount
+        conn.commit()
 
     return updated_count
 
@@ -4301,19 +4242,18 @@ def create_import_batch(companies_list: list) -> int:
     Returns:
         The batch_id (integer) of the newly created batch
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    now = datetime.now().isoformat()
-    companies_json = json.dumps(companies_list)
-    total_count = len(companies_list)
+        now = datetime.now().isoformat()
+        companies_json = json.dumps(companies_list)
+        total_count = len(companies_list)
 
-    batch_id = _insert_returning_id(cursor, '''
-        INSERT INTO import_batches (status, total_count, processed_count, companies_json, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-    ''', ('pending', total_count, 0, companies_json, now, now))
-    conn.commit()
-    conn.close()
+        batch_id = _insert_returning_id(cursor, '''
+            INSERT INTO import_batches (status, total_count, processed_count, companies_json, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', ('pending', total_count, 0, companies_json, now, now))
+        conn.commit()
 
     return batch_id
 
@@ -4327,18 +4267,17 @@ def get_pending_import_batches() -> list:
     Returns:
         List of batch dictionaries with id, status, total_count, processed_count, companies_json
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    cursor.execute('''
-        SELECT id, status, total_count, processed_count, companies_json, created_at, updated_at
-        FROM import_batches
-        WHERE status IN ('pending', 'processing')
-        ORDER BY created_at ASC
-    ''')
+        cursor.execute('''
+            SELECT id, status, total_count, processed_count, companies_json, created_at, updated_at
+            FROM import_batches
+            WHERE status IN ('pending', 'processing')
+            ORDER BY created_at ASC
+        ''')
 
-    rows = cursor.fetchall()
-    conn.close()
+        rows = cursor.fetchall()
 
     batches = []
     for row in rows:
@@ -4365,27 +4304,26 @@ def update_batch_progress(batch_id: int, processed_count: int, status: Optional[
     Returns:
         True if the update was successful, False otherwise
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    now = datetime.now().isoformat()
+        now = datetime.now().isoformat()
 
-    if status:
-        cursor.execute('''
-            UPDATE import_batches
-            SET processed_count = ?, status = ?, updated_at = ?
-            WHERE id = ?
-        ''', (processed_count, status, now, batch_id))
-    else:
-        cursor.execute('''
-            UPDATE import_batches
-            SET processed_count = ?, updated_at = ?
-            WHERE id = ?
-        ''', (processed_count, now, batch_id))
+        if status:
+            cursor.execute('''
+                UPDATE import_batches
+                SET processed_count = ?, status = ?, updated_at = ?
+                WHERE id = ?
+            ''', (processed_count, status, now, batch_id))
+        else:
+            cursor.execute('''
+                UPDATE import_batches
+                SET processed_count = ?, updated_at = ?
+                WHERE id = ?
+            ''', (processed_count, now, batch_id))
 
-    updated = cursor.rowcount > 0
-    conn.commit()
-    conn.close()
+        updated = cursor.rowcount > 0
+        conn.commit()
 
     return updated
 
@@ -4400,17 +4338,16 @@ def get_import_batch(batch_id: int) -> Optional[dict]:
     Returns:
         Batch dictionary or None if not found
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    cursor.execute('''
-        SELECT id, status, total_count, processed_count, companies_json, created_at, updated_at
-        FROM import_batches
-        WHERE id = ?
-    ''', (batch_id,))
+        cursor.execute('''
+            SELECT id, status, total_count, processed_count, companies_json, created_at, updated_at
+            FROM import_batches
+            WHERE id = ?
+        ''', (batch_id,))
 
-    row = cursor.fetchone()
-    conn.close()
+        row = cursor.fetchone()
 
     if row:
         batch = dict(row)
@@ -4440,22 +4377,21 @@ def get_stale_queued_accounts(timeout_minutes: int = 30) -> list:
     Returns:
         List of company names that are stale-queued
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    # Calculate cutoff time: now - timeout_minutes
-    cutoff_time = (datetime.now() - timedelta(minutes=timeout_minutes)).isoformat()
+        # Calculate cutoff time: now - timeout_minutes
+        cutoff_time = (datetime.now() - timedelta(minutes=timeout_minutes)).isoformat()
 
-    # Find accounts that have been 'queued' for too long
-    cursor.execute('''
-        SELECT company_name FROM monitored_accounts
-        WHERE scan_status = 'queued'
-          AND scan_start_time IS NOT NULL
-          AND scan_start_time < ?
-    ''', (cutoff_time,))
+        # Find accounts that have been 'queued' for too long
+        cursor.execute('''
+            SELECT company_name FROM monitored_accounts
+            WHERE scan_status = 'queued'
+              AND scan_start_time IS NOT NULL
+              AND scan_start_time < ?
+        ''', (cutoff_time,))
 
-    accounts = [row[0] for row in cursor.fetchall()]
-    conn.close()
+        accounts = [row[0] for row in cursor.fetchall()]
 
     return accounts
 
@@ -4477,25 +4413,24 @@ def reset_stale_queued_accounts(timeout_minutes: int = 30) -> list:
     if not accounts:
         return []
 
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    # Calculate cutoff time: now - timeout_minutes
-    cutoff_time = (datetime.now() - timedelta(minutes=timeout_minutes)).isoformat()
+        # Calculate cutoff time: now - timeout_minutes
+        cutoff_time = (datetime.now() - timedelta(minutes=timeout_minutes)).isoformat()
 
-    # Reset these accounts to 'idle' so they can be re-queued
-    cursor.execute('''
-        UPDATE monitored_accounts
-        SET scan_status = 'idle',
-            scan_progress = 'Re-queued (was stuck in queue)',
-            scan_start_time = NULL
-        WHERE scan_status = 'queued'
-          AND scan_start_time IS NOT NULL
-          AND scan_start_time < ?
-    ''', (cutoff_time,))
+        # Reset these accounts to 'idle' so they can be re-queued
+        cursor.execute('''
+            UPDATE monitored_accounts
+            SET scan_status = 'idle',
+                scan_progress = 'Re-queued (was stuck in queue)',
+                scan_start_time = NULL
+            WHERE scan_status = 'queued'
+              AND scan_start_time IS NOT NULL
+              AND scan_start_time < ?
+        ''', (cutoff_time,))
 
-    conn.commit()
-    conn.close()
+        conn.commit()
 
     return accounts
 
@@ -4508,16 +4443,15 @@ def get_all_queued_accounts() -> list:
     Returns:
         List of company names that are currently queued
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    cursor.execute('''
-        SELECT company_name FROM monitored_accounts
-        WHERE scan_status = 'queued'
-    ''')
+        cursor.execute('''
+            SELECT company_name FROM monitored_accounts
+            WHERE scan_status = 'queued'
+        ''')
 
-    accounts = [row[0] for row in cursor.fetchall()]
-    conn.close()
+        accounts = [row[0] for row in cursor.fetchall()]
 
     return accounts
 
@@ -4537,19 +4471,18 @@ def reset_all_queued_to_idle() -> list:
     if not accounts:
         return []
 
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    cursor.execute('''
-        UPDATE monitored_accounts
-        SET scan_status = 'idle',
-            scan_progress = 'Reset at startup',
-            scan_start_time = NULL
-        WHERE scan_status = 'queued'
-    ''')
+        cursor.execute('''
+            UPDATE monitored_accounts
+            SET scan_status = 'idle',
+                scan_progress = 'Reset at startup',
+                scan_start_time = NULL
+            WHERE scan_status = 'queued'
+        ''')
 
-    conn.commit()
-    conn.close()
+        conn.commit()
 
     return accounts
 
@@ -4593,76 +4526,75 @@ def get_paginated_reports(
             - current_page: Current page number
             - limit: Items per page
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    # Build WHERE clause
-    where_clauses = ["rn = 1"]  # Always filter to latest per company
-    params = []
+        # Build WHERE clause
+        where_clauses = ["rn = 1"]  # Always filter to latest per company
+        params = []
 
-    if search_query:
-        where_clauses.append('(LOWER(company_name) LIKE ? OR LOWER(github_org) LIKE ?)')
-        search_param = f'%{search_query.lower()}%'
-        params.extend([search_param, search_param])
+        if search_query:
+            where_clauses.append('(LOWER(company_name) LIKE ? OR LOWER(github_org) LIKE ?)')
+            search_param = f'%{search_query.lower()}%'
+            params.extend([search_param, search_param])
 
-    if date_from:
-        where_clauses.append('created_at >= ?')
-        params.append(date_from)
+        if date_from:
+            where_clauses.append('created_at >= ?')
+            params.append(date_from)
 
-    if date_to:
-        where_clauses.append('created_at <= ?')
-        params.append(date_to + ' 23:59:59')
+        if date_to:
+            where_clauses.append('created_at <= ?')
+            params.append(date_to + ' 23:59:59')
 
-    if min_signals is not None:
-        where_clauses.append('signals_found >= ?')
-        params.append(min_signals)
+        if min_signals is not None:
+            where_clauses.append('signals_found >= ?')
+            params.append(min_signals)
 
-    if max_signals is not None:
-        where_clauses.append('signals_found <= ?')
-        params.append(max_signals)
+        if max_signals is not None:
+            where_clauses.append('signals_found <= ?')
+            params.append(max_signals)
 
-    if favorites_only:
-        where_clauses.append('is_favorite = 1')
+        if favorites_only:
+            where_clauses.append('is_favorite = 1')
 
-    where_sql = ' WHERE ' + ' AND '.join(where_clauses)
+        where_sql = ' WHERE ' + ' AND '.join(where_clauses)
 
-    # Whitelist-validated sort column (prevents SQL injection)
-    valid_sort_columns = ['created_at', 'signals_found', 'company_name', 'github_org',
-                          'repos_scanned', 'commits_analyzed', 'prs_analyzed',
-                          'scan_duration_seconds', 'is_favorite']
-    if sort_by not in valid_sort_columns:
-        sort_by = 'created_at'
-    assert sort_by in valid_sort_columns
-    sort_order = 'DESC' if sort_order.lower() == 'desc' else 'ASC'
+        # Whitelist-validated sort column (prevents SQL injection)
+        valid_sort_columns = ['created_at', 'signals_found', 'company_name', 'github_org',
+                              'repos_scanned', 'commits_analyzed', 'prs_analyzed',
+                              'scan_duration_seconds', 'is_favorite']
+        if sort_by not in valid_sort_columns:
+            sort_by = 'created_at'
+        assert sort_by in valid_sort_columns
+        sort_order = 'DESC' if sort_order.lower() == 'desc' else 'ASC'
 
-    _REPORTS_SUBQUERY = '''(
-            SELECT id, company_name, github_org, signals_found, repos_scanned,
+        _REPORTS_SUBQUERY = '''(
+                SELECT id, company_name, github_org, signals_found, repos_scanned,
+                       commits_analyzed, prs_analyzed, created_at, scan_duration_seconds,
+                       COALESCE(is_favorite, 0) as is_favorite,
+                       ROW_NUMBER() OVER (PARTITION BY LOWER(company_name) ORDER BY created_at DESC) as rn
+                FROM reports
+            )'''
+
+        # Get total count with filters (where_sql uses ? placeholders)
+        count_query = 'SELECT COUNT(*) as total FROM ' + _REPORTS_SUBQUERY + where_sql
+        cursor.execute(count_query, params)
+        total_items = cursor.fetchone()['total']
+
+        # Calculate pagination
+        total_pages = (total_items + limit - 1) // limit if total_items > 0 else 1
+        current_page = max(1, min(page, total_pages))
+        offset = (current_page - 1) * limit
+
+        # Get paginated data (sort_by is whitelist-validated above)
+        select_query = '''SELECT id, company_name, github_org, signals_found, repos_scanned,
                    commits_analyzed, prs_analyzed, created_at, scan_duration_seconds,
-                   COALESCE(is_favorite, 0) as is_favorite,
-                   ROW_NUMBER() OVER (PARTITION BY LOWER(company_name) ORDER BY created_at DESC) as rn
-            FROM reports
-        )'''
+                   COALESCE(is_favorite, 0) as is_favorite
+            FROM ''' + _REPORTS_SUBQUERY + where_sql + \
+            ' ORDER BY ' + sort_by + ' ' + sort_order + ' LIMIT ? OFFSET ?'
 
-    # Get total count with filters (where_sql uses ? placeholders)
-    count_query = 'SELECT COUNT(*) as total FROM ' + _REPORTS_SUBQUERY + where_sql
-    cursor.execute(count_query, params)
-    total_items = cursor.fetchone()['total']
-
-    # Calculate pagination
-    total_pages = (total_items + limit - 1) // limit if total_items > 0 else 1
-    current_page = max(1, min(page, total_pages))
-    offset = (current_page - 1) * limit
-
-    # Get paginated data (sort_by is whitelist-validated above)
-    select_query = '''SELECT id, company_name, github_org, signals_found, repos_scanned,
-               commits_analyzed, prs_analyzed, created_at, scan_duration_seconds,
-               COALESCE(is_favorite, 0) as is_favorite
-        FROM ''' + _REPORTS_SUBQUERY + where_sql + \
-        ' ORDER BY ' + sort_by + ' ' + sort_order + ' LIMIT ? OFFSET ?'
-
-    cursor.execute(select_query, params + [limit, offset])
-    rows = cursor.fetchall()
-    conn.close()
+        cursor.execute(select_query, params + [limit, offset])
+        rows = cursor.fetchall()
 
     return {
         'reports': [dict(row) for row in rows],
@@ -4683,23 +4615,21 @@ def toggle_report_favorite(report_id: int) -> dict:
     Returns:
         Dictionary with 'success' and 'is_favorite' status
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    # Get current favorite status
-    cursor.execute('SELECT is_favorite FROM reports WHERE id = ?', (report_id,))
-    row = cursor.fetchone()
+        # Get current favorite status
+        cursor.execute('SELECT is_favorite FROM reports WHERE id = ?', (report_id,))
+        row = cursor.fetchone()
 
-    if not row:
-        conn.close()
-        return {'success': False, 'error': 'Report not found'}
+        if not row:
+            return {'success': False, 'error': 'Report not found'}
 
-    current_favorite = row['is_favorite'] or 0
-    new_favorite = 0 if current_favorite else 1
+        current_favorite = row['is_favorite'] or 0
+        new_favorite = 0 if current_favorite else 1
 
-    cursor.execute('UPDATE reports SET is_favorite = ? WHERE id = ?', (new_favorite, report_id))
-    conn.commit()
-    conn.close()
+        cursor.execute('UPDATE reports SET is_favorite = ? WHERE id = ?', (new_favorite, report_id))
+        conn.commit()
 
     return {'success': True, 'is_favorite': bool(new_favorite)}
 
@@ -4714,23 +4644,21 @@ def delete_report_by_id(report_id: int) -> dict:
     Returns:
         Dictionary with 'success' status
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    # Check if report exists
-    cursor.execute('SELECT id FROM reports WHERE id = ?', (report_id,))
-    if not cursor.fetchone():
-        conn.close()
-        return {'success': False, 'error': 'Report not found'}
+        # Check if report exists
+        cursor.execute('SELECT id FROM reports WHERE id = ?', (report_id,))
+        if not cursor.fetchone():
+            return {'success': False, 'error': 'Report not found'}
 
-    # Delete associated signals first
-    cursor.execute('DELETE FROM scan_signals WHERE report_id = ?', (report_id,))
+        # Delete associated signals first
+        cursor.execute('DELETE FROM scan_signals WHERE report_id = ?', (report_id,))
 
-    # Delete the report
-    cursor.execute('DELETE FROM reports WHERE id = ?', (report_id,))
+        # Delete the report
+        cursor.execute('DELETE FROM reports WHERE id = ?', (report_id,))
 
-    conn.commit()
-    conn.close()
+        conn.commit()
 
     return {'success': True}
 
@@ -4745,48 +4673,46 @@ def get_report_preview(report_id: int) -> Optional[dict]:
     Returns:
         Dictionary with preview data or None if not found
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    cursor.execute('''
-        SELECT r.id, r.company_name, r.github_org, r.signals_found, r.repos_scanned,
-               r.commits_analyzed, r.prs_analyzed, r.created_at, r.scan_duration_seconds,
-               COALESCE(r.is_favorite, 0) as is_favorite, r.ai_analysis
-        FROM reports r
-        WHERE r.id = ?
-    ''', (report_id,))
+        cursor.execute('''
+            SELECT r.id, r.company_name, r.github_org, r.signals_found, r.repos_scanned,
+                   r.commits_analyzed, r.prs_analyzed, r.created_at, r.scan_duration_seconds,
+                   COALESCE(r.is_favorite, 0) as is_favorite, r.ai_analysis
+            FROM reports r
+            WHERE r.id = ?
+        ''', (report_id,))
 
-    row = cursor.fetchone()
-    if not row:
-        conn.close()
-        return None
+        row = cursor.fetchone()
+        if not row:
+            return None
 
-    report = dict(row)
+        report = dict(row)
 
-    # Parse AI analysis for summary
-    if report.get('ai_analysis'):
-        try:
-            ai_data = json.loads(report['ai_analysis'])
-            report['ai_summary'] = ai_data.get('executive_summary', ai_data.get('summary', ''))
-            report['ai_priority'] = ai_data.get('priority', ai_data.get('lead_priority', 'unknown'))
-        except (json.JSONDecodeError, TypeError):
-            report['ai_summary'] = ''
-            report['ai_priority'] = 'unknown'
-        del report['ai_analysis']  # Don't send full analysis in preview
+        # Parse AI analysis for summary
+        if report.get('ai_analysis'):
+            try:
+                ai_data = json.loads(report['ai_analysis'])
+                report['ai_summary'] = ai_data.get('executive_summary', ai_data.get('summary', ''))
+                report['ai_priority'] = ai_data.get('priority', ai_data.get('lead_priority', 'unknown'))
+            except (json.JSONDecodeError, TypeError):
+                report['ai_summary'] = ''
+                report['ai_priority'] = 'unknown'
+            del report['ai_analysis']  # Don't send full analysis in preview
 
-    # Get top 5 signals for preview
-    cursor.execute('''
-        SELECT signal_type, description
-        FROM scan_signals
-        WHERE report_id = ?
-        ORDER BY timestamp DESC
-        LIMIT 5
-    ''', (report_id,))
+        # Get top 5 signals for preview
+        cursor.execute('''
+            SELECT signal_type, description
+            FROM scan_signals
+            WHERE report_id = ?
+            ORDER BY timestamp DESC
+            LIMIT 5
+        ''', (report_id,))
 
-    signal_rows = cursor.fetchall()
-    report['top_signals'] = [dict(s) for s in signal_rows]
+        signal_rows = cursor.fetchall()
+        report['top_signals'] = [dict(s) for s in signal_rows]
 
-    conn.close()
     return report
 
 
@@ -4818,37 +4744,36 @@ def save_website_analysis(
     Returns:
         ID of the saved analysis
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    # Extract scores and grades
-    loc_score = localization_score.get('score', 0)
-    loc_grade = localization_score.get('grade', 'F')
-    qual_score = quality_metrics.get('overall_score', 0)
-    qual_grade = quality_metrics.get('overall_grade', 'F')
+        # Extract scores and grades
+        loc_score = localization_score.get('score', 0)
+        loc_grade = localization_score.get('grade', 'F')
+        qual_score = quality_metrics.get('overall_score', 0)
+        qual_grade = quality_metrics.get('overall_grade', 'F')
 
-    # Store full details as JSON
-    analysis_details = {
-        'localization': localization_score,
-        'quality': quality_metrics,
-    }
+        # Store full details as JSON
+        analysis_details = {
+            'localization': localization_score,
+            'quality': quality_metrics,
+        }
 
-    analysis_id = _insert_returning_id(cursor, '''
-        INSERT INTO website_analyses (
+        analysis_id = _insert_returning_id(cursor, '''
+            INSERT INTO website_analyses (
+                account_id, company_name, website_url,
+                localization_score, localization_grade,
+                quality_score, quality_grade,
+                tech_stack_json, analysis_details_json, ai_analysis
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
             account_id, company_name, website_url,
-            localization_score, localization_grade,
-            quality_score, quality_grade,
-            tech_stack_json, analysis_details_json, ai_analysis
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (
-        account_id, company_name, website_url,
-        loc_score, loc_grade,
-        qual_score, qual_grade,
-        json.dumps(tech_stack), json.dumps(analysis_details), ai_analysis
-    ))
-    conn.commit()
-    conn.close()
+            loc_score, loc_grade,
+            qual_score, qual_grade,
+            json.dumps(tech_stack), json.dumps(analysis_details), ai_analysis
+        ))
+        conn.commit()
 
     return analysis_id
 
@@ -4863,16 +4788,15 @@ def get_website_analysis(analysis_id: int) -> Optional[dict]:
     Returns:
         Dictionary with analysis data or None if not found
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    cursor.execute('''
-        SELECT * FROM website_analyses
-        WHERE id = ?
-    ''', (analysis_id,))
+        cursor.execute('''
+            SELECT * FROM website_analyses
+            WHERE id = ?
+        ''', (analysis_id,))
 
-    row = cursor.fetchone()
-    conn.close()
+        row = cursor.fetchone()
 
     if not row:
         return None
@@ -4905,18 +4829,17 @@ def get_latest_website_analysis(company_name: str) -> Optional[dict]:
     Returns:
         Dictionary with analysis data or None if not found
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    cursor.execute('''
-        SELECT * FROM website_analyses
-        WHERE LOWER(company_name) = LOWER(?)
-        ORDER BY analyzed_at DESC
-        LIMIT 1
-    ''', (company_name,))
+        cursor.execute('''
+            SELECT * FROM website_analyses
+            WHERE LOWER(company_name) = LOWER(?)
+            ORDER BY analyzed_at DESC
+            LIMIT 1
+        ''', (company_name,))
 
-    row = cursor.fetchone()
-    conn.close()
+        row = cursor.fetchone()
 
     if not row:
         return None
@@ -4950,21 +4873,20 @@ def get_all_website_analyses(limit: int = 100, offset: int = 0) -> list:
     Returns:
         List of analysis dictionaries
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    cursor.execute('''
-        SELECT id, company_name, website_url,
-               localization_score, localization_grade,
-               quality_score, quality_grade,
-               analyzed_at
-        FROM website_analyses
-        ORDER BY analyzed_at DESC
-        LIMIT ? OFFSET ?
-    ''', (limit, offset))
+        cursor.execute('''
+            SELECT id, company_name, website_url,
+                   localization_score, localization_grade,
+                   quality_score, quality_grade,
+                   analyzed_at
+            FROM website_analyses
+            ORDER BY analyzed_at DESC
+            LIMIT ? OFFSET ?
+        ''', (limit, offset))
 
-    rows = cursor.fetchall()
-    conn.close()
+        rows = cursor.fetchall()
 
     return [dict(row) for row in rows]
 
@@ -4979,34 +4901,33 @@ def get_accounts_with_websites(include_analyzed: bool = False) -> list:
     Returns:
         List of account dictionaries with website URLs
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    if include_analyzed:
-        # Get all accounts with websites
-        cursor.execute('''
-            SELECT id, company_name, website, github_org, annual_revenue
-            FROM monitored_accounts
-            WHERE website IS NOT NULL
-              AND website != ''
-              AND archived_at IS NULL
-            ORDER BY company_name
-        ''')
-    else:
-        # Exclude accounts that already have analyses
-        cursor.execute('''
-            SELECT ma.id, ma.company_name, ma.website, ma.github_org, ma.annual_revenue
-            FROM monitored_accounts ma
-            LEFT JOIN website_analyses wa ON ma.id = wa.account_id
-            WHERE ma.website IS NOT NULL
-              AND ma.website != ''
-              AND ma.archived_at IS NULL
-              AND wa.id IS NULL
-            ORDER BY ma.company_name
-        ''')
+        if include_analyzed:
+            # Get all accounts with websites
+            cursor.execute('''
+                SELECT id, company_name, website, github_org, annual_revenue
+                FROM monitored_accounts
+                WHERE website IS NOT NULL
+                  AND website != ''
+                  AND archived_at IS NULL
+                ORDER BY company_name
+            ''')
+        else:
+            # Exclude accounts that already have analyses
+            cursor.execute('''
+                SELECT ma.id, ma.company_name, ma.website, ma.github_org, ma.annual_revenue
+                FROM monitored_accounts ma
+                LEFT JOIN website_analyses wa ON ma.id = wa.account_id
+                WHERE ma.website IS NOT NULL
+                  AND ma.website != ''
+                  AND ma.archived_at IS NULL
+                  AND wa.id IS NULL
+                ORDER BY ma.company_name
+            ''')
 
-    rows = cursor.fetchall()
-    conn.close()
+        rows = cursor.fetchall()
 
     return [dict(row) for row in rows]
 
@@ -5021,14 +4942,13 @@ def delete_website_analysis(analysis_id: int) -> bool:
     Returns:
         True if deleted, False if not found
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    cursor.execute('DELETE FROM website_analyses WHERE id = ?', (analysis_id,))
-    deleted = cursor.rowcount > 0
+        cursor.execute('DELETE FROM website_analyses WHERE id = ?', (analysis_id,))
+        deleted = cursor.rowcount > 0
 
-    conn.commit()
-    conn.close()
+        conn.commit()
 
     return deleted
 
@@ -5062,64 +4982,62 @@ def populate_webscraper_from_reporadar() -> dict:
     Returns:
         Dictionary with migration results: {created: int, skipped: int, errors: int}
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    created_count = 0
-    skipped_count = 0
-    error_count = 0
+        created_count = 0
+        skipped_count = 0
+        error_count = 0
 
-    try:
-        # Get all monitored accounts that have a website
-        cursor.execute('''
-            SELECT id, company_name, website
-            FROM monitored_accounts
-            WHERE archived_at IS NULL
-            AND website IS NOT NULL
-            AND TRIM(website) != ''
-        ''')
-        accounts = cursor.fetchall()
+        try:
+            # Get all monitored accounts that have a website
+            cursor.execute('''
+                SELECT id, company_name, website
+                FROM monitored_accounts
+                WHERE archived_at IS NULL
+                AND website IS NOT NULL
+                AND TRIM(website) != ''
+            ''')
+            accounts = cursor.fetchall()
 
-        for account in accounts:
-            try:
-                # Check if already exists in webscraper_accounts
-                cursor.execute('''
-                    SELECT id FROM webscraper_accounts
-                    WHERE monitored_account_id = ?
-                ''', (account['id'],))
+            for account in accounts:
+                try:
+                    # Check if already exists in webscraper_accounts
+                    cursor.execute('''
+                        SELECT id FROM webscraper_accounts
+                        WHERE monitored_account_id = ?
+                    ''', (account['id'],))
 
-                if cursor.fetchone():
-                    skipped_count += 1
+                    if cursor.fetchone():
+                        skipped_count += 1
+                        continue
+
+                    # Create new webscraper account
+                    cursor.execute('''
+                        INSERT INTO webscraper_accounts (
+                            company_name,
+                            website_url,
+                            current_tier,
+                            tier_label,
+                            scan_status,
+                            monitored_account_id,
+                            created_at,
+                            updated_at
+                        ) VALUES (?, ?, 4, 'Not Scanned', 'not_scanned', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    ''', (account['company_name'], account['website'], account['id']))
+
+                    created_count += 1
+
+                except Exception as e:
+                    print(f"[WEBSCRAPER] Error creating account for {account['company_name']}: {e}")
+                    error_count += 1
                     continue
 
-                # Create new webscraper account
-                cursor.execute('''
-                    INSERT INTO webscraper_accounts (
-                        company_name,
-                        website_url,
-                        current_tier,
-                        tier_label,
-                        scan_status,
-                        monitored_account_id,
-                        created_at,
-                        updated_at
-                    ) VALUES (?, ?, 4, 'Not Scanned', 'not_scanned', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                ''', (account['company_name'], account['website'], account['id']))
+            conn.commit()
 
-                created_count += 1
-
-            except Exception as e:
-                print(f"[WEBSCRAPER] Error creating account for {account['company_name']}: {e}")
-                error_count += 1
-                continue
-
-        conn.commit()
-
-    except Exception as e:
-        print(f"[WEBSCRAPER] Migration error: {e}")
-        conn.rollback()
-    finally:
-        conn.close()
+        except Exception as e:
+            print(f"[WEBSCRAPER] Migration error: {e}")
+            conn.rollback()
 
     return {
         'created': created_count,
@@ -5135,12 +5053,11 @@ def is_webscraper_accounts_empty() -> bool:
     Returns:
         True if the table is empty, False otherwise.
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    cursor.execute('SELECT COUNT(*) as count FROM webscraper_accounts')
-    row = cursor.fetchone()
-    conn.close()
+        cursor.execute('SELECT COUNT(*) as count FROM webscraper_accounts')
+        row = cursor.fetchone()
 
     return row['count'] == 0
 
@@ -5153,28 +5070,27 @@ def get_webscraper_tier_counts() -> dict:
         Dictionary with tier numbers as string keys and counts as values:
         {'1': count, '2': count, '3': count, '4': count, 'archived': count}
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    # Get tier counts excluding archived
-    cursor.execute('''
-        SELECT current_tier, COUNT(*) as count
-        FROM webscraper_accounts
-        WHERE archived_at IS NULL
-        GROUP BY current_tier
-    ''')
+        # Get tier counts excluding archived
+        cursor.execute('''
+            SELECT current_tier, COUNT(*) as count
+            FROM webscraper_accounts
+            WHERE archived_at IS NULL
+            GROUP BY current_tier
+        ''')
 
-    rows = cursor.fetchall()
+        rows = cursor.fetchall()
 
-    # Get archived count
-    cursor.execute('''
-        SELECT COUNT(*) as count
-        FROM webscraper_accounts
-        WHERE archived_at IS NOT NULL
-    ''')
-    archived_count = cursor.fetchone()['count']
+        # Get archived count
+        cursor.execute('''
+            SELECT COUNT(*) as count
+            FROM webscraper_accounts
+            WHERE archived_at IS NOT NULL
+        ''')
+        archived_count = cursor.fetchone()['count']
 
-    conn.close()
 
     # Initialize with zeros for all tiers
     tier_counts = {'1': 0, '2': 0, '3': 0, '4': 0, 'archived': archived_count}
@@ -5212,66 +5128,65 @@ def get_webscraper_accounts_datatable(
     Returns:
         Dictionary with DataTables format
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    # Column mapping for sorting
-    column_map = {
-        0: 'company_name',
-        1: 'website_url',
-        2: 'current_tier',
-        3: 'locale_count',
-        4: 'localization_coverage_score',
-        5: 'last_scanned_at',
-        6: 'evidence_summary',
-    }
+        # Column mapping for sorting
+        column_map = {
+            0: 'company_name',
+            1: 'website_url',
+            2: 'current_tier',
+            3: 'locale_count',
+            4: 'localization_coverage_score',
+            5: 'last_scanned_at',
+            6: 'evidence_summary',
+        }
 
-    # Get total count without filters (excluding archived)
-    cursor.execute('SELECT COUNT(*) as total FROM webscraper_accounts WHERE archived_at IS NULL')
-    total_records = cursor.fetchone()['total']
+        # Get total count without filters (excluding archived)
+        cursor.execute('SELECT COUNT(*) as total FROM webscraper_accounts WHERE archived_at IS NULL')
+        total_records = cursor.fetchone()['total']
 
-    # Build WHERE clause - always exclude archived
-    where_clauses = ['archived_at IS NULL']
-    params = []
+        # Build WHERE clause - always exclude archived
+        where_clauses = ['archived_at IS NULL']
+        params = []
 
-    # Tier filter
-    if tier_filter:
-        placeholders = ','.join(['?'] * len(tier_filter))
-        where_clauses.append(f'current_tier IN ({placeholders})')
-        params.extend(tier_filter)
+        # Tier filter
+        if tier_filter:
+            placeholders = ','.join(['?'] * len(tier_filter))
+            where_clauses.append(f'current_tier IN ({placeholders})')
+            params.extend(tier_filter)
 
-    # Global search
-    if search_value:
-        where_clauses.append('(LOWER(company_name) LIKE ? OR LOWER(website_url) LIKE ?)')
-        search_param = f'%{search_value.lower()}%'
-        params.extend([search_param, search_param])
+        # Global search
+        if search_value:
+            where_clauses.append('(LOWER(company_name) LIKE ? OR LOWER(website_url) LIKE ?)')
+            search_param = f'%{search_value.lower()}%'
+            params.extend([search_param, search_param])
 
-    where_sql = ' WHERE ' + ' AND '.join(where_clauses)
+        where_sql = ' WHERE ' + ' AND '.join(where_clauses)
 
-    # Get filtered count (where_sql uses ? placeholders, params passed separately)
-    count_query = 'SELECT COUNT(*) as total FROM webscraper_accounts' + where_sql
-    cursor.execute(count_query, params)
-    filtered_records = cursor.fetchone()['total']
+        # Get filtered count (where_sql uses ? placeholders, params passed separately)
+        count_query = 'SELECT COUNT(*) as total FROM webscraper_accounts' + where_sql
+        cursor.execute(count_query, params)
+        filtered_records = cursor.fetchone()['total']
 
-    # Whitelist-validated sort column (column_map values are all hardcoded above)
-    sort_column = column_map.get(order_column, 'company_name')
-    assert sort_column in column_map.values(), f"sort_column must be in whitelist, got {sort_column!r}"
-    sort_order = 'DESC' if order_dir.lower() == 'desc' else 'ASC'
+        # Whitelist-validated sort column (column_map values are all hardcoded above)
+        sort_column = column_map.get(order_column, 'company_name')
+        assert sort_column in column_map.values(), f"sort_column must be in whitelist, got {sort_column!r}"
+        sort_order = 'DESC' if order_dir.lower() == 'desc' else 'ASC'
 
-    # Get paginated and sorted data
-    _WS_COLS = '''id, company_name, website_url, current_tier, tier_label,
-            localization_coverage_score, quality_gap_score, enterprise_score,
-            locale_count, languages_detected, hreflang_tags, i18n_libraries,
-            last_scanned_at, scan_status, scan_error,
-            signals_json, evidence_summary, notes,
-            monitored_account_id, created_at, updated_at'''
-    select_query = 'SELECT ' + _WS_COLS + ' FROM webscraper_accounts' + where_sql + \
-                   ' ORDER BY ' + sort_column + ' ' + sort_order + ' LIMIT ? OFFSET ?'
+        # Get paginated and sorted data
+        _WS_COLS = '''id, company_name, website_url, current_tier, tier_label,
+                localization_coverage_score, quality_gap_score, enterprise_score,
+                locale_count, languages_detected, hreflang_tags, i18n_libraries,
+                last_scanned_at, scan_status, scan_error,
+                signals_json, evidence_summary, notes,
+                monitored_account_id, created_at, updated_at'''
+        select_query = 'SELECT ' + _WS_COLS + ' FROM webscraper_accounts' + where_sql + \
+                       ' ORDER BY ' + sort_column + ' ' + sort_order + ' LIMIT ? OFFSET ?'
 
-    select_params = list(params) + [length, start]
-    cursor.execute(select_query, select_params)
-    rows = cursor.fetchall()
-    conn.close()
+        select_params = list(params) + [length, start]
+        cursor.execute(select_query, select_params)
+        rows = cursor.fetchall()
 
     # Format data for DataTables
     data = []
@@ -5290,81 +5205,76 @@ def get_webscraper_accounts_datatable(
 
 def update_webscraper_notes(account_id: int, notes: str) -> bool:
     """Update the notes field for a webscraper account."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    cursor.execute('''
-        UPDATE webscraper_accounts
-        SET notes = ?, updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-    ''', (notes, account_id))
+        cursor.execute('''
+            UPDATE webscraper_accounts
+            SET notes = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        ''', (notes, account_id))
 
-    updated = cursor.rowcount > 0
-    conn.commit()
-    conn.close()
+        updated = cursor.rowcount > 0
+        conn.commit()
 
     return updated
 
 
 def archive_webscraper_account(account_id: int) -> bool:
     """Archive a webscraper account."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    cursor.execute('''
-        UPDATE webscraper_accounts
-        SET archived_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-        WHERE id = ? AND archived_at IS NULL
-    ''', (account_id,))
+        cursor.execute('''
+            UPDATE webscraper_accounts
+            SET archived_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND archived_at IS NULL
+        ''', (account_id,))
 
-    updated = cursor.rowcount > 0
-    conn.commit()
-    conn.close()
+        updated = cursor.rowcount > 0
+        conn.commit()
 
     return updated
 
 
 def unarchive_webscraper_account(account_id: int) -> bool:
     """Unarchive a webscraper account."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    cursor.execute('''
-        UPDATE webscraper_accounts
-        SET archived_at = NULL, updated_at = CURRENT_TIMESTAMP
-        WHERE id = ? AND archived_at IS NOT NULL
-    ''', (account_id,))
+        cursor.execute('''
+            UPDATE webscraper_accounts
+            SET archived_at = NULL, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND archived_at IS NOT NULL
+        ''', (account_id,))
 
-    updated = cursor.rowcount > 0
-    conn.commit()
-    conn.close()
+        updated = cursor.rowcount > 0
+        conn.commit()
 
     return updated
 
 
 def delete_webscraper_account(account_id: int) -> bool:
     """Delete a webscraper account."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    cursor.execute('DELETE FROM webscraper_accounts WHERE id = ?', (account_id,))
-    deleted = cursor.rowcount > 0
+        cursor.execute('DELETE FROM webscraper_accounts WHERE id = ?', (account_id,))
+        deleted = cursor.rowcount > 0
 
-    conn.commit()
-    conn.close()
+        conn.commit()
 
     return deleted
 
 
 def get_webscraper_archived_count() -> int:
     """Get the count of archived webscraper accounts."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    cursor.execute('SELECT COUNT(*) as count FROM webscraper_accounts WHERE archived_at IS NOT NULL')
-    count = cursor.fetchone()['count']
+        cursor.execute('SELECT COUNT(*) as count FROM webscraper_accounts WHERE archived_at IS NOT NULL')
+        count = cursor.fetchone()['count']
 
-    conn.close()
     return count
 
 
@@ -5373,17 +5283,16 @@ def webscraper_bulk_archive(account_ids: list) -> int:
     if not account_ids:
         return 0
 
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    placeholders = ','.join(['?'] * len(account_ids))
-    cursor.execute(
-        'UPDATE webscraper_accounts SET archived_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id IN (' + placeholders + ') AND archived_at IS NULL',
-        account_ids)
+        placeholders = ','.join(['?'] * len(account_ids))
+        cursor.execute(
+            'UPDATE webscraper_accounts SET archived_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id IN (' + placeholders + ') AND archived_at IS NULL',
+            account_ids)
 
-    updated = cursor.rowcount
-    conn.commit()
-    conn.close()
+        updated = cursor.rowcount
+        conn.commit()
 
     return updated
 
@@ -5393,15 +5302,14 @@ def webscraper_bulk_delete(account_ids: list) -> int:
     if not account_ids:
         return 0
 
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    placeholders = ','.join(['?'] * len(account_ids))
-    cursor.execute('DELETE FROM webscraper_accounts WHERE id IN (' + placeholders + ')', account_ids)
+        placeholders = ','.join(['?'] * len(account_ids))
+        cursor.execute('DELETE FROM webscraper_accounts WHERE id IN (' + placeholders + ')', account_ids)
 
-    deleted = cursor.rowcount
-    conn.commit()
-    conn.close()
+        deleted = cursor.rowcount
+        conn.commit()
 
     return deleted
 
@@ -5411,31 +5319,29 @@ def webscraper_bulk_change_tier(account_ids: list, new_tier: int) -> int:
     if not account_ids or new_tier not in WEBSCRAPER_TIER_CONFIG:
         return 0
 
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    tier_label = WEBSCRAPER_TIER_CONFIG[new_tier]['name']
-    placeholders = ','.join(['?'] * len(account_ids))
+        tier_label = WEBSCRAPER_TIER_CONFIG[new_tier]['name']
+        placeholders = ','.join(['?'] * len(account_ids))
 
-    cursor.execute(
-        'UPDATE webscraper_accounts SET current_tier = ?, tier_label = ?, updated_at = CURRENT_TIMESTAMP WHERE id IN (' + placeholders + ')',
-        [new_tier, tier_label] + account_ids)
+        cursor.execute(
+            'UPDATE webscraper_accounts SET current_tier = ?, tier_label = ?, updated_at = CURRENT_TIMESTAMP WHERE id IN (' + placeholders + ')',
+            [new_tier, tier_label] + account_ids)
 
-    updated = cursor.rowcount
-    conn.commit()
-    conn.close()
+        updated = cursor.rowcount
+        conn.commit()
 
     return updated
 
 
 def get_webscraper_account(account_id: int) -> Optional[dict]:
     """Get a single webscraper account by ID."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    cursor.execute('SELECT * FROM webscraper_accounts WHERE id = ?', (account_id,))
-    row = cursor.fetchone()
-    conn.close()
+        cursor.execute('SELECT * FROM webscraper_accounts WHERE id = ?', (account_id,))
+        row = cursor.fetchone()
 
     if row:
         return dict(row)
@@ -5467,68 +5373,67 @@ def update_webscraper_scan_results(account_id: int, scan_results: dict) -> bool:
     """
     import json
 
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    # Convert lists to JSON strings if needed
-    languages = scan_results.get('languages_detected', [])
-    if isinstance(languages, list):
-        languages = json.dumps(languages)
+        # Convert lists to JSON strings if needed
+        languages = scan_results.get('languages_detected', [])
+        if isinstance(languages, list):
+            languages = json.dumps(languages)
 
-    hreflang = scan_results.get('hreflang_tags', [])
-    if isinstance(hreflang, list):
-        hreflang = json.dumps(hreflang)
+        hreflang = scan_results.get('hreflang_tags', [])
+        if isinstance(hreflang, list):
+            hreflang = json.dumps(hreflang)
 
-    i18n_libs = scan_results.get('i18n_libraries', [])
-    if isinstance(i18n_libs, list):
-        i18n_libs = json.dumps(i18n_libs)
+        i18n_libs = scan_results.get('i18n_libraries', [])
+        if isinstance(i18n_libs, list):
+            i18n_libs = json.dumps(i18n_libs)
 
-    signals = scan_results.get('signals_json', {})
-    if isinstance(signals, dict):
-        signals = json.dumps(signals)
+        signals = scan_results.get('signals_json', {})
+        if isinstance(signals, dict):
+            signals = json.dumps(signals)
 
-    # Determine scan status
-    scan_status = 'error' if scan_results.get('scan_error') else 'completed'
+        # Determine scan status
+        scan_status = 'error' if scan_results.get('scan_error') else 'completed'
 
-    cursor.execute('''
-        UPDATE webscraper_accounts
-        SET
-            current_tier = ?,
-            tier_label = ?,
-            localization_coverage_score = ?,
-            quality_gap_score = ?,
-            enterprise_score = ?,
-            locale_count = ?,
-            languages_detected = ?,
-            hreflang_tags = ?,
-            i18n_libraries = ?,
-            signals_json = ?,
-            evidence_summary = ?,
-            scan_status = ?,
-            scan_error = ?,
-            last_scanned_at = CURRENT_TIMESTAMP,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-    ''', (
-        scan_results.get('tier', 4),
-        scan_results.get('tier_label', 'Not Scanned'),
-        scan_results.get('localization_coverage_score', 0),
-        scan_results.get('quality_gap_score', 100),
-        scan_results.get('enterprise_score', 0),
-        scan_results.get('locale_count', 0),
-        languages,
-        hreflang,
-        i18n_libs,
-        signals,
-        scan_results.get('evidence_summary', ''),
-        scan_status,
-        scan_results.get('scan_error'),
-        account_id
-    ))
+        cursor.execute('''
+            UPDATE webscraper_accounts
+            SET
+                current_tier = ?,
+                tier_label = ?,
+                localization_coverage_score = ?,
+                quality_gap_score = ?,
+                enterprise_score = ?,
+                locale_count = ?,
+                languages_detected = ?,
+                hreflang_tags = ?,
+                i18n_libraries = ?,
+                signals_json = ?,
+                evidence_summary = ?,
+                scan_status = ?,
+                scan_error = ?,
+                last_scanned_at = CURRENT_TIMESTAMP,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        ''', (
+            scan_results.get('tier', 4),
+            scan_results.get('tier_label', 'Not Scanned'),
+            scan_results.get('localization_coverage_score', 0),
+            scan_results.get('quality_gap_score', 100),
+            scan_results.get('enterprise_score', 0),
+            scan_results.get('locale_count', 0),
+            languages,
+            hreflang,
+            i18n_libs,
+            signals,
+            scan_results.get('evidence_summary', ''),
+            scan_status,
+            scan_results.get('scan_error'),
+            account_id
+        ))
 
-    updated = cursor.rowcount > 0
-    conn.commit()
-    conn.close()
+        updated = cursor.rowcount > 0
+        conn.commit()
 
     return updated
 
@@ -5544,74 +5449,11 @@ def save_contributor(contributor_data: dict) -> Optional[int]:
 
     Returns the contributor ID or None on failure.
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    try:
-        contributor_id = _insert_returning_id(cursor, '''
-            INSERT INTO contributors (
-                github_login, github_url, name, email, blog,
-                company, company_size, annual_revenue, repo_source,
-                github_org, contributions, insight,
-                is_org_member, github_profile_company, last_activity_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(github_login, github_org) DO UPDATE SET
-                name = COALESCE(NULLIF(excluded.name, ''), contributors.name),
-                email = COALESCE(NULLIF(excluded.email, ''), contributors.email),
-                blog = COALESCE(NULLIF(excluded.blog, ''), contributors.blog),
-                company = COALESCE(NULLIF(excluded.company, ''), contributors.company),
-                company_size = COALESCE(NULLIF(excluded.company_size, ''), contributors.company_size),
-                annual_revenue = COALESCE(NULLIF(excluded.annual_revenue, ''), contributors.annual_revenue),
-                repo_source = COALESCE(NULLIF(excluded.repo_source, ''), contributors.repo_source),
-                contributions = CASE WHEN excluded.contributions > 0 THEN excluded.contributions ELSE contributors.contributions END,
-                insight = COALESCE(NULLIF(excluded.insight, ''), contributors.insight),
-                is_org_member = excluded.is_org_member,
-                github_profile_company = COALESCE(NULLIF(excluded.github_profile_company, ''), contributors.github_profile_company),
-                last_activity_at = COALESCE(excluded.last_activity_at, contributors.last_activity_at),
-                updated_at = CURRENT_TIMESTAMP
-        ''', (
-            contributor_data.get('github_login', ''),
-            contributor_data.get('github_url', ''),
-            contributor_data.get('name', ''),
-            contributor_data.get('email', ''),
-            contributor_data.get('blog', ''),
-            contributor_data.get('company', ''),
-            contributor_data.get('company_size', ''),
-            contributor_data.get('annual_revenue', ''),
-            contributor_data.get('repo_source', ''),
-            contributor_data.get('github_org', ''),
-            contributor_data.get('contributions', 0),
-            contributor_data.get('insight', ''),
-            contributor_data.get('is_org_member'),
-            contributor_data.get('github_profile_company', ''),
-            contributor_data.get('last_activity_at')
-        ))
-        conn.commit()
-        return contributor_id
-    except Exception as e:
-        print(f"[CONTRIBUTORS] Error saving contributor: {e}")
-        conn.rollback()
-        return None
-    finally:
-        conn.close()
-
-
-def save_contributors_batch(contributors: list) -> int:
-    """Save multiple contributors in a single transaction. Returns count saved."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    saved = 0
-
-    # Bot patterns to filter out
-    BOT_PATTERNS = ('[bot]', '-bot', 'github-actions', 'dependabot', 'renovate', 'greenkeeper', 'snyk-bot')
-
-    try:
-        for c in contributors:
-            login = c.get('github_login', '').lower()
-            if any(p in login for p in BOT_PATTERNS):
-                continue
-
-            cursor.execute('''
+        try:
+            contributor_id = _insert_returning_id(cursor, '''
                 INSERT INTO contributors (
                     github_login, github_url, name, email, blog,
                     company, company_size, annual_revenue, repo_source,
@@ -5633,30 +5475,89 @@ def save_contributors_batch(contributors: list) -> int:
                     last_activity_at = COALESCE(excluded.last_activity_at, contributors.last_activity_at),
                     updated_at = CURRENT_TIMESTAMP
             ''', (
-                c.get('github_login', ''),
-                c.get('github_url', ''),
-                c.get('name', ''),
-                c.get('email', ''),
-                c.get('blog', ''),
-                c.get('company', ''),
-                c.get('company_size', ''),
-                c.get('annual_revenue', ''),
-                c.get('repo_source', ''),
-                c.get('github_org', ''),
-                c.get('contributions', 0),
-                c.get('insight', ''),
-                c.get('is_org_member'),
-                c.get('github_profile_company', ''),
-                c.get('last_activity_at')
+                contributor_data.get('github_login', ''),
+                contributor_data.get('github_url', ''),
+                contributor_data.get('name', ''),
+                contributor_data.get('email', ''),
+                contributor_data.get('blog', ''),
+                contributor_data.get('company', ''),
+                contributor_data.get('company_size', ''),
+                contributor_data.get('annual_revenue', ''),
+                contributor_data.get('repo_source', ''),
+                contributor_data.get('github_org', ''),
+                contributor_data.get('contributions', 0),
+                contributor_data.get('insight', ''),
+                contributor_data.get('is_org_member'),
+                contributor_data.get('github_profile_company', ''),
+                contributor_data.get('last_activity_at')
             ))
-            saved += 1
+            conn.commit()
+            return contributor_id
+        except Exception as e:
+            print(f"[CONTRIBUTORS] Error saving contributor: {e}")
+            conn.rollback()
+            return None
 
-        conn.commit()
-    except Exception as e:
-        print(f"[CONTRIBUTORS] Batch save error: {e}")
-        conn.rollback()
-    finally:
-        conn.close()
+
+def save_contributors_batch(contributors: list) -> int:
+    """Save multiple contributors in a single transaction. Returns count saved."""
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        saved = 0
+
+        # Bot patterns to filter out
+        BOT_PATTERNS = ('[bot]', '-bot', 'github-actions', 'dependabot', 'renovate', 'greenkeeper', 'snyk-bot')
+
+        try:
+            for c in contributors:
+                login = c.get('github_login', '').lower()
+                if any(p in login for p in BOT_PATTERNS):
+                    continue
+
+                cursor.execute('''
+                    INSERT INTO contributors (
+                        github_login, github_url, name, email, blog,
+                        company, company_size, annual_revenue, repo_source,
+                        github_org, contributions, insight,
+                        is_org_member, github_profile_company, last_activity_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(github_login, github_org) DO UPDATE SET
+                        name = COALESCE(NULLIF(excluded.name, ''), contributors.name),
+                        email = COALESCE(NULLIF(excluded.email, ''), contributors.email),
+                        blog = COALESCE(NULLIF(excluded.blog, ''), contributors.blog),
+                        company = COALESCE(NULLIF(excluded.company, ''), contributors.company),
+                        company_size = COALESCE(NULLIF(excluded.company_size, ''), contributors.company_size),
+                        annual_revenue = COALESCE(NULLIF(excluded.annual_revenue, ''), contributors.annual_revenue),
+                        repo_source = COALESCE(NULLIF(excluded.repo_source, ''), contributors.repo_source),
+                        contributions = CASE WHEN excluded.contributions > 0 THEN excluded.contributions ELSE contributors.contributions END,
+                        insight = COALESCE(NULLIF(excluded.insight, ''), contributors.insight),
+                        is_org_member = excluded.is_org_member,
+                        github_profile_company = COALESCE(NULLIF(excluded.github_profile_company, ''), contributors.github_profile_company),
+                        last_activity_at = COALESCE(excluded.last_activity_at, contributors.last_activity_at),
+                        updated_at = CURRENT_TIMESTAMP
+                ''', (
+                    c.get('github_login', ''),
+                    c.get('github_url', ''),
+                    c.get('name', ''),
+                    c.get('email', ''),
+                    c.get('blog', ''),
+                    c.get('company', ''),
+                    c.get('company_size', ''),
+                    c.get('annual_revenue', ''),
+                    c.get('repo_source', ''),
+                    c.get('github_org', ''),
+                    c.get('contributions', 0),
+                    c.get('insight', ''),
+                    c.get('is_org_member'),
+                    c.get('github_profile_company', ''),
+                    c.get('last_activity_at')
+                ))
+                saved += 1
+
+            conn.commit()
+        except Exception as e:
+            print(f"[CONTRIBUTORS] Batch save error: {e}")
+            conn.rollback()
 
     return saved
 
@@ -5673,80 +5574,79 @@ def get_contributors_datatable(draw=1, start=0, length=50, search_value='',
     Server-side datatable processing for contributors.
     Returns paginated, sorted, and filtered contributor data.
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    # Column mapping for sorting
-    columns = ['github_login', 'name', 'company', 'company_size',
-               'github_url', 'annual_revenue', 'contributions',
-               'apollo_status', 'emails_sent', 'insight']
+        # Column mapping for sorting
+        columns = ['github_login', 'name', 'company', 'company_size',
+                   'github_url', 'annual_revenue', 'contributions',
+                   'apollo_status', 'emails_sent', 'insight']
 
-    # Whitelist-validated: sort_col is always one of `columns` (SQL injection safe)
-    sort_col = columns[order_column] if 0 <= order_column < len(columns) else 'contributions'
-    assert sort_col in columns, f"sort_col must be in whitelist, got {sort_col!r}"
-    sort_dir = 'DESC' if order_dir.lower() == 'desc' else 'ASC'
+        # Whitelist-validated: sort_col is always one of `columns` (SQL injection safe)
+        sort_col = columns[order_column] if 0 <= order_column < len(columns) else 'contributions'
+        assert sort_col in columns, f"sort_col must be in whitelist, got {sort_col!r}"
+        sort_dir = 'DESC' if order_dir.lower() == 'desc' else 'ASC'
 
-    # Build WHERE clause — default: hide confirmed external contributors
-    conditions = ["(is_org_member IS NULL OR is_org_member = 1)"]
-    params = []
+        # Build WHERE clause — default: hide confirmed external contributors
+        conditions = ["(is_org_member IS NULL OR is_org_member = 1)"]
+        params = []
 
-    if search_value:
-        conditions.append('''
-            (LOWER(github_login) LIKE ? OR LOWER(name) LIKE ?
-             OR LOWER(company) LIKE ? OR LOWER(email) LIKE ?
-             OR LOWER(github_org) LIKE ? OR LOWER(repo_source) LIKE ?
-             OR LOWER(insight) LIKE ?)
-        ''')
-        sv = f'%{search_value.lower()}%'
-        params.extend([sv, sv, sv, sv, sv, sv, sv])
+        if search_value:
+            conditions.append('''
+                (LOWER(github_login) LIKE ? OR LOWER(name) LIKE ?
+                 OR LOWER(company) LIKE ? OR LOWER(email) LIKE ?
+                 OR LOWER(github_org) LIKE ? OR LOWER(repo_source) LIKE ?
+                 OR LOWER(insight) LIKE ?)
+            ''')
+            sv = f'%{search_value.lower()}%'
+            params.extend([sv, sv, sv, sv, sv, sv, sv])
 
-    if apollo_filter:
-        conditions.append('apollo_status = ?')
-        params.append(apollo_filter)
+        if apollo_filter:
+            conditions.append('apollo_status = ?')
+            params.append(apollo_filter)
 
-    if has_email_filter == '1':
-        conditions.append("email IS NOT NULL AND email != ''")
+        if has_email_filter == '1':
+            conditions.append("email IS NOT NULL AND email != ''")
 
-    if warm_hot_filter == '1':
-        # Filter to contributors whose company is in tier 1 or 2
-        conditions.append("""LOWER(company) IN (
-            SELECT LOWER(company_name) FROM monitored_accounts WHERE current_tier IN (1, 2)
-        )""")
+        if warm_hot_filter == '1':
+            # Filter to contributors whose company is in tier 1 or 2
+            conditions.append("""LOWER(company) IN (
+                SELECT LOWER(company_name) FROM monitored_accounts WHERE current_tier IN (1, 2)
+            )""")
 
-    if i18n_filter == '1':
-        conditions.append("""(LOWER(insight) LIKE '%i18n%'
-            OR LOWER(insight) LIKE '%internationalization%'
-            OR LOWER(insight) LIKE '%locale%'
-            OR LOWER(insight) LIKE '%translation%')""")
+        if i18n_filter == '1':
+            conditions.append("""(LOWER(insight) LIKE '%i18n%'
+                OR LOWER(insight) LIKE '%internationalization%'
+                OR LOWER(insight) LIKE '%locale%'
+                OR LOWER(insight) LIKE '%translation%')""")
 
-    if not_contacted_filter == '1':
-        conditions.append("apollo_status = 'not_sent'")
+        if not_contacted_filter == '1':
+            conditions.append("apollo_status = 'not_sent'")
 
-    if enrolled_filter == '1':
-        conditions.append("enrolled_in_sequence = 1")
+        if enrolled_filter == '1':
+            conditions.append("enrolled_in_sequence = 1")
 
-    where_clause = ''
-    if conditions:
-        where_clause = 'WHERE ' + ' AND '.join(conditions)
+        where_clause = ''
+        if conditions:
+            where_clause = 'WHERE ' + ' AND '.join(conditions)
 
-    # Total records (excluding confirmed externals)
-    cursor.execute('SELECT COUNT(*) as cnt FROM contributors WHERE (is_org_member IS NULL OR is_org_member = 1)')
-    total_records = cursor.fetchone()['cnt']
+        # Total records (excluding confirmed externals)
+        cursor.execute('SELECT COUNT(*) as cnt FROM contributors WHERE (is_org_member IS NULL OR is_org_member = 1)')
+        total_records = cursor.fetchone()['cnt']
 
-    # Filtered records (where_clause uses ? placeholders; sort_col is whitelist-validated above)
-    count_sql = 'SELECT COUNT(*) as cnt FROM contributors ' + where_clause
-    cursor.execute(count_sql, params)
-    filtered_records = cursor.fetchone()['cnt']
+        # Filtered records (where_clause uses ? placeholders; sort_col is whitelist-validated above)
+        count_sql = 'SELECT COUNT(*) as cnt FROM contributors ' + where_clause
+        cursor.execute(count_sql, params)
+        filtered_records = cursor.fetchone()['cnt']
 
-    query = 'SELECT * FROM contributors ' + where_clause + \
-            ' ORDER BY ' + sort_col + ' ' + sort_dir + ' LIMIT ? OFFSET ?'
-    params.extend([length, start])
-    cursor.execute(query, params)
+        query = 'SELECT * FROM contributors ' + where_clause + \
+                ' ORDER BY ' + sort_col + ' ' + sort_dir + ' LIMIT ? OFFSET ?'
+        params.extend([length, start])
+        cursor.execute(query, params)
 
-    rows = cursor.fetchall()
-    data = [dict(row) for row in rows]
+        rows = cursor.fetchall()
+        data = [dict(row) for row in rows]
 
-    conn.close()
 
     return {
         'draw': draw,
@@ -5758,19 +5658,18 @@ def get_contributors_datatable(draw=1, start=0, length=50, search_value='',
 
 def get_contributor_stats() -> dict:
     """Get aggregate stats for contributors: total, enrolled, emails sent."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    cursor.execute('''
-        SELECT
-            COUNT(*) as total_contributors,
-            SUM(CASE WHEN apollo_status = 'sent' OR enrolled_in_sequence = 1 THEN 1 ELSE 0 END) as total_enrolled,
-            SUM(emails_sent) as total_emails_sent
-        FROM contributors
-        WHERE (is_org_member IS NULL OR is_org_member = 1)
-    ''')
-    row = cursor.fetchone()
-    conn.close()
+        cursor.execute('''
+            SELECT
+                COUNT(*) as total_contributors,
+                SUM(CASE WHEN apollo_status = 'sent' OR enrolled_in_sequence = 1 THEN 1 ELSE 0 END) as total_enrolled,
+                SUM(emails_sent) as total_emails_sent
+            FROM contributors
+            WHERE (is_org_member IS NULL OR is_org_member = 1)
+        ''')
+        row = cursor.fetchone()
 
     return {
         'total_contributors': row['total_contributors'] or 0,
@@ -5781,66 +5680,62 @@ def get_contributor_stats() -> dict:
 
 def update_contributor_apollo_status(contributor_id: int, status: str, sequence_name: str = '') -> bool:
     """Update Apollo enrollment status for a contributor."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    enrolled = 1 if status == 'sent' else 0
-    enrolled_at = datetime.now().isoformat() if status == 'sent' else None
+        enrolled = 1 if status == 'sent' else 0
+        enrolled_at = datetime.now().isoformat() if status == 'sent' else None
 
-    cursor.execute('''
-        UPDATE contributors
-        SET apollo_status = ?,
-            enrolled_in_sequence = ?,
-            sequence_name = ?,
-            enrolled_at = ?,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-    ''', (status, enrolled, sequence_name, enrolled_at, contributor_id))
+        cursor.execute('''
+            UPDATE contributors
+            SET apollo_status = ?,
+                enrolled_in_sequence = ?,
+                sequence_name = ?,
+                enrolled_at = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        ''', (status, enrolled, sequence_name, enrolled_at, contributor_id))
 
-    updated = cursor.rowcount > 0
-    conn.commit()
-    conn.close()
+        updated = cursor.rowcount > 0
+        conn.commit()
     return updated
 
 
 def increment_contributor_emails(contributor_id: int) -> bool:
     """Increment email count for a contributor."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    cursor.execute('''
-        UPDATE contributors
-        SET emails_sent = emails_sent + 1,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-    ''', (contributor_id,))
+        cursor.execute('''
+            UPDATE contributors
+            SET emails_sent = emails_sent + 1,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        ''', (contributor_id,))
 
-    updated = cursor.rowcount > 0
-    conn.commit()
-    conn.close()
+        updated = cursor.rowcount > 0
+        conn.commit()
     return updated
 
 
 def update_contributor_email(contributor_id: int, email: str) -> bool:
     """Update email address for a contributor (persists Apollo lookup results)."""
-    conn = get_db_connection()
-    try:
-        cursor = conn.cursor()
-        cursor.execute('''
-            UPDATE contributors
-            SET email = ?,
-                updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
-        ''', (email, contributor_id))
-        updated = cursor.rowcount > 0
-        conn.commit()
-        return updated
-    except Exception as e:
-        print(f"[DB] Error updating email for contributor {contributor_id}: {e}")
-        conn.rollback()
-        return False
-    finally:
-        conn.close()
+    with db_connection() as conn:
+        try:
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE contributors
+                SET email = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            ''', (email, contributor_id))
+            updated = cursor.rowcount > 0
+            conn.commit()
+            return updated
+        except Exception as e:
+            print(f"[DB] Error updating email for contributor {contributor_id}: {e}")
+            conn.rollback()
+            return False
 
 
 def get_contributors_by_company(company_name: str) -> list:
@@ -5848,26 +5743,24 @@ def get_contributors_by_company(company_name: str) -> list:
 
     Used by the RepoRadar detail panel to show enrollable contributors.
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('''
-        SELECT * FROM contributors
-        WHERE (github_org = ? OR LOWER(company) = LOWER(?))
-          AND (is_org_member IS NULL OR is_org_member = 1)
-        ORDER BY contributions DESC
-    ''', (company_name, company_name))
-    rows = cursor.fetchall()
-    conn.close()
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT * FROM contributors
+            WHERE (github_org = ? OR LOWER(company) = LOWER(?))
+              AND (is_org_member IS NULL OR is_org_member = 1)
+            ORDER BY contributions DESC
+        ''', (company_name, company_name))
+        rows = cursor.fetchall()
     return [dict(row) for row in rows]
 
 
 def get_contributor_by_id(contributor_id: int) -> Optional[dict]:
     """Get a single contributor by ID."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('SELECT * FROM contributors WHERE id = ?', (contributor_id,))
-    row = cursor.fetchone()
-    conn.close()
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM contributors WHERE id = ?', (contributor_id,))
+        row = cursor.fetchone()
     return dict(row) if row else None
 
 
@@ -5882,23 +5775,21 @@ def get_contributors_by_ids(ids: list) -> list:
     """
     if not ids:
         return []
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    placeholders = ','.join('?' * len(ids))
-    cursor.execute(f'SELECT * FROM contributors WHERE id IN ({placeholders})', tuple(ids))
-    rows = cursor.fetchall()
-    conn.close()
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        placeholders = ','.join('?' * len(ids))
+        cursor.execute(f'SELECT * FROM contributors WHERE id IN ({placeholders})', tuple(ids))
+        rows = cursor.fetchall()
     return [dict(row) for row in rows]
 
 
 def delete_contributor(contributor_id: int) -> bool:
     """Delete a contributor by ID."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('DELETE FROM contributors WHERE id = ?', (contributor_id,))
-    deleted = cursor.rowcount > 0
-    conn.commit()
-    conn.close()
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM contributors WHERE id = ?', (contributor_id,))
+        deleted = cursor.rowcount > 0
+        conn.commit()
     return deleted
 
 
@@ -5921,59 +5812,58 @@ def get_scorecard_datatable(
     Column map: 0=company_name, 1=total_score, 2=cohort, 3=locale_count,
                 4=systems_score, 5=revenue_raw, 6=apollo_status.
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    column_map = {
-        0: 'ss.company_name',
-        1: 'ss.total_score',
-        2: 'ss.cohort',
-        3: 'ss.locale_count',
-        4: 'ss.systems_score',
-        5: 'ss.revenue_raw',
-        6: 'ss.apollo_status',
-    }
+        column_map = {
+            0: 'ss.company_name',
+            1: 'ss.total_score',
+            2: 'ss.cohort',
+            3: 'ss.locale_count',
+            4: 'ss.systems_score',
+            5: 'ss.revenue_raw',
+            6: 'ss.apollo_status',
+        }
 
-    # Total count (all scored accounts)
-    cursor.execute('SELECT COUNT(*) as total FROM scorecard_scores')
-    total_records = cursor.fetchone()['total']
+        # Total count (all scored accounts)
+        cursor.execute('SELECT COUNT(*) as total FROM scorecard_scores')
+        total_records = cursor.fetchone()['total']
 
-    # Build WHERE clause
-    where_clauses = []
-    params = []
+        # Build WHERE clause
+        where_clauses = []
+        params = []
 
-    if cohort_filter and cohort_filter in ('A', 'B'):
-        where_clauses.append('ss.cohort = ?')
-        params.append(cohort_filter)
+        if cohort_filter and cohort_filter in ('A', 'B'):
+            where_clauses.append('ss.cohort = ?')
+            params.append(cohort_filter)
 
-    if search_value:
-        where_clauses.append('(LOWER(ss.company_name) LIKE ? OR LOWER(ma.website) LIKE ?)')
-        search_param = f'%{search_value.lower()}%'
-        params.extend([search_param, search_param])
+        if search_value:
+            where_clauses.append('(LOWER(ss.company_name) LIKE ? OR LOWER(ma.website) LIKE ?)')
+            search_param = f'%{search_value.lower()}%'
+            params.extend([search_param, search_param])
 
-    where_sql = (' WHERE ' + ' AND '.join(where_clauses)) if where_clauses else ''
+        where_sql = (' WHERE ' + ' AND '.join(where_clauses)) if where_clauses else ''
 
-    # Filtered count
-    count_query = 'SELECT COUNT(*) as total FROM scorecard_scores ss LEFT JOIN monitored_accounts ma ON ma.id = ss.account_id' + where_sql
-    cursor.execute(count_query, params)
-    filtered_records = cursor.fetchone()['total']
+        # Filtered count
+        count_query = 'SELECT COUNT(*) as total FROM scorecard_scores ss LEFT JOIN monitored_accounts ma ON ma.id = ss.account_id' + where_sql
+        cursor.execute(count_query, params)
+        filtered_records = cursor.fetchone()['total']
 
-    # Whitelist-validated sort column
-    sort_column = column_map.get(order_column, 'ss.total_score')
-    assert sort_column in column_map.values(), f"sort_column must be in whitelist, got {sort_column!r}"
-    sort_order = 'DESC' if order_dir.lower() == 'desc' else 'ASC'
+        # Whitelist-validated sort column
+        sort_column = column_map.get(order_column, 'ss.total_score')
+        assert sort_column in column_map.values(), f"sort_column must be in whitelist, got {sort_column!r}"
+        sort_order = 'DESC' if order_dir.lower() == 'desc' else 'ASC'
 
-    # Paginated query with JOIN for website/github_org
-    select_query = '''
-        SELECT ss.*, ma.website, ma.github_org
-        FROM scorecard_scores ss
-        LEFT JOIN monitored_accounts ma ON ma.id = ss.account_id
-    ''' + where_sql + f' ORDER BY {sort_column} {sort_order} LIMIT ? OFFSET ?'
+        # Paginated query with JOIN for website/github_org
+        select_query = '''
+            SELECT ss.*, ma.website, ma.github_org
+            FROM scorecard_scores ss
+            LEFT JOIN monitored_accounts ma ON ma.id = ss.account_id
+        ''' + where_sql + f' ORDER BY {sort_column} {sort_order} LIMIT ? OFFSET ?'
 
-    select_params = list(params) + [length, start]
-    cursor.execute(select_query, select_params)
-    rows = cursor.fetchall()
-    conn.close()
+        select_params = list(params) + [length, start]
+        cursor.execute(select_query, select_params)
+        rows = cursor.fetchall()
 
     data = [dict(row) for row in rows]
 
@@ -5996,41 +5886,40 @@ def upsert_scorecard_scores(scores: list) -> int:
     Returns:
         Number of rows upserted.
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    count = 0
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        count = 0
 
-    for s in scores:
-        cursor.execute('''
-            INSERT INTO scorecard_scores (
-                account_id, company_name, annual_revenue, revenue_raw,
-                locale_count, total_score, lang_score, revenue_score,
-                cohort, has_loc_titles, has_app_loc, scored_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            ON CONFLICT(account_id) DO UPDATE SET
-                company_name = excluded.company_name,
-                annual_revenue = excluded.annual_revenue,
-                revenue_raw = excluded.revenue_raw,
-                locale_count = excluded.locale_count,
-                lang_score = excluded.lang_score,
-                revenue_score = excluded.revenue_score,
-                total_score = excluded.lang_score + scorecard_scores.systems_score + excluded.revenue_score,
-                cohort = excluded.cohort,
-                has_loc_titles = excluded.has_loc_titles,
-                has_app_loc = excluded.has_app_loc,
-                scored_at = CURRENT_TIMESTAMP,
-                updated_at = CURRENT_TIMESTAMP
-        ''', (
-            s['account_id'], s['company_name'], s.get('annual_revenue', ''),
-            s.get('revenue_raw', 0), s.get('locale_count', 0),
-            s.get('total_score', 0), s.get('lang_score', 0),
-            s.get('revenue_score', 0), s.get('cohort', 'B'),
-            s.get('has_loc_titles', 0), s.get('has_app_loc', 0)
-        ))
-        count += 1
+        for s in scores:
+            cursor.execute('''
+                INSERT INTO scorecard_scores (
+                    account_id, company_name, annual_revenue, revenue_raw,
+                    locale_count, total_score, lang_score, revenue_score,
+                    cohort, has_loc_titles, has_app_loc, scored_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                ON CONFLICT(account_id) DO UPDATE SET
+                    company_name = excluded.company_name,
+                    annual_revenue = excluded.annual_revenue,
+                    revenue_raw = excluded.revenue_raw,
+                    locale_count = excluded.locale_count,
+                    lang_score = excluded.lang_score,
+                    revenue_score = excluded.revenue_score,
+                    total_score = excluded.lang_score + scorecard_scores.systems_score + excluded.revenue_score,
+                    cohort = excluded.cohort,
+                    has_loc_titles = excluded.has_loc_titles,
+                    has_app_loc = excluded.has_app_loc,
+                    scored_at = CURRENT_TIMESTAMP,
+                    updated_at = CURRENT_TIMESTAMP
+            ''', (
+                s['account_id'], s['company_name'], s.get('annual_revenue', ''),
+                s.get('revenue_raw', 0), s.get('locale_count', 0),
+                s.get('total_score', 0), s.get('lang_score', 0),
+                s.get('revenue_score', 0), s.get('cohort', 'B'),
+                s.get('has_loc_titles', 0), s.get('has_app_loc', 0)
+            ))
+            count += 1
 
-    conn.commit()
-    conn.close()
+        conn.commit()
     return count
 
 
@@ -6040,58 +5929,55 @@ def update_scorecard_systems(account_id: int, systems_json: str, systems_score: 
 
     total_score = lang_score + systems_score + revenue_score
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    cursor.execute('''
-        UPDATE scorecard_scores
-        SET systems_json = ?,
-            systems_score = ?,
-            total_score = lang_score + ? + revenue_score,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE account_id = ?
-    ''', (systems_json, systems_score, systems_score, account_id))
+        cursor.execute('''
+            UPDATE scorecard_scores
+            SET systems_json = ?,
+                systems_score = ?,
+                total_score = lang_score + ? + revenue_score,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE account_id = ?
+        ''', (systems_json, systems_score, systems_score, account_id))
 
-    updated = cursor.rowcount > 0
-    conn.commit()
-    conn.close()
+        updated = cursor.rowcount > 0
+        conn.commit()
     return updated
 
 
 def update_scorecard_enrollment(account_id: int, apollo_status: str, sequence_name: str) -> bool:
     """Set Apollo enrollment status + enrolled_at timestamp."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    cursor.execute('''
-        UPDATE scorecard_scores
-        SET apollo_status = ?,
-            sequence_name = ?,
-            enrolled_at = CURRENT_TIMESTAMP,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE account_id = ?
-    ''', (apollo_status, sequence_name, account_id))
+        cursor.execute('''
+            UPDATE scorecard_scores
+            SET apollo_status = ?,
+                sequence_name = ?,
+                enrolled_at = CURRENT_TIMESTAMP,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE account_id = ?
+        ''', (apollo_status, sequence_name, account_id))
 
-    updated = cursor.rowcount > 0
-    conn.commit()
-    conn.close()
+        updated = cursor.rowcount > 0
+        conn.commit()
     return updated
 
 
 def get_scorecard_score(account_id: int) -> Optional[dict]:
     """Get a single scorecard score row for sidebar detail view."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    cursor.execute('''
-        SELECT ss.*, ma.website, ma.github_org
-        FROM scorecard_scores ss
-        LEFT JOIN monitored_accounts ma ON ma.id = ss.account_id
-        WHERE ss.account_id = ?
-    ''', (account_id,))
+        cursor.execute('''
+            SELECT ss.*, ma.website, ma.github_org
+            FROM scorecard_scores ss
+            LEFT JOIN monitored_accounts ma ON ma.id = ss.account_id
+            WHERE ss.account_id = ?
+        ''', (account_id,))
 
-    row = cursor.fetchone()
-    conn.close()
+        row = cursor.fetchone()
     return dict(row) if row else None
 
 
@@ -6113,16 +5999,15 @@ def create_campaign(name: str, prompt: str, assets: list, sequence_id: str = Non
                     contact_cap: int = 20, verified_emails_only: int = 0,
                     review_in_tool: int = 1, tone: str = None) -> dict:
     """Create a new campaign."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    campaign_id = _insert_returning_id(cursor, '''
-        INSERT INTO campaigns (name, prompt, assets, sequence_id, sequence_name, sequence_config,
-                               contact_cap, verified_emails_only, review_in_tool, tone, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft')
-    ''', (name, prompt, json.dumps(assets), sequence_id, sequence_name, sequence_config,
-          contact_cap, verified_emails_only, review_in_tool, tone))
-    conn.commit()
-    conn.close()
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        campaign_id = _insert_returning_id(cursor, '''
+            INSERT INTO campaigns (name, prompt, assets, sequence_id, sequence_name, sequence_config,
+                                   contact_cap, verified_emails_only, review_in_tool, tone, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft')
+        ''', (name, prompt, json.dumps(assets), sequence_id, sequence_name, sequence_config,
+              contact_cap, verified_emails_only, review_in_tool, tone))
+        conn.commit()
     return {'id': campaign_id, 'name': name}
 
 
@@ -6139,76 +6024,71 @@ def update_campaign(campaign_id: int, **kwargs) -> bool:
     values = list(updates.values())
     values.append(campaign_id)
 
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute(f'''
-        UPDATE campaigns SET {set_clause}, updated_at = CURRENT_TIMESTAMP WHERE id = ?
-    ''', values)
-    updated = cursor.rowcount > 0
-    conn.commit()
-    conn.close()
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(f'''
+            UPDATE campaigns SET {set_clause}, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+        ''', values)
+        updated = cursor.rowcount > 0
+        conn.commit()
     return updated
 
 
 def delete_campaign(campaign_id: int) -> bool:
     """Delete a campaign by ID."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('DELETE FROM campaigns WHERE id = ?', (campaign_id,))
-    deleted = cursor.rowcount > 0
-    conn.commit()
-    conn.close()
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM campaigns WHERE id = ?', (campaign_id,))
+        deleted = cursor.rowcount > 0
+        conn.commit()
     return deleted
 
 
 def get_campaign(campaign_id: int) -> Optional[dict]:
     """Get a single campaign by ID, including its personas."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('SELECT * FROM campaigns WHERE id = ?', (campaign_id,))
-    row = cursor.fetchone()
-    if not row:
-        conn.close()
-        return None
-    campaign = dict(row)
-    try:
-        campaign['assets'] = json.loads(campaign.get('assets') or '[]')
-    except (json.JSONDecodeError, TypeError):
-        campaign['assets'] = []
-    # Attach personas
-    cursor.execute(
-        'SELECT * FROM campaign_personas WHERE campaign_id = ? ORDER BY priority ASC, id ASC',
-        (campaign_id,)
-    )
-    personas = []
-    for p in cursor.fetchall():
-        persona = dict(p)
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM campaigns WHERE id = ?', (campaign_id,))
+        row = cursor.fetchone()
+        if not row:
+            return None
+        campaign = dict(row)
         try:
-            persona['titles'] = json.loads(persona.get('titles_json') or '[]')
+            campaign['assets'] = json.loads(campaign.get('assets') or '[]')
         except (json.JSONDecodeError, TypeError):
-            persona['titles'] = []
-        try:
-            persona['seniorities'] = json.loads(persona.get('seniorities_json') or '[]')
-        except (json.JSONDecodeError, TypeError):
-            persona['seniorities'] = []
-        personas.append(persona)
-    campaign['personas'] = personas
-    conn.close()
+            campaign['assets'] = []
+        # Attach personas
+        cursor.execute(
+            'SELECT * FROM campaign_personas WHERE campaign_id = ? ORDER BY priority ASC, id ASC',
+            (campaign_id,)
+        )
+        personas = []
+        for p in cursor.fetchall():
+            persona = dict(p)
+            try:
+                persona['titles'] = json.loads(persona.get('titles_json') or '[]')
+            except (json.JSONDecodeError, TypeError):
+                persona['titles'] = []
+            try:
+                persona['seniorities'] = json.loads(persona.get('seniorities_json') or '[]')
+            except (json.JSONDecodeError, TypeError):
+                persona['seniorities'] = []
+            personas.append(persona)
+        campaign['personas'] = personas
     return campaign
 
 
 def get_all_campaigns() -> list:
     """Get all campaigns ordered by most recently updated, with persona counts."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('SELECT * FROM campaigns ORDER BY updated_at DESC')
-    rows = cursor.fetchall()
-    # Batch-fetch persona counts
-    cursor.execute('''
-        SELECT campaign_id, COUNT(*) as cnt FROM campaign_personas GROUP BY campaign_id
-    ''')
-    persona_counts = {r['campaign_id']: r['cnt'] for r in cursor.fetchall()}
-    conn.close()
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM campaigns ORDER BY updated_at DESC')
+        rows = cursor.fetchall()
+        # Batch-fetch persona counts
+        cursor.execute('''
+            SELECT campaign_id, COUNT(*) as cnt FROM campaign_personas GROUP BY campaign_id
+        ''')
+        persona_counts = {r['campaign_id']: r['cnt'] for r in cursor.fetchall()}
     campaigns = []
     for row in rows:
         c = dict(row)
@@ -6229,60 +6109,58 @@ def upsert_sequence_mapping(sequence_id: str, sequence_name: str,
                             sequence_config: str = None, num_steps: int = 0,
                             active: bool = True, owner_name: str = None) -> dict:
     """Insert or update a sequence mapping. Returns the mapping dict."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    upsert_sql = '''
-        INSERT INTO sequence_mappings (sequence_id, sequence_name, sequence_config, num_steps, active, owner_name, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-        ON CONFLICT(sequence_id) DO UPDATE SET
-            sequence_name = excluded.sequence_name,
-            sequence_config = excluded.sequence_config,
-            num_steps = excluded.num_steps,
-            active = excluded.active,
-            owner_name = COALESCE(sequence_mappings.owner_name, excluded.owner_name),
-            updated_at = CURRENT_TIMESTAMP
-    '''
-    upsert_params = (sequence_id, sequence_name, sequence_config, num_steps, int(active), owner_name)
-    if _USE_POSTGRES:
-        mapping_id = _insert_returning_id(cursor, upsert_sql, upsert_params)
-    else:
-        cursor.execute(upsert_sql, upsert_params)
-        mapping_id = cursor.lastrowid or cursor.execute(
-            'SELECT id FROM sequence_mappings WHERE sequence_id = ?', (sequence_id,)
-        ).fetchone()['id']
-    conn.commit()
-    conn.close()
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        upsert_sql = '''
+            INSERT INTO sequence_mappings (sequence_id, sequence_name, sequence_config, num_steps, active, owner_name, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(sequence_id) DO UPDATE SET
+                sequence_name = excluded.sequence_name,
+                sequence_config = excluded.sequence_config,
+                num_steps = excluded.num_steps,
+                active = excluded.active,
+                owner_name = COALESCE(sequence_mappings.owner_name, excluded.owner_name),
+                updated_at = CURRENT_TIMESTAMP
+        '''
+        upsert_params = (sequence_id, sequence_name, sequence_config, num_steps, int(active), owner_name)
+        if _USE_POSTGRES:
+            mapping_id = _insert_returning_id(cursor, upsert_sql, upsert_params)
+        else:
+            cursor.execute(upsert_sql, upsert_params)
+            mapping_id = cursor.lastrowid or cursor.execute(
+                'SELECT id FROM sequence_mappings WHERE sequence_id = ?', (sequence_id,)
+            ).fetchone()['id']
+        conn.commit()
     return {'id': mapping_id, 'sequence_id': sequence_id, 'sequence_name': sequence_name}
 
 
 def get_all_sequence_mappings(enabled_only: bool = False) -> list:
     """Get sequence mappings with campaigns derived from campaigns.sequence_id (many-to-many)."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    query = 'SELECT * FROM sequence_mappings'
-    if enabled_only:
-        query += ' WHERE enabled = 1'
-    query += ' ORDER BY sequence_name ASC'
-    cursor.execute(query)
-    mappings = [dict(r) for r in cursor.fetchall()]
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        query = 'SELECT * FROM sequence_mappings'
+        if enabled_only:
+            query += ' WHERE enabled = 1'
+        query += ' ORDER BY sequence_name ASC'
+        cursor.execute(query)
+        mappings = [dict(r) for r in cursor.fetchall()]
 
-    # Batch-fetch campaigns grouped by sequence_id
-    if mappings:
-        seq_ids = [m['sequence_id'] for m in mappings]
-        placeholders = ','.join('?' * len(seq_ids))
-        cursor.execute(
-            f'SELECT id, name, status, sequence_id FROM campaigns WHERE sequence_id IN ({placeholders})',
-            seq_ids
-        )
-        campaign_rows = [dict(r) for r in cursor.fetchall()]
-        campaigns_by_seq = {}
-        for c in campaign_rows:
-            campaigns_by_seq.setdefault(c['sequence_id'], []).append(c)
-        for m in mappings:
-            m['campaigns'] = campaigns_by_seq.get(m['sequence_id'], [])
-            m['campaign_name'] = ', '.join(c['name'] for c in m['campaigns']) or None
+        # Batch-fetch campaigns grouped by sequence_id
+        if mappings:
+            seq_ids = [m['sequence_id'] for m in mappings]
+            placeholders = ','.join('?' * len(seq_ids))
+            cursor.execute(
+                f'SELECT id, name, status, sequence_id FROM campaigns WHERE sequence_id IN ({placeholders})',
+                seq_ids
+            )
+            campaign_rows = [dict(r) for r in cursor.fetchall()]
+            campaigns_by_seq = {}
+            for c in campaign_rows:
+                campaigns_by_seq.setdefault(c['sequence_id'], []).append(c)
+            for m in mappings:
+                m['campaigns'] = campaigns_by_seq.get(m['sequence_id'], [])
+                m['campaign_name'] = ', '.join(c['name'] for c in m['campaigns']) or None
 
-    conn.close()
     return mappings
 
 
@@ -6295,80 +6173,75 @@ def update_sequence_mapping(mapping_id: int, **kwargs) -> bool:
     updates['updated_at'] = datetime.now().isoformat()
     set_clause = ', '.join(f'{k} = ?' for k in updates)
     values = list(updates.values()) + [mapping_id]
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute(f'UPDATE sequence_mappings SET {set_clause} WHERE id = ?', values)
-    conn.commit()
-    changed = cursor.rowcount > 0
-    conn.close()
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(f'UPDATE sequence_mappings SET {set_clause} WHERE id = ?', values)
+        conn.commit()
+        changed = cursor.rowcount > 0
     return changed
 
 
 def delete_sequence_mapping(mapping_id: int) -> bool:
     """Delete a sequence mapping."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('DELETE FROM sequence_mappings WHERE id = ?', (mapping_id,))
-    conn.commit()
-    deleted = cursor.rowcount > 0
-    conn.close()
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM sequence_mappings WHERE id = ?', (mapping_id,))
+        conn.commit()
+        deleted = cursor.rowcount > 0
     return deleted
 
 
 def search_sequence_mappings(query: str, enabled_only: bool = False) -> list:
     """Search sequence mappings by name with campaigns derived from campaigns.sequence_id."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    sql = 'SELECT * FROM sequence_mappings WHERE sequence_name LIKE ?'
-    if enabled_only:
-        sql += ' AND enabled = 1'
-    sql += ' ORDER BY sequence_name ASC'
-    cursor.execute(sql, (f'%{query}%',))
-    mappings = [dict(r) for r in cursor.fetchall()]
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        sql = 'SELECT * FROM sequence_mappings WHERE sequence_name LIKE ?'
+        if enabled_only:
+            sql += ' AND enabled = 1'
+        sql += ' ORDER BY sequence_name ASC'
+        cursor.execute(sql, (f'%{query}%',))
+        mappings = [dict(r) for r in cursor.fetchall()]
 
-    if mappings:
-        seq_ids = [m['sequence_id'] for m in mappings]
-        placeholders = ','.join('?' * len(seq_ids))
-        cursor.execute(
-            f'SELECT id, name, status, sequence_id FROM campaigns WHERE sequence_id IN ({placeholders})',
-            seq_ids
-        )
-        campaign_rows = [dict(r) for r in cursor.fetchall()]
-        campaigns_by_seq = {}
-        for c in campaign_rows:
-            campaigns_by_seq.setdefault(c['sequence_id'], []).append(c)
-        for m in mappings:
-            m['campaigns'] = campaigns_by_seq.get(m['sequence_id'], [])
-            m['campaign_name'] = ', '.join(c['name'] for c in m['campaigns']) or None
+        if mappings:
+            seq_ids = [m['sequence_id'] for m in mappings]
+            placeholders = ','.join('?' * len(seq_ids))
+            cursor.execute(
+                f'SELECT id, name, status, sequence_id FROM campaigns WHERE sequence_id IN ({placeholders})',
+                seq_ids
+            )
+            campaign_rows = [dict(r) for r in cursor.fetchall()]
+            campaigns_by_seq = {}
+            for c in campaign_rows:
+                campaigns_by_seq.setdefault(c['sequence_id'], []).append(c)
+            for m in mappings:
+                m['campaigns'] = campaigns_by_seq.get(m['sequence_id'], [])
+                m['campaign_name'] = ', '.join(c['name'] for c in m['campaigns']) or None
 
-    conn.close()
     return mappings
 
 
 def get_campaigns_for_sequence(sequence_id: str) -> list:
     """Get all campaigns that reference a given Apollo sequence ID."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        'SELECT id, name, status FROM campaigns WHERE sequence_id = ? ORDER BY updated_at DESC',
-        (sequence_id,)
-    )
-    rows = [dict(r) for r in cursor.fetchall()]
-    conn.close()
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            'SELECT id, name, status FROM campaigns WHERE sequence_id = ? ORDER BY updated_at DESC',
+            (sequence_id,)
+        )
+        rows = [dict(r) for r in cursor.fetchall()]
     return rows
 
 
 def toggle_sequence_mapping_enabled(mapping_id: int, enabled: bool) -> bool:
     """Toggle a sequence mapping's enabled status."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        'UPDATE sequence_mappings SET enabled = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-        (int(enabled), mapping_id)
-    )
-    conn.commit()
-    changed = cursor.rowcount > 0
-    conn.close()
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            'UPDATE sequence_mappings SET enabled = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+            (int(enabled), mapping_id)
+        )
+        conn.commit()
+        changed = cursor.rowcount > 0
     return changed
 
 
@@ -6380,16 +6253,15 @@ def create_campaign_persona(campaign_id: int, persona_name: str, titles: list,
                             seniorities: list, sequence_id: str,
                             sequence_name: str = None, priority: int = 0) -> dict:
     """Create a persona-sequence mapping for a campaign."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    pid = _insert_returning_id(cursor, '''
-        INSERT INTO campaign_personas (campaign_id, persona_name, titles_json, seniorities_json,
-                                       sequence_id, sequence_name, priority)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    ''', (campaign_id, persona_name, json.dumps(titles), json.dumps(seniorities),
-          sequence_id, sequence_name, priority))
-    conn.commit()
-    conn.close()
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        pid = _insert_returning_id(cursor, '''
+            INSERT INTO campaign_personas (campaign_id, persona_name, titles_json, seniorities_json,
+                                           sequence_id, sequence_name, priority)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (campaign_id, persona_name, json.dumps(titles), json.dumps(seniorities),
+              sequence_id, sequence_name, priority))
+        conn.commit()
     return {'id': pid, 'campaign_id': campaign_id, 'persona_name': persona_name}
 
 
@@ -6409,69 +6281,65 @@ def update_campaign_persona(persona_id: int, **kwargs) -> bool:
         return False
     set_clause = ', '.join(f'{k} = ?' for k in updates)
     values = list(updates.values()) + [persona_id]
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute(f'UPDATE campaign_personas SET {set_clause} WHERE id = ?', values)
-    conn.commit()
-    changed = cursor.rowcount > 0
-    conn.close()
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(f'UPDATE campaign_personas SET {set_clause} WHERE id = ?', values)
+        conn.commit()
+        changed = cursor.rowcount > 0
     return changed
 
 
 def delete_campaign_persona(persona_id: int) -> bool:
     """Delete a campaign persona."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('DELETE FROM campaign_personas WHERE id = ?', (persona_id,))
-    conn.commit()
-    deleted = cursor.rowcount > 0
-    conn.close()
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM campaign_personas WHERE id = ?', (persona_id,))
+        conn.commit()
+        deleted = cursor.rowcount > 0
     return deleted
 
 
 def get_campaign_personas(campaign_id: int) -> list:
     """Get all personas for a campaign, ordered by priority."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        'SELECT * FROM campaign_personas WHERE campaign_id = ? ORDER BY priority ASC, id ASC',
-        (campaign_id,)
-    )
-    personas = []
-    for r in cursor.fetchall():
-        p = dict(r)
-        try:
-            p['titles'] = json.loads(p.get('titles_json') or '[]')
-        except (json.JSONDecodeError, TypeError):
-            p['titles'] = []
-        try:
-            p['seniorities'] = json.loads(p.get('seniorities_json') or '[]')
-        except (json.JSONDecodeError, TypeError):
-            p['seniorities'] = []
-        personas.append(p)
-    conn.close()
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            'SELECT * FROM campaign_personas WHERE campaign_id = ? ORDER BY priority ASC, id ASC',
+            (campaign_id,)
+        )
+        personas = []
+        for r in cursor.fetchall():
+            p = dict(r)
+            try:
+                p['titles'] = json.loads(p.get('titles_json') or '[]')
+            except (json.JSONDecodeError, TypeError):
+                p['titles'] = []
+            try:
+                p['seniorities'] = json.loads(p.get('seniorities_json') or '[]')
+            except (json.JSONDecodeError, TypeError):
+                p['seniorities'] = []
+            personas.append(p)
     return personas
 
 
 def replace_campaign_personas(campaign_id: int, personas: list) -> int:
     """Replace all personas for a campaign. Each persona dict should have:
     persona_name, titles, seniorities, sequence_id, sequence_name, priority."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('DELETE FROM campaign_personas WHERE campaign_id = ?', (campaign_id,))
-    count = 0
-    for i, p in enumerate(personas):
-        cursor.execute('''
-            INSERT INTO campaign_personas (campaign_id, persona_name, titles_json,
-                                           seniorities_json, sequence_id, sequence_name, priority)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        ''', (campaign_id, p.get('persona_name', f'Persona {i+1}'),
-              json.dumps(p.get('titles', [])), json.dumps(p.get('seniorities', [])),
-              p.get('sequence_id', ''), p.get('sequence_name', ''),
-              p.get('priority', i)))
-        count += 1
-    conn.commit()
-    conn.close()
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM campaign_personas WHERE campaign_id = ?', (campaign_id,))
+        count = 0
+        for i, p in enumerate(personas):
+            cursor.execute('''
+                INSERT INTO campaign_personas (campaign_id, persona_name, titles_json,
+                                               seniorities_json, sequence_id, sequence_name, priority)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (campaign_id, p.get('persona_name', f'Persona {i+1}'),
+                  json.dumps(p.get('titles', [])), json.dumps(p.get('seniorities', [])),
+                  p.get('sequence_id', ''), p.get('sequence_name', ''),
+                  p.get('priority', i)))
+            count += 1
+        conn.commit()
     return count
 
 
@@ -6481,24 +6349,22 @@ def replace_campaign_personas(campaign_id: int, personas: list) -> int:
 
 def create_enrollment_batch(campaign_id: int, account_ids: list) -> int:
     """Create an enrollment batch and return its ID."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    batch_id = _insert_returning_id(cursor, '''
-        INSERT INTO enrollment_batches (campaign_id, total_accounts, account_ids_json)
-        VALUES (?, ?, ?)
-    ''', (campaign_id, len(account_ids), json.dumps(account_ids)))
-    conn.commit()
-    conn.close()
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        batch_id = _insert_returning_id(cursor, '''
+            INSERT INTO enrollment_batches (campaign_id, total_accounts, account_ids_json)
+            VALUES (?, ?, ?)
+        ''', (campaign_id, len(account_ids), json.dumps(account_ids)))
+        conn.commit()
     return batch_id
 
 
 def get_enrollment_batch(batch_id: int) -> Optional[dict]:
     """Get an enrollment batch by ID."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('SELECT * FROM enrollment_batches WHERE id = ?', (batch_id,))
-    row = cursor.fetchone()
-    conn.close()
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM enrollment_batches WHERE id = ?', (batch_id,))
+        row = cursor.fetchone()
     if not row:
         return None
     batch = dict(row)
@@ -6519,25 +6385,23 @@ def update_enrollment_batch(batch_id: int, **kwargs) -> bool:
         return False
     set_clause = ', '.join(f'{k} = ?' for k in updates)
     values = list(updates.values()) + [batch_id]
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute(f'UPDATE enrollment_batches SET {set_clause} WHERE id = ?', values)
-    conn.commit()
-    changed = cursor.rowcount > 0
-    conn.close()
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(f'UPDATE enrollment_batches SET {set_clause} WHERE id = ?', values)
+        conn.commit()
+        changed = cursor.rowcount > 0
     return changed
 
 
 def get_enrollment_batches_for_campaign(campaign_id: int) -> list:
     """Get all enrollment batches for a campaign, newest first."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        'SELECT * FROM enrollment_batches WHERE campaign_id = ? ORDER BY created_at DESC',
-        (campaign_id,)
-    )
-    batches = [dict(r) for r in cursor.fetchall()]
-    conn.close()
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            'SELECT * FROM enrollment_batches WHERE campaign_id = ? ORDER BY created_at DESC',
+            (campaign_id,)
+        )
+        batches = [dict(r) for r in cursor.fetchall()]
     return batches
 
 
@@ -6547,22 +6411,21 @@ def get_enrollment_batches_for_campaign(campaign_id: int) -> list:
 
 def create_enrollment_contact(batch_id: int, company_name: str, **kwargs) -> int:
     """Create a single enrollment contact record."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cols = ['batch_id', 'company_name']
-    vals = [batch_id, company_name]
-    allowed = {'account_id', 'company_domain', 'persona_name', 'sequence_id',
-               'sequence_name', 'apollo_person_id', 'first_name', 'last_name',
-               'email', 'title', 'seniority', 'linkedin_url', 'status'}
-    for k, v in kwargs.items():
-        if k in allowed:
-            cols.append(k)
-            vals.append(v)
-    placeholders = ', '.join('?' * len(cols))
-    col_names = ', '.join(cols)
-    cid = _insert_returning_id(cursor, f'INSERT INTO enrollment_contacts ({col_names}) VALUES ({placeholders})', tuple(vals))
-    conn.commit()
-    conn.close()
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        cols = ['batch_id', 'company_name']
+        vals = [batch_id, company_name]
+        allowed = {'account_id', 'company_domain', 'persona_name', 'sequence_id',
+                   'sequence_name', 'apollo_person_id', 'first_name', 'last_name',
+                   'email', 'title', 'seniority', 'linkedin_url', 'status'}
+        for k, v in kwargs.items():
+            if k in allowed:
+                cols.append(k)
+                vals.append(v)
+        placeholders = ', '.join('?' * len(cols))
+        col_names = ', '.join(cols)
+        cid = _insert_returning_id(cursor, f'INSERT INTO enrollment_contacts ({col_names}) VALUES ({placeholders})', tuple(vals))
+        conn.commit()
     return cid
 
 
@@ -6570,25 +6433,24 @@ def bulk_create_enrollment_contacts(contacts: list) -> int:
     """Batch-insert enrollment contacts. Each dict must have batch_id and company_name."""
     if not contacts:
         return 0
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    count = 0
-    for c in contacts:
-        cols = ['batch_id', 'company_name']
-        vals = [c['batch_id'], c['company_name']]
-        optional = {'account_id', 'company_domain', 'persona_name', 'sequence_id',
-                     'sequence_name', 'apollo_person_id', 'first_name', 'last_name',
-                     'email', 'title', 'seniority', 'linkedin_url', 'status'}
-        for k in optional:
-            if k in c and c[k] is not None:
-                cols.append(k)
-                vals.append(c[k])
-        placeholders = ', '.join('?' * len(cols))
-        col_names = ', '.join(cols)
-        cursor.execute(f'INSERT INTO enrollment_contacts ({col_names}) VALUES ({placeholders})', vals)
-        count += 1
-    conn.commit()
-    conn.close()
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        count = 0
+        for c in contacts:
+            cols = ['batch_id', 'company_name']
+            vals = [c['batch_id'], c['company_name']]
+            optional = {'account_id', 'company_domain', 'persona_name', 'sequence_id',
+                         'sequence_name', 'apollo_person_id', 'first_name', 'last_name',
+                         'email', 'title', 'seniority', 'linkedin_url', 'status'}
+            for k in optional:
+                if k in c and c[k] is not None:
+                    cols.append(k)
+                    vals.append(c[k])
+            placeholders = ', '.join('?' * len(cols))
+            col_names = ', '.join(cols)
+            cursor.execute(f'INSERT INTO enrollment_contacts ({col_names}) VALUES ({placeholders})', vals)
+            count += 1
+        conn.commit()
     return count
 
 
@@ -6601,59 +6463,55 @@ def update_enrollment_contact(contact_id: int, **kwargs) -> bool:
         return False
     set_clause = ', '.join(f'{k} = ?' for k in updates)
     values = list(updates.values()) + [contact_id]
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute(f'UPDATE enrollment_contacts SET {set_clause} WHERE id = ?', values)
-    conn.commit()
-    changed = cursor.rowcount > 0
-    conn.close()
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(f'UPDATE enrollment_contacts SET {set_clause} WHERE id = ?', values)
+        conn.commit()
+        changed = cursor.rowcount > 0
     return changed
 
 
 def get_enrollment_contacts(batch_id: int, status: str = None,
                             limit: int = 500, offset: int = 0) -> list:
     """Get contacts for a batch, optionally filtered by status."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    sql = 'SELECT * FROM enrollment_contacts WHERE batch_id = ?'
-    params = [batch_id]
-    if status:
-        sql += ' AND status = ?'
-        params.append(status)
-    sql += ' ORDER BY persona_name ASC, company_name ASC, id ASC LIMIT ? OFFSET ?'
-    params.extend([limit, offset])
-    cursor.execute(sql, params)
-    contacts = [dict(r) for r in cursor.fetchall()]
-    conn.close()
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        sql = 'SELECT * FROM enrollment_contacts WHERE batch_id = ?'
+        params = [batch_id]
+        if status:
+            sql += ' AND status = ?'
+            params.append(status)
+        sql += ' ORDER BY persona_name ASC, company_name ASC, id ASC LIMIT ? OFFSET ?'
+        params.extend([limit, offset])
+        cursor.execute(sql, params)
+        contacts = [dict(r) for r in cursor.fetchall()]
     return contacts
 
 
 def get_enrollment_batch_summary(batch_id: int) -> dict:
     """Get aggregated contact counts by status for a batch."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('''
-        SELECT status, COUNT(*) as cnt FROM enrollment_contacts
-        WHERE batch_id = ? GROUP BY status
-    ''', (batch_id,))
-    summary = {r['status']: r['cnt'] for r in cursor.fetchall()}
-    cursor.execute('SELECT COUNT(*) as total FROM enrollment_contacts WHERE batch_id = ?', (batch_id,))
-    summary['total'] = cursor.fetchone()['total']
-    conn.close()
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT status, COUNT(*) as cnt FROM enrollment_contacts
+            WHERE batch_id = ? GROUP BY status
+        ''', (batch_id,))
+        summary = {r['status']: r['cnt'] for r in cursor.fetchall()}
+        cursor.execute('SELECT COUNT(*) as total FROM enrollment_contacts WHERE batch_id = ?', (batch_id,))
+        summary['total'] = cursor.fetchone()['total']
     return summary
 
 
 def get_next_contacts_for_phase(batch_id: int, current_status: str, limit: int = 10) -> list:
     """Get the next N contacts with a given status for batch processing."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('''
-        SELECT * FROM enrollment_contacts
-        WHERE batch_id = ? AND status = ?
-        ORDER BY id ASC LIMIT ?
-    ''', (batch_id, current_status, limit))
-    contacts = [dict(r) for r in cursor.fetchall()]
-    conn.close()
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT * FROM enrollment_contacts
+            WHERE batch_id = ? AND status = ?
+            ORDER BY id ASC LIMIT ?
+        ''', (batch_id, current_status, limit))
+        contacts = [dict(r) for r in cursor.fetchall()]
     return contacts
 
 
@@ -6673,14 +6531,13 @@ def log_audit_event(action: str, details: str = None, user_or_key: str = None, i
     if details and len(details) > 2000:
         details = details[:2000]
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute('''
-            INSERT INTO audit_log (action, user_or_key, details, ip_address)
-            VALUES (?, ?, ?, ?)
-        ''', (action, user_or_key, details, ip_address))
-        conn.commit()
-        conn.close()
+        with db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO audit_log (action, user_or_key, details, ip_address)
+                VALUES (?, ?, ?, ?)
+            ''', (action, user_or_key, details, ip_address))
+            conn.commit()
     except Exception as e:
         # Never let audit logging break the main request
         import logging
@@ -6697,21 +6554,20 @@ def get_recent_audit_logs(limit: int = 100, action_filter: str = None) -> list:
     Returns:
         List of audit log dicts.
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    if action_filter:
-        cursor.execute('''
-            SELECT * FROM audit_log
-            WHERE action = ?
-            ORDER BY timestamp DESC LIMIT ?
-        ''', (action_filter, limit))
-    else:
-        cursor.execute('''
-            SELECT * FROM audit_log
-            ORDER BY timestamp DESC LIMIT ?
-        ''', (limit,))
-    rows = [dict(r) for r in cursor.fetchall()]
-    conn.close()
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        if action_filter:
+            cursor.execute('''
+                SELECT * FROM audit_log
+                WHERE action = ?
+                ORDER BY timestamp DESC LIMIT ?
+            ''', (action_filter, limit))
+        else:
+            cursor.execute('''
+                SELECT * FROM audit_log
+                ORDER BY timestamp DESC LIMIT ?
+            ''', (limit,))
+        rows = [dict(r) for r in cursor.fetchall()]
     return rows
 
 
@@ -6746,19 +6602,18 @@ def get_db_health() -> dict:
         'db_size_bytes': None,
     }
 
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    # Table row counts
-    for table in _ALL_TABLES:
-        try:
-            cursor.execute(f'SELECT COUNT(*) as cnt FROM {table}')
-            row = cursor.fetchone()
-            health['tables'][table] = row['cnt'] if isinstance(row, dict) else row[0]
-        except Exception:
-            health['tables'][table] = -1  # table may not exist yet
+        # Table row counts
+        for table in _ALL_TABLES:
+            try:
+                cursor.execute(f'SELECT COUNT(*) as cnt FROM {table}')
+                row = cursor.fetchone()
+                health['tables'][table] = row['cnt'] if isinstance(row, dict) else row[0]
+            except Exception:
+                health['tables'][table] = -1  # table may not exist yet
 
-    conn.close()
 
     # Connection pool stats (PostgreSQL)
     if _USE_POSTGRES and _pg_pool is not None:

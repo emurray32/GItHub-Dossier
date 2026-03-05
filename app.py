@@ -26,7 +26,7 @@ from database import (
     update_account_status, get_all_accounts, get_all_accounts_datatable, get_tier_counts, add_account_to_tier_0, TIER_CONFIG,
     get_account_by_company, get_account_by_company_case_insensitive,
     mark_account_as_invalid, get_refreshable_accounts, delete_account,
-    get_db_connection, db_connection, get_setting, set_setting, increment_daily_stat,
+    db_connection, get_setting, set_setting, increment_daily_stat,
     get_stats_last_n_days, log_webhook, get_recent_webhook_logs,
     set_scan_status, get_scan_status, get_queued_and_processing_accounts,
     clear_stale_scan_statuses, reset_all_scan_statuses, batch_set_scan_status_queued,
@@ -2432,17 +2432,16 @@ def api_campaigns_activate(campaign_id):
 @app.route('/api/campaigns/<int:campaign_id>/stats')
 def api_campaign_stats(campaign_id):
     """Get enrollment stats for a campaign: total enrolled, generated, failed."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('''
-        SELECT
-            COALESCE(SUM(total_contacts), 0) AS total_enrolled,
-            COALESCE(SUM(generated), 0) AS total_generated,
-            COALESCE(SUM(failed), 0) AS total_failed
-        FROM enrollment_batches WHERE campaign_id = ?
-    ''', (campaign_id,))
-    row = cursor.fetchone()
-    conn.close()
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT
+                COALESCE(SUM(total_contacts), 0) AS total_enrolled,
+                COALESCE(SUM(generated), 0) AS total_generated,
+                COALESCE(SUM(failed), 0) AS total_failed
+            FROM enrollment_batches WHERE campaign_id = ?
+        ''', (campaign_id,))
+        row = cursor.fetchone()
     return jsonify({
         'status': 'success',
         'total_enrolled': row['total_enrolled'] if row else 0,
@@ -2643,18 +2642,17 @@ def _discovery_worker(batch_id: int):
 
         # Load accounts
         account_ids = batch.get('account_ids', [])
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        if account_ids:
-            placeholders = ','.join('?' * len(account_ids))
-            cursor.execute(
-                f'SELECT id, company_name, website, github_org FROM monitored_accounts WHERE id IN ({placeholders})',
-                account_ids
-            )
-        else:
-            cursor.execute('SELECT id, company_name, website, github_org FROM monitored_accounts LIMIT 0')
-        accounts = [dict(r) for r in cursor.fetchall()]
-        conn.close()
+        with db_connection() as conn:
+            cursor = conn.cursor()
+            if account_ids:
+                placeholders = ','.join('?' * len(account_ids))
+                cursor.execute(
+                    f'SELECT id, company_name, website, github_org FROM monitored_accounts WHERE id IN ({placeholders})',
+                    account_ids
+                )
+            else:
+                cursor.execute('SELECT id, company_name, website, github_org FROM monitored_accounts LIMIT 0')
+            accounts = [dict(r) for r in cursor.fetchall()]
 
         # Campaign-level filters
         verified_only = bool(campaign.get('verified_emails_only'))
@@ -3315,18 +3313,17 @@ def api_enrollment_batch_retry(batch_id):
 @app.route('/api/enrollment/accounts')
 def api_enrollment_accounts():
     """List accounts available for enrollment selection, with scorecard data."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('''
-        SELECT a.id, a.company_name, a.website, a.github_org, a.annual_revenue,
-               a.current_tier, s.cohort, s.locale_count, s.total_score
-        FROM monitored_accounts a
-        LEFT JOIN scorecard_scores s ON s.account_id = a.id
-        WHERE a.archived_at IS NULL
-        ORDER BY a.company_name ASC
-    ''')
-    accounts = [dict(r) for r in cursor.fetchall()]
-    conn.close()
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT a.id, a.company_name, a.website, a.github_org, a.annual_revenue,
+                   a.current_tier, s.cohort, s.locale_count, s.total_score
+            FROM monitored_accounts a
+            LEFT JOIN scorecard_scores s ON s.account_id = a.id
+            WHERE a.archived_at IS NULL
+            ORDER BY a.company_name ASC
+        ''')
+        accounts = [dict(r) for r in cursor.fetchall()]
     return jsonify({'status': 'success', 'accounts': accounts})
 
 
@@ -3486,21 +3483,20 @@ def api_scorecard_rescore():
     rubric = data['rubric']
 
     # Fetch all non-archived accounts with locale data
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('''
-        SELECT
-            ma.id,
-            ma.company_name,
-            ma.annual_revenue,
-            ws.locale_count
-        FROM monitored_accounts ma
-        LEFT JOIN webscraper_accounts ws ON ws.monitored_account_id = ma.id
-        WHERE ma.archived_at IS NULL
-        GROUP BY ma.id
-    ''')
-    rows = cursor.fetchall()
-    conn.close()
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT
+                ma.id,
+                ma.company_name,
+                ma.annual_revenue,
+                ws.locale_count
+            FROM monitored_accounts ma
+            LEFT JOIN webscraper_accounts ws ON ws.monitored_account_id = ma.id
+            WHERE ma.archived_at IS NULL
+            GROUP BY ma.id
+        ''')
+        rows = cursor.fetchall()
 
     scores = []
     for row in rows:
@@ -3931,16 +3927,15 @@ def api_accounts_scan_statuses():
     Used by the 6-second poller instead of fetching all 1000+ full account records.
     Returns accounts that are currently scanning/queued OR were scanned in the last 2 minutes.
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('''
-        SELECT id, scan_status, scan_start_time, last_scanned_at, next_scan_due, last_scan_error
-        FROM monitored_accounts
-        WHERE scan_status IS NOT NULL AND scan_status != 'idle'
-           OR last_scanned_at >= datetime('now', '-2 minutes')
-    ''')
-    rows = cursor.fetchall()
-    conn.close()
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT id, scan_status, scan_start_time, last_scanned_at, next_scan_due, last_scan_error
+            FROM monitored_accounts
+            WHERE scan_status IS NOT NULL AND scan_status != 'idle'
+               OR last_scanned_at >= datetime('now', '-2 minutes')
+        ''')
+        rows = cursor.fetchall()
     accounts = []
     for row in rows:
         a = dict(row)
@@ -4441,11 +4436,10 @@ def api_contributors_datatable():
     # Enrich results with priority_score and company_tier
     # Build a tier lookup from monitored_accounts
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute('SELECT LOWER(company_name) as company_lower, current_tier FROM monitored_accounts')
-        tier_lookup = {row['company_lower']: row['current_tier'] for row in cursor.fetchall()}
-        conn.close()
+        with db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT LOWER(company_name) as company_lower, current_tier FROM monitored_accounts')
+            tier_lookup = {row['company_lower']: row['current_tier'] for row in cursor.fetchall()}
     except Exception:
         tier_lookup = {}
 
@@ -4584,24 +4578,23 @@ def api_fetch_contributors():
     if not valid:
         return jsonify({'status': 'error', 'message': limit_per_repo}), 400
 
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    if specific_org:
-        cursor.execute('''
-            SELECT DISTINCT company_name, github_org, annual_revenue
-            FROM monitored_accounts
-            WHERE github_org = ? AND archived_at IS NULL
-        ''', (specific_org,))
-    else:
-        cursor.execute('''
-            SELECT DISTINCT company_name, github_org, annual_revenue
-            FROM monitored_accounts
-            WHERE github_org IS NOT NULL AND github_org != '' AND archived_at IS NULL
-        ''')
+        if specific_org:
+            cursor.execute('''
+                SELECT DISTINCT company_name, github_org, annual_revenue
+                FROM monitored_accounts
+                WHERE github_org = ? AND archived_at IS NULL
+            ''', (specific_org,))
+        else:
+            cursor.execute('''
+                SELECT DISTINCT company_name, github_org, annual_revenue
+                FROM monitored_accounts
+                WHERE github_org IS NOT NULL AND github_org != '' AND archived_at IS NULL
+            ''')
 
-    accounts = [dict(row) for row in cursor.fetchall()]
-    conn.close()
+        accounts = [dict(row) for row in cursor.fetchall()]
 
     total_saved = 0
     errors = []
@@ -5175,16 +5168,15 @@ def api_webscraper_analyze_batch():
                 return jsonify({'status': 'error', 'message': f'Invalid account_id: {aid}'}), 400
 
         # Get accounts
-        conn = get_db_connection()
-        cursor = conn.cursor()
+        with db_connection() as conn:
+            cursor = conn.cursor()
 
-        placeholders = ','.join('?' * len(account_ids))
-        cursor.execute(
-            'SELECT id, company_name, website FROM monitored_accounts WHERE id IN (' + placeholders + ') AND website IS NOT NULL AND website != \'\'',
-            account_ids)
+            placeholders = ','.join('?' * len(account_ids))
+            cursor.execute(
+                'SELECT id, company_name, website FROM monitored_accounts WHERE id IN (' + placeholders + ') AND website IS NOT NULL AND website != \'\'',
+                account_ids)
 
-        accounts = [dict(row) for row in cursor.fetchall()]
-        conn.close()
+            accounts = [dict(row) for row in cursor.fetchall()]
 
         results = []
 
@@ -5501,25 +5493,24 @@ def api_webscraper_history():
     if not valid:
         return jsonify({'status': 'error', 'message': limit}), 400
 
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with db_connection() as conn:
+        cursor = conn.cursor()
 
-    cursor.execute('''
-        SELECT
-            company_name,
-            current_tier as tier,
-            locale_count,
-            localization_coverage_score as score,
-            evidence_summary as evidence,
-            last_scanned_at as scanned_at
-        FROM webscraper_accounts
-        WHERE last_scanned_at IS NOT NULL
-        ORDER BY last_scanned_at DESC
-        LIMIT ?
-    ''', (limit,))
+        cursor.execute('''
+            SELECT
+                company_name,
+                current_tier as tier,
+                locale_count,
+                localization_coverage_score as score,
+                evidence_summary as evidence,
+                last_scanned_at as scanned_at
+            FROM webscraper_accounts
+            WHERE last_scanned_at IS NOT NULL
+            ORDER BY last_scanned_at DESC
+            LIMIT ?
+        ''', (limit,))
 
-    rows = cursor.fetchall()
-    conn.close()
+        rows = cursor.fetchall()
 
     history = []
     for row in rows:
@@ -6283,8 +6274,6 @@ def api_update_org():
     Returns:
         JSON with update result.
     """
-    from database import get_db_connection
-
     data = request.get_json() or {}
     company_name = data.get('company_name', '').strip()
     github_org = data.get('github_org', '').strip()
@@ -6299,21 +6288,21 @@ def api_update_org():
     if not valid:
         return jsonify({'status': 'error', 'message': github_org}), 400
 
-    conn = get_db_connection()
     try:
-        cursor = conn.cursor()
+        with db_connection() as conn:
+            cursor = conn.cursor()
 
-        # Update the github_org for this account (preserve existing tier and evidence)
-        cursor.execute('''
-            UPDATE monitored_accounts
-            SET github_org = ?
-            WHERE company_name = ?
-        ''', (github_org, company_name))
+            # Update the github_org for this account (preserve existing tier and evidence)
+            cursor.execute('''
+                UPDATE monitored_accounts
+                SET github_org = ?
+                WHERE company_name = ?
+            ''', (github_org, company_name))
 
-        if cursor.rowcount == 0:
-            return jsonify({'status': 'error', 'message': 'Account not found'}), 404
+            if cursor.rowcount == 0:
+                return jsonify({'status': 'error', 'message': 'Account not found'}), 404
 
-        conn.commit()
+            conn.commit()
 
         return jsonify({
             'status': 'success',
@@ -6324,8 +6313,6 @@ def api_update_org():
     except Exception as e:
         logging.error(f"[ERROR] Failed to update org for {company_name}: {e}")
         return jsonify({'status': 'error', 'message': 'Failed to update organization'}), 500
-    finally:
-        conn.close()
 
 
 @app.route('/api/rescan/<company_name>', methods=['POST'])
@@ -6420,8 +6407,7 @@ def api_scan_pending():
     Returns:
         JSON with count of scans queued.
     """
-    conn = get_db_connection()
-    try:
+    with db_connection() as conn:
         cursor = conn.cursor()
 
         # Find accounts that have never been scanned (last_scanned_at is NULL)
@@ -6433,8 +6419,6 @@ def api_scan_pending():
         ''', (SCAN_STATUS_IDLE,))
 
         pending_accounts = [row[0] for row in cursor.fetchall()]
-    finally:
-        conn.close()
 
     # Throttle: only queue up to MAX_PENDING_BATCH at a time to prevent
     # overwhelming the thread pool and exhausting internal queue memory
@@ -6651,8 +6635,7 @@ def api_batch_rescan():
     if scope == 'refreshable':
         accounts = get_refreshable_accounts()
     elif scope == 'never_scanned':
-        conn = get_db_connection()
-        try:
+        with db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute('''
                 SELECT * FROM monitored_accounts
@@ -6663,12 +6646,9 @@ def api_batch_rescan():
             ''')
             columns = [desc[0] for desc in cursor.description]
             accounts = [dict(zip(columns, row)) for row in cursor.fetchall()]
-        finally:
-            conn.close()
     else:
         # "all" — all non-archived accounts with a github_org
-        conn = get_db_connection()
-        try:
+        with db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute('''
                 SELECT * FROM monitored_accounts
@@ -6678,8 +6658,6 @@ def api_batch_rescan():
             ''')
             columns = [desc[0] for desc in cursor.description]
             accounts = [dict(zip(columns, row)) for row in cursor.fetchall()]
-        finally:
-            conn.close()
 
     if not accounts:
         _batch_rescan_state['active'] = False
@@ -7313,20 +7291,17 @@ def _auto_scan_pending_accounts():
     then submits to executor. This ensures status is visible immediately even
     if executor submission is slow.
     """
-    conn = None
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
+        with db_connection() as conn:
+            cursor = conn.cursor()
 
-        # Find accounts that have never been scanned (regardless of current status)
-        cursor.execute('''
-            SELECT company_name FROM monitored_accounts
-            WHERE last_scanned_at IS NULL
-        ''')
+            # Find accounts that have never been scanned (regardless of current status)
+            cursor.execute('''
+                SELECT company_name FROM monitored_accounts
+                WHERE last_scanned_at IS NULL
+            ''')
 
-        pending_accounts = [row[0] for row in cursor.fetchall()]
-        conn.close()
-        conn = None  # Mark as closed
+            pending_accounts = [row[0] for row in cursor.fetchall()]
 
         if pending_accounts:
             total = len(pending_accounts)
@@ -7354,9 +7329,6 @@ def _auto_scan_pending_accounts():
 
     except Exception as e:
         logging.error(f"[APP] Error auto-scanning pending accounts: {str(e)}")
-    finally:
-        if conn is not None:
-            conn.close()
 
 
 # =============================================================================
@@ -7651,8 +7623,7 @@ def api_zapier_trigger():
                 'message': f'Account "{company_name}" not found'
             }), 404
         # Try to get the most recent report for this company
-        conn = get_db_connection()
-        try:
+        with db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute('''
                 SELECT id FROM reports
@@ -7663,8 +7634,6 @@ def api_zapier_trigger():
             row = cursor.fetchone()
             if row:
                 report = get_report(row['id'])
-        finally:
-            conn.close()
     else:
         return jsonify({
             'status': 'error',
