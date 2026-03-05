@@ -636,7 +636,7 @@
             var html = '<div class="sequence-thread"><div class="thread-label">Email Sequence</div>';
             html += '<div class="outreach-field"><label class="outreach-label">Subject <span class="outreach-var-name">personalized_subject_1</span></label><input type="text" id="email-subject1-' + id + '" class="outreach-input" placeholder="Subject line..."></div>';
             for (var i = 1; i <= numSteps; i++) {
-                html += '<div class="outreach-field"><label class="outreach-label">Email ' + i + ' <span class="outreach-var-name">personalized_email_' + i + '</span></label><textarea id="email-body' + i + '-' + id + '" class="outreach-textarea" rows="' + (i === 1 ? 4 : 3) + '" placeholder="Email ' + i + '..."></textarea></div>';
+                html += '<div class="outreach-field"><label class="outreach-label">Email ' + i + ' <span class="outreach-var-name">personalized_email_' + i + '</span></label><textarea id="email-body' + i + '-' + id + '" class="outreach-textarea" rows="' + (i === 1 ? 6 : 5) + '" placeholder="Email ' + i + '..."></textarea></div>';
             }
             html += '</div>';
             return html;
@@ -645,7 +645,7 @@
             var html = '<div class="sequence-thread"><div class="thread-label">Email Sequence (3 emails)</div>';
             html += '<div class="outreach-field"><label class="outreach-label">Subject <span class="outreach-var-name">personalized_subject_1</span></label><input type="text" id="email-subject1-' + id + '" class="outreach-input" placeholder="Subject line..."></div>';
             for (var i = 1; i <= 3; i++) {
-                html += '<div class="outreach-field"><label class="outreach-label">Email ' + i + ' <span class="outreach-var-name">personalized_email_' + i + '</span></label><textarea id="email-body' + i + '-' + id + '" class="outreach-textarea" rows="' + (i === 1 ? 4 : 3) + '" placeholder="Email ' + i + '..."></textarea></div>';
+                html += '<div class="outreach-field"><label class="outreach-label">Email ' + i + ' <span class="outreach-var-name">personalized_email_' + i + '</span></label><textarea id="email-body' + i + '-' + id + '" class="outreach-textarea" rows="' + (i === 1 ? 6 : 5) + '" placeholder="Email ' + i + '..."></textarea></div>';
             }
             html += '</div>';
             return html;
@@ -653,12 +653,12 @@
         // 4+ steps: 2x2 split thread
         return '<div class="sequence-thread"><div class="thread-label">Thread 1</div>' +
             '<div class="outreach-field"><label class="outreach-label">Subject 1 <span class="outreach-var-name">personalized_subject_1</span></label><input type="text" id="email-subject1-' + id + '" class="outreach-input" placeholder="Subject line..."></div>' +
-            '<div class="outreach-field"><label class="outreach-label">Email 1 <span class="outreach-var-name">personalized_email_1</span></label><textarea id="email-body1-' + id + '" class="outreach-textarea" rows="4" placeholder="Initial outreach..."></textarea></div>' +
-            '<div class="outreach-field"><label class="outreach-label">Email 2 <span class="outreach-var-name">personalized_email_2</span></label><textarea id="email-body2-' + id + '" class="outreach-textarea" rows="3" placeholder="Follow-up bump..."></textarea></div></div>' +
+            '<div class="outreach-field"><label class="outreach-label">Email 1 <span class="outreach-var-name">personalized_email_1</span></label><textarea id="email-body1-' + id + '" class="outreach-textarea" rows="6" placeholder="Initial outreach..."></textarea></div>' +
+            '<div class="outreach-field"><label class="outreach-label">Email 2 <span class="outreach-var-name">personalized_email_2</span></label><textarea id="email-body2-' + id + '" class="outreach-textarea" rows="5" placeholder="Follow-up bump..."></textarea></div></div>' +
             '<div class="sequence-thread"><div class="thread-label">Thread 2</div>' +
             '<div class="outreach-field"><label class="outreach-label">Subject 2 <span class="outreach-var-name">personalized_subject_2</span></label><input type="text" id="email-subject2-' + id + '" class="outreach-input" placeholder="New angle subject..."></div>' +
-            '<div class="outreach-field"><label class="outreach-label">Email 3 <span class="outreach-var-name">personalized_email_3</span></label><textarea id="email-body3-' + id + '" class="outreach-textarea" rows="4" placeholder="New thread email..."></textarea></div>' +
-            '<div class="outreach-field"><label class="outreach-label">Email 4 <span class="outreach-var-name">personalized_email_4</span></label><textarea id="email-body4-' + id + '" class="outreach-textarea" rows="3" placeholder="Breakup email..."></textarea></div></div>';
+            '<div class="outreach-field"><label class="outreach-label">Email 3 <span class="outreach-var-name">personalized_email_3</span></label><textarea id="email-body3-' + id + '" class="outreach-textarea" rows="6" placeholder="New thread email..."></textarea></div>' +
+            '<div class="outreach-field"><label class="outreach-label">Email 4 <span class="outreach-var-name">personalized_email_4</span></label><textarea id="email-body4-' + id + '" class="outreach-textarea" rows="5" placeholder="Breakup email..."></textarea></div></div>';
     }
 
     window.enrollInSelectedSequence = async function(id) {
