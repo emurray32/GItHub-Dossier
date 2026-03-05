@@ -2180,6 +2180,21 @@ def campaigns():
     return render_template('campaigns.html', campaigns=all_campaigns)
 
 
+@app.route('/campaigns/new')
+def campaign_new():
+    """Full-page form — create a new campaign."""
+    return render_template('campaign_form.html', campaign=None)
+
+
+@app.route('/campaigns/<int:campaign_id>/edit')
+def campaign_edit(campaign_id):
+    """Full-page form — edit an existing campaign."""
+    campaign = get_campaign(campaign_id)
+    if not campaign:
+        return redirect(url_for('campaigns'))
+    return render_template('campaign_form.html', campaign=campaign)
+
+
 @app.route('/mapping-sequences')
 def mapping_sequences():
     """Mapping Sequences — browse enabled Apollo sequences and assign them to campaigns."""
