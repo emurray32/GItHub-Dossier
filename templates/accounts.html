@@ -1295,8 +1295,8 @@
         // Load initial data
         reloadAccountsTable();
 
-        // Setup tier filter buttons
-        const tierButtons = document.querySelectorAll('.tier-filter-btn');
+        // Setup tier filter buttons (skip the archived button — it has its own handler)
+        const tierButtons = document.querySelectorAll('.tier-filter-btn:not(.archived-btn)');
         tierButtons.forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.preventDefault();
