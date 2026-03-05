@@ -686,15 +686,6 @@
     width: 200px;
 }
 
-.accounts-table th.actions-col,
-.accounts-table td.actions-cell {
-    width: 120px;
-    position: sticky;
-    right: 0;
-    background: var(--color-surface);
-    box-shadow: -2px 0 4px rgba(0, 0, 0, 0.05);
-    z-index: 2;
-}
 
 .accounts-table th.notes-col,
 .accounts-table td.notes-cell {

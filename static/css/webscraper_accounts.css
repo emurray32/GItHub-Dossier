@@ -444,8 +444,6 @@
 .accounts-table th.evidence-col,
 .accounts-table td.evidence-cell { width: 190px; }
 
-.accounts-table th.actions-col,
-.accounts-table td.actions-cell { width: 95px; }
 
 .select-account-checkbox {
     width: 15px;

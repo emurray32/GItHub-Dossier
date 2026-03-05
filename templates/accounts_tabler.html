@@ -163,7 +163,7 @@
                         <th class="sortable tier-col resizable" data-sort-key="tier">Tier <span class="sort-indicator"><span class="sort-asc">&#9650;</span><span class="sort-desc">&#9660;</span></span><div class="resize-handle"></div></th>
                         <th class="sortable last-scanned-col resizable" data-sort-key="last_scanned">Last Scanned <span class="sort-indicator"><span class="sort-asc">&#9650;</span><span class="sort-desc">&#9660;</span></span><div class="resize-handle"></div></th>
                         <th class="sortable evidence-col resizable" data-sort-key="evidence">Evidence Summary <span class="sort-indicator"><span class="sort-asc">&#9650;</span><span class="sort-desc">&#9660;</span></span><div class="resize-handle"></div></th>
-                        <th class="actions-col resizable">Repo Report<div class="resize-handle"></div></th>
+
                         <th class="notes-col resizable">Notes<div class="resize-handle"></div></th>
                     </tr>
                 </thead>
@@ -211,7 +211,7 @@
             <td class="evidence-cell">
                 <span class="evidence-text" title="{evidence_title}">{evidence_summary}</span>
             </td>
-            <td class="actions-cell">{actions_html}</td>
+
             <td class="notes-cell" data-account-id="{id}">
                 <span class="notes-display" ondblclick="editNotes(this)">{notes}</span>
                 <div class="notes-edit-container" style="display: none;">
@@ -304,13 +304,6 @@
                     <span class="evidence-text" title="{{ account.evidence_summary or 'No evidence recorded' }}">
                         {{ account.evidence_summary or 'No evidence recorded' }}
                     </span>
-                </td>
-                <td class="actions-cell">
-                    {% if account.latest_report_id %}
-                    <button type="button" class="btn btn-primary btn-sm" onclick="openReport('{{ url_for('view_report', report_id=account.latest_report_id) }}')">View</button>
-                    {% else %}
-                    <button type="button" class="btn btn-primary btn-sm" disabled style="visibility: hidden;">View</button>
-                    {% endif %}
                 </td>
             </tr>
             {% endfor %}
