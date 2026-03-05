@@ -4442,7 +4442,7 @@ def api_contributors_datatable():
             cursor.execute('SELECT LOWER(company_name) as company_lower, current_tier FROM monitored_accounts')
             tier_lookup = {row['company_lower']: row['current_tier'] for row in cursor.fetchall()}
     except Exception as e:
-        logging.error(f"[CONTRIBUTORS] Failed to query tier_lookup from monitored_accounts: {e}")
+        logging.warning(f"[CONTRIBUTORS] Failed to query tier_lookup from monitored_accounts: {e}")
         tier_lookup = {}
 
     tier_names = {0: 'Tracking', 1: 'Thinking', 2: 'Preparing', 3: 'Launched', 4: 'Not Found'}
@@ -5623,12 +5623,11 @@ def api_webscraper_scan_account(account_id):
 
     except Exception as e:
         logging.error(f"[WEBSCRAPER] Scan failed for account {account_id}: {e}")
-        # Save error to database (internal diagnostic data, not exposed to client)
         update_webscraper_scan_results(account_id, {
             'tier': 4,
             'tier_label': 'Not Yet Global',
-            'scan_error': str(e),
-            'evidence_summary': f'Scan failed: {str(e)}'
+            'scan_error': 'Scan failed due to an internal error',
+            'evidence_summary': 'Scan failed'
         })
 
         return jsonify({
@@ -5771,12 +5770,11 @@ def api_webscraper_bulk_action():
                     logging.error(f"[WEBSCRAPER] Bulk scan failed for account {aid}: {e}")
                     results['failed'] += 1
                     results['details'].append({'id': aid, 'status': 'failed', 'reason': 'Scan failed for this account'})
-                    # Save error state (internal diagnostic data, not exposed to client)
                     update_webscraper_scan_results(aid, {
                         'tier': 4,
                         'tier_label': 'Not Yet Global',
-                        'scan_error': str(e),
-                        'evidence_summary': f'Scan failed: {str(e)}'
+                        'scan_error': 'Scan failed due to an internal error',
+                        'evidence_summary': 'Scan failed'
                     })
 
             return jsonify({

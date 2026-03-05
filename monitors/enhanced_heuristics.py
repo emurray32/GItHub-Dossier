@@ -232,8 +232,8 @@ def scan_headless_cms_i18n(org: str, repos: List[Dict]) -> Generator[Tuple[str, 
                                     }
                                     cms_signals.append(signal)
                                     yield (f"CMS i18n: {cms_name.title()} configured for localization in {repo_name}", signal)
-                            except Exception:
-                                pass
+                            except Exception as e:
+                                logging.debug(f"[HEURISTICS] Failed to parse file content: {e}")
 
                 except requests.RequestException:
                     continue
@@ -306,8 +306,8 @@ def scan_payment_infrastructure(org: str, repos: List[Dict]) -> Generator[Tuple[
                             }
                             payment_signals.append(signal)
                             yield (f"PAYMENT: Multi-currency setup found in {repo_name}", signal)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logging.debug(f"[HEURISTICS] Failed to parse file content: {e}")
 
         except requests.RequestException:
             continue
@@ -382,8 +382,8 @@ def scan_timezone_libraries(org: str, repos: List[Dict]) -> Generator[Tuple[str,
                         }
                         tz_signals.append(signal)
                         yield (f"TIMEZONE: {evidence}", signal)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logging.debug(f"[HEURISTICS] Failed to parse file content: {e}")
 
         except requests.RequestException:
             continue
