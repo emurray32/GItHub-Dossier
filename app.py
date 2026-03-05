@@ -2568,7 +2568,7 @@ def api_campaign_suggest_personas(campaign_id):
         return jsonify({'status': 'success', 'suggestions': suggestions})
     except Exception as e:
         logging.error(f"[CAMPAIGN PERSONAS] AI suggestion failed: {e}")
-        return jsonify({'status': 'error', 'message': f'AI suggestion failed: {str(e)[:200]}'}), 500
+        return jsonify({'status': 'error', 'message': 'AI suggestion failed. Please try again.'}), 500
 
 
 # ---------------------------------------------------------------------------
@@ -3167,7 +3167,7 @@ def api_campaign_upload_accounts(campaign_id):
                 saved += 1
             except Exception as e:
                 logging.warning(f'[CSV-UPLOAD] Failed to import row {company_name}: {e}')
-                row_failures.append({'company_name': company_name, 'reason': str(e)[:200]})
+                row_failures.append({'company_name': company_name, 'reason': 'Import failed for this row'})
 
     return jsonify({
         'status': 'success',
@@ -3843,7 +3843,7 @@ Return ONLY valid JSON: {json_structure}"""
 
     except Exception as e:
         logging.error(f"[SCORECARD EMAIL GEN ERROR] {e}")
-        return jsonify({'status': 'error', 'message': f'Email generation failed: {str(e)}'}), 500
+        return jsonify({'status': 'error', 'message': 'Email generation failed. Please try again.'}), 500
 
 
 @app.route('/sequence')
@@ -4318,7 +4318,7 @@ def api_account_enroll(account_id):
         except Exception as e:
             logging.error(f"[PANEL ENROLL] Error enrolling {name}: {e}")
             results.append({'contributor_id': cid, 'name': name, 'status': 'failed',
-                            'message': str(e)})
+                            'message': 'Enrollment failed due to an internal error'})
 
     enrolled_count = sum(1 for r in results if r['status'] == 'enrolled')
     return jsonify({'status': 'success', 'results': results, 'enrolled': enrolled_count, 'total': len(results)})
@@ -4669,7 +4669,8 @@ def api_fetch_contributors():
                     total_saved += saved
 
         except Exception as e:
-            errors.append(f"{org}: {str(e)}")
+            logging.error(f"[CONTRIBUTORS] Failed to fetch contributors for {org}: {e}")
+            errors.append(f"{org}: contributor fetch failed")
 
     return jsonify({
         'status': 'success',
@@ -5217,12 +5218,13 @@ def api_webscraper_analyze_batch():
                     })
 
             except Exception as e:
+                logging.error(f"[WEBSCRAPER] Batch analysis failed for account {account['id']}: {e}")
                 results.append({
                     'account_id': account['id'],
                     'company_name': account['company_name'],
                     'website': account['website'],
                     'success': False,
-                    'error': str(e)
+                    'error': 'Analysis failed for this account'
                 })
 
         return jsonify({
@@ -5620,7 +5622,8 @@ def api_webscraper_scan_account(account_id):
         })
 
     except Exception as e:
-        # Save error to database
+        logging.error(f"[WEBSCRAPER] Scan failed for account {account_id}: {e}")
+        # Save error to database (internal diagnostic data, not exposed to client)
         update_webscraper_scan_results(account_id, {
             'tier': 4,
             'tier_label': 'Not Yet Global',
@@ -5630,7 +5633,7 @@ def api_webscraper_scan_account(account_id):
 
         return jsonify({
             'status': 'error',
-            'message': f'Scan failed: {str(e)}',
+            'message': 'Scan failed due to an internal error',
             'account_id': account_id,
             'company_name': account['company_name']
         }), 500
@@ -5765,9 +5768,10 @@ def api_webscraper_bulk_action():
                     })
 
                 except Exception as e:
+                    logging.error(f"[WEBSCRAPER] Bulk scan failed for account {aid}: {e}")
                     results['failed'] += 1
-                    results['details'].append({'id': aid, 'status': 'failed', 'reason': str(e)})
-                    # Save error state
+                    results['details'].append({'id': aid, 'status': 'failed', 'reason': 'Scan failed for this account'})
+                    # Save error state (internal diagnostic data, not exposed to client)
                     update_webscraper_scan_results(aid, {
                         'tier': 4,
                         'tier_label': 'Not Yet Global',
@@ -6927,9 +6931,10 @@ def api_deduplicate():
             'details': groups
         })
     except Exception as e:
+        logging.error(f"[DEDUPLICATE] Deduplication failed: {e}")
         return jsonify({
             'status': 'error',
-            'error': str(e)
+            'error': 'Deduplication failed'
         }), 500
 
 
@@ -7549,9 +7554,10 @@ def api_settings_gsheet_test():
             'message': 'Request timed out. Google Apps Script may be slow on first run.'
         }), 408
     except requests.exceptions.RequestException as e:
+        logging.error(f"[GSHEET] Connection test failed: {e}")
         return jsonify({
             'status': 'error',
-            'message': f'Request failed: {str(e)}'
+            'message': 'Google Sheets connection test failed'
         }), 500
 
 
@@ -7763,9 +7769,10 @@ def api_zapier_trigger():
             'message': 'Zapier webhook timed out'
         }), 504
     except requests.exceptions.RequestException as e:
+        logging.error(f"[ZAPIER] Webhook trigger failed: {e}")
         return jsonify({
             'status': 'error',
-            'message': f'Failed to call Zapier webhook: {str(e)}'
+            'message': 'Failed to trigger Zapier webhook'
         }), 500
 
 
