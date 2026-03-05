@@ -60,6 +60,66 @@ mcp = FastMCP("dossier_mcp")
 
 
 # ---------------------------------------------------------------------------
+# MCP Resource: Cold Outreach Skill
+# ---------------------------------------------------------------------------
+
+_SKILL_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    ".agent", "skills", "cold-outreach", "SKILL.md",
+)
+
+
+@mcp.resource("dossier://skills/cold-outreach")
+def cold_outreach_skill() -> str:
+    """Cold outreach writing rules and BDR workflow for Phrase."""
+    try:
+        with open(_SKILL_PATH, "r") as f:
+            return f.read()
+    except FileNotFoundError:
+        return "Cold outreach skill file not found."
+
+
+# ---------------------------------------------------------------------------
+# MCP Prompt: Write Outreach for Account
+# ---------------------------------------------------------------------------
+
+@mcp.prompt()
+def write_outreach(company_name: str) -> str:
+    """Start the cold email writing workflow for a target account.
+
+    Gathers intent signals, finds prospects, and guides you through
+    writing a personalized email sequence one email at a time.
+    """
+    return f"""The BDR wants to write cold outreach emails for **{company_name}**.
+
+Follow this workflow:
+
+1. **Gather context** — Call these tools in parallel:
+   - `dossier_get_account_signals` for "{company_name}"
+   - `dossier_get_contributors` for "{company_name}" with has_email=true
+   - `dossier_get_account` for "{company_name}"
+
+2. **Brief the BDR** — Show a concise 3-4 line summary:
+   - Company name + maturity level
+   - Strongest intent signal (1-2 sentences, e.g., "Added react-i18next to main-app repo 3 weeks ago")
+   - Top prospects with email (names + titles)
+
+3. **Ask who to target** — "Who do you want to reach out to? Or should I pick the best match?"
+
+4. **Write Email 1** — Present TWO versions (A and B, different angles). Follow the cold outreach skill rules exactly (read `dossier://skills/cold-outreach` for writing rules).
+
+5. **Iterate one at a time** — After BDR picks/edits Email 1, write Email 2 (one version only). Get approval. Then Email 3. Then Email 4. Each email must use a different angle and build on the sequence arc:
+   - Email 1: Hook + value prop (strongest signal)
+   - Email 2: Different angle (different signal or pain point)
+   - Email 3: Lighter touch (social proof or quick insight)
+   - Email 4: Breakup (final value add, graceful close)
+
+6. **Enroll** — After all emails are approved, ask: "Ready to enroll [name] into the Apollo sequence?" If yes, call `dossier_enroll_contributor`.
+
+IMPORTANT: Read the cold outreach skill resource for email formatting rules, Apollo dynamic variables, persona adaptation, and Phrase messaging guidelines."""
+
+
+# ---------------------------------------------------------------------------
 # Pydantic Input Models
 # ---------------------------------------------------------------------------
 
