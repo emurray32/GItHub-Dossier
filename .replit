@@ -59,3 +59,8 @@ externalPort = 5001
 [deployment]
 deploymentTarget = "autoscale"
 run = ["gunicorn", "--bind=0.0.0.0:5000", "--reuse-port", "--workers=2", "--timeout=120", "app:app"]
+
+[userenv]
+
+[userenv.shared]
+MCP_API_KEY = "Y1oh-cvTbxH0Y2_R8KicZPY1hPmYBJC8YYOMZpAZyAs"

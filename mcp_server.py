@@ -12,6 +12,7 @@ Usage:
 
 import json
 import logging
+import secrets
 import sys
 import os
 import time
@@ -1993,13 +1994,52 @@ async def apollo_batch_enroll(params: ApolloBatchEnrollInput) -> str:
 # Entry point
 # ---------------------------------------------------------------------------
 
+def _create_authenticated_sse_app(mcp_instance, api_key: str):
+    """Wrap the MCP SSE app with bearer-token authentication middleware."""
+    from starlette.applications import Starlette
+    from starlette.middleware import Middleware
+    from starlette.middleware.base import BaseHTTPMiddleware
+    from starlette.responses import JSONResponse
+
+    class BearerAuthMiddleware(BaseHTTPMiddleware):
+        async def dispatch(self, request, call_next):
+            auth_header = request.headers.get("authorization", "")
+            if auth_header.startswith("Bearer "):
+                token = auth_header[7:]
+            else:
+                token = ""
+
+            if not token or not secrets.compare_digest(token, api_key):
+                return JSONResponse(
+                    {"error": "Unauthorized — provide MCP_API_KEY as Bearer token in Authorization header"},
+                    status_code=401,
+                )
+            return await call_next(request)
+
+    inner_app = mcp_instance.sse_app()
+    inner_app.add_middleware(BearerAuthMiddleware)
+    return inner_app
+
+
 if __name__ == "__main__":
     transport = os.environ.get("MCP_TRANSPORT", "stdio")
     if transport == "sse":
         host = os.environ.get("MCP_HOST", "0.0.0.0")
         port = int(os.environ.get("MCP_PORT", "5001"))
-        mcp.settings.host = host
-        mcp.settings.port = port
-        mcp.run(transport="sse")
+
+        api_key = os.environ.get("MCP_API_KEY", "")
+        if not api_key:
+            logging.warning(
+                "[MCP] MCP_API_KEY is not set — MCP server is UNPROTECTED. "
+                "Set MCP_API_KEY in Secrets to require authentication."
+            )
+            mcp.settings.host = host
+            mcp.settings.port = port
+            mcp.run(transport="sse")
+        else:
+            logging.info("[MCP] Bearer-token auth enabled (MCP_API_KEY is set)")
+            import uvicorn
+            app = _create_authenticated_sse_app(mcp, api_key)
+            uvicorn.run(app, host=host, port=port)
     else:
         mcp.run(transport="stdio")

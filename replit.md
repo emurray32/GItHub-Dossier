@@ -47,6 +47,8 @@ python app.py
 ## MCP Server
 The MCP Server runs on port 5001 with SSE transport for Claude Desktop integration. Host/port are configured via `MCP_HOST` and `MCP_PORT` environment variables (defaults: `0.0.0.0:5001`). The SSE endpoint is at `/sse`. Connect from Claude Desktop using the app's published URL + `/sse`.
 
+**Authentication**: When `MCP_API_KEY` is set (recommended), all MCP requests require a Bearer token. Pass it via `Authorization: Bearer <key>` header. Uses constant-time comparison to prevent timing attacks. Without `MCP_API_KEY`, the server runs unprotected with a warning.
+
 ## Recent Changes
 - 2026-03-05: Fixed MCP Server startup
   - Installed `mcp[cli]` package (was missing)
