@@ -566,7 +566,7 @@ class TestContributorEmail:
                            json={'email': 'john@gmail.com'})
         assert resp.status_code == 400
         data = resp.get_json()
-        assert 'valid work email' in data['error'].lower()
+        assert 'valid work email' in data['message'].lower()
 
     def test_empty_email(self, client):
         """Empty email returns 400."""

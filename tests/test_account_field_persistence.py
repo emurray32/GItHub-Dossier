@@ -315,15 +315,9 @@ class TestSheetsSyncFieldPersistence:
 
     def test_store_account_metadata_saves_to_account(self, fresh_db):
         """_store_account_metadata writes to account metadata column."""
-        with patch('config.Config.DATABASE_PATH', fresh_db), \
-             patch('sheets_sync.get_db_connection') as mock_conn_fn:
+        with patch('config.Config.DATABASE_PATH', fresh_db):
             # Create account first
             add_account_to_tier_0('SheetCo', 'sheetco')
-
-            # Set up real DB connection for the system_settings write
-            conn = sqlite3.connect(fresh_db)
-            conn.row_factory = sqlite3.Row
-            mock_conn_fn.return_value = conn
 
             from sheets_sync import _store_account_metadata
             _store_account_metadata('SheetCo', {
