@@ -283,6 +283,11 @@ a:hover {
 .sidebar-toggle-icon {
     width: 18px;
     height: 18px;
+    transition: transform 0.2s ease;
+}
+
+.sidebar.collapsed .sidebar-toggle-icon {
+    transform: rotate(180deg);
 }
 
 /* Sidebar Navigation */
