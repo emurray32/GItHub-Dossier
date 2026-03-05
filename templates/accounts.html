@@ -3637,7 +3637,24 @@
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ notes: notes })
-        }).catch(err => console.error('Error saving notes:', err));
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.status === 'success') {
+                // Update the table row's notes cell so it reflects the saved value
+                const row = document.getElementById('row-' + _panelAccountId);
+                if (row) {
+                    const notesCell = row.querySelector('.notes-cell');
+                    if (notesCell) {
+                        const display = notesCell.querySelector('.notes-display');
+                        const textarea = notesCell.querySelector('.notes-input');
+                        if (display) display.textContent = notes;
+                        if (textarea) textarea.value = notes;
+                    }
+                }
+            }
+        })
+        .catch(err => console.error('Error saving notes:', err));
     }
 
     function generateAndEnroll() {
