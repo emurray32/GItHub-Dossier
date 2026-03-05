@@ -119,8 +119,8 @@ def _audit_log(action, details, ip_address=None):
     try:
         from database import log_audit_event
         log_audit_event(action, details, ip_address=ip_address)
-    except Exception:
-        pass
+    except Exception as e:
+        logging.warning(f"[AUTH] Failed to log audit event for {action}: {e}")
 
 
 # ---------------------------------------------------------------------------

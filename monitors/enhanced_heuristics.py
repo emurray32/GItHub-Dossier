@@ -10,6 +10,7 @@ with high intent on:
 These heuristics complement the core 3-signal scanner with deeper insights.
 """
 
+import logging
 import re
 import requests
 import base64
@@ -93,8 +94,8 @@ def scan_job_posting_intent(org: str, repos: List[Dict]) -> Generator[Tuple[str,
                                     job_signals.append(signal)
                                     yield (f"JOB SIGNAL: Found '{keyword}' in {repo_name}/{job_file}", signal)
                                     break  # One match per file is enough
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            logging.debug(f"[HEURISTICS] Failed to parse file content: {e}")
 
             except requests.RequestException:
                 continue
@@ -481,8 +482,8 @@ def scan_ci_localization_pipeline(org: str, repos: List[Dict]) -> Generator[Tupl
                                             ci_signals.append(signal)
                                             yield (f"CI/CD: Translation automation in {repo_name}", signal)
                                             break
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            logging.debug(f"[HEURISTICS] Failed to parse file content: {e}")
 
         except requests.RequestException:
             continue
@@ -539,8 +540,8 @@ def scan_compliance_documentation(org: str, repos: List[Dict]) -> Generator[Tupl
                             for keyword in Config.COMPLIANCE_KEYWORDS:
                                 if keyword.lower() in content:
                                     compliance_keywords_found.add(keyword)
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            logging.debug(f"[HEURISTICS] Failed to parse file content: {e}")
 
                     # Directory found with compliance-related content
                     if isinstance(content_data, list):
@@ -814,8 +815,8 @@ def scan_api_international_endpoints(org: str, repos: List[Dict]) -> Generator[T
                                 }
                                 api_signals.append(signal)
                                 yield (f"API: International endpoints in {repo_name}", signal)
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            logging.debug(f"[HEURISTICS] Failed to parse file content: {e}")
 
             except requests.RequestException:
                 continue
@@ -856,8 +857,8 @@ def scan_api_international_endpoints(org: str, repos: List[Dict]) -> Generator[T
                                 }
                                 api_signals.append(signal)
                                 yield (f"API: i18n route handlers in {repo_name}", signal)
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            logging.debug(f"[HEURISTICS] Failed to parse file content: {e}")
 
             except requests.RequestException:
                 continue

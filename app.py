@@ -1377,8 +1377,8 @@ def process_import_batch_worker(batch_id: int):
         # Mark as failed but preserve progress
         try:
             update_batch_progress(batch_id, processed_count, status='failed')
-        except Exception:
-            pass
+        except Exception as e:
+            logging.error(f"[BATCH-WORKER] Failed to update batch {batch_id} progress to 'failed': {e}")
 
 
 @app.route('/favicon.ico')
@@ -3721,8 +3721,8 @@ def api_scorecard_enroll():
                     email_account_id = match['id'] if match else (active[0]['id'] if active else None)
                 elif active:
                     email_account_id = active[0]['id']
-        except Exception:
-            pass
+        except Exception as e:
+            logging.warning(f"[SCORECARD ENROLL] Failed to fetch Apollo email accounts: {e}")
 
         if not email_account_id:
             return jsonify({'status': 'error', 'message': 'No active Apollo email account found'}), 500
@@ -4191,7 +4191,8 @@ def api_account_enroll(account_id):
                     field_id_map[k] = v
         else:
             field_id_map = {k: v for k, v in FIELD_ENV_OVERRIDES.items() if v}
-    except Exception:
+    except Exception as e:
+        logging.warning(f"[PANEL ENROLL] Failed to fetch Apollo custom fields: {e}")
         field_id_map = {k: v for k, v in FIELD_ENV_OVERRIDES.items() if v}
 
     for cid in contributor_ids:
@@ -4440,7 +4441,8 @@ def api_contributors_datatable():
             cursor = conn.cursor()
             cursor.execute('SELECT LOWER(company_name) as company_lower, current_tier FROM monitored_accounts')
             tier_lookup = {row['company_lower']: row['current_tier'] for row in cursor.fetchall()}
-    except Exception:
+    except Exception as e:
+        logging.error(f"[CONTRIBUTORS] Failed to query tier_lookup from monitored_accounts: {e}")
         tier_lookup = {}
 
     tier_names = {0: 'Tracking', 1: 'Thinking', 2: 'Preparing', 3: 'Launched', 4: 'Not Found'}
@@ -4873,8 +4875,8 @@ def api_contributors_bulk_enroll():
             for f in cf_resp.json().get('typed_custom_fields', []):
                 norm = f.get('name', '').lower().replace(' ', '_')
                 custom_field_map[norm] = f.get('id', '')
-    except Exception:
-        pass
+    except Exception as e:
+        logging.warning(f"[BDR ENROLL] Failed to fetch Apollo custom fields: {e}")
     # Env var fallbacks
     for key in ['personalized_subject_1', 'personalized_subject_2',
                 'personalized_email_1', 'personalized_email_2',

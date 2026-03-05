@@ -11,6 +11,7 @@ Usage:
 """
 
 import json
+import logging
 import sys
 import os
 import time
@@ -288,14 +289,14 @@ async def dossier_scan_company(params: ScanCompanyInput, ctx: Context) -> str:
     if signals and report_id:
         try:
             save_signals(report_id, params.company_name, signals)
-        except Exception:
-            pass  # Non-fatal
+        except Exception as e:
+            logging.error(f"[MCP] Failed to save signals for report {report_id}: {e}")
 
     # Update account status
     try:
         update_account_status(scan_data, report_id)
-    except Exception:
-        pass  # Non-fatal
+    except Exception as e:
+        logging.error(f"[MCP] Failed to update account status for report {report_id}: {e}")
 
     await ctx.report_progress(100, 100)
 
@@ -953,8 +954,8 @@ async def apollo_enroll_contact(params: ApolloEnrollContactInput) -> str:
                 active = [a for a in accounts if a.get("active")]
                 if active:
                     sender_id = active[0]["id"]
-        except Exception:
-            pass
+        except Exception as e:
+            logging.warning(f"[MCP] Failed to fetch Apollo email accounts for sender auto-detect: {e}")
     if not sender_id:
         return _json_response({"error": "No sender email account found. Provide sender_email_account_id."})
 
@@ -1020,8 +1021,8 @@ async def apollo_batch_enroll(params: ApolloBatchEnrollInput) -> str:
                 active = [a for a in accounts if a.get("active")]
                 if active:
                     sender_id = active[0]["id"]
-        except Exception:
-            pass
+        except Exception as e:
+            logging.warning(f"[MCP] Failed to fetch Apollo email accounts for batch sender auto-detect: {e}")
     if not sender_id:
         return _json_response({"error": "No sender email account found. Provide sender_email_account_id."})
 

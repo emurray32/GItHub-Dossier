@@ -280,8 +280,8 @@ def _build_hook_line(signal_type: str, template: dict, details: dict) -> str:
         # Check if any placeholder was left empty / unfilled
         if '{' not in formatted and formatted.strip():
             return formatted
-    except (KeyError, IndexError):
-        pass
+    except (KeyError, IndexError) as e:
+        logging.debug(f"[EMAIL] Hook template format error for {signal_type}: {e}")
     return template.get('fallback_hook', 'I noticed your team is working on internationalization.')
 
 

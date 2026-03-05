@@ -11,6 +11,7 @@ by scanning GitHub repositories for pre-launch signals:
 This scanner focuses on PRE-MERGE, PRE-LAUNCH detection - the ideal sales window.
 """
 import json
+import logging
 import re
 import requests
 import base64
@@ -897,7 +898,7 @@ def deep_scan_generator(company_name: str, last_scanned_timestamp: Optional[obje
         api_calls_estimate = len(repos_to_scan) * 4
         increment_daily_stat('api_calls_estimated', api_calls_estimate)
     except Exception as e:
-        pass  # Stats tracking should not break scans
+        logging.debug(f"[SCANNER] Failed to increment daily stats: {e}")
 
     # Phase 7: Fetch Top Contributors for Key Engineering Contacts
     yield _sse_log("")
@@ -1508,8 +1509,8 @@ def _scan_dependency_injection(org: str, repo: str, company: str, is_fork: bool 
                                 }
                                 yield (f"DIY TRANSLATION: {lib} ({provider}) found in {dep_path}", signal)
 
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logging.debug(f"[SCANNER] Failed to parse dependency file {dep_path}: {e}")
 
             except requests.RequestException:
                 continue

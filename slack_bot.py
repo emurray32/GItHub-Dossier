@@ -447,8 +447,8 @@ def _handle_enrollment_decision(payload: dict, action: dict, approved: bool):
     try:
         log_webhook(f'enrollment_{"approve" if approved else "reject"}',
                     f'contact_{contact_id}', 'success')
-    except Exception:
-        pass
+    except Exception as e:
+        logging.warning(f"[SLACK] Failed to log webhook for enrollment action: {e}")
 
     return '', 200
 

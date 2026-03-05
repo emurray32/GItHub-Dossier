@@ -1133,8 +1133,8 @@ class PipelineOrchestrator:
         try:
             db = _db()
             db.set_setting('pipeline_health', json.dumps(health))
-        except Exception:
-            pass
+        except Exception as e:
+            logging.warning(f"[PIPELINE] Failed to persist pipeline_health setting: {e}")
 
         return health
 
