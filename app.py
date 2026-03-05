@@ -1382,6 +1382,155 @@ def process_import_batch_worker(batch_id: int):
             logging.error(f"[BATCH-WORKER] Failed to update batch {batch_id} progress to 'failed': {e}")
 
 
+# ---------------------------------------------------------------------------
+# OAuth 2.0 endpoints for Claude CoWork MCP connector
+# ---------------------------------------------------------------------------
+
+_oauth_pending_codes: dict[str, dict] = {}  # code -> {redirect_uri, expires}
+_OAUTH_CODE_TTL = 300  # seconds
+
+
+@app.route('/.well-known/oauth-authorization-server')
+def oauth_metadata():
+    """RFC 8414 — OAuth Authorization Server Metadata."""
+    base = request.url_root.rstrip('/')
+    return jsonify({
+        'issuer': base,
+        'authorization_endpoint': f'{base}/authorize',
+        'token_endpoint': f'{base}/token',
+        'response_types_supported': ['code'],
+        'grant_types_supported': ['authorization_code'],
+        'token_endpoint_auth_methods_supported': ['none'],
+        'code_challenge_methods_supported': ['S256'],
+    })
+
+
+@app.route('/authorize', methods=['GET'])
+def oauth_authorize():
+    """Show OAuth approval page."""
+    redirect_uri = request.args.get('redirect_uri', '')
+    state = request.args.get('state', '')
+    response_type = request.args.get('response_type', '')
+
+    if response_type != 'code':
+        return jsonify({'error': 'unsupported_response_type'}), 400
+    if not redirect_uri:
+        return jsonify({'error': 'missing redirect_uri'}), 400
+
+    import secrets as _secrets
+    code = _secrets.token_urlsafe(32)
+    _oauth_pending_codes[code] = {
+        'redirect_uri': redirect_uri,
+        'expires': time.time() + _OAUTH_CODE_TTL,
+    }
+
+    # Clean expired codes
+    now = time.time()
+    expired = [k for k, v in _oauth_pending_codes.items() if v['expires'] < now]
+    for k in expired:
+        del _oauth_pending_codes[k]
+
+    html = f"""<!DOCTYPE html>
+<html><head><title>Authorize Lead Machine</title>
+<style>
+  body {{ font-family: -apple-system, sans-serif; display: flex;
+         justify-content: center; align-items: center; height: 100vh;
+         margin: 0; background: #f5f5f5; }}
+  .card {{ background: white; padding: 2rem 3rem; border-radius: 12px;
+           box-shadow: 0 2px 10px rgba(0,0,0,.1); text-align: center;
+           max-width: 400px; }}
+  h2 {{ margin-top: 0; }}
+  .btn {{ background: #e84b3a; color: white; border: none; padding: 12px 32px;
+          border-radius: 8px; font-size: 16px; cursor: pointer; margin-top: 1rem; }}
+  .btn:hover {{ background: #d43d2e; }}
+  .info {{ color: #666; font-size: 14px; margin-top: 12px; }}
+</style></head>
+<body><div class="card">
+  <h2>Authorize Lead Machine</h2>
+  <p>Claude CoWork is requesting access to your Lead Machine MCP server.</p>
+  <form method="POST" action="/authorize">
+    <input type="hidden" name="code" value="{code}">
+    <input type="hidden" name="redirect_uri" value="{redirect_uri}">
+    <input type="hidden" name="state" value="{state}">
+    <button type="submit" class="btn">Approve</button>
+  </form>
+  <p class="info">This grants access to account data, signals, and Apollo tools.</p>
+</div></body></html>"""
+    return Response(html, content_type='text/html')
+
+
+@app.route('/authorize', methods=['POST'])
+def oauth_authorize_post():
+    """Handle approval — redirect back with auth code."""
+    code = request.form.get('code', '')
+    redirect_uri = request.form.get('redirect_uri', '')
+    state = request.form.get('state', '')
+
+    if code not in _oauth_pending_codes:
+        return jsonify({'error': 'invalid_code'}), 400
+
+    sep = '&' if '?' in redirect_uri else '?'
+    location = f'{redirect_uri}{sep}code={code}'
+    if state:
+        location += f'&state={state}'
+    return redirect(location, code=302)
+
+
+@app.route('/token', methods=['POST'])
+def oauth_token():
+    """Exchange auth code for Bearer token (the MCP_API_KEY)."""
+    if request.content_type and 'json' in request.content_type:
+        data = request.get_json(silent=True) or {}
+    else:
+        data = request.form
+
+    grant_type = data.get('grant_type', '')
+    code = data.get('code', '')
+
+    if grant_type != 'authorization_code':
+        return jsonify({'error': 'unsupported_grant_type'}), 400
+
+    entry = _oauth_pending_codes.pop(code, None)
+    if not entry or entry['expires'] < time.time():
+        return jsonify({'error': 'invalid_grant'}), 400
+
+    api_key = os.environ.get('MCP_API_KEY', '')
+    if not api_key:
+        return jsonify({'error': 'server_error', 'error_description': 'MCP_API_KEY not configured'}), 500
+
+    return jsonify({
+        'access_token': api_key,
+        'token_type': 'bearer',
+        'expires_in': 86400,
+    })
+
+
+# ---------------------------------------------------------------------------
+# Start MCP server as subprocess when running under gunicorn
+# ---------------------------------------------------------------------------
+
+def _start_mcp_subprocess():
+    """Start the MCP SSE server as a background subprocess."""
+    import subprocess
+    env = {**os.environ, 'MCP_TRANSPORT': 'sse', 'MCP_PORT': '5001'}
+    proc = subprocess.Popen(
+        ['python', 'mcp_server.py'],
+        env=env,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+    )
+    logging.info(f'[APP] MCP server subprocess started (PID {proc.pid})')
+    return proc
+
+# Auto-start MCP server when loaded by gunicorn (not in dev mode)
+_mcp_proc = None
+if os.environ.get('GUNICORN_WORKER', '') or not os.environ.get('WERKZEUG_RUN_MAIN', ''):
+    try:
+        _mcp_proc = _start_mcp_subprocess()
+    except Exception as e:
+        logging.warning(f'[APP] Failed to start MCP subprocess: {e}')
+
+
 @app.route('/favicon.ico')
 def favicon():
     """Return empty response for favicon to prevent 404 errors.
