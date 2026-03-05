@@ -66,7 +66,7 @@
     top: 0;
     right: 0;
     bottom: 0;
-    width: 420px;
+    width: 560px;
     max-width: 90vw;
     background: rgba(255, 255, 255, 0.92);
     backdrop-filter: blur(8px);
@@ -880,7 +880,7 @@
 .outreach-input,
 .outreach-textarea {
     width: 100%;
-    padding: 0.4rem 0.6rem;
+    padding: 0.5rem 0.65rem;
     background: var(--color-surface);
     border: 1px solid var(--color-border);
     border-radius: 6px;
@@ -890,6 +890,7 @@
     resize: vertical;
     box-sizing: border-box;
     transition: border-color var(--transition-fast);
+    min-height: 120px;
 }
 
 .outreach-input:focus,
@@ -921,7 +922,6 @@
 
 .seq-picker-select {
     width: 100%;
-    max-width: 260px;
     padding: 0.35rem 0.5rem;
     background: var(--color-bg);
     border: 1px solid var(--color-border);
@@ -1143,8 +1143,8 @@
 /* Tablet (768-1023px): sidebar narrower to avoid covering the table */
 @media (min-width: 768px) and (max-width: 1023px) {
     .contrib-sidebar {
-        width: 360px;
-        max-width: 50vw;
+        width: 480px;
+        max-width: 60vw;
     }
 }
 

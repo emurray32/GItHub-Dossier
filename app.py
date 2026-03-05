@@ -344,8 +344,8 @@ def get_top_contributors(org_login: str, repo_name: str, limit: int = 5) -> list
         if response.status_code == 200:
             contributors = []
             for c in response.json():
-                # Filter out bots
-                if c['type'] != 'Bot' and '[bot]' not in c['login']:
+                # Filter out bots and zero-contribution entries
+                if c['type'] != 'Bot' and '[bot]' not in c['login'] and c.get('contributions', 0) > 0:
                     login = c['login']
 
                     # Fetch full user profile to get real name, email, blog
@@ -4631,6 +4631,10 @@ def api_fetch_contributors():
 
                 batch = []
                 for c in contributors_list:
+                    # Skip contributors with no activity date or zero contributions
+                    if not repo_pushed_at or c.get('contributions', 0) <= 0:
+                        continue
+
                     # Classify contributor as org member or external
                     is_member = 0
                     login_lower = c['login'].lower()
@@ -4750,12 +4754,12 @@ def api_generate_contributor_email():
     else:
         tone_guidance = '\nTone: EDUCATIONAL — this is a cold lead with no clear i18n signals yet. Focus on education about the market opportunity and plant seeds for when they do start thinking about localization.'
 
-    prompt = f"""You are a BDR (Business Development Rep) at Phrase, a localization/internationalization platform. Write a personalized cold outreach email SEQUENCE to a software contributor.
+    prompt = f"""You are a BDR at Phrase, a localization/internationalization platform. Write a personalized cold outreach email SEQUENCE to a software contributor.
 
 Contact info:
 - Name: {name}
 - First name: {first_name}
-- GitHub: {github_login}
+- GitHub: @{github_login}
 - Company: {company}
 - Active repo: {repo_source}
 - Contributions: {contributions}
@@ -4763,17 +4767,34 @@ Contact info:
 - Lead temperature: {goldilocks_status or 'unknown'}
 {tone_guidance}
 
-Write a {num_emails}-email cold outreach sequence. The goal is to start a conversation about their internationalization/localization (i18n) workflow and how Phrase can help their engineering team ship to global markets faster.
+Write a {num_emails}-email cold outreach sequence. The goal is to start a conversation about their i18n/localization workflow and how Phrase can help.
 
 {structure_guidance}
 
-Rules:
-- Each email body: concise, specific, references something real about them
-- End each email with a simple CTA
-- No fluff, no "I hope this email finds you well"
-- Sound like a human, not a robot
-- Use their first name
-- Use the actual contact's name and company in the email. Do NOT use template variables like {{{{company}}}}, {{{{name}}}}, or {{{{first_name}}}}.
+Email Copy Best Practices (FOLLOW THESE):
+1. HOOK: Open email 1 with a specific reference to their GitHub activity. Examples:
+   - "I noticed your team added [library] to [repo]" (if they added an i18n library)
+   - "I saw the [branch] branch in [repo]" (if there's i18n branch activity)
+   - "I noticed localization mentioned in [file] in [repo]" (if i18n is on their roadmap)
+   - "I saw you're a top contributor on [repo] at [company]" (general contributor hook)
+   Use the insight field to craft the most specific hook possible. Reference the ACTUAL repo name.
+2. PAIN POINT: After the hook, connect to a real engineering pain point:
+   - Manual JSON/string file wrangling → Phrase automates via GitHub Sync
+   - Translation bottlenecks slowing releases → Phrase integrates into CI/CD
+   - Developer time spent on locale management → Phrase keeps translation files in lockstep
+3. EACH EMAIL must be 3-5 sentences MAX. Under 100 words is ideal.
+4. CTAs: End with a soft question, not a demand. Examples:
+   - "Open to seeing how we fit into your CI/CD?"
+   - "Worth a quick look?"
+   - "Open to a 15-minute chat?"
+5. PROGRESSION across the sequence:
+   - Email 1: Lead with the specific signal/hook + value prop
+   - Email 2: Different angle or pain point, shorter
+   - Email 3+: Even lighter touch, new thread if 4-step
+   - Final email: Breakup — short, low-pressure, respectful
+6. NO fluff ("I hope this finds you well"), NO generic intros, NO marketing jargon
+7. Sound peer-to-peer, like an engineer writing to another engineer
+8. Use their first name and real company name — NO template variables like {{{{company}}}} or {{{{first_name}}}}
 
 Return ONLY valid JSON with no markdown formatting:
 {json_structure}"""
@@ -4783,7 +4804,7 @@ Return ONLY valid JSON with no markdown formatting:
         response = client.chat.completions.create(
             model="gpt-5-mini",
             messages=[
-                {"role": "system", "content": "You are a BDR at Phrase, a localization platform. Write diverse, natural-sounding emails. Vary your sentence structure and word choice. Return ONLY valid JSON."},
+                {"role": "system", "content": "You write peer-to-peer cold emails for a technical product. Be concise, reference specific repos/libraries/branches, and avoid sounding like a sales pitch. Vary sentence structure and word choice across emails. Return ONLY valid JSON."},
                 {"role": "user", "content": prompt}
             ],
             response_format={"type": "json_object"},
