@@ -34,6 +34,7 @@ from database import (
     get_account_by_company_case_insensitive,
     get_tier_counts,
     get_signals_for_report,
+    get_signals_by_company,
     save_report,
     save_signals,
     update_account_status,
@@ -48,6 +49,7 @@ from database import (
     get_enrollment_batch_summary,
     create_campaign,
     create_campaign_persona,
+    get_active_campaign_for_signal,
 )
 from monitors.scanner import deep_scan_generator
 from monitors.web_analyzer import analyze_website_technical
@@ -956,6 +958,168 @@ async def dossier_get_account_signals(params: GetAccountSignalsInput) -> str:
         "maturity": account.get("maturity") if account else None,
         "tier": account.get("tier") if account else None,
         "last_scanned_at": account.get("last_scanned_at") if account else latest.get("created_at"),
+    })
+
+
+# ---------------------------------------------------------------------------
+# Outreach Briefing (consolidated BDR context)
+# ---------------------------------------------------------------------------
+
+# Signal priority order — higher priority = stronger buying signal.
+_SIGNAL_PRIORITY = {
+    'dependency_injection': 1,
+    'rfc_discussion': 2,
+    'ghost_branch': 3,
+    'documentation_intent': 4,
+}
+
+
+class OutreachBriefingInput(BaseModel):
+    """Input for the outreach briefing tool."""
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    company_name: str = Field(
+        ...,
+        description="Company name to prepare outreach for (e.g., 'Shopify')",
+        min_length=1,
+        max_length=200,
+    )
+
+
+@mcp.tool(
+    name="dossier_get_outreach_briefing",
+    annotations={
+        "title": "Get Outreach Briefing",
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
+    },
+)
+async def dossier_get_outreach_briefing(params: OutreachBriefingInput) -> str:
+    """Get a complete outreach briefing for a company in a single call.
+
+    Returns account info, intent signals, contributors/prospects, and the
+    matching active campaign — everything a BDR needs to start writing
+    personalized cold outreach.
+
+    Args:
+        params: company_name (str).
+
+    Returns:
+        str: JSON with account, signals, strongest_signal, contributors,
+             matching_campaign, and active_campaigns.
+    """
+    company = params.company_name
+
+    # 1. Account lookup
+    account = get_account_by_company_case_insensitive(company)
+    account_data = None
+    if account:
+        account_data = {
+            "id": account.get("id"),
+            "company_name": account.get("company_name", company),
+            "tier": account.get("current_tier") or account.get("tier", 0),
+            "website": account.get("website"),
+            "annual_revenue": account.get("annual_revenue"),
+            "github_org": account.get("github_org"),
+            "intent_score": account.get("intent_score"),
+            "maturity": account.get("maturity"),
+        }
+
+    # 2. Signals — from latest report
+    signals = []
+    reports = search_reports(company)
+    if reports:
+        latest = reports[0]
+        raw_signals = get_signals_for_report(latest.get("id"))
+        signals = [
+            {
+                "signal_type": s.get("signal_type"),
+                "description": s.get("description"),
+                "file_path": s.get("file_path"),
+                "timestamp": s.get("timestamp"),
+            }
+            for s in (raw_signals or [])
+        ]
+
+    # 3. Determine strongest signal
+    strongest = None
+    if signals:
+        def _signal_priority(s):
+            st = s.get("signal_type", "")
+            # Normalize variants like rfc_discussion_high → rfc_discussion
+            base = st.rsplit("_", 1)[0] if st.count("_") > 1 else st
+            return _SIGNAL_PRIORITY.get(base, _SIGNAL_PRIORITY.get(st, 99))
+
+        sorted_signals = sorted(signals, key=_signal_priority)
+        best = sorted_signals[0]
+        best_type = best.get("signal_type", "")
+        base_type = best_type.rsplit("_", 1)[0] if best_type.count("_") > 1 else best_type
+        strongest = {
+            "type": best_type,
+            "base_type": base_type,
+            "description": best.get("description"),
+            "priority": _signal_priority(best),
+        }
+
+    # 4. Contributors
+    raw_contributors = get_contributors_by_company(company)
+    contributors = [
+        {
+            "id": c.get("id"),
+            "name": c.get("name") or f"{c.get('first_name', '')} {c.get('last_name', '')}".strip(),
+            "email": c.get("email"),
+            "title": c.get("title"),
+            "github_login": c.get("github_login"),
+            "linkedin_url": c.get("linkedin_url"),
+            "apollo_status": c.get("apollo_status"),
+            "contributions": c.get("contributions", 0),
+        }
+        for c in raw_contributors
+    ]
+
+    # 5. Matching campaign (based on strongest signal)
+    matching_campaign = None
+    if strongest:
+        campaign = get_active_campaign_for_signal(strongest["base_type"])
+        if campaign:
+            matching_campaign = {
+                "id": campaign.get("id"),
+                "name": campaign.get("name"),
+                "sequence_id": campaign.get("sequence_id"),
+                "sequence_name": campaign.get("sequence_name"),
+                "tone": campaign.get("tone"),
+                "prompt": campaign.get("prompt"),
+                "personas": [
+                    {
+                        "persona_name": p.get("persona_name"),
+                        "titles": p.get("titles", []),
+                        "seniorities": p.get("seniorities", []),
+                        "sequence_id": p.get("sequence_id"),
+                        "sequence_name": p.get("sequence_name"),
+                    }
+                    for p in campaign.get("personas", [])
+                ],
+            }
+
+    # 6. All active campaigns (fallback list)
+    all_campaigns = get_all_campaigns()
+    active_campaigns = [
+        {"id": c["id"], "name": c["name"], "status": c["status"]}
+        for c in all_campaigns
+        if c.get("status") == "active"
+    ]
+
+    return _json_response({
+        "account": account_data,
+        "signals": signals,
+        "signal_count": len(signals),
+        "strongest_signal": strongest,
+        "contributors": contributors,
+        "contributor_count": len(contributors),
+        "matching_campaign": matching_campaign,
+        "active_campaigns": active_campaigns,
     })
 
 
@@ -1994,15 +2158,29 @@ async def apollo_batch_enroll(params: ApolloBatchEnrollInput) -> str:
 # Entry point
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# OAuth 2.0 helpers — in-memory auth-code store with expiry
+# ---------------------------------------------------------------------------
+
+_pending_auth_codes: dict[str, dict] = {}  # code -> {redirect_uri, expires}
+_AUTH_CODE_TTL = 300  # seconds
+
+
 def _create_authenticated_sse_app(mcp_instance, api_key: str):
-    """Wrap the MCP SSE app with bearer-token authentication middleware."""
+    """Wrap the MCP SSE app with OAuth 2.0 endpoints + Bearer-token auth."""
     from starlette.applications import Starlette
-    from starlette.middleware import Middleware
     from starlette.middleware.base import BaseHTTPMiddleware
-    from starlette.responses import JSONResponse
+    from starlette.responses import JSONResponse, HTMLResponse, RedirectResponse
+    from starlette.routing import Route
+
+    # --- Bearer middleware (skips OAuth and well-known routes) ----------------
+    _PUBLIC_PATHS = {"/.well-known/oauth-authorization-server", "/authorize", "/token"}
 
     class BearerAuthMiddleware(BaseHTTPMiddleware):
         async def dispatch(self, request, call_next):
+            if request.url.path in _PUBLIC_PATHS:
+                return await call_next(request)
+
             auth_header = request.headers.get("authorization", "")
             if auth_header.startswith("Bearer "):
                 token = auth_header[7:]
@@ -2016,9 +2194,139 @@ def _create_authenticated_sse_app(mcp_instance, api_key: str):
                 )
             return await call_next(request)
 
+    # --- OAuth 2.0 endpoints -------------------------------------------------
+
+    async def oauth_metadata(request):
+        """RFC 8414 — OAuth Authorization Server Metadata."""
+        base = str(request.base_url).rstrip("/")
+        return JSONResponse({
+            "issuer": base,
+            "authorization_endpoint": f"{base}/authorize",
+            "token_endpoint": f"{base}/token",
+            "response_types_supported": ["code"],
+            "grant_types_supported": ["authorization_code"],
+            "token_endpoint_auth_methods_supported": ["none"],
+            "code_challenge_methods_supported": ["S256"],
+        })
+
+    async def authorize(request):
+        """OAuth authorize endpoint — shows approval page, issues auth code."""
+        redirect_uri = request.query_params.get("redirect_uri", "")
+        state = request.query_params.get("state", "")
+        response_type = request.query_params.get("response_type", "")
+
+        if response_type != "code":
+            return JSONResponse({"error": "unsupported_response_type"}, status_code=400)
+        if not redirect_uri:
+            return JSONResponse({"error": "missing redirect_uri"}, status_code=400)
+
+        # Generate a one-time auth code
+        code = secrets.token_urlsafe(32)
+        _pending_auth_codes[code] = {
+            "redirect_uri": redirect_uri,
+            "expires": time.time() + _AUTH_CODE_TTL,
+        }
+
+        # Clean up expired codes
+        now = time.time()
+        expired = [k for k, v in _pending_auth_codes.items() if v["expires"] < now]
+        for k in expired:
+            del _pending_auth_codes[k]
+
+        # Show approval page
+        html = f"""<!DOCTYPE html>
+<html><head><title>Authorize Lead Machine</title>
+<style>
+  body {{ font-family: -apple-system, sans-serif; display: flex;
+         justify-content: center; align-items: center; height: 100vh;
+         margin: 0; background: #f5f5f5; }}
+  .card {{ background: white; padding: 2rem 3rem; border-radius: 12px;
+           box-shadow: 0 2px 10px rgba(0,0,0,.1); text-align: center;
+           max-width: 400px; }}
+  h2 {{ margin-top: 0; }}
+  .btn {{ background: #e84b3a; color: white; border: none; padding: 12px 32px;
+          border-radius: 8px; font-size: 16px; cursor: pointer; margin-top: 1rem; }}
+  .btn:hover {{ background: #d43d2e; }}
+  .info {{ color: #666; font-size: 14px; margin-top: 12px; }}
+</style></head>
+<body><div class="card">
+  <h2>Authorize Lead Machine</h2>
+  <p>Claude CoWork is requesting access to your Lead Machine MCP server.</p>
+  <form method="POST" action="/authorize">
+    <input type="hidden" name="code" value="{code}">
+    <input type="hidden" name="redirect_uri" value="{redirect_uri}">
+    <input type="hidden" name="state" value="{state}">
+    <button type="submit" class="btn">Approve</button>
+  </form>
+  <p class="info">This grants access to account data, signals, and Apollo tools.</p>
+</div></body></html>"""
+        return HTMLResponse(html)
+
+    async def authorize_post(request):
+        """Handle approval form POST — redirect back with auth code."""
+        form = await request.form()
+        code = form.get("code", "")
+        redirect_uri = form.get("redirect_uri", "")
+        state = form.get("state", "")
+
+        if code not in _pending_auth_codes:
+            return JSONResponse({"error": "invalid_code"}, status_code=400)
+
+        sep = "&" if "?" in redirect_uri else "?"
+        location = f"{redirect_uri}{sep}code={code}"
+        if state:
+            location += f"&state={state}"
+        return RedirectResponse(location, status_code=302)
+
+    async def token(request):
+        """OAuth token endpoint — exchange auth code for Bearer token."""
+        content_type = request.headers.get("content-type", "")
+        if "application/x-www-form-urlencoded" in content_type:
+            form = await request.form()
+            grant_type = form.get("grant_type", "")
+            code = form.get("code", "")
+        elif "application/json" in content_type:
+            body = await request.json()
+            grant_type = body.get("grant_type", "")
+            code = body.get("code", "")
+        else:
+            form = await request.form()
+            grant_type = form.get("grant_type", "")
+            code = form.get("code", "")
+
+        if grant_type != "authorization_code":
+            return JSONResponse({"error": "unsupported_grant_type"}, status_code=400)
+
+        entry = _pending_auth_codes.pop(code, None)
+        if not entry or entry["expires"] < time.time():
+            return JSONResponse({"error": "invalid_grant"}, status_code=400)
+
+        return JSONResponse({
+            "access_token": api_key,
+            "token_type": "bearer",
+            "expires_in": 86400,
+        })
+
+    # --- Compose the Starlette app -------------------------------------------
+
+    oauth_routes = [
+        Route("/.well-known/oauth-authorization-server", oauth_metadata, methods=["GET"]),
+        Route("/authorize", authorize, methods=["GET"]),
+        Route("/authorize", authorize_post, methods=["POST"]),
+        Route("/token", token, methods=["POST"]),
+    ]
+
     inner_app = mcp_instance.sse_app()
     inner_app.add_middleware(BearerAuthMiddleware)
-    return inner_app
+
+    # Mount OAuth routes + MCP SSE app together
+    from starlette.routing import Mount
+    app = Starlette(routes=[
+        *oauth_routes,
+        Mount("/", app=inner_app),
+    ])
+
+    return app
 
 
 if __name__ == "__main__":
@@ -2037,7 +2345,7 @@ if __name__ == "__main__":
             mcp.settings.port = port
             mcp.run(transport="sse")
         else:
-            logging.info("[MCP] Bearer-token auth enabled (MCP_API_KEY is set)")
+            logging.info("[MCP] OAuth + Bearer-token auth enabled (MCP_API_KEY is set)")
             import uvicorn
             app = _create_authenticated_sse_app(mcp, api_key)
             uvicorn.run(app, host=host, port=port)
