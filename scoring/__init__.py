@@ -27,6 +27,10 @@ def get_scoring_fingerprint() -> str:
         os.path.join(scoring_dir, 'maturity.py'),     # classify_maturity() logic
         os.path.join(scoring_dir, 'compat.py'),       # _MATURITY_TO_TIER mapping
         os.path.join(scoring_dir, 'bayesian_pipeline.py'),  # stage1 fast filter
+        os.path.join(scoring_dir, 'filters.py'),      # structural/domain/contextual filters
+        os.path.join(project_dir, 'database.py'),     # calculate_tier_from_scan() logic
+        os.path.join(project_dir, 'signal_verifier.py'),  # LLM verification thresholds
+        os.path.join(project_dir, 'config.py'),       # scan caps and phase limits
     ]
 
     h = hashlib.sha256()

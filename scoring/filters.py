@@ -66,13 +66,22 @@ def apply_structural_filters(
             continue
 
         # Stale repo: >365 days since last push
+        # Size-aware: small/mid orgs get a reduced multiplier instead of full filter
         last_push = meta.get('pushed_at')
         if last_push:
             age = _days_since(last_push)
             if age is not None and age > 365:
-                signal.is_filtered = True
-                signal.filter_reason = 'stale_repo'
-                signal.filter_multiplier = 0.0
+                org_repos = scan_results.get('org_public_repos', 0) or 0
+                if org_repos >= 100:
+                    signal.is_filtered = True
+                    signal.filter_reason = 'stale_repo'
+                    signal.filter_multiplier = 0.0
+                elif org_repos >= 30:
+                    signal.filter_multiplier *= 0.20
+                    signal.filter_reason = signal.filter_reason or 'stale_repo_reduced'
+                else:
+                    signal.filter_multiplier *= 0.30
+                    signal.filter_reason = signal.filter_reason or 'stale_repo_reduced'
                 continue
 
     return signals
@@ -86,9 +95,25 @@ def apply_domain_filters(
     signals: List[EnrichedSignal],
     scan_results: Dict[str, Any],
 ) -> List[EnrichedSignal]:
-    """Apply 80% reduction for open protocol, tutorial, library/SDK repos."""
+    """Apply size-aware reduction for open protocol, tutorial, library/SDK repos.
+
+    Small orgs (<30 repos): 50% reduction (signals more likely genuine)
+    Mid orgs (30-100): 60% reduction
+    Large orgs (100+): 70% reduction (more noise from SDK/tutorial repos)
+    """
     org_description = (scan_results.get('org_description', '') or '').lower()
-    org_name = (scan_results.get('org_login', '') or '').lower()
+    org_repos = scan_results.get('org_public_repos', 0) or 0
+
+    # Size-aware multipliers (less aggressive than the old flat 0.20)
+    if org_repos < 30:
+        tutorial_mult = 0.50
+        sdk_mult = 0.50
+    elif org_repos < 100:
+        tutorial_mult = 0.40
+        sdk_mult = 0.40
+    else:
+        tutorial_mult = 0.30
+        sdk_mult = 0.30
 
     # Check for open protocol / decentralized project
     open_protocol_keywords = [
@@ -102,29 +127,28 @@ def apply_domain_filters(
             continue
 
         repo_name = (signal.repo or '').lower()
-        evidence_lower = (signal.evidence or '').lower()
 
-        # Open protocol org → 80% reduction
+        # Open protocol org → 80% reduction (always aggressive, regardless of size)
         if is_open_protocol:
             signal.filter_multiplier *= 0.20
             signal.filter_reason = signal.filter_reason or 'open_protocol'
 
-        # Tutorial/educational repo → 80% reduction
+        # Tutorial/educational repo → size-aware reduction
         tutorial_indicators = [
             'tutorial', 'example', 'demo', 'sample', 'starter',
             'boilerplate', 'template', 'learn', 'course', 'workshop',
         ]
         if any(ind in repo_name for ind in tutorial_indicators):
-            signal.filter_multiplier *= 0.20
+            signal.filter_multiplier *= tutorial_mult
             signal.filter_reason = signal.filter_reason or 'tutorial_repo'
 
-        # Library/SDK repo → 80% reduction (they provide i18n, not consuming)
+        # Library/SDK repo → size-aware reduction
         sdk_indicators = [
             '-sdk', '-client', '-api', '-library', '-lib', '-plugin',
             '-extension', '-package', '-module',
         ]
         if any(ind in repo_name for ind in sdk_indicators):
-            signal.filter_multiplier *= 0.20
+            signal.filter_multiplier *= sdk_mult
             signal.filter_reason = signal.filter_reason or 'sdk_library_repo'
 
     return signals

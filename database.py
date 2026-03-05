@@ -3511,7 +3511,12 @@ def auto_retier_if_version_changed() -> int:
         ''')
         rows = cursor.fetchall()
 
-        # First pass: calculate new tiers without writing (to check for mass change)
+        # First pass: re-score and calculate new tiers without writing
+        # (to check for mass change). Re-runs the V2 scoring pipeline on
+        # stored signals so that filter/threshold changes take effect
+        # without a rescan.
+        from scoring import score_scan_results
+
         pending_changes = []
         for row in rows:
             try:
@@ -3519,9 +3524,17 @@ def auto_retier_if_version_changed() -> int:
             except (json.JSONDecodeError, TypeError):
                 continue
 
-            scoring_v2 = scan_data.get('scoring_v2') if scan_data else None
-            if not scoring_v2 or not isinstance(scoring_v2, dict):
+            if not scan_data:
                 continue
+
+            # Re-run V2 scoring pipeline with updated filters/thresholds
+            if scan_data.get('signals'):
+                try:
+                    v2_result = score_scan_results(scan_data)
+                    v2_result.apply_to_scan_results(scan_data)
+                    scan_data['scoring_v2'] = v2_result.to_structured_output()
+                except Exception as e:
+                    logging.warning(f"[RETIER] V2 re-score failed for {row['company_name']}: {e}")
 
             website_data = _build_website_data_from_row(row)
 
