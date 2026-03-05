@@ -232,8 +232,10 @@ def apply_heuristic_filters(scan_data: dict) -> dict:
     # ---- Heuristic 1: Large org with only SDK/CLI repos public ----
     repos_scanned = scan_data.get('repos_scanned', 0) or 0
     total_org_repos = scan_data.get('total_org_repos', 0) or 0
-    
-    if total_org_repos > 50:
+
+    # Only apply SDK-only heuristic for very large orgs (100+)
+    # Small/mid orgs are more focused — SDK signals likely mean real product work
+    if total_org_repos > 100:
         # Large org - their product is almost certainly in private repos
         # Public repos are likely SDKs, CLIs, docs
         repo_types = set()
@@ -308,10 +310,18 @@ def apply_llm_verification(scan_data: dict) -> dict:
         scan_data['verification'] = verification
         return scan_data
     
+    # Size-aware LLM settings: small orgs skip LLM entirely (signals are likely real)
+    total_org_repos = scan_data.get('total_org_repos', 0) or 0
+    org_public_repos = scan_data.get('org_public_repos', 0) or 0
+    repo_count = max(total_org_repos, org_public_repos)
+    if repo_count < 30:
+        verification['llm_verification'] = 'SKIPPED - small org (signals treated as genuine)'
+        scan_data['verification'] = verification
+        return scan_data
+
     # Build context for the LLM
     company_name = scan_data.get('company_name', 'Unknown')
     org_login = scan_data.get('org_login', '')
-    total_org_repos = scan_data.get('total_org_repos', 0)
     
     # Collect signal evidence
     signal_evidence = []
@@ -377,7 +387,7 @@ RESPOND WITH EXACTLY THIS JSON:
                 {"role": "system", "content": "You are a precise signal quality analyst. Return ONLY valid JSON."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.1,
+            temperature=0.3,
             max_completion_tokens=300,
         )
         
@@ -395,8 +405,11 @@ RESPOND WITH EXACTLY THIS JSON:
         verification['llm_verification'] = llm_result
         verification['llm_model'] = 'gpt-5-mini'
         
-        # Apply LLM verdict
-        if llm_result.get('verdict') == 'FALSE_POSITIVE' and llm_result.get('confidence', 0) >= 0.7:
+        # Apply LLM verdict — size-aware confidence threshold
+        # Mid orgs (30-100 repos): 0.85 threshold (benefit of doubt)
+        # Large orgs (100+): 0.80 threshold (more noise expected, but still looser than old 0.7)
+        fp_threshold = 0.85 if repo_count < 100 else 0.80
+        if llm_result.get('verdict') == 'FALSE_POSITIVE' and llm_result.get('confidence', 0) >= fp_threshold:
             verification['is_false_positive'] = True
             verification['false_positive_reasons'] = verification.get('false_positive_reasons', [])
             verification['false_positive_reasons'].append(
