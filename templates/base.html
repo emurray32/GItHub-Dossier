@@ -51,17 +51,9 @@
                     <i data-lucide="trending-up" class="sidebar-icon"></i>
                     <span class="sidebar-label">Grow</span>
                 </a>
-                <a href="{{ url_for('linkedin_prospector') }}" class="sidebar-item {% if request.endpoint == 'linkedin_prospector' %}active{% endif %}">
-                    <i data-lucide="linkedin" class="sidebar-icon"></i>
-                    <span class="sidebar-label">LinkedIn Prospector</span>
-                </a>
                 <a href="{{ url_for('settings') }}" class="sidebar-item {% if request.endpoint == 'settings' %}active{% endif %}">
                     <i data-lucide="settings" class="sidebar-icon"></i>
                     <span class="sidebar-label">Settings</span>
-                </a>
-                <a href="{{ url_for('scorecard') }}" class="sidebar-item {% if request.endpoint == 'scorecard' %}active{% endif %}" style="opacity:0.5;">
-                    <i data-lucide="award" class="sidebar-icon"></i>
-                    <span class="sidebar-label">ScoreCard <span style="font-size:0.6rem;color:var(--color-text-tertiary);font-weight:600;text-transform:uppercase;letter-spacing:0.3px;">WIP</span></span>
                 </a>
             </nav>
         </aside>
