@@ -404,15 +404,13 @@
             <button class="panel-close" onclick="closeDetailPanel()" title="Close panel">&times;</button>
         </div>
         <div class="panel-body">
-            <section class="panel-section">
-                <h4>Evidence &amp; Context</h4>
-                <div class="panel-evidence" id="panel-evidence">No evidence recorded</div>
-                <a id="panel-report-link" href="#" target="_blank" class="panel-report-link" style="display:none">View Full Report</a>
-                <div class="panel-notes-wrap">
-                    <label for="panel-notes">Notes</label>
-                    <textarea id="panel-notes" rows="3" placeholder="Add notes..." onblur="saveAccountNotes()"></textarea>
-                </div>
+            <!-- Outreach blurb: why reach out -->
+            <section class="panel-section panel-blurb-section">
+                <div class="panel-blurb" id="panel-blurb"></div>
+                <a id="panel-report-link" href="#" target="_blank" class="panel-report-link" style="display:none">View full report &rarr;</a>
             </section>
+
+            <!-- Contributors: find emails + select for enrollment -->
             <section class="panel-section">
                 <div class="panel-section-header">
                     <h4>Contributors</h4>
@@ -422,24 +420,29 @@
                     <div class="panel-placeholder">Click to load contributors</div>
                 </div>
             </section>
+
+            <!-- Enroll: sequence selection + action -->
             <section class="panel-section panel-enroll-section">
-                <div class="enroll-panel" id="enroll-panel-account">
-                    <div class="enroll-panel-title">Enrollment</div>
-                    <div class="enroll-steps">
-                        <div class="enroll-step active"></div>
-                        <div class="enroll-step"></div>
-                        <div class="enroll-step"></div>
-                    </div>
-                    <div class="enroll-field">
-                        <label>Apollo Sequence</label>
-                        <select class="enroll-seq-select" id="panel-sequence-select"></select>
-                    </div>
-                    <button class="enroll-btn enroll-btn-enroll" id="panel-enroll-btn" type="button" onclick="generateAndEnroll()">
+                <h4>Enroll in Apollo</h4>
+                <div class="panel-enroll-controls">
+                    <select class="panel-select" id="panel-sequence-select">
+                        <option value="">Select a sequence...</option>
+                    </select>
+                    <button class="btn-enroll" id="panel-enroll-btn" type="button" onclick="generateAndEnroll()">
                         Generate Emails &amp; Enroll
                     </button>
-                    <div class="enroll-status" id="panel-enroll-status"></div>
                 </div>
                 <div id="panel-enroll-results" class="panel-enroll-results" style="display:none"></div>
+            </section>
+
+            <!-- Notes (collapsed by default) -->
+            <section class="panel-section panel-notes-section">
+                <button class="panel-notes-toggle" id="panel-notes-toggle" onclick="togglePanelNotes()">
+                    <span class="panel-notes-toggle-icon">&#9654;</span> Notes
+                </button>
+                <div class="panel-notes-wrap" id="panel-notes-wrap" style="display:none">
+                    <textarea id="panel-notes" rows="3" placeholder="Add notes about this account..." onblur="saveAccountNotes()"></textarea>
+                </div>
             </section>
         </div>
     </div>
@@ -3487,6 +3490,33 @@
     let _panelAccountId = null;
     let _panelAccountData = null;
 
+    function buildOutreachBlurb(account) {
+        // Parse metadata JSON for scoring/maturity data
+        let meta = {};
+        try { meta = account.metadata ? JSON.parse(account.metadata) : {}; } catch(e) {}
+
+        const maturity = meta.org_maturity_label || '';
+        const goldilocks = meta.goldilocks_status || '';
+        const company = account.company_name || 'this company';
+
+        // "Launched" = already localized → different angle
+        if (goldilocks === 'launched' || maturity === 'Launched') {
+            return `${company} has already launched localization. They may be evaluating whether their current stack scales — a good time to introduce Phrase as a platform upgrade.`;
+        }
+        // Active signals / warm
+        if (goldilocks === 'preparing' || maturity === 'Preparing') {
+            return `${company} is actively preparing to localize — dependency signals and repo activity suggest they're building or evaluating tooling now. High-intent window to reach out.`;
+        }
+        if (goldilocks === 'thinking' || maturity === 'Thinking') {
+            return `${company} shows early i18n exploration signals (library additions, config changes). They're likely in research mode — a well-timed intro to Phrase could shape their decision.`;
+        }
+        // Cold / pre-i18n
+        if (account.evidence_summary) {
+            return account.evidence_summary;
+        }
+        return `No strong i18n signals detected yet for ${company}. Monitor for future activity.`;
+    }
+
     function openDetailPanel(accountId) {
         _panelAccountId = accountId;
         const panel = document.getElementById('account-detail-panel');
@@ -3497,9 +3527,12 @@
         // Reset state
         document.getElementById('panel-company-name').textContent = 'Loading...';
         document.getElementById('panel-meta').textContent = '';
-        document.getElementById('panel-evidence').textContent = 'Loading...';
+        document.getElementById('panel-blurb').textContent = '';
         document.getElementById('panel-report-link').style.display = 'none';
         document.getElementById('panel-notes').value = '';
+        document.getElementById('panel-notes-wrap').style.display = 'none';
+        const toggleIcon = document.querySelector('.panel-notes-toggle-icon');
+        if (toggleIcon) toggleIcon.innerHTML = '&#9654;';
         document.getElementById('panel-contributors-list').innerHTML = '<div class="panel-placeholder">Loading...</div>';
         document.getElementById('panel-enroll-results').style.display = 'none';
 
@@ -3520,10 +3553,10 @@
             const tierName = tierConfig ? tierConfig.name : ('Tier ' + account.current_tier);
             const revenue = formatRevenue(account.annual_revenue);
             const lastScan = account.last_scanned_at ? formatSmartDate(account.last_scanned_at) : 'Never';
-            document.getElementById('panel-meta').textContent = `${tierName} | ${revenue || 'No revenue'} | Last: ${lastScan}`;
+            document.getElementById('panel-meta').textContent = `${tierName} | ${revenue || 'No revenue'} | Scanned ${lastScan}`;
 
-            // Evidence
-            document.getElementById('panel-evidence').textContent = account.evidence_summary || 'No evidence recorded';
+            // Outreach blurb
+            document.getElementById('panel-blurb').textContent = buildOutreachBlurb(account);
 
             // Report link
             const reportLink = document.getElementById('panel-report-link');
@@ -3534,7 +3567,7 @@
                 reportLink.style.display = 'none';
             }
 
-            // Notes
+            // Notes (keep value loaded but section stays collapsed)
             document.getElementById('panel-notes').value = account.notes || '';
 
             // Contributors
@@ -3570,21 +3603,29 @@
             const enrolled = c.enrolled_in_sequence === 1 || c.apollo_status === 'sent';
             const name = escapeHtml(c.name || c.github_login || 'Unknown');
             const repo = escapeHtml(c.repo_source || '');
-            const insight = escapeHtml((c.insight || '').substring(0, 80));
+            const hasEmail = c.email && c.email.trim();
             const checked = enrolled ? '' : 'checked';
             const disabled = enrolled ? 'disabled' : '';
-            const badge = enrolled
-                ? `<span class="panel-enrolled-badge">Enrolled${c.sequence_name ? ' in ' + escapeHtml(c.sequence_name) : ''}</span>`
-                : '';
+
+            // Email status indicator
+            let emailBadge;
+            if (enrolled) {
+                emailBadge = `<span class="panel-badge panel-badge-enrolled">Enrolled${c.sequence_name ? ' — ' + escapeHtml(c.sequence_name) : ''}</span>`;
+            } else if (hasEmail) {
+                emailBadge = `<span class="panel-badge panel-badge-email">${escapeHtml(c.email)}</span>`;
+            } else {
+                emailBadge = `<span class="panel-badge panel-badge-no-email">No email — Apollo lookup on enroll</span>`;
+            }
 
             return `
                 <label class="panel-contributor-row ${enrolled ? 'enrolled' : ''}">
                     <input type="checkbox" class="panel-contributor-cb" value="${c.id}" ${checked} ${disabled}>
                     <div class="panel-contributor-info">
-                        <span class="panel-contributor-name">${name}</span>
-                        <span class="panel-contributor-repo">${repo}</span>
-                        <span class="panel-contributor-insight">${insight}</span>
-                        ${badge}
+                        <div class="panel-contributor-top">
+                            <span class="panel-contributor-name">${name}</span>
+                            <span class="panel-contributor-repo">${repo}</span>
+                        </div>
+                        ${emailBadge}
                     </div>
                 </label>
             `;
@@ -3655,6 +3696,14 @@
             }
         })
         .catch(err => console.error('Error saving notes:', err));
+    }
+
+    function togglePanelNotes() {
+        const wrap = document.getElementById('panel-notes-wrap');
+        const icon = document.querySelector('.panel-notes-toggle-icon');
+        const isHidden = wrap.style.display === 'none';
+        wrap.style.display = isHidden ? 'block' : 'none';
+        icon.innerHTML = isHidden ? '&#9660;' : '&#9654;';
     }
 
     function generateAndEnroll() {
