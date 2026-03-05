@@ -176,7 +176,7 @@
                         '<button class="alert-dismiss" onclick="this.parentElement.remove();window._alertDismiss(\''+a.type+'\')">&times;</button>'+
                         '</div>';
                 }).join('');
-            }).catch(function(){});
+            }).catch(function(err){ console.error('[Alerts] Failed to poll system alerts:', err); });
         }
         window._alertDismiss = function(type){dismissed[type]=true};
         pollAlerts();

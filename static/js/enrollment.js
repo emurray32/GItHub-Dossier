@@ -35,7 +35,8 @@
                 _seqCallbacks = [];
                 return _seqCache;
             })
-            .catch(function () {
+            .catch(function (err) {
+                console.error('[Enrollment] Failed to fetch sequence mappings:', err);
                 _seqCache = [];
                 _seqCallbacks.forEach(function (cb) { cb(_seqCache); });
                 _seqCallbacks = [];

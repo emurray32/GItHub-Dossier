@@ -115,7 +115,7 @@
                 var el = document.getElementById('settingsScanMeta');
                 if (el) el.textContent = d.total + ' reports';
             }
-        }).catch(function(){});
+        }).catch(function(err){ console.error('[Settings] Failed to load scan stats:', err); });
 
     fetch('/api/webscraper/stats')
         .then(function(r) { return r.ok ? r.json() : null; })
@@ -124,7 +124,7 @@
                 var el = document.getElementById('settingsWebMeta');
                 if (el) el.textContent = d.total + ' accounts';
             }
-        }).catch(function(){});
+        }).catch(function(err){ console.error('[Settings] Failed to load webscraper stats:', err); });
 })();
 </script>
 {% endblock %}

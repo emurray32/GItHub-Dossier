@@ -333,9 +333,10 @@
                     setDetectStatus('Could not auto-detect \u2014 select config manually.');
                 }
             })
-            .catch(function () {
+            .catch(function (err) {
+                console.error('[Sequences] Auto-detect failed:', err);
                 setDetectSpinner(false);
-                setDetectStatus('');
+                setDetectStatus('Auto-detect failed');
             });
         }
 
