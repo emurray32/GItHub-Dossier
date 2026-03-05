@@ -2,7 +2,16 @@
 import json
 
 import pytest
+from contextlib import contextmanager
 from unittest.mock import patch, MagicMock
+
+
+def _mock_db_conn(mock_conn):
+    """Create a context-manager patch for email_routes.db_connection."""
+    @contextmanager
+    def _ctx():
+        yield mock_conn
+    return patch('email_routes.db_connection', _ctx)
 
 
 pytestmark = pytest.mark.unit
@@ -294,7 +303,7 @@ class TestEmailPreview:
         mock_conn.cursor.return_value = mock_cursor
         mock_cursor.fetchone.return_value = None
 
-        with patch('email_routes.get_db_connection', return_value=mock_conn):
+        with _mock_db_conn(mock_conn):
             resp = flask_app.get('/api/pipeline/email-preview?contact_id=9999')
 
         assert resp.status_code == 404
@@ -323,7 +332,7 @@ class TestEmailPreview:
         mock_conn.cursor.return_value = mock_cursor
         mock_cursor.fetchone.return_value = mock_row
 
-        with patch('email_routes.get_db_connection', return_value=mock_conn), \
+        with _mock_db_conn(mock_conn), \
              patch('builtins.dict', side_effect=lambda x: row_dict() if x is mock_row else dict.__call__(x)):
             # The simpler approach: mock the dict conversion
             pass
@@ -336,7 +345,7 @@ class TestEmailPreview:
         }
         mock_cursor.fetchone.return_value = mock_row
 
-        with patch('email_routes.get_db_connection', return_value=mock_conn):
+        with _mock_db_conn(mock_conn):
             # Patch dict() around the row to return our mock dict
             original_dict = dict
 
@@ -397,7 +406,7 @@ class TestEmailPreview:
         mock_conn.cursor.return_value = mock_cursor
         mock_cursor.fetchone.return_value = PatchedRow()
 
-        with patch('email_routes.get_db_connection', return_value=mock_conn):
+        with _mock_db_conn(mock_conn):
             resp = flask_app.get('/api/pipeline/email-preview?contact_id=101&variant=B')
 
         assert resp.status_code == 200
@@ -442,7 +451,7 @@ class TestEmailPreview:
             'variant': 'A',
         }
 
-        with patch('email_routes.get_db_connection', return_value=mock_conn), \
+        with _mock_db_conn(mock_conn), \
              patch('email_routes.get_signals_by_company', return_value=[]), \
              patch('email_routes.get_account_by_company', return_value=None), \
              patch('email_routes.preview_email', return_value=mock_preview):
@@ -550,7 +559,7 @@ class TestEmailPreview:
         mock_conn.cursor.return_value = mock_cursor
         mock_cursor.fetchone.return_value = PatchedRow()
 
-        with patch('email_routes.get_db_connection', return_value=mock_conn):
+        with _mock_db_conn(mock_conn):
             resp = flask_app.get('/api/pipeline/email-preview?contact_id=101')
 
         assert resp.status_code == 200
@@ -591,7 +600,7 @@ class TestEmailPreview:
 
         mock_preview = {'subject': 'Fresh', 'body': 'Generated'}
 
-        with patch('email_routes.get_db_connection', return_value=mock_conn), \
+        with _mock_db_conn(mock_conn), \
              patch('email_routes.get_signals_by_company', return_value=[]), \
              patch('email_routes.get_account_by_company', return_value=None), \
              patch('email_routes.preview_email', return_value=mock_preview):

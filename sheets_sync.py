@@ -36,7 +36,6 @@ from database import (
     get_setting,
     set_setting,
     increment_daily_stat,
-    get_db_connection,
     db_connection,
 )
 from monitors.discovery import resolve_org_fast

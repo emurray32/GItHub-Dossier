@@ -182,7 +182,7 @@ class TestExtractSignalDetails:
             'description': 'Found lib in repo/pkg.json',
             'age_in_days': 30,
         })
-        assert '30 days ago' in details['age_clause']
+        assert 'recently' in details['age_clause']
 
     def test_no_age_clause_when_zero(self):
         details = _extract_signal_details('dependency_injection', {

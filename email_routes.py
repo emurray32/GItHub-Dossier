@@ -12,7 +12,7 @@ from validators import validate_positive_int, validate_company_name
 from database import (
     get_enrollment_batch, get_campaign, get_next_contacts_for_phase,
     get_signals_by_company, get_account_by_company, get_scorecard_score,
-    update_enrollment_contact, get_db_connection, db_connection,
+    update_enrollment_contact, db_connection,
 )
 from email_engine import generate_batch_emails, preview_email, generate_email_sequence
 
