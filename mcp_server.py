@@ -33,14 +33,23 @@ from database import (
     get_account_by_company_case_insensitive,
     get_tier_counts,
     get_signals_for_report,
+    get_signals_by_company,
     save_report,
     save_signals,
     update_account_status,
     add_account_to_tier_0,
+    get_contributors_by_company,
+    get_contributor_stats,
 )
 from monitors.scanner import deep_scan_generator
 from monitors.web_analyzer import analyze_website_technical
 from ai_summary import generate_analysis
+from email_engine import (
+    generate_personalized_emails,
+    generate_email_sequence,
+    SIGNAL_TEMPLATES,
+    PERSONA_TONES,
+)
 
 # Initialize database (creates tables if needed)
 init_db()
@@ -1053,6 +1062,731 @@ async def apollo_batch_enroll(params: ApolloBatchEnrollInput) -> str:
         })
     except Exception as e:
         return _json_response({"error": f"Batch enrollment failed: {e}"})
+
+
+# ---------------------------------------------------------------------------
+# Contributors & Outreach Tools
+# ---------------------------------------------------------------------------
+
+class GetContributorsInput(BaseModel):
+    """Input for getting contributors for a company."""
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    company_name: str = Field(
+        ...,
+        description="Company name or GitHub org to look up contributors for",
+        min_length=1,
+    )
+
+
+class GenerateOutreachEmailInput(BaseModel):
+    """Input for generating personalized outreach emails."""
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    company_name: str = Field(..., description="Company name (used to look up signals)")
+    first_name: str = Field(..., description="Contact's first name")
+    last_name: str = Field(default="", description="Contact's last name")
+    title: str = Field(default="", description="Contact's job title (used for persona matching)")
+    email: str = Field(default="", description="Contact's email (for reference only)")
+    campaign_prompt: str = Field(
+        default="",
+        description="Optional campaign-specific instructions (tone, key messages, etc.)",
+    )
+
+
+class GenerateEmailSequenceInput(BaseModel):
+    """Input for generating a multi-email outreach sequence."""
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    company_name: str = Field(..., description="Company name (used to look up signals)")
+    first_name: str = Field(..., description="Contact's first name")
+    last_name: str = Field(default="", description="Contact's last name")
+    title: str = Field(default="", description="Contact's job title")
+    num_emails: int = Field(default=4, description="Number of emails in the sequence (2-6)", ge=2, le=6)
+    campaign_prompt: str = Field(
+        default="",
+        description="Optional campaign-specific instructions",
+    )
+
+
+class BatchScanInput(BaseModel):
+    """Input for scanning multiple companies."""
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    companies: List[str] = Field(
+        ...,
+        description="List of company names to scan",
+        min_length=1,
+        max_length=20,
+    )
+
+
+class OutreachPipelineInput(BaseModel):
+    """Input for running the full outreach pipeline on a company."""
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    company_name: str = Field(..., description="Company name to run pipeline for")
+    max_contacts: int = Field(
+        default=5,
+        description="Maximum number of contacts to generate emails for",
+        ge=1,
+        le=20,
+    )
+    campaign_prompt: str = Field(
+        default="",
+        description="Optional campaign-specific instructions for email generation",
+    )
+    enroll_in_apollo: bool = Field(
+        default=False,
+        description="If True, also enroll contacts in Apollo sequences (requires APOLLO_API_KEY)",
+    )
+    apollo_sequence_id: str = Field(
+        default="",
+        description="Apollo sequence ID to enroll contacts into (required if enroll_in_apollo=True)",
+    )
+
+
+@mcp.tool(
+    name="dossier_get_contributors",
+    annotations={
+        "title": "Get Company Contributors",
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
+    },
+)
+async def dossier_get_contributors(params: GetContributorsInput) -> str:
+    """Get GitHub contributors discovered for a company.
+
+    Returns contributors sorted by contribution count, including their
+    GitHub username, name, email, title, and Apollo enrichment status.
+
+    Args:
+        params: company_name to look up.
+
+    Returns:
+        str: JSON list of contributors with login, name, email, title,
+             contributions count, and apollo_status.
+    """
+    contributors = get_contributors_by_company(params.company_name)
+    if not contributors:
+        return _json_response({
+            "message": f"No contributors found for '{params.company_name}'. "
+                       "Run dossier_scan_company first to discover contributors.",
+            "company": params.company_name,
+        })
+
+    # Return a useful subset of fields
+    result = []
+    for c in contributors:
+        result.append({
+            "id": c.get("id"),
+            "login": c.get("login"),
+            "name": c.get("name"),
+            "email": c.get("email"),
+            "title": c.get("title"),
+            "company": c.get("company"),
+            "contributions": c.get("contributions", 0),
+            "apollo_status": c.get("apollo_status"),
+            "linkedin_url": c.get("linkedin_url"),
+        })
+
+    return _json_response({
+        "company": params.company_name,
+        "total": len(result),
+        "contributors": result,
+    })
+
+
+@mcp.tool(
+    name="dossier_generate_outreach_email",
+    annotations={
+        "title": "Generate Personalized Outreach Email",
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": False,
+    },
+)
+async def dossier_generate_outreach_email(params: GenerateOutreachEmailInput, ctx: Context) -> str:
+    """Generate 3 personalized cold email variants for a contact using scan signals.
+
+    Uses the cold-outreach skill, signal-specific templates, and persona-aware
+    tone adjustment. Scores each variant for specificity and returns the best one
+    plus all variants.
+
+    The email engine auto-detects persona from job title:
+    - VP/Head of Engineering → technical CI/CD angle
+    - VP/Head of Product → time-to-market angle
+    - Dir/Head of Localization → TMS workflow angle
+    - Default → peer-to-peer technical angle
+
+    Args:
+        params: company_name, first_name, last_name, title, email, campaign_prompt
+
+    Returns:
+        str: JSON with best_variant, best_subject, best_body, all variants with scores,
+             signal_type used, and persona detected.
+    """
+    await ctx.info(f"Looking up signals for {params.company_name}...")
+
+    # Get signals for this company
+    signals = get_signals_by_company(params.company_name)
+
+    if not signals:
+        return _json_response({
+            "error": f"No signals found for '{params.company_name}'. "
+                     "Run dossier_scan_company first to detect i18n signals.",
+            "company": params.company_name,
+        })
+
+    # Get account data for enrichment context
+    account = get_account_by_company_case_insensitive(params.company_name)
+
+    contact = {
+        "first_name": params.first_name,
+        "last_name": params.last_name,
+        "title": params.title,
+        "email": params.email,
+        "company_name": params.company_name,
+    }
+
+    await ctx.info(f"Generating 3 email variants (persona: auto-detect from '{params.title or 'default'}')...")
+
+    try:
+        result = generate_personalized_emails(
+            contact=contact,
+            signals=signals,
+            campaign_prompt=params.campaign_prompt,
+            account_data=dict(account) if account else None,
+        )
+        return _json_response(result)
+    except Exception as e:
+        return _json_response({
+            "error": f"Email generation failed: {e}",
+            "company": params.company_name,
+        })
+
+
+@mcp.tool(
+    name="dossier_generate_email_sequence",
+    annotations={
+        "title": "Generate Multi-Email Outreach Sequence",
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": False,
+    },
+)
+async def dossier_generate_email_sequence(params: GenerateEmailSequenceInput, ctx: Context) -> str:
+    """Generate a full multi-email outreach sequence for a contact.
+
+    Produces a cohesive sequence where each email progresses naturally:
+    Email 1 = hook + value prop, Email 2 = different angle, Email 3 = lighter touch,
+    Email 4 = breakup. Designed for Apollo custom field injection.
+
+    Args:
+        params: company_name, first_name, last_name, title, num_emails, campaign_prompt
+
+    Returns:
+        str: JSON with emails list (position, subject, body, score),
+             persona, signal_type, specificity_score.
+    """
+    await ctx.info(f"Looking up signals for {params.company_name}...")
+
+    signals = get_signals_by_company(params.company_name)
+    if not signals:
+        return _json_response({
+            "error": f"No signals found for '{params.company_name}'. Scan the company first.",
+        })
+
+    account = get_account_by_company_case_insensitive(params.company_name)
+
+    contact = {
+        "first_name": params.first_name,
+        "last_name": params.last_name,
+        "title": params.title,
+        "company_name": params.company_name,
+    }
+
+    await ctx.info(f"Generating {params.num_emails}-email sequence...")
+
+    try:
+        result = generate_email_sequence(
+            contact=contact,
+            signals=signals,
+            campaign_prompt=params.campaign_prompt,
+            account_data=dict(account) if account else None,
+            num_emails=params.num_emails,
+        )
+        return _json_response(result)
+    except Exception as e:
+        return _json_response({"error": f"Sequence generation failed: {e}"})
+
+
+@mcp.tool(
+    name="dossier_batch_scan",
+    annotations={
+        "title": "Batch Scan Multiple Companies",
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": True,
+    },
+)
+async def dossier_batch_scan(params: BatchScanInput, ctx: Context) -> str:
+    """Scan multiple companies sequentially and return a summary.
+
+    Runs a full 3-Signal Intent Scan on each company. Reports progress
+    after each scan completes. Max 20 companies per batch.
+
+    Args:
+        params: companies (list of company names)
+
+    Returns:
+        str: JSON with results for each company (report_id, signals_found,
+             intent_score) and overall summary.
+    """
+    results = []
+    total = len(params.companies)
+
+    for i, company in enumerate(params.companies):
+        await ctx.report_progress(i, total)
+        await ctx.info(f"[{i+1}/{total}] Scanning {company}...")
+
+        account = get_account_by_company_case_insensitive(company)
+        last_scanned_at = account.get("last_scanned_at") if account else None
+        github_org = account.get("github_org") if account else None
+
+        scan_data = None
+        analysis_data = None
+        start_time = time.time()
+
+        try:
+            for message in deep_scan_generator(company, last_scanned_at, github_org):
+                if "SCAN_COMPLETE:" in message:
+                    json_str = message.split("SCAN_COMPLETE:", 1)[1].strip()
+                    if json_str.startswith("data: "):
+                        json_str = json_str[6:]
+                    scan_data = json.loads(json_str)
+                elif "data: ERROR:" in message:
+                    error_msg = message.split("data: ERROR:", 1)[1].strip().replace("\n", "")
+                    results.append({"company": company, "error": error_msg})
+                    break
+
+            if not scan_data:
+                if not any(r.get("company") == company for r in results):
+                    results.append({"company": company, "error": "No scan data generated"})
+                continue
+
+            # AI analysis
+            try:
+                for message in generate_analysis(scan_data):
+                    if "ANALYSIS_COMPLETE:" in message:
+                        json_str = message.split("ANALYSIS_COMPLETE:", 1)[1].strip()
+                        if json_str.startswith("data: "):
+                            json_str = json_str[6:]
+                        analysis_data = json.loads(json_str)
+            except Exception as e:
+                analysis_data = {"error": str(e)}
+
+            duration = time.time() - start_time
+            report_id = save_report(
+                company_name=company,
+                github_org=scan_data.get("org_login", ""),
+                scan_data=scan_data,
+                ai_analysis=analysis_data or {},
+                scan_duration=duration,
+            )
+
+            signals = scan_data.get("signals", [])
+            if signals and report_id:
+                try:
+                    save_signals(report_id, company, signals)
+                except Exception:
+                    pass
+            try:
+                update_account_status(scan_data, report_id)
+            except Exception:
+                pass
+
+            results.append({
+                "company": company,
+                "report_id": report_id,
+                "github_org": scan_data.get("org_login"),
+                "signals_found": len(signals),
+                "intent_score": scan_data.get("intent_score", 0),
+                "duration_seconds": round(duration, 1),
+                "executive_summary": (analysis_data or {}).get("executive_summary", ""),
+            })
+
+        except Exception as e:
+            results.append({"company": company, "error": str(e)[:300]})
+
+    await ctx.report_progress(total, total)
+
+    # Summary
+    scanned = [r for r in results if "report_id" in r]
+    failed = [r for r in results if "error" in r]
+    with_signals = [r for r in scanned if r.get("signals_found", 0) > 0]
+
+    return _json_response({
+        "total_requested": total,
+        "scanned": len(scanned),
+        "failed": len(failed),
+        "with_signals": len(with_signals),
+        "results": results,
+    })
+
+
+@mcp.tool(
+    name="dossier_outreach_pipeline",
+    annotations={
+        "title": "Run Full Outreach Pipeline",
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": True,
+    },
+)
+async def dossier_outreach_pipeline(params: OutreachPipelineInput, ctx: Context) -> str:
+    """Run the full outreach pipeline for a company: scan → signals → contacts → emails.
+
+    End-to-end pipeline that:
+    1. Scans the company (or uses existing scan data)
+    2. Retrieves detected signals
+    3. Gets known contributors
+    4. Generates personalized emails for top contributors
+    5. Optionally enrolls contacts in an Apollo sequence
+
+    Args:
+        params: company_name, max_contacts, campaign_prompt,
+                enroll_in_apollo, apollo_sequence_id
+
+    Returns:
+        str: JSON with scan summary, contributors found, emails generated,
+             and enrollment results (if requested).
+    """
+    pipeline_result = {
+        "company": params.company_name,
+        "steps": {},
+    }
+
+    # Step 1: Check existing scan or run new one
+    await ctx.report_progress(0, 100)
+    await ctx.info(f"Step 1/4: Checking scan data for {params.company_name}...")
+
+    account = get_account_by_company_case_insensitive(params.company_name)
+    signals = get_signals_by_company(params.company_name) if account else []
+
+    if not signals:
+        await ctx.info(f"No existing signals — running fresh scan...")
+        last_scanned_at = account.get("last_scanned_at") if account else None
+        github_org = account.get("github_org") if account else None
+        scan_data = None
+        analysis_data = None
+        start_time = time.time()
+
+        for message in deep_scan_generator(params.company_name, last_scanned_at, github_org):
+            if "SCAN_COMPLETE:" in message:
+                json_str = message.split("SCAN_COMPLETE:", 1)[1].strip()
+                if json_str.startswith("data: "):
+                    json_str = json_str[6:]
+                scan_data = json.loads(json_str)
+            elif "data: ERROR:" in message:
+                error_msg = message.split("data: ERROR:", 1)[1].strip().replace("\n", "")
+                return _json_response({"error": f"Scan failed: {error_msg}"})
+
+        if not scan_data:
+            return _json_response({"error": "No scan data generated"})
+
+        try:
+            for message in generate_analysis(scan_data):
+                if "ANALYSIS_COMPLETE:" in message:
+                    json_str = message.split("ANALYSIS_COMPLETE:", 1)[1].strip()
+                    if json_str.startswith("data: "):
+                        json_str = json_str[6:]
+                    analysis_data = json.loads(json_str)
+        except Exception:
+            analysis_data = {}
+
+        duration = time.time() - start_time
+        report_id = save_report(
+            company_name=params.company_name,
+            github_org=scan_data.get("org_login", ""),
+            scan_data=scan_data,
+            ai_analysis=analysis_data or {},
+            scan_duration=duration,
+        )
+        scan_signals = scan_data.get("signals", [])
+        if scan_signals and report_id:
+            save_signals(report_id, params.company_name, scan_signals)
+        update_account_status(scan_data, report_id)
+
+        signals = get_signals_by_company(params.company_name)
+        account = get_account_by_company_case_insensitive(params.company_name)
+
+        pipeline_result["steps"]["scan"] = {
+            "status": "completed",
+            "report_id": report_id,
+            "signals_found": len(scan_signals),
+            "duration_seconds": round(duration, 1),
+        }
+    else:
+        pipeline_result["steps"]["scan"] = {
+            "status": "existing_data",
+            "signals_found": len(signals),
+        }
+
+    # Step 2: Get contributors
+    await ctx.report_progress(30, 100)
+    await ctx.info(f"Step 2/4: Getting contributors...")
+
+    github_org = account.get("github_org", params.company_name) if account else params.company_name
+    contributors = get_contributors_by_company(github_org)
+    if not contributors:
+        contributors = get_contributors_by_company(params.company_name)
+
+    # Filter to contributors with emails, limited to max_contacts
+    emailable = [c for c in contributors if c.get("email")]
+    selected = emailable[:params.max_contacts]
+
+    pipeline_result["steps"]["contributors"] = {
+        "total_found": len(contributors),
+        "with_email": len(emailable),
+        "selected": len(selected),
+    }
+
+    if not selected:
+        pipeline_result["steps"]["emails"] = {
+            "status": "skipped",
+            "reason": "No contributors with email addresses found. "
+                      "Use apollo_search_people to find contacts by domain.",
+        }
+        return _json_response(pipeline_result)
+
+    # Step 3: Generate emails for each contact
+    await ctx.report_progress(50, 100)
+    await ctx.info(f"Step 3/4: Generating emails for {len(selected)} contacts...")
+
+    email_results = []
+    for i, contributor in enumerate(selected):
+        contact = {
+            "first_name": contributor.get("name", contributor.get("login", "")).split()[0] if contributor.get("name") else contributor.get("login", ""),
+            "last_name": " ".join(contributor.get("name", "").split()[1:]) if contributor.get("name") else "",
+            "title": contributor.get("title", ""),
+            "email": contributor.get("email", ""),
+            "company_name": params.company_name,
+        }
+
+        try:
+            result = generate_personalized_emails(
+                contact=contact,
+                signals=signals,
+                campaign_prompt=params.campaign_prompt,
+                account_data=dict(account) if account else None,
+            )
+            email_results.append({
+                "contributor_id": contributor.get("id"),
+                "name": contributor.get("name") or contributor.get("login"),
+                "email": contributor.get("email"),
+                "title": contributor.get("title", ""),
+                "best_variant": result.get("best_variant"),
+                "best_subject": result.get("best_subject"),
+                "best_body": result.get("best_body"),
+                "persona": result.get("persona"),
+                "signal_type": result.get("signal_type"),
+                "score": result.get("variants", {}).get(result.get("best_variant", "A"), {}).get("score", 0),
+            })
+        except Exception as e:
+            email_results.append({
+                "contributor_id": contributor.get("id"),
+                "name": contributor.get("name") or contributor.get("login"),
+                "error": str(e)[:200],
+            })
+
+    pipeline_result["steps"]["emails"] = {
+        "status": "completed",
+        "generated": len([r for r in email_results if "best_subject" in r]),
+        "failed": len([r for r in email_results if "error" in r]),
+        "emails": email_results,
+    }
+
+    # Step 4: Optional Apollo enrollment
+    await ctx.report_progress(80, 100)
+
+    if params.enroll_in_apollo and params.apollo_sequence_id:
+        await ctx.info(f"Step 4/4: Enrolling in Apollo sequence...")
+
+        try:
+            headers = _apollo_headers()
+        except ValueError as e:
+            pipeline_result["steps"]["enrollment"] = {"status": "skipped", "reason": str(e)}
+            await ctx.report_progress(100, 100)
+            return _json_response(pipeline_result)
+
+        enrolled = []
+        for er in email_results:
+            if "error" in er or not er.get("email"):
+                continue
+            # Create contact in Apollo
+            payload = {
+                "first_name": er.get("name", "").split()[0] if er.get("name") else "",
+                "last_name": " ".join(er.get("name", "").split()[1:]) if er.get("name") else "",
+                "email": er["email"],
+                "organization_name": params.company_name,
+                "title": er.get("title", ""),
+            }
+            try:
+                resp = _requests.post(
+                    f"{_APOLLO_BASE}/v1/contacts",
+                    json=payload,
+                    headers=headers,
+                    timeout=15,
+                )
+                if resp.status_code in (200, 201):
+                    contact_data = resp.json().get("contact", {})
+                    contact_id = contact_data.get("id")
+                    if contact_id:
+                        enrolled.append(contact_id)
+            except Exception:
+                pass
+
+        # Batch enroll
+        if enrolled:
+            # Get sender email account
+            sender_id = None
+            try:
+                acct_resp = _requests.get(f"{_APOLLO_BASE}/v1/email_accounts", headers=headers, timeout=10)
+                if acct_resp.status_code == 200:
+                    accounts = acct_resp.json().get("email_accounts", [])
+                    active = [a for a in accounts if a.get("active")]
+                    if active:
+                        sender_id = active[0]["id"]
+            except Exception:
+                pass
+
+            if sender_id:
+                try:
+                    enroll_payload = {
+                        "contact_ids": enrolled,
+                        "emailer_campaign_id": params.apollo_sequence_id,
+                        "send_email_from_email_account_id": sender_id,
+                    }
+                    resp = _requests.post(
+                        f"{_APOLLO_BASE}/api/v1/emailer_campaigns/{params.apollo_sequence_id}/add_contact_ids",
+                        json=enroll_payload,
+                        headers=headers,
+                        timeout=30,
+                    )
+                    pipeline_result["steps"]["enrollment"] = {
+                        "status": "completed",
+                        "contacts_enrolled": len(enrolled),
+                        "sequence_id": params.apollo_sequence_id,
+                        "apollo_response_code": resp.status_code,
+                    }
+                except Exception as e:
+                    pipeline_result["steps"]["enrollment"] = {
+                        "status": "failed",
+                        "error": str(e)[:200],
+                    }
+            else:
+                pipeline_result["steps"]["enrollment"] = {
+                    "status": "failed",
+                    "reason": "No active Apollo email account found",
+                }
+        else:
+            pipeline_result["steps"]["enrollment"] = {
+                "status": "skipped",
+                "reason": "No contacts could be created in Apollo",
+            }
+    else:
+        pipeline_result["steps"]["enrollment"] = {
+            "status": "skipped",
+            "reason": "enroll_in_apollo not set or no sequence_id provided",
+        }
+
+    await ctx.report_progress(100, 100)
+    return _json_response(pipeline_result)
+
+
+@mcp.tool(
+    name="dossier_get_contributor_stats",
+    annotations={
+        "title": "Get Contributor Statistics",
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
+    },
+)
+async def dossier_get_contributor_stats_tool() -> str:
+    """Get aggregate statistics about discovered contributors.
+
+    Returns:
+        str: JSON with total contributors, by Apollo status, with emails, etc.
+    """
+    stats = get_contributor_stats()
+    return _json_response(stats)
+
+
+# ---------------------------------------------------------------------------
+# MCP Prompts — Expose skills as reusable prompt templates
+# ---------------------------------------------------------------------------
+
+@mcp.prompt(
+    name="cold_outreach",
+    description="Generate a hyper-personalized cold email using GitHub scan signals. "
+                "Provide company name and contact details.",
+)
+def cold_outreach_prompt(company_name: str, contact_name: str, contact_title: str = "") -> str:
+    """Cold outreach prompt using the skill instructions."""
+    skill_path = os.path.join(
+        os.path.dirname(__file__), ".agent", "skills", "cold-outreach", "SKILL.md"
+    )
+    skill_content = ""
+    if os.path.exists(skill_path):
+        with open(skill_path) as f:
+            skill_content = f.read()
+
+    return f"""You are generating a cold outreach email for Phrase (localization platform).
+
+{skill_content}
+
+TASK:
+1. Use dossier_get_account to look up "{company_name}"
+2. Use dossier_get_signals (with the report_id from the account) to get i18n signals
+3. Use dossier_get_contributors to find contacts at "{company_name}"
+4. Generate a personalized cold email for {contact_name} ({contact_title}) following the SKILL.md rules above
+5. Score the email for specificity (does it reference specific repos, libraries, branches?)
+
+Company: {company_name}
+Contact: {contact_name}
+Title: {contact_title}
+"""
+
+
+@mcp.prompt(
+    name="outreach_pipeline",
+    description="Run the complete outreach pipeline: scan a company, find contacts, "
+                "generate personalized emails, and optionally enroll in Apollo sequences.",
+)
+def outreach_pipeline_prompt(company_name: str) -> str:
+    """Full pipeline orchestration prompt."""
+    return f"""Run the complete outreach pipeline for {company_name}:
+
+1. Use dossier_scan_company to scan "{company_name}" for i18n signals
+2. Use dossier_get_contributors to find engineering contacts
+3. For each contact with an email, use dossier_generate_outreach_email to create personalized emails
+4. Present all generated emails with their specificity scores
+5. Ask if I want to enroll any contacts in an Apollo sequence
+
+Prioritize contacts by:
+- Engineering Managers / VP Engineering (decision makers)
+- High contribution count (active developers)
+- Contributors to repos with i18n signals
+"""
 
 
 # ---------------------------------------------------------------------------

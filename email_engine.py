@@ -693,11 +693,17 @@ def _build_variant_prompt(
     signal_type_label: str,
 ) -> str:
     """Build the GPT prompt for a single variant."""
-    from ai_summary import _load_cold_outreach_skill
+    from ai_summary import _load_cold_outreach_skill, _load_email_skills
     skill_content = _load_cold_outreach_skill()
+    granular_skills = _load_email_skills(email_position=1)
 
     skill_section = ''
-    if skill_content:
+    if granular_skills:
+        skill_section = f"""
+GRANULAR OUTREACH SKILL INSTRUCTIONS (follow these EXACTLY):
+{granular_skills}
+"""
+    elif skill_content:
         skill_section = f"""
 COLD OUTREACH SKILL INSTRUCTIONS (follow these EXACTLY):
 {skill_content}
@@ -788,12 +794,25 @@ def _build_sequence_prompt(
     num_emails: int = 4,
 ) -> str:
     """Build the prompt for generating a full email sequence in one AI call."""
-    from ai_summary import _load_cold_outreach_skill
-    skill_content = _load_cold_outreach_skill()
+    from ai_summary import _load_cold_outreach_skill, _load_email_skills
+
+    # Load granular skills for each email position and combine
+    all_position_skills = []
+    for pos in range(1, num_emails + 1):
+        pos_skills = _load_email_skills(email_position=pos)
+        if pos_skills:
+            all_position_skills.append(f"--- EMAIL {pos} SKILL RULES ---\n{pos_skills}")
 
     skill_section = ''
-    if skill_content:
-        skill_section = f"\nCOLD OUTREACH SKILL INSTRUCTIONS (follow these EXACTLY):\n{skill_content}\n"
+    if all_position_skills:
+        # Use first-touch skills as the primary (they include vocabulary/hooks)
+        # Plus position-specific rules for each email
+        first_touch_skills = _load_email_skills(email_position=1)
+        skill_section = f"\nGRANULAR OUTREACH SKILL INSTRUCTIONS (follow these EXACTLY):\n{first_touch_skills}\n"
+    else:
+        skill_content = _load_cold_outreach_skill()
+        if skill_content:
+            skill_section = f"\nCOLD OUTREACH SKILL INSTRUCTIONS (follow these EXACTLY):\n{skill_content}\n"
 
     links_section = ''
     if campaign_links:
