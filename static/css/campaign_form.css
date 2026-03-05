@@ -1,0 +1,151 @@
+/* ============================================================
+   CAMPAIGN FORM — Full-page layout
+   ============================================================ */
+
+.cf-container { max-width: 820px; margin: 0 auto; padding: 0 1.5rem 2rem; }
+
+/* Back link */
+.cf-back {
+    display: inline-flex; align-items: center; gap: 0.3rem;
+    font-size: 0.8rem; color: var(--color-text-tertiary); text-decoration: none;
+    margin-bottom: 0.75rem; transition: color 0.12s;
+}
+.cf-back:hover { color: var(--color-text); }
+.cf-back svg { width: 14px; height: 14px; }
+
+/* Page header */
+.cf-header { margin-bottom: 1.25rem; }
+.cf-header h1 {
+    font-size: 1.25rem; font-weight: 700; color: var(--color-text); margin: 0 0 0.15rem;
+}
+.cf-header p { font-size: 0.8rem; color: var(--color-text-tertiary); margin: 0; }
+
+/* Card sections */
+.cf-section {
+    background: var(--color-surface); border: 1px solid var(--color-border);
+    border-radius: 8px; padding: 1.25rem; margin-bottom: 1rem;
+}
+.cf-section-title {
+    font-size: 0.75rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.4px; color: var(--color-text-tertiary); margin: 0 0 0.75rem;
+}
+
+/* Form fields */
+.cf-group { margin-bottom: 1rem; }
+.cf-group:last-child { margin-bottom: 0; }
+.cf-group label {
+    display: block; font-size: 0.8rem; font-weight: 600; margin-bottom: 0.3rem;
+    color: var(--color-text);
+}
+.cf-help { font-size: 0.75rem; color: var(--color-text-tertiary); margin-top: 0.2rem; }
+.cf-input, .cf-textarea, .cf-select {
+    width: 100%; padding: 0.5rem 0.65rem; border: 1px solid var(--color-border);
+    border-radius: 6px; font-size: 0.85rem; font-family: var(--font-sans);
+    background: var(--color-surface); color: var(--color-text);
+    transition: border-color 0.12s; box-sizing: border-box;
+}
+.cf-input:focus, .cf-textarea:focus, .cf-select:focus {
+    outline: none; border-color: var(--color-primary); box-shadow: 0 0 0 2px rgba(79,70,229,0.08);
+}
+.cf-textarea { min-height: 90px; resize: vertical; line-height: 1.5; }
+
+/* Settings row */
+.cf-settings-row { display: flex; gap: 1rem; flex-wrap: wrap; }
+.cf-settings-row .cf-group { flex: 1; min-width: 140px; }
+
+/* Sequence picker */
+.cf-seq-picker { display: flex; gap: 0.4rem; align-items: flex-end; }
+.cf-seq-picker .cf-select { flex: 1; }
+.cf-btn-secondary {
+    padding: 0.5rem 0.75rem; background: var(--color-bg); border: 1px solid var(--color-border);
+    border-radius: 6px; font-size: 0.8rem; cursor: pointer; white-space: nowrap;
+    color: var(--color-text-secondary); font-weight: 500; font-family: var(--font-sans);
+    transition: background 0.12s;
+}
+.cf-btn-secondary:hover { background: var(--color-border-subtle); color: var(--color-text); }
+
+/* Sequence steps preview */
+.cf-seq-steps { margin-top: 0.5rem; }
+.cf-seq-steps-list {
+    background: var(--color-bg); border-radius: 6px; padding: 0.35rem;
+    max-height: 200px; overflow-y: auto;
+}
+.cf-seq-step {
+    display: flex; align-items: center; gap: 0.5rem;
+    padding: 0.35rem 0.5rem; border-radius: 4px; font-size: 0.8rem;
+}
+.cf-seq-step:not(:last-child) { margin-bottom: 1px; }
+.cf-seq-step:hover { background: var(--color-surface); }
+.cf-seq-step-num {
+    width: 20px; height: 20px; display: flex; align-items: center; justify-content: center;
+    background: var(--color-primary); color: #fff; border-radius: 50%;
+    font-size: 0.65rem; font-weight: 700; flex-shrink: 0;
+}
+.cf-seq-step-num.task { background: var(--color-warning); }
+.cf-seq-step-num.linkedin { background: #0a66c2; }
+.cf-seq-step-type {
+    font-size: 0.7rem; font-weight: 600; color: var(--color-text-tertiary);
+    text-transform: uppercase; letter-spacing: 0.3px; width: 42px; flex-shrink: 0;
+}
+.cf-seq-step-subject { flex: 1; color: var(--color-text); font-weight: 500; font-size: 0.8rem; }
+.cf-seq-step-delay { font-size: 0.7rem; color: var(--color-text-tertiary); flex-shrink: 0; }
+.cf-seq-steps-empty, .cf-seq-steps-loading {
+    padding: 0.75rem; text-align: center; color: var(--color-text-tertiary); font-size: 0.8rem;
+}
+.cf-shared-warning {
+    display: none; margin-top: 0.4rem; padding: 0.35rem 0.6rem;
+    background: #fef3c7; border-radius: 5px; font-size: 0.75rem; color: #92400e;
+}
+
+/* Persona rows */
+.cf-persona-row {
+    display: flex; gap: 0.4rem; align-items: flex-start; padding: 0.5rem;
+    background: var(--color-bg); border-radius: 6px; margin-bottom: 0.3rem;
+}
+.cf-persona-row input[type="text"] {
+    padding: 0.35rem 0.5rem; border: 1px solid var(--color-border);
+    border-radius: 5px; font-size: 0.78rem; font-family: var(--font-sans);
+}
+.cf-persona-row .p-name { width: 120px; }
+.cf-persona-row .p-titles { flex: 1; min-width: 160px; }
+.cf-persona-row select {
+    padding: 0.35rem 0.5rem; border: 1px solid var(--color-border);
+    border-radius: 5px; font-size: 0.78rem; flex: 1; min-width: 140px; font-family: var(--font-sans);
+}
+.cf-persona-row .p-remove {
+    background: none; border: none; color: #DC2626; cursor: pointer;
+    font-size: 1rem; padding: 0.2rem; line-height: 1;
+}
+.cf-persona-row .p-remove:hover { background: #FEF2F2; border-radius: 3px; }
+.cf-seniority-checks { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-top: 0.2rem; }
+.cf-seniority-checks label {
+    font-size: 0.68rem; display: flex; align-items: center; gap: 0.15rem;
+    color: var(--color-text-secondary); cursor: pointer;
+}
+.cf-seniority-checks input { width: 12px; height: 12px; }
+
+/* Footer bar */
+.cf-footer {
+    display: flex; gap: 0.5rem; justify-content: flex-end;
+    padding-top: 0.5rem;
+}
+.cf-btn-save {
+    display: inline-flex; align-items: center; gap: 0.3rem;
+    padding: 0.5rem 1.1rem; background: var(--color-primary); color: #fff;
+    border: none; border-radius: 6px; font-size: 0.85rem; font-weight: 600;
+    cursor: pointer; transition: background 0.12s; font-family: var(--font-sans);
+}
+.cf-btn-save:hover { background: var(--color-primary-hover); }
+.cf-btn-save:disabled { opacity: 0.6; cursor: not-allowed; }
+
+/* Toast */
+.cf-toast {
+    position: fixed; bottom: 1.25rem; right: 1.25rem; z-index: 2000;
+    padding: 0.6rem 1rem; border-radius: 6px; font-size: 0.84rem; font-weight: 500;
+    color: #fff; box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+    transform: translateY(80px); opacity: 0; transition: all 0.25s;
+}
+.cf-toast.show { transform: translateY(0); opacity: 1; }
+.cf-toast.success { background: var(--color-success); }
+.cf-toast.error { background: var(--color-destructive); }
+.cf-toast.info { background: var(--color-info); }

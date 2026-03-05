@@ -43,7 +43,7 @@
                     <i data-lucide="trending-up" class="sidebar-icon"></i>
                     <span class="sidebar-label">Grow</span>
                 </a>
-                <a href="{{ url_for('campaigns') }}" class="sidebar-item {% if request.endpoint == 'campaigns' %}active{% endif %}">
+                <a href="{{ url_for('campaigns') }}" class="sidebar-item {% if request.endpoint in ('campaigns', 'campaign_new', 'campaign_edit') %}active{% endif %}">
                     <i data-lucide="send" class="sidebar-icon"></i>
                     <span class="sidebar-label">Campaigns</span>
                 </a>
