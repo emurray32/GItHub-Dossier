@@ -6666,10 +6666,11 @@ def api_batch_rescan():
     try:
         batch_size = max(min(int(data.get('batch_size', 50)), 200), 1)
         delay_seconds = max(int(data.get('delay_seconds', 30)), 5)
+        limit = int(data.get('limit', 0)) if data.get('limit') else 0
     except (ValueError, TypeError):
         with _batch_rescan_lock:
             _batch_rescan_state['active'] = False
-        return jsonify({'status': 'error', 'message': 'batch_size and delay_seconds must be integers'}), 400
+        return jsonify({'status': 'error', 'message': 'batch_size, delay_seconds, and limit must be integers'}), 400
 
     # Query accounts based on scope
     if scope == 'refreshable':
@@ -6702,6 +6703,10 @@ def api_batch_rescan():
     if not accounts:
         _batch_rescan_state['active'] = False
         return jsonify({'status': 'error', 'message': f'No accounts found for scope "{scope}"'}), 404
+
+    # Apply limit if specified
+    if limit > 0:
+        accounts = accounts[:limit]
 
     total = len(accounts)
     total_batches = math.ceil(total / batch_size)
