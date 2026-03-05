@@ -2098,6 +2098,11 @@
         const selectedRows = getSelectedRows();
         if (selectedRows.length === 0) return;
 
+        const btn = document.getElementById('bulk-rescan-btn');
+        const origText = btn.textContent.trim();
+        btn.disabled = true;
+        btn.textContent = 'Rescanning...';
+
         for (const row of selectedRows) {
             const companyName = row.dataset.company;
             if (!companyName) continue;
@@ -2113,12 +2118,19 @@
             }
         }
 
+        btn.textContent = 'Done!';
         showNotification(`Queued rescan for ${selectedRows.length} account(s).`, 'info');
+        setTimeout(() => { btn.disabled = false; btn.textContent = origText; }, 2000);
     }
 
     function exportCSV() {
         const selectedRows = getSelectedRows();
         if (selectedRows.length === 0) return;
+
+        const btn = document.getElementById('bulk-export-btn');
+        const origText = btn.textContent.trim();
+        btn.textContent = 'Exporting...';
+        btn.disabled = true;
 
         const header = ['Company', 'Annual Revenue', 'GitHub Org', 'Website', 'Tier', 'Last Scanned', 'Signal Status', 'Signal Detail'];
         const csvRows = [header];
@@ -2175,6 +2187,9 @@
         link.click();
         document.body.removeChild(link);
         URL.revokeObjectURL(url);
+
+        btn.textContent = 'Exported!';
+        setTimeout(() => { btn.disabled = false; btn.textContent = origText; }, 2000);
     }
 
     async function bulkDeleteSelected() {
@@ -2184,6 +2199,11 @@
         if (!confirm(`Delete ${selectedRows.length} selected account${selectedRows.length === 1 ? '' : 's'}? This cannot be undone.`)) {
             return;
         }
+
+        const btn = document.getElementById('bulk-delete-btn');
+        const origText = btn.textContent.trim();
+        btn.disabled = true;
+        btn.textContent = 'Deleting...';
 
         for (const row of selectedRows) {
             const accountId = row.dataset.accountId;
@@ -2204,7 +2224,9 @@
         const selectAll = document.querySelector('#select-all-accounts');
         if (selectAll) selectAll.checked = false;
         updateBulkSelectionState();
+        btn.textContent = 'Deleted!';
         showNotification('Selected accounts removed.', 'success');
+        setTimeout(() => { btn.disabled = false; btn.textContent = origText; }, 2000);
     }
 
     async function bulkArchiveSelected() {
@@ -2214,6 +2236,11 @@
         if (!confirm(`Archive ${selectedRows.length} selected account${selectedRows.length === 1 ? '' : 's'}? Archived accounts will be hidden from the main list but can be restored later.`)) {
             return;
         }
+
+        const btn = document.getElementById('bulk-archive-btn');
+        const origText = btn.textContent.trim();
+        btn.disabled = true;
+        btn.textContent = 'Archiving...';
 
         let successCount = 0;
         let failCount = 0;
@@ -2240,14 +2267,15 @@
         if (selectAll) selectAll.checked = false;
         updateBulkSelectionState();
 
+        btn.textContent = 'Archived!';
         if (successCount > 0) {
             showNotification(`${successCount} account${successCount === 1 ? '' : 's'} archived successfully.`, 'success');
-            // Update archived count in the header if it exists
             updateArchivedCount(successCount);
         }
         if (failCount > 0) {
             showNotification(`Failed to archive ${failCount} account${failCount === 1 ? '' : 's'}.`, 'warning');
         }
+        setTimeout(() => { btn.disabled = false; btn.textContent = origText; }, 2000);
     }
 
     // =============================================================================
