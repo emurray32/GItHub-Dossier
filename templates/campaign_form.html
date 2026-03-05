@@ -17,7 +17,7 @@
 
     <div class="cf-header">
         <h1 id="cf-page-title">{{ 'Edit: ' + campaign.name if campaign else 'New Campaign' }}</h1>
-        <p>{{ 'Update campaign details and sequence mapping.' if campaign else 'Create a campaign to pair a prompt with an Apollo sequence.' }}</p>
+        <p>{{ 'Update campaign details.' if campaign else 'Create a campaign to define messaging and target personas.' }}</p>
     </div>
 
     <input type="hidden" id="campaign-edit-id" value="{{ campaign.id if campaign else '' }}">
@@ -89,35 +89,10 @@
         </div>
     </div>
 
-    <!-- Apollo Sequence -->
-    <div class="cf-section">
-        <div class="cf-section-title">Apollo Sequence</div>
-
-        <div class="cf-group">
-            <div class="cf-seq-picker">
-                <select id="campaign-sequence" class="cf-select">
-                    <option value="">Select a sequence...</option>
-                </select>
-                <button type="button" class="cf-btn-secondary" onclick="loadApolloSequences()">Refresh</button>
-            </div>
-            <p class="cf-help">Sequence contacts will be enrolled in.</p>
-
-            <div class="cf-shared-warning" id="seq-shared-info">
-                Also used by: <span id="seq-shared-campaigns" style="font-weight:600;"></span>
-            </div>
-
-            <div class="cf-seq-steps" id="seq-steps-preview" style="display:none">
-                <div class="cf-seq-steps-list" id="seq-steps-list">
-                    <div class="cf-seq-steps-loading">Loading steps...</div>
-                </div>
-            </div>
-        </div>
-    </div>
-
     <!-- Personas -->
     <div class="cf-section">
         <div class="cf-section-title">Personas <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--color-text-tertiary);font-size:0.72rem;">(optional)</span></div>
-        <p class="cf-help" style="margin-bottom:0.5rem;">Target personas with title/seniority filters for batch enrollment.</p>
+        <p class="cf-help" style="margin-bottom:0.5rem;">Define target personas with title and seniority filters.</p>
 
         <div id="personas-list"></div>
         <div style="display:flex;gap:0.5rem;margin-top:0.35rem;">
@@ -145,8 +120,6 @@
 
     const campaignData = {{ campaign | tojson if campaign else 'null' }};
     let editingId = campaignData ? campaignData.id : null;
-    let sequencesCache = [];
-
     const SENIORITY_OPTIONS = [
         {value: 'c_suite', label: 'C-Suite'},
         {value: 'vp', label: 'VP'},
@@ -170,112 +143,7 @@
         return d.innerHTML;
     }
 
-    // ── Load enabled sequences into dropdown ──
-    window.loadApolloSequences = async function() {
-        const sel = document.getElementById('campaign-sequence');
-        const currentVal = sel.value;
-        sel.innerHTML = '<option value="">Loading sequences...</option>';
-
-        try {
-            const resp = await fetch('/api/sequence-mappings/enabled');
-            const data = await resp.json();
-            if (data.status === 'success' && data.sequences) {
-                sequencesCache = data.sequences.map(s => ({
-                    id: s.sequence_id,
-                    name: s.sequence_name,
-                    num_steps: s.num_steps,
-                    active: s.active,
-                }));
-                sel.innerHTML = '<option value="">Select a sequence...</option>';
-                for (const seq of sequencesCache) {
-                    const opt = document.createElement('option');
-                    opt.value = seq.id;
-                    opt.textContent = `${seq.name} (${seq.num_steps} steps${seq.active ? '' : ', inactive'})`;
-                    opt.dataset.name = seq.name;
-                    opt.dataset.steps = seq.num_steps;
-                    sel.appendChild(opt);
-                }
-                if (currentVal) sel.value = currentVal;
-            } else {
-                sel.innerHTML = '<option value="">No enabled sequences — enable them in Mapping Sequences</option>';
-            }
-        } catch(e) {
-            sel.innerHTML = '<option value="">Failed to load sequences</option>';
-        }
-    };
-
-    // ── Show sequence steps + shared-campaign indicator ──
-    document.getElementById('campaign-sequence').addEventListener('change', async function() {
-        const seqId = this.value;
-        const preview = document.getElementById('seq-steps-preview');
-        const list = document.getElementById('seq-steps-list');
-        const sharedInfo = document.getElementById('seq-shared-info');
-
-        if (!seqId) {
-            preview.style.display = 'none';
-            sharedInfo.style.display = 'none';
-            return;
-        }
-
-        preview.style.display = 'block';
-        list.innerHTML = '<div class="cf-seq-steps-loading">Loading steps...</div>';
-
-        try {
-            const resp = await fetch(`/api/apollo/sequence-steps/${seqId}`);
-            const data = await resp.json();
-
-            if (data.status === 'success' && data.steps && data.steps.length > 0) {
-                let html = '';
-                for (const step of data.steps) {
-                    const isEmail = step.type.includes('email');
-                    const isLinkedIn = step.type.includes('linkedin');
-                    const numClass = isLinkedIn ? 'linkedin' : (!isEmail ? 'task' : '');
-                    const delay = step.wait_time > 0 ? `${step.wait_time}d` : '';
-
-                    html += `<div class="cf-seq-step">
-                        <span class="cf-seq-step-num ${numClass}">${step.position}</span>
-                        <span class="cf-seq-step-type">${step.type_label}</span>
-                        <span class="cf-seq-step-subject">${escHtml(step.subject)}</span>
-                        ${delay ? `<span class="cf-seq-step-delay">+${delay}</span>` : ''}
-                    </div>`;
-                }
-                list.innerHTML = html;
-            } else {
-                list.innerHTML = '<div class="cf-seq-steps-empty">No steps found for this sequence</div>';
-            }
-        } catch(e) {
-            list.innerHTML = '<div class="cf-seq-steps-empty">Failed to load steps</div>';
-        }
-
-        try {
-            const cResp = await fetch(`/api/campaigns/by-sequence/${seqId}`);
-            const cData = await cResp.json();
-            if (cData.status === 'success' && cData.campaigns && cData.campaigns.length > 0) {
-                const others = cData.campaigns.filter(c => c.id !== editingId);
-                if (others.length > 0) {
-                    document.getElementById('seq-shared-campaigns').textContent = others.map(c => c.name).join(', ');
-                    sharedInfo.style.display = 'block';
-                } else {
-                    sharedInfo.style.display = 'none';
-                }
-            } else {
-                sharedInfo.style.display = 'none';
-            }
-        } catch(e) {
-            sharedInfo.style.display = 'none';
-        }
-    });
-
     // ── Persona helpers ──
-    function buildSequenceOptions(selectedId) {
-        let html = '<option value="">Select sequence...</option>';
-        for (const seq of sequencesCache) {
-            const sel = seq.id === selectedId ? ' selected' : '';
-            html += `<option value="${seq.id}" data-name="${escHtml(seq.name)}"${sel}>${escHtml(seq.name)} (${seq.num_steps} steps)</option>`;
-        }
-        return html;
-    }
-
     function buildSeniorityChecks(selected) {
         const set = new Set(selected || []);
         return SENIORITY_OPTIONS.map(s =>
@@ -292,7 +160,6 @@
                 <div style="display:flex;gap:0.5rem;align-items:center;">
                     <input type="text" class="p-name" placeholder="Persona name" value="${escHtml((data && data.persona_name) || '')}">
                     <input type="text" class="p-titles" placeholder="Titles (comma-separated)" value="${escHtml((data && data.titles || []).join(', '))}">
-                    <select class="p-sequence">${buildSequenceOptions(data && data.sequence_id)}</select>
                     <button type="button" class="p-remove" title="Remove" onclick="this.closest('.cf-persona-row').remove()">&times;</button>
                 </div>
                 <div class="cf-seniority-checks">${buildSeniorityChecks(data && data.seniorities)}</div>
@@ -356,20 +223,12 @@
             const titles = titlesRaw ? titlesRaw.split(',').map(t => t.trim()).filter(Boolean) : [];
             const seniorities = [];
             row.querySelectorAll('.cf-seniority-checks input:checked').forEach(cb => seniorities.push(cb.value));
-            const seqSelect = row.querySelector('.p-sequence');
-            const seqId = seqSelect.value || null;
-            const seqOpt = seqSelect.selectedOptions[0];
-            const seqName = (seqOpt && seqOpt.dataset.name) || null;
-            if (seqId) {
-                personas.push({
-                    persona_name: name,
-                    titles_json: JSON.stringify(titles),
-                    seniorities_json: JSON.stringify(seniorities),
-                    sequence_id: seqId,
-                    sequence_name: seqName,
-                    priority: idx,
-                });
-            }
+            personas.push({
+                persona_name: name,
+                titles_json: JSON.stringify(titles),
+                seniorities_json: JSON.stringify(seniorities),
+                priority: idx,
+            });
         });
         return personas;
     }
@@ -400,24 +259,6 @@
 
         const assetsRaw = document.getElementById('campaign-assets').value.trim();
         const assets = assetsRaw ? assetsRaw.split('\n').map(a => a.trim()).filter(Boolean) : [];
-        const seqSelect = document.getElementById('campaign-sequence');
-        const seqId = seqSelect.value || null;
-        const seqOpt = seqSelect.selectedOptions[0];
-        const seqName = (seqOpt && seqOpt.dataset.name) || null;
-
-        let seqConfig = null;
-        if (seqId) {
-            try {
-                const dr = await fetch('/api/apollo/sequence-detect', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({sequence_id: seqId})
-                });
-                const dd = await dr.json();
-                if (dd.detected_config) seqConfig = dd.detected_config;
-            } catch(e) {}
-        }
-
         const personas = getPersonasFromForm();
         const tone = document.getElementById('campaign-tone').value.trim();
         const contactCap = parseInt(document.getElementById('campaign-contact-cap').value) || 20;
@@ -429,9 +270,6 @@
             contact_cap: contactCap,
             verified_emails_only: verifiedOnly,
             review_in_tool: reviewInTool,
-            sequence_id: seqId,
-            sequence_name: seqName,
-            sequence_config: seqConfig,
             personas: personas
         };
 
@@ -464,18 +302,10 @@
     };
 
     // ── Initialize ──
-    document.addEventListener('DOMContentLoaded', async function() {
-        await loadApolloSequences();
-
-        if (campaignData && campaignData.sequence_id) {
-            document.getElementById('campaign-sequence').value = campaignData.sequence_id;
-            document.getElementById('campaign-sequence').dispatchEvent(new Event('change'));
-        }
-
+    document.addEventListener('DOMContentLoaded', function() {
         if (campaignData && campaignData.personas) {
             renderPersonaRows(campaignData.personas);
         }
-
         document.getElementById('campaign-name').focus();
     });
 

@@ -54,12 +54,10 @@
     .cp-table td { padding: 0.6rem 0.75rem; vertical-align: middle; }
 
     /* Column widths */
-    .cp-col-name { width: 22%; }
-    .cp-col-prompt { width: 30%; }
-    .cp-col-seq { width: 16%; }
-    .cp-col-stats { width: 14%; }
-    .cp-col-updated { width: 9%; }
-    .cp-col-actions { width: 9%; text-align: right; }
+    .cp-col-name { width: 25%; }
+    .cp-col-prompt { width: 45%; }
+    .cp-col-updated { width: 15%; }
+    .cp-col-actions { width: 15%; text-align: right; }
 
     /* Name cell */
     .cp-name {
@@ -183,8 +181,6 @@
                 <tr>
                     <th class="cp-col-name">Campaign</th>
                     <th class="cp-col-prompt">Prompt</th>
-                    <th class="cp-col-seq">Sequence</th>
-                    <th class="cp-col-stats">Stats</th>
                     <th class="cp-col-updated">Updated</th>
                     <th class="cp-col-actions"></th>
                 </tr>
@@ -206,32 +202,6 @@
                         {% endif %}
                     </td>
                     <td><div class="cp-prompt">{{ c.prompt if c.prompt else '—' }}</div></td>
-                    <td>
-                        {% if c.sequence_name %}
-                        <div class="cp-seq">{{ c.sequence_name }}</div>
-                        {% if c.sequence_config %}<span class="cp-seq-config">{{ c.sequence_config | replace('_', ' ') | title }}</span>{% endif %}
-                        {% else %}
-                        <span class="cp-seq" style="color:var(--color-text-tertiary);">—</span>
-                        {% endif %}
-                        {% if c.persona_count %}
-                        <div class="cp-personas">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle></svg>
-                            {{ c.persona_count }}
-                        </div>
-                        {% endif %}
-                    </td>
-                    <td>
-                        <div class="cp-stats">
-                            <span class="cp-stat enrollment-stat" data-campaign-id="{{ c.id }}">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="8.5" cy="7" r="4"></circle><line x1="20" y1="8" x2="20" y2="14"></line><line x1="23" y1="11" x2="17" y2="11"></line></svg>
-                                <span class="cp-stat-val stat-enrolled">--</span>
-                            </span>
-                            <span class="cp-stat enrollment-stat" data-campaign-id="{{ c.id }}">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
-                                <span class="cp-stat-val stat-generated">--</span>
-                            </span>
-                        </div>
-                    </td>
                     <td><span class="cp-date">{{ c.updated_at|string|truncate(10, True, "") if c.updated_at else '—' }}</span></td>
                     <td>
                         <div class="cp-actions">
@@ -257,7 +227,7 @@
     {% else %}
         <div class="cp-empty" id="campaigns-empty">
             <div class="cp-empty-title">No campaigns</div>
-            <div>Create one to pair a prompt with an Apollo sequence.</div>
+            <div>Create one to define messaging, tone, and target personas.</div>
         </div>
     {% endif %}
     </div>
@@ -272,24 +242,6 @@
 <script>
 (function() {
     'use strict';
-
-    // ── Load enrollment stats for each campaign row ──
-    (function loadEnrollmentStats() {
-        const cards = document.querySelectorAll('.campaign-card[data-id]');
-        cards.forEach(card => {
-            const cid = card.dataset.id;
-            fetch(`/api/campaigns/${cid}/stats`)
-                .then(r => r.json())
-                .then(data => {
-                    if (data.status !== 'success') return;
-                    const enrolledEls = card.querySelectorAll('.stat-enrolled');
-                    const generatedEls = card.querySelectorAll('.stat-generated');
-                    enrolledEls.forEach(el => { el.textContent = data.total_enrolled; });
-                    generatedEls.forEach(el => { el.textContent = data.total_generated; });
-                })
-                .catch(err => console.warn('Campaign stats fetch failed:', err));
-        });
-    })();
 
     // ── Toast ──
     function showToast(msg, type) {

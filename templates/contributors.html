@@ -6,7 +6,6 @@
 
 {% block head %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/contributors.css') }}">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/enrollment.css') }}">
 {% endblock %}
 
 {% block content %}
@@ -23,11 +22,6 @@
         <!-- Controls -->
         <div class="contrib-controls">
             <input type="text" class="contrib-search" id="contrib-search" placeholder="Search contributors, companies, repos..." autocomplete="off">
-            <select class="contrib-filter-select" id="apollo-filter">
-                <option value="">All statuses</option>
-                <option value="not_sent">Not sent to Apollo</option>
-                <option value="sent">Sent to Apollo</option>
-            </select>
             <button type="button" class="btn-fetch-contributors" id="btn-fetch" onclick="fetchContributors()" data-tooltip="Pull contributor data from monitored GitHub repos">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M23 4v6h-6"></path>
@@ -56,8 +50,6 @@
                         <th class="col-company sortable" data-col="2" data-dir="">Company <span class="sort-indicator"><span class="asc">&#9650;</span><span class="desc">&#9660;</span></span></th>
                         <th class="col-repo">Repo</th>
                         <th class="col-contributions sortable" data-col="6" data-dir="">Contributions <span class="sort-indicator"><span class="asc">&#9650;</span><span class="desc">&#9660;</span></span></th>
-                        <th class="col-apollo sortable" data-col="7" data-dir="">Status <span class="sort-indicator"><span class="asc">&#9650;</span><span class="desc">&#9660;</span></span></th>
-                        <th class="col-enrolled">Enrolled</th>
                         <th class="col-insight">Insight</th>
                     </tr>
                 </thead>
@@ -70,8 +62,6 @@
                         <td class="col-company"><div class="skeleton-bar" style="width:60%;"></div></td>
                         <td class="col-repo"><div class="skeleton-bar" style="width:55%;"></div></td>
                         <td class="col-contributions"><div class="skeleton-bar" style="width:30%;"></div></td>
-                        <td class="col-apollo"><div class="skeleton-bar" style="width:50%;"></div></td>
-                        <td class="col-enrolled"><div class="skeleton-bar" style="width:40%;"></div></td>
                         <td class="col-insight"><div class="skeleton-bar" style="width:80%;"></div></td>
                     </tr>
                     {% endfor %}
@@ -105,24 +95,11 @@
 
 </div>
 
-<!-- Enrollment Toolbar (floating bottom bar) -->
-<div class="enrollment-toolbar" id="enrollment-toolbar" style="display:none">
-    <span class="toolbar-count"><span id="selected-count">0</span> selected</span>
-    <select id="toolbar-campaign" class="toolbar-select">
-        <option value="">Select campaign...</option>
-    </select>
-    <select id="toolbar-sequence" class="toolbar-select">
-        <option value="">Select sequence...</option>
-    </select>
-    <button class="toolbar-btn-enroll" onclick="enrollSelected()">Enroll Selected</button>
-</div>
-
 <!-- Toast -->
 <div class="contrib-toast" id="contrib-toast"></div>
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='js/enrollment.js') }}"></script>
 <script>
 (function() {
     // State
@@ -139,7 +116,6 @@
 
     const tbody = document.getElementById('contrib-tbody');
     const searchInput = document.getElementById('contrib-search');
-    const apolloFilter = document.getElementById('apollo-filter');
     const sidebar = document.getElementById('contrib-sidebar');
     const sidebarBody = document.getElementById('sidebar-body');
     const sidebarTitle = document.getElementById('sidebar-title');
@@ -171,9 +147,6 @@
             'order[0][column]': currentSort.col,
             'order[0][dir]': currentSort.dir
         });
-
-        const apolloVal = apolloFilter.value;
-        if (apolloVal) params.set('apollo_filter', apolloVal);
 
         Object.entries(activeFilters).forEach(([key, val]) => {
             params.set(key, val);
@@ -231,8 +204,6 @@
                 ? `<span class="tier-dot" style="background:${tierColors[tierNum] || '#94a3b8'}" title="${c.company_tier_name || ''}"></span>`
                 : '';
             const isSelected = c.id === selectedContributorId;
-            const hasEmail = c.email && c.email.trim();
-            const isEnrolled = c.enrolled_in_sequence === 1;
             const isChecked = selectedIds.has(c.id);
             const isStale = c.is_stale;
             const staleBadge = isStale ? '<span class="stale-badge" title="No GitHub activity in 2+ years">Stale</span>' : '';
@@ -240,7 +211,7 @@
             html += `
             <tr data-id="${c.id}" class="contrib-row ${isSelected ? 'selected' : ''} ${isStale ? 'stale-row' : ''}">
                 <td class="col-check" onclick="event.stopPropagation()">
-                    <input type="checkbox" class="row-checkbox" data-id="${c.id}" ${isEnrolled ? 'disabled title="Already enrolled"' : ''} ${isChecked ? 'checked' : ''} onchange="onRowCheckChange(${c.id}, this.checked)">
+                    <input type="checkbox" class="row-checkbox" data-id="${c.id}" ${isChecked ? 'checked' : ''} onchange="onRowCheckChange(${c.id}, this.checked)">
                 </td>
                 <td class="col-name" onclick="openSidebar(${c.id})">
                     <div class="name-cell">
@@ -253,14 +224,6 @@
                 <td class="col-company" onclick="openSidebar(${c.id})">${tierDot}${escapeHtml(c.company || '-')}</td>
                 <td class="col-repo" onclick="openSidebar(${c.id})" title="${escapeHtml(c.repo_source || '')}">${escapeHtml(formatRepoSource(c.repo_source))}</td>
                 <td class="col-contributions" onclick="openSidebar(${c.id})">${c.contributions || 0}</td>
-                <td class="col-apollo" onclick="openSidebar(${c.id})">
-                    <span class="status-badge ${apolloClass} ${hasEmail ? 'has-email' : ''}">${apolloLabel}</span>
-                </td>
-                <td class="col-enrolled" onclick="openSidebar(${c.id})">
-                    ${isEnrolled
-                        ? '<span class="enrolled-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14"><polyline points="20 6 9 17 4 12"></polyline></svg> Enrolled</span>'
-                        : '<span class="not-enrolled-badge">--</span>'}
-                </td>
                 <td class="col-insight" onclick="openSidebar(${c.id})"><span class="insight-text" title="${escapedInsight}">${escapedInsight || '-'}</span></td>
             </tr>`;
         });
@@ -356,10 +319,6 @@
                         <span class="detail-value" id="sidebar-email">${email ? '<a href="mailto:' + escapeHtml(email) + '">' + escapeHtml(email) + '</a>' : '<span class="text-muted">Not found yet</span>'}</span>
                     </div>
                     <div class="detail-row">
-                        <span class="detail-label">Sequence</span>
-                        <span class="detail-value">${c.sequence_name ? escapeHtml(c.sequence_name) : '<span class="text-muted">Not enrolled</span>'}</span>
-                    </div>
-                    <div class="detail-row">
                         <span class="detail-label">Last Activity</span>
                         <span class="detail-value">${c.last_activity_at ? formatActivityDate(c.last_activity_at) : '<span class="text-muted">Unknown</span>'}${c.is_stale ? ' <span class="stale-badge">Stale</span>' : ''}</span>
                     </div>
@@ -372,76 +331,11 @@
                 <p class="sidebar-insight">${escapeHtml(c.insight || 'No insight available.')}</p>
             </div>
 
-            <!-- Unified Enrollment Panel -->
-            <div class="sidebar-section">
-                <div class="enroll-panel" id="enroll-panel-contrib-${c.id}">
-                    <div class="enroll-panel-title">Enrollment</div>
-                    <div class="enroll-steps">
-                        <div class="enroll-step active"></div>
-                        <div class="enroll-step"></div>
-                        <div class="enroll-step"></div>
-                    </div>
-                    <button class="enroll-btn enroll-btn-find" type="button"${hasEmail ? ' disabled' : ''}>
-                        ${hasEmail
-                            ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="20 6 9 17 4 12"></polyline></svg> ' + escapeHtml(c.email)
-                            : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg> Find Email'}
-                    </button>
-                    <div class="enroll-contact-info" style="display:none"></div>
-                    <div class="enroll-field"><label>Email</label><input type="email" class="enroll-email-input" placeholder="name@company.com" value="${escapeHtml(c.email || '')}"></div>
-                    <div class="enroll-field-row">
-                        <div class="enroll-field"><label>First Name</label><input type="text" class="enroll-first-name" placeholder="First" value="${escapeHtml((c.name || '').split(' ')[0] || '')}"></div>
-                        <div class="enroll-field"><label>Last Name</label><input type="text" class="enroll-last-name" placeholder="Last" value="${escapeHtml((c.name || '').split(' ').slice(1).join(' ') || '')}"></div>
-                    </div>
-                    <hr class="enroll-separator">
-                    <div class="enroll-field"><label>Apollo Sequence</label><select class="enroll-seq-select" id="seq-select-${c.id}" onchange="onSequenceChanged(${c.id})"><option value="">Loading sequences...</option></select></div>
-                    <button class="enroll-btn" style="background:var(--primary,#6366f1);color:#fff;margin-bottom:0.4rem" onclick="generateEmail(${c.id})" id="gen-email-btn-${c.id}" type="button">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg> Generate Sequence
-                    </button>
-                    <div id="email-fields-container-${c.id}"></div>
-                    <button class="enroll-btn enroll-btn-enroll" type="button"${!hasEmail && !isEnrolled ? ' disabled' : ''}>${isEnrolled ? 'Enrolled in Sequence' : 'Approve & Enroll'}</button>
-                    <div class="enroll-status">${isEnrolled ? '<span class="enroll-status-success">Already enrolled</span>' : ''}</div>
-                </div>
-            </div>
         `;
 
         // Show sidebar
         sidebar.classList.add('open');
         mainArea.classList.add('sidebar-active');
-
-        // Initialize unified enrollment panel
-        var enrollPanel = document.getElementById('enroll-panel-contrib-' + id);
-        if (enrollPanel) {
-            Enrollment.init(enrollPanel, {
-                getContactData: function() {
-                    var cached = cachedRows.find(function(x) { return x.id === id; });
-                    return {
-                        name: cached ? cached.name : '',
-                        company: cached ? cached.company : '',
-                        github_login: cached ? cached.github_login : '',
-                        contributor_id: id
-                    };
-                },
-                onEmailFound: function(data) {
-                    // Persist email to DB and update cache
-                    fetch('/api/contributors/' + id + '/email', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ email: data.email })
-                    }).catch(function(err) { console.error('Failed to save email:', err); });
-                    var cached = cachedRows.find(function(x) { return x.id === id; });
-                    if (cached) cached.email = data.email;
-                },
-                onEnrolled: function(data, sequenceName) {
-                    fetch('/api/contributors/' + id + '/apollo', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ status: 'sent', sequence_name: sequenceName })
-                    });
-                    showToast('Enrolled in ' + sequenceName, 'success');
-                    loadTable();
-                }
-            });
-        }
     };
 
     // Close sidebar
@@ -1007,12 +901,6 @@
             currentPage = 0;
             loadTable();
         }, 300);
-    });
-
-    // Apollo filter
-    apolloFilter.addEventListener('change', () => {
-        currentPage = 0;
-        loadTable();
     });
 
     // Close sidebar on Escape
