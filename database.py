@@ -146,7 +146,14 @@ def _safe_add_column(cursor, table: str, col_def: str):
         if _USE_POSTGRES:
             sql = sql.replace('?', '%s')
             sql = _adapt_ddl(sql)
-        cursor.execute(sql)
+        try:
+            cursor.execute(sql)
+        except Exception as e:
+            err_msg = str(e).lower()
+            if 'duplicate column' in err_msg or 'already exists' in err_msg:
+                pass
+            else:
+                raise
 
 
 def _insert_returning_id(cursor, sql: str, params: tuple):

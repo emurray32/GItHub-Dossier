@@ -19,3 +19,4 @@ fpdf
 psycopg2-binary
 pydantic
 werkzeug
+mcp[cli]

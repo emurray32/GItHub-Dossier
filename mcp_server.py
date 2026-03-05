@@ -1996,9 +1996,10 @@ async def apollo_batch_enroll(params: ApolloBatchEnrollInput) -> str:
 if __name__ == "__main__":
     transport = os.environ.get("MCP_TRANSPORT", "stdio")
     if transport == "sse":
-        # HTTP/SSE transport for Replit and remote clients
         host = os.environ.get("MCP_HOST", "0.0.0.0")
         port = int(os.environ.get("MCP_PORT", "5001"))
-        mcp.run(transport="sse", host=host, port=port)
+        mcp.settings.host = host
+        mcp.settings.port = port
+        mcp.run(transport="sse")
     else:
         mcp.run(transport="stdio")

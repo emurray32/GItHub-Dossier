@@ -44,7 +44,14 @@ python app.py
 - **Frontend**: HTML, CSS, JavaScript with Server-Sent Events
 - **AI**: OpenAI GPT-5-mini (all tasks — analysis, writing, cold emails, via Replit AI Integrations)
 
+## MCP Server
+The MCP Server runs on port 5001 with SSE transport for Claude Desktop integration. Host/port are configured via `MCP_HOST` and `MCP_PORT` environment variables (defaults: `0.0.0.0:5001`). The SSE endpoint is at `/sse`. Connect from Claude Desktop using the app's published URL + `/sse`.
+
 ## Recent Changes
+- 2026-03-05: Fixed MCP Server startup
+  - Installed `mcp[cli]` package (was missing)
+  - Fixed `FastMCP.run()` API: host/port set via `mcp.settings` (not run() kwargs)
+  - Hardened `_safe_add_column` in database.py: catches only duplicate-column errors, re-raises others
 - 2026-03-02: Fixed API authentication blocking browser requests
   - `DOSSIER_API_KEY` middleware was returning 401 for all browser JS fetch calls (queue status, scan statuses, etc.)
   - Added secure same-origin exemption using strict `urlparse` netloc comparison
