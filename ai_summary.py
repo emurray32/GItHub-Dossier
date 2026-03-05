@@ -12,6 +12,18 @@ from typing import Generator
 from config import Config
 
 
+def _load_skill(skill_name: str) -> str:
+    """Load a skill SKILL.md file by name. Returns content or empty string."""
+    path = f'.agent/skills/{skill_name}/SKILL.md'
+    if os.path.exists(path):
+        try:
+            with open(path, 'r') as f:
+                return f.read()
+        except Exception as e:
+            print(f"[AI] Failed to load skill {skill_name}: {e}")
+    return ""
+
+
 def _load_cold_outreach_skill() -> str:
     """Load the cold-outreach SKILL.md file if it exists."""
     skill_paths = [
@@ -19,7 +31,7 @@ def _load_cold_outreach_skill() -> str:
         'skills/cold-outreach/SKILL.md',
         '.agent/skill/cold-outreach/SKILL.md',
     ]
-    
+
     for path in skill_paths:
         if os.path.exists(path):
             try:
@@ -29,8 +41,62 @@ def _load_cold_outreach_skill() -> str:
                     return content
             except Exception as e:
                 print(f"[AI] Failed to load skill from {path}: {e}")
-    
+
     print("[AI] No cold-outreach skill file found, using defaults")
+    return ""
+
+
+def _load_email_skills(email_position: int = 1) -> str:
+    """Load granular email skills relevant to a specific email position.
+
+    Args:
+        email_position: 1 = first touch, 2-3 = follow-up, 4 = breakup
+
+    Returns:
+        Combined skill content for AI prompt injection.
+    """
+    sections = []
+
+    # Always load vocabulary skills
+    words_use = _load_skill('words-to-use')
+    if words_use:
+        sections.append(f"=== APPROVED VOCABULARY ===\n{words_use}")
+
+    words_avoid = _load_skill('words-to-avoid')
+    if words_avoid:
+        sections.append(f"=== BANNED VOCABULARY ===\n{words_avoid}")
+
+    # Always load subject line rules
+    subject = _load_skill('subject-lines')
+    if subject:
+        sections.append(f"=== SUBJECT LINE RULES ===\n{subject}")
+
+    # Always load CTA formulas
+    cta = _load_skill('cta-formulas')
+    if cta:
+        sections.append(f"=== CTA FORMULAS ===\n{cta}")
+
+    # Always load signal hooks
+    hooks = _load_skill('signal-hooks')
+    if hooks:
+        sections.append(f"=== SIGNAL HOOK PATTERNS ===\n{hooks}")
+
+    # Position-specific skills
+    if email_position == 1:
+        first_touch = _load_skill('first-touch-email')
+        if first_touch:
+            sections.append(f"=== FIRST TOUCH EMAIL RULES ===\n{first_touch}")
+    elif email_position in (2, 3):
+        follow_up = _load_skill('follow-up-emails')
+        if follow_up:
+            sections.append(f"=== FOLLOW-UP EMAIL RULES ===\n{follow_up}")
+    elif email_position >= 4:
+        breakup = _load_skill('breakup-email')
+        if breakup:
+            sections.append(f"=== BREAKUP EMAIL RULES ===\n{breakup}")
+
+    if sections:
+        return "\n\n".join(sections)
     return ""
 
 
