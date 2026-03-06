@@ -281,6 +281,12 @@ def sanitize_ai_error(exception):
     return 'Email generation failed. Please try again.'
 
 
+@app.route('/health')
+def health_check():
+    """Lightweight health check — responds immediately, no DB required."""
+    return 'ok', 200
+
+
 @app.context_processor
 def inject_cache_buster():
     return {'cache_bust': int(time.time())}
