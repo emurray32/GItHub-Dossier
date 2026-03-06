@@ -58,4 +58,4 @@ externalPort = 5001
 
 [deployment]
 deploymentTarget = "gce"
-run = ["gunicorn", "--bind=0.0.0.0:5000", "--reuse-port", "--workers=2", "--timeout=120", "--preload", "app:app"]
+run = ["bash", "start.sh"]
