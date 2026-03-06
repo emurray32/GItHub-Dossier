@@ -7448,6 +7448,9 @@ def initialize_on_first_request():
     """
     Initialize the thread pool executor and reset stale scan statuses on first request.
 
+    Skips lightweight endpoints (/health, /.well-known/) so health checks
+    never trigger the heavy initialization.
+
     This provides resilience against app restarts:
     - Recovers accounts stuck in 'queued' status and re-queues them
     - Resets any scan statuses that were stuck in 'processing'
@@ -7459,6 +7462,9 @@ def initialize_on_first_request():
     """
     global _app_initialized
     if _app_initialized:
+        return
+    # Skip heavy init for health checks and discovery endpoints
+    if request.path in ('/health',) or request.path.startswith('/.well-known/'):
         return
     with _init_lock:
         if _app_initialized:

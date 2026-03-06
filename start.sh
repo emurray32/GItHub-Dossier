@@ -1,12 +1,17 @@
 #!/bin/bash
 # Start both Flask app and MCP server for production deployment
 
-# Start MCP server in background
+# Start gunicorn FIRST so port 5000 binds immediately for health checks
+gunicorn --bind=0.0.0.0:5000 --reuse-port --workers=2 --timeout=120 app:app &
+GUNICORN_PID=$!
+
+# Give gunicorn a moment to bind the port, then start MCP server
+sleep 2
 MCP_TRANSPORT=sse MCP_PORT=5001 python mcp_server.py &
 MCP_PID=$!
 
-# Start Flask app via gunicorn (NO --preload, starts accepting connections faster)
-gunicorn --bind=0.0.0.0:5000 --reuse-port --workers=2 --timeout=120 app:app
+# Wait for gunicorn (the primary process)
+wait $GUNICORN_PID
 
 # If gunicorn exits, kill MCP server too
 kill $MCP_PID 2>/dev/null
