@@ -143,7 +143,9 @@ limiter.set_route_limit('/api/linkedin', 20, 60)    # 20 LinkedIn lookups per mi
 # =============================================================================
 
 # Routes that serve HTML pages (no auth required — they load the UI)
-_PUBLIC_PREFIXES = ('/static/', '/slack/', '/login', '/logout')
+_PUBLIC_PREFIXES = ('/static/', '/slack/', '/login', '/logout',
+                    '/.well-known/', '/authorize', '/token',
+                    '/sse', '/messages')
 _PUBLIC_ENDPOINTS = {
     'index', 'dashboard', 'reports_page', 'linkedin_prospector',
     'scorecard_page', 'webscraper_page', 'contributors_page',
@@ -225,6 +227,10 @@ def enforce_csrf_protection():
 
     # Slack routes use signing-secret verification instead of CSRF
     if request.path.startswith('/slack/'):
+        return
+
+    # MCP/OAuth routes use Bearer token auth, not CSRF
+    if request.path in ('/authorize', '/token') or request.path.startswith(('/messages', '/.well-known')):
         return
 
     origin = request.headers.get('Origin')
@@ -1394,6 +1400,19 @@ def process_import_batch_worker(batch_id: int):
 
 _oauth_pending_codes: dict[str, dict] = {}  # code -> {redirect_uri, expires}
 _OAUTH_CODE_TTL = 300  # seconds
+
+
+@app.route('/.well-known/oauth-protected-resource')
+def oauth_protected_resource():
+    """RFC 9728 — OAuth Protected Resource Metadata (MCP spec 2025).
+
+    Claude CoWork hits this FIRST to discover the authorization server.
+    """
+    base = request.url_root.rstrip('/')
+    return jsonify({
+        'resource': f'{base}/sse',
+        'authorization_servers': [base],
+    })
 
 
 @app.route('/.well-known/oauth-authorization-server')
