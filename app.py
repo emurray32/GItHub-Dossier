@@ -298,9 +298,32 @@ def inject_cache_buster():
     return {'cache_bust': int(time.time())}
 
 
+# Paths that need CORS for Claude CoWork (claude.ai cross-origin requests)
+_CORS_PATHS = ('/.well-known/', '/authorize', '/token', '/sse', '/messages')
+
+
+@app.before_request
+def handle_cors_preflight():
+    """Handle OPTIONS preflight requests for MCP/OAuth endpoints."""
+    if request.method == 'OPTIONS' and any(request.path.startswith(p) for p in _CORS_PATHS):
+        resp = Response('', status=204)
+        resp.headers['Access-Control-Allow-Origin'] = '*'
+        resp.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+        resp.headers['Access-Control-Allow-Headers'] = 'Authorization, Content-Type'
+        resp.headers['Access-Control-Max-Age'] = '86400'
+        return resp
+
+
 @app.after_request
 def add_security_headers(response):
     """Add security headers to every response."""
+    # CORS headers for MCP/OAuth endpoints (CoWork runs on claude.ai)
+    if any(request.path.startswith(p) for p in _CORS_PATHS):
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Authorization, Content-Type'
+        response.headers['Access-Control-Expose-Headers'] = 'Content-Type'
+
     # Cache control for dynamic content
     if 'text/html' in response.content_type or 'text/css' in response.content_type or 'javascript' in response.content_type:
         response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
