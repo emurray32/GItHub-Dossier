@@ -1647,6 +1647,15 @@ def proxy_sse():
     except requests.ConnectionError:
         return jsonify({'error': 'MCP server not available on port 5001'}), 502
 
+    # Pass through non-200 status codes (e.g. 401 Unauthorized) so CoWork
+    # can distinguish auth failures from successful SSE connections.
+    if mcp_resp.status_code != 200:
+        return Response(
+            mcp_resp.content,
+            status=mcp_resp.status_code,
+            content_type=mcp_resp.headers.get('content-type', 'application/json'),
+        )
+
     public_base = request.url_root.rstrip('/')
 
     def rewrite_stream():
