@@ -288,7 +288,7 @@ def sanitize_ai_error(exception):
 
 
 @app.route('/health')
-def health_check():
+def health_ping():
     """Lightweight health check — responds immediately, no DB required."""
     return 'ok', 200
 

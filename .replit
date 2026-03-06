@@ -57,5 +57,5 @@ localPort = 5001
 externalPort = 5001
 
 [deployment]
-deploymentTarget = "gce"
+deploymentTarget = "vm"
 run = ["bash", "start.sh"]

@@ -2159,28 +2159,23 @@ async def apollo_batch_enroll(params: ApolloBatchEnrollInput) -> str:
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
-# OAuth 2.0 helpers — in-memory auth-code store with expiry
+# Bearer-token auth wrapper (OAuth is handled by Flask on port 5000)
 # ---------------------------------------------------------------------------
-
-_pending_auth_codes: dict[str, dict] = {}  # code -> {redirect_uri, expires}
-_AUTH_CODE_TTL = 300  # seconds
 
 
 def _create_authenticated_sse_app(mcp_instance, api_key: str):
-    """Wrap the MCP SSE app with OAuth 2.0 endpoints + Bearer-token auth."""
-    from starlette.applications import Starlette
-    from starlette.middleware.base import BaseHTTPMiddleware
-    from starlette.responses import JSONResponse, HTMLResponse, RedirectResponse
-    from starlette.routing import Route
+    """Wrap the MCP SSE app with Bearer-token auth middleware.
 
-    # --- Bearer middleware (skips OAuth and well-known routes) ----------------
-    _PUBLIC_PATHS = {"/.well-known/oauth-authorization-server", "/authorize", "/token"}
+    OAuth 2.0 endpoints (/.well-known/*, /authorize, /token) are handled
+    by Flask (the public gateway on port 5000). Flask proxies /sse and
+    /messages/ here after the user has already authenticated via OAuth.
+    This middleware just validates the Bearer token on every proxied request.
+    """
+    from starlette.middleware.base import BaseHTTPMiddleware
+    from starlette.responses import JSONResponse
 
     class BearerAuthMiddleware(BaseHTTPMiddleware):
         async def dispatch(self, request, call_next):
-            if request.url.path in _PUBLIC_PATHS:
-                return await call_next(request)
-
             auth_header = request.headers.get("authorization", "")
             if auth_header.startswith("Bearer "):
                 token = auth_header[7:]
@@ -2194,139 +2189,9 @@ def _create_authenticated_sse_app(mcp_instance, api_key: str):
                 )
             return await call_next(request)
 
-    # --- OAuth 2.0 endpoints -------------------------------------------------
-
-    async def oauth_metadata(request):
-        """RFC 8414 — OAuth Authorization Server Metadata."""
-        base = str(request.base_url).rstrip("/")
-        return JSONResponse({
-            "issuer": base,
-            "authorization_endpoint": f"{base}/authorize",
-            "token_endpoint": f"{base}/token",
-            "response_types_supported": ["code"],
-            "grant_types_supported": ["authorization_code"],
-            "token_endpoint_auth_methods_supported": ["none"],
-            "code_challenge_methods_supported": ["S256"],
-        })
-
-    async def authorize(request):
-        """OAuth authorize endpoint — shows approval page, issues auth code."""
-        redirect_uri = request.query_params.get("redirect_uri", "")
-        state = request.query_params.get("state", "")
-        response_type = request.query_params.get("response_type", "")
-
-        if response_type != "code":
-            return JSONResponse({"error": "unsupported_response_type"}, status_code=400)
-        if not redirect_uri:
-            return JSONResponse({"error": "missing redirect_uri"}, status_code=400)
-
-        # Generate a one-time auth code
-        code = secrets.token_urlsafe(32)
-        _pending_auth_codes[code] = {
-            "redirect_uri": redirect_uri,
-            "expires": time.time() + _AUTH_CODE_TTL,
-        }
-
-        # Clean up expired codes
-        now = time.time()
-        expired = [k for k, v in _pending_auth_codes.items() if v["expires"] < now]
-        for k in expired:
-            del _pending_auth_codes[k]
-
-        # Show approval page
-        html = f"""<!DOCTYPE html>
-<html><head><title>Authorize Lead Machine</title>
-<style>
-  body {{ font-family: -apple-system, sans-serif; display: flex;
-         justify-content: center; align-items: center; height: 100vh;
-         margin: 0; background: #f5f5f5; }}
-  .card {{ background: white; padding: 2rem 3rem; border-radius: 12px;
-           box-shadow: 0 2px 10px rgba(0,0,0,.1); text-align: center;
-           max-width: 400px; }}
-  h2 {{ margin-top: 0; }}
-  .btn {{ background: #e84b3a; color: white; border: none; padding: 12px 32px;
-          border-radius: 8px; font-size: 16px; cursor: pointer; margin-top: 1rem; }}
-  .btn:hover {{ background: #d43d2e; }}
-  .info {{ color: #666; font-size: 14px; margin-top: 12px; }}
-</style></head>
-<body><div class="card">
-  <h2>Authorize Lead Machine</h2>
-  <p>Claude CoWork is requesting access to your Lead Machine MCP server.</p>
-  <form method="POST" action="/authorize">
-    <input type="hidden" name="code" value="{code}">
-    <input type="hidden" name="redirect_uri" value="{redirect_uri}">
-    <input type="hidden" name="state" value="{state}">
-    <button type="submit" class="btn">Approve</button>
-  </form>
-  <p class="info">This grants access to account data, signals, and Apollo tools.</p>
-</div></body></html>"""
-        return HTMLResponse(html)
-
-    async def authorize_post(request):
-        """Handle approval form POST — redirect back with auth code."""
-        form = await request.form()
-        code = form.get("code", "")
-        redirect_uri = form.get("redirect_uri", "")
-        state = form.get("state", "")
-
-        if code not in _pending_auth_codes:
-            return JSONResponse({"error": "invalid_code"}, status_code=400)
-
-        sep = "&" if "?" in redirect_uri else "?"
-        location = f"{redirect_uri}{sep}code={code}"
-        if state:
-            location += f"&state={state}"
-        return RedirectResponse(location, status_code=302)
-
-    async def token(request):
-        """OAuth token endpoint — exchange auth code for Bearer token."""
-        content_type = request.headers.get("content-type", "")
-        if "application/x-www-form-urlencoded" in content_type:
-            form = await request.form()
-            grant_type = form.get("grant_type", "")
-            code = form.get("code", "")
-        elif "application/json" in content_type:
-            body = await request.json()
-            grant_type = body.get("grant_type", "")
-            code = body.get("code", "")
-        else:
-            form = await request.form()
-            grant_type = form.get("grant_type", "")
-            code = form.get("code", "")
-
-        if grant_type != "authorization_code":
-            return JSONResponse({"error": "unsupported_grant_type"}, status_code=400)
-
-        entry = _pending_auth_codes.pop(code, None)
-        if not entry or entry["expires"] < time.time():
-            return JSONResponse({"error": "invalid_grant"}, status_code=400)
-
-        return JSONResponse({
-            "access_token": api_key,
-            "token_type": "bearer",
-            "expires_in": 86400,
-        })
-
-    # --- Compose the Starlette app -------------------------------------------
-
-    oauth_routes = [
-        Route("/.well-known/oauth-authorization-server", oauth_metadata, methods=["GET"]),
-        Route("/authorize", authorize, methods=["GET"]),
-        Route("/authorize", authorize_post, methods=["POST"]),
-        Route("/token", token, methods=["POST"]),
-    ]
-
     inner_app = mcp_instance.sse_app()
     inner_app.add_middleware(BearerAuthMiddleware)
-
-    # Mount OAuth routes + MCP SSE app together
-    from starlette.routing import Mount
-    app = Starlette(routes=[
-        *oauth_routes,
-        Mount("/", app=inner_app),
-    ])
-
-    return app
+    return inner_app
 
 
 if __name__ == "__main__":

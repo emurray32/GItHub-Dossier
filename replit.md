@@ -45,11 +45,29 @@ python app.py
 - **AI**: OpenAI GPT-5-mini (all tasks — analysis, writing, cold emails, via Replit AI Integrations)
 
 ## MCP Server
-The MCP Server runs on port 5001 with SSE transport for Claude Desktop integration. Host/port are configured via `MCP_HOST` and `MCP_PORT` environment variables (defaults: `0.0.0.0:5001`). The SSE endpoint is at `/sse`. Connect from Claude Desktop using the app's published URL + `/sse`.
+The MCP Server runs on port 5001 with SSE transport for Claude Desktop/CoWork integration. Flask on port 5000 is the public gateway, proxying `/sse` and `/messages/` to the MCP server.
 
-**Authentication**: When `MCP_API_KEY` is set (recommended), all MCP requests require a Bearer token. Pass it via `Authorization: Bearer <key>` header. Uses constant-time comparison to prevent timing attacks. Without `MCP_API_KEY`, the server runs unprotected with a warning.
+**Architecture**: Flask handles all OAuth 2.0 (RFC 9728 + RFC 8414) and proxies authenticated SSE/message requests to the internal MCP server. The MCP server only validates Bearer tokens — no duplicate OAuth endpoints.
+
+**OAuth Flow (for Claude CoWork)**:
+1. Client discovers `/.well-known/oauth-protected-resource` (RFC 9728) → finds auth server
+2. Client fetches `/.well-known/oauth-authorization-server` (RFC 8414) → gets authorize/token URLs
+3. User approves at `/authorize` (no password gate currently)
+4. Client exchanges auth code for Bearer token at `/token` → receives `MCP_API_KEY`
+5. Client connects to `/sse` with Bearer token → Flask proxies to MCP server on port 5001
+
+**Deployment**: Reserved VM (`deploymentTarget = "vm"`) via `start.sh` which launches MCP server (background) + gunicorn (foreground). Health check at `/health` returns 200 instantly.
+
+**Auth Exemptions**: `/.well-known/`, `/authorize`, `/token`, `/sse`, `/messages` are exempt from both `DOSSIER_API_KEY` middleware and CSRF protection (they use Bearer token auth instead).
 
 ## Recent Changes
+- 2026-03-06: Fixed MCP deployment and OAuth for Claude CoWork
+  - Added `/.well-known/oauth-protected-resource` (RFC 9728) — Claude CoWork discovers auth server through this
+  - Exempted OAuth/MCP paths from DOSSIER_API_KEY and CSRF middleware
+  - Removed duplicate OAuth routes from `mcp_server.py` (Flask is the sole OAuth gateway)
+  - Added `/health` endpoint for fast deployment health checks
+  - Deployment target set to Reserved VM (`vm`) with `start.sh`
+  - Fixed duplicate `health_check` function name conflict
 - 2026-03-05: Fixed MCP Server startup
   - Installed `mcp[cli]` package (was missing)
   - Fixed `FastMCP.run()` API: host/port set via `mcp.settings` (not run() kwargs)
