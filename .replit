@@ -57,5 +57,5 @@ localPort = 5001
 externalPort = 5001
 
 [deployment]
-deploymentTarget = "autoscale"
+deploymentTarget = "gce"
 run = ["gunicorn", "--bind=0.0.0.0:5000", "--reuse-port", "--workers=2", "--timeout=120", "--preload", "app:app"]

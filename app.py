@@ -1505,32 +1505,6 @@ def oauth_token():
     })
 
 
-# ---------------------------------------------------------------------------
-# Start MCP server as subprocess when running under gunicorn
-# ---------------------------------------------------------------------------
-
-def _start_mcp_subprocess():
-    """Start the MCP SSE server as a background subprocess."""
-    import subprocess
-    env = {**os.environ, 'MCP_TRANSPORT': 'sse', 'MCP_PORT': '5001'}
-    proc = subprocess.Popen(
-        ['python', 'mcp_server.py'],
-        env=env,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.PIPE,
-    )
-    logging.info(f'[APP] MCP server subprocess started (PID {proc.pid})')
-    return proc
-
-# Auto-start MCP server when loaded by gunicorn (not in dev mode)
-_mcp_proc = None
-if os.environ.get('GUNICORN_WORKER', '') or not os.environ.get('WERKZEUG_RUN_MAIN', ''):
-    try:
-        _mcp_proc = _start_mcp_subprocess()
-    except Exception as e:
-        logging.warning(f'[APP] Failed to start MCP subprocess: {e}')
-
-
 @app.route('/favicon.ico')
 def favicon():
     """Return empty response for favicon to prevent 404 errors.
