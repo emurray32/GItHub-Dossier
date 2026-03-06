@@ -6658,3 +6658,50 @@ def get_db_health() -> dict:
             pass
 
     return health
+
+
+# ---------------------------------------------------------------------------
+# Outreach Helpers
+# ---------------------------------------------------------------------------
+
+# Signal type keywords used for matching campaigns to signal types.
+_SIGNAL_KEYWORDS = {
+    'dependency_injection': ['dependency', 'injection', 'library', 'i18next', 'react-intl', 'smoking gun'],
+    'rfc_discussion': ['rfc', 'discussion', 'thinking'],
+    'ghost_branch': ['ghost branch', 'branch', 'wip', 'feature/i18n', 'l10n'],
+    'documentation_intent': ['documentation', 'docs', 'readme'],
+}
+
+
+def get_active_campaign_for_signal(signal_type: str) -> Optional[dict]:
+    """Find an active campaign whose name or prompt matches a signal type.
+
+    Checks campaign name and prompt text for keywords associated with
+    the given signal_type (e.g., 'dependency_injection' checks for
+    'dependency', 'injection', 'library', etc.).
+
+    Returns the first matching active campaign dict (with personas), or None.
+    """
+    keywords = _SIGNAL_KEYWORDS.get(signal_type, [])
+    if not keywords:
+        # Unknown signal type — fall back to first active campaign
+        campaigns = get_all_campaigns()
+        for c in campaigns:
+            if c.get('status') == 'active':
+                return get_campaign(c['id'])
+        return None
+
+    campaigns = get_all_campaigns()
+    for c in campaigns:
+        if c.get('status') != 'active':
+            continue
+        searchable = f"{c.get('name', '')} {c.get('prompt', '')}".lower()
+        for kw in keywords:
+            if kw in searchable:
+                return get_campaign(c['id'])
+
+    # No keyword match — fall back to first active campaign
+    for c in campaigns:
+        if c.get('status') == 'active':
+            return get_campaign(c['id'])
+    return None
