@@ -1505,6 +1505,73 @@ def oauth_token():
     })
 
 
+# ---------------------------------------------------------------------------
+# MCP SSE Proxy — forward /sse and /messages to MCP server on port 5001
+# ---------------------------------------------------------------------------
+
+_MCP_INTERNAL = 'http://localhost:5001'
+
+
+@app.route('/sse')
+def proxy_sse():
+    """Proxy SSE stream from MCP server, rewriting endpoint URLs."""
+    auth = request.headers.get('Authorization', '')
+    try:
+        mcp_resp = requests.get(
+            f'{_MCP_INTERNAL}/sse',
+            headers={'Authorization': auth},
+            stream=True,
+            timeout=(5, None),  # 5s connect, no read timeout (SSE is long-lived)
+        )
+    except requests.ConnectionError:
+        return jsonify({'error': 'MCP server not available on port 5001'}), 502
+
+    public_base = request.url_root.rstrip('/')
+
+    def rewrite_stream():
+        for line in mcp_resp.iter_lines(decode_unicode=True):
+            if line is None:
+                yield '\n'
+            else:
+                # Rewrite internal MCP URLs to the public URL
+                line = line.replace(f'{_MCP_INTERNAL}', public_base)
+                line = line.replace('http://0.0.0.0:5001', public_base)
+                yield line + '\n'
+
+    return Response(
+        stream_with_context(rewrite_stream()),
+        content_type='text/event-stream',
+        headers={
+            'Cache-Control': 'no-cache',
+            'X-Accel-Buffering': 'no',
+            'Connection': 'keep-alive',
+        },
+    )
+
+
+@app.route('/messages/', methods=['POST'])
+@app.route('/messages', methods=['POST'])
+def proxy_messages():
+    """Proxy message POSTs to MCP server."""
+    auth = request.headers.get('Authorization', '')
+    qs = request.query_string.decode()
+    try:
+        mcp_resp = requests.post(
+            f'{_MCP_INTERNAL}/messages/?{qs}' if qs else f'{_MCP_INTERNAL}/messages/',
+            data=request.get_data(),
+            headers={
+                'Content-Type': request.content_type or 'application/json',
+                'Authorization': auth,
+            },
+            timeout=30,
+        )
+    except requests.ConnectionError:
+        return jsonify({'error': 'MCP server not available on port 5001'}), 502
+
+    return Response(mcp_resp.content, status=mcp_resp.status_code,
+                    content_type=mcp_resp.headers.get('content-type', 'application/json'))
+
+
 @app.route('/favicon.ico')
 def favicon():
     """Return empty response for favicon to prevent 404 errors.
