@@ -1489,30 +1489,34 @@ def oauth_register():
 
 @app.route('/authorize', methods=['GET'])
 def oauth_authorize():
-    """Show OAuth approval page."""
+    """Show OAuth approval page.
+
+    Passes all OAuth params (including PKCE code_challenge) as hidden form
+    fields so the POST handler can generate the auth code in the same worker
+    process that will later handle /token (avoids multi-worker memory issues).
+    """
+    import html as _html
+
     redirect_uri = request.args.get('redirect_uri', '')
     state = request.args.get('state', '')
     response_type = request.args.get('response_type', '')
+    code_challenge = request.args.get('code_challenge', '')
+    code_challenge_method = request.args.get('code_challenge_method', '')
+    client_id = request.args.get('client_id', '')
 
     if response_type != 'code':
         return jsonify({'error': 'unsupported_response_type'}), 400
     if not redirect_uri:
         return jsonify({'error': 'missing redirect_uri'}), 400
 
-    import secrets as _secrets
-    code = _secrets.token_urlsafe(32)
-    _oauth_pending_codes[code] = {
-        'redirect_uri': redirect_uri,
-        'expires': time.time() + _OAUTH_CODE_TTL,
-    }
+    # Escape all values for safe HTML embedding
+    e_redirect = _html.escape(redirect_uri, quote=True)
+    e_state = _html.escape(state, quote=True)
+    e_challenge = _html.escape(code_challenge, quote=True)
+    e_method = _html.escape(code_challenge_method, quote=True)
+    e_client = _html.escape(client_id, quote=True)
 
-    # Clean expired codes
-    now = time.time()
-    expired = [k for k, v in _oauth_pending_codes.items() if v['expires'] < now]
-    for k in expired:
-        del _oauth_pending_codes[k]
-
-    html = f"""<!DOCTYPE html>
+    page = f"""<!DOCTYPE html>
 <html><head><title>Authorize Lead Machine</title>
 <style>
   body {{ font-family: -apple-system, sans-serif; display: flex;
@@ -1531,25 +1535,47 @@ def oauth_authorize():
   <h2>Authorize Lead Machine</h2>
   <p>Claude CoWork is requesting access to your Lead Machine MCP server.</p>
   <form method="POST" action="/authorize">
-    <input type="hidden" name="code" value="{code}">
-    <input type="hidden" name="redirect_uri" value="{redirect_uri}">
-    <input type="hidden" name="state" value="{state}">
+    <input type="hidden" name="redirect_uri" value="{e_redirect}">
+    <input type="hidden" name="state" value="{e_state}">
+    <input type="hidden" name="code_challenge" value="{e_challenge}">
+    <input type="hidden" name="code_challenge_method" value="{e_method}">
+    <input type="hidden" name="client_id" value="{e_client}">
     <button type="submit" class="btn">Approve</button>
   </form>
   <p class="info">This grants access to account data, signals, and Apollo tools.</p>
 </div></body></html>"""
-    return Response(html, content_type='text/html')
+    return Response(page, content_type='text/html')
 
 
 @app.route('/authorize', methods=['POST'])
 def oauth_authorize_post():
-    """Handle approval — redirect back with auth code."""
-    code = request.form.get('code', '')
+    """Handle approval — generate auth code and redirect to callback."""
+    import secrets as _secrets
+
     redirect_uri = request.form.get('redirect_uri', '')
     state = request.form.get('state', '')
+    code_challenge = request.form.get('code_challenge', '')
+    code_challenge_method = request.form.get('code_challenge_method', '')
+    client_id = request.form.get('client_id', '')
 
-    if code not in _oauth_pending_codes:
-        return jsonify({'error': 'invalid_code'}), 400
+    if not redirect_uri:
+        return jsonify({'error': 'invalid_request', 'error_description': 'missing redirect_uri'}), 400
+
+    # Generate a fresh auth code and store it with PKCE data
+    code = _secrets.token_urlsafe(32)
+    _oauth_pending_codes[code] = {
+        'redirect_uri': redirect_uri,
+        'code_challenge': code_challenge,
+        'code_challenge_method': code_challenge_method,
+        'client_id': client_id,
+        'expires': time.time() + _OAUTH_CODE_TTL,
+    }
+
+    # Clean expired codes
+    now = time.time()
+    expired = [k for k, v in _oauth_pending_codes.items() if v['expires'] < now]
+    for k in expired:
+        del _oauth_pending_codes[k]
 
     sep = '&' if '?' in redirect_uri else '?'
     location = f'{redirect_uri}{sep}code={code}'
@@ -1560,7 +1586,10 @@ def oauth_authorize_post():
 
 @app.route('/token', methods=['POST'])
 def oauth_token():
-    """Exchange auth code for Bearer token (the MCP_API_KEY)."""
+    """Exchange auth code for Bearer token (the MCP_API_KEY).
+
+    Validates PKCE code_verifier against the stored code_challenge (S256).
+    """
     if request.content_type and 'json' in request.content_type:
         data = request.get_json(silent=True) or {}
     else:
@@ -1568,6 +1597,7 @@ def oauth_token():
 
     grant_type = data.get('grant_type', '')
     code = data.get('code', '')
+    code_verifier = data.get('code_verifier', '')
 
     if grant_type != 'authorization_code':
         return jsonify({'error': 'unsupported_grant_type'}), 400
@@ -1575,6 +1605,15 @@ def oauth_token():
     entry = _oauth_pending_codes.pop(code, None)
     if not entry or entry['expires'] < time.time():
         return jsonify({'error': 'invalid_grant'}), 400
+
+    # Validate PKCE if code_challenge was provided during authorization
+    stored_challenge = entry.get('code_challenge', '')
+    if stored_challenge and code_verifier:
+        import hashlib, base64
+        digest = hashlib.sha256(code_verifier.encode('ascii')).digest()
+        computed = base64.urlsafe_b64encode(digest).rstrip(b'=').decode('ascii')
+        if computed != stored_challenge:
+            return jsonify({'error': 'invalid_grant', 'error_description': 'PKCE verification failed'}), 400
 
     api_key = os.environ.get('MCP_API_KEY', '')
     if not api_key:
