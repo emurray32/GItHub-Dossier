@@ -144,7 +144,7 @@ limiter.set_route_limit('/api/linkedin', 20, 60)    # 20 LinkedIn lookups per mi
 
 # Routes that serve HTML pages (no auth required — they load the UI)
 _PUBLIC_PREFIXES = ('/static/', '/slack/', '/login', '/logout',
-                    '/.well-known/', '/authorize', '/token',
+                    '/.well-known/', '/authorize', '/token', '/register',
                     '/sse', '/messages')
 _PUBLIC_ENDPOINTS = {
     'index', 'dashboard', 'reports_page', 'linkedin_prospector',
@@ -230,7 +230,7 @@ def enforce_csrf_protection():
         return
 
     # MCP/OAuth routes use Bearer token auth, not CSRF
-    if request.path in ('/authorize', '/token') or request.path.startswith(('/messages', '/.well-known')):
+    if request.path in ('/authorize', '/token', '/register') or request.path.startswith(('/messages', '/.well-known')):
         return
 
     origin = request.headers.get('Origin')
@@ -299,7 +299,7 @@ def inject_cache_buster():
 
 
 # Paths that need CORS for Claude CoWork (claude.ai cross-origin requests)
-_CORS_PATHS = ('/.well-known/', '/authorize', '/token', '/sse', '/messages')
+_CORS_PATHS = ('/.well-known/', '/authorize', '/token', '/register', '/sse', '/messages')
 
 
 @app.before_request
@@ -1422,6 +1422,7 @@ def process_import_batch_worker(batch_id: int):
 # ---------------------------------------------------------------------------
 
 _oauth_pending_codes: dict[str, dict] = {}  # code -> {redirect_uri, expires}
+_oauth_registered_clients: dict[str, dict] = {}  # client_id -> registration data
 _OAUTH_CODE_TTL = 300  # seconds
 
 
@@ -1446,11 +1447,44 @@ def oauth_metadata():
         'issuer': base,
         'authorization_endpoint': f'{base}/authorize',
         'token_endpoint': f'{base}/token',
+        'registration_endpoint': f'{base}/register',
         'response_types_supported': ['code'],
         'grant_types_supported': ['authorization_code'],
         'token_endpoint_auth_methods_supported': ['none'],
         'code_challenge_methods_supported': ['S256'],
     })
+
+
+@app.route('/register', methods=['POST'])
+def oauth_register():
+    """RFC 7591 — Dynamic Client Registration.
+
+    CoWork calls this automatically to register itself as an OAuth client
+    before starting the authorization flow. We accept any registration
+    and return a client_id. No client_secret is required since our
+    token_endpoint_auth_method is 'none'.
+    """
+    import secrets as _secrets
+
+    if request.content_type and 'json' in request.content_type:
+        data = request.get_json(silent=True) or {}
+    else:
+        data = {}
+
+    client_id = _secrets.token_urlsafe(16)
+    registration = {
+        'client_id': client_id,
+        'client_name': data.get('client_name', 'Claude CoWork'),
+        'redirect_uris': data.get('redirect_uris', []),
+        'grant_types': data.get('grant_types', ['authorization_code']),
+        'response_types': data.get('response_types', ['code']),
+        'token_endpoint_auth_method': 'none',
+        'client_id_issued_at': int(time.time()),
+        'client_secret_expires_at': 0,
+    }
+
+    _oauth_registered_clients[client_id] = registration
+    return jsonify(registration), 201
 
 
 @app.route('/authorize', methods=['GET'])
@@ -7486,8 +7520,8 @@ def initialize_on_first_request():
     global _app_initialized
     if _app_initialized:
         return
-    # Skip heavy init for health checks and discovery endpoints
-    if request.path in ('/health',) or request.path.startswith('/.well-known/'):
+    # Skip heavy init for health checks, discovery, and OAuth endpoints
+    if request.path in ('/health',) or request.path.startswith(('/.well-known/', '/register', '/authorize', '/token')):
         return
     with _init_lock:
         if _app_initialized:
