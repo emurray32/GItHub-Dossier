@@ -1657,6 +1657,9 @@ def proxy_sse():
                 # Rewrite internal MCP URLs to the public URL
                 line = line.replace(f'{_MCP_INTERNAL}', public_base)
                 line = line.replace('http://0.0.0.0:5001', public_base)
+                # Ensure relative /messages/ URLs become absolute
+                if line.startswith('data: /messages/'):
+                    line = f'data: {public_base}{line[6:]}'
                 yield line + '\n'
 
     return Response(
