@@ -136,6 +136,9 @@ limiter.set_route_limit('/api/apollo', 30, 60)      # 30 Apollo calls per minute
 limiter.set_route_limit('/api/send', 20, 60)        # 20 email sends per minute
 limiter.set_route_limit('/api/import', 5, 60)       # 5 bulk imports per minute
 limiter.set_route_limit('/api/linkedin', 20, 60)    # 20 LinkedIn lookups per minute
+limiter.set_route_limit('/register', 5, 60)         # 5 client registrations per minute
+limiter.set_route_limit('/token', 10, 60)            # 10 token exchanges per minute
+limiter.set_route_limit('/authorize', 10, 60)        # 10 auth attempts per minute
 
 
 # =============================================================================
@@ -302,12 +305,35 @@ def inject_cache_buster():
 _CORS_PATHS = ('/.well-known/', '/authorize', '/token', '/register', '/sse', '/messages')
 
 
+def _get_allowed_cors_origin():
+    """Return the request Origin if it's on the allowlist, else None."""
+    origin = request.headers.get('Origin', '')
+    if not origin:
+        return None
+    # Exact matches
+    if origin in ('https://claude.ai', 'https://console.anthropic.com'):
+        return origin
+    # Subdomains of claude.ai (e.g. https://cowork.claude.ai)
+    if origin.startswith('https://') and origin.endswith('.claude.ai'):
+        return origin
+    # Subdomains of anthropic.com
+    if origin.startswith('https://') and origin.endswith('.anthropic.com'):
+        return origin
+    # Localhost for development
+    if origin.startswith('http://localhost'):
+        return origin
+    return None
+
+
 @app.before_request
 def handle_cors_preflight():
     """Handle OPTIONS preflight requests for MCP/OAuth endpoints."""
     if request.method == 'OPTIONS' and any(request.path.startswith(p) for p in _CORS_PATHS):
+        allowed = _get_allowed_cors_origin()
+        if not allowed:
+            return Response('Origin not allowed', status=403)
         resp = Response('', status=204)
-        resp.headers['Access-Control-Allow-Origin'] = '*'
+        resp.headers['Access-Control-Allow-Origin'] = allowed
         resp.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
         resp.headers['Access-Control-Allow-Headers'] = 'Authorization, Content-Type'
         resp.headers['Access-Control-Max-Age'] = '86400'
@@ -319,10 +345,12 @@ def add_security_headers(response):
     """Add security headers to every response."""
     # CORS headers for MCP/OAuth endpoints (CoWork runs on claude.ai)
     if any(request.path.startswith(p) for p in _CORS_PATHS):
-        response.headers['Access-Control-Allow-Origin'] = '*'
-        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
-        response.headers['Access-Control-Allow-Headers'] = 'Authorization, Content-Type'
-        response.headers['Access-Control-Expose-Headers'] = 'Content-Type'
+        allowed = _get_allowed_cors_origin()
+        if allowed:
+            response.headers['Access-Control-Allow-Origin'] = allowed
+            response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+            response.headers['Access-Control-Allow-Headers'] = 'Authorization, Content-Type'
+            response.headers['Access-Control-Expose-Headers'] = 'Content-Type'
 
     # Cache control for dynamic content
     if 'text/html' in response.content_type or 'text/css' in response.content_type or 'javascript' in response.content_type:
@@ -1421,9 +1449,18 @@ def process_import_batch_worker(batch_id: int):
 # OAuth 2.0 endpoints for Claude CoWork MCP connector
 # ---------------------------------------------------------------------------
 
-_oauth_pending_codes: dict[str, dict] = {}  # code -> {redirect_uri, expires}
-_oauth_registered_clients: dict[str, dict] = {}  # client_id -> registration data
-_OAUTH_CODE_TTL = 300  # seconds
+_oauth_pending_codes = {}   # code -> {redirect_uri, expires, ...}
+_oauth_registered_clients = {}  # client_id -> registration data
+_oauth_access_tokens = {}   # token -> {api_key, client_id, expires}
+_oauth_csrf_tokens = {}     # csrf_token -> expires_at
+
+_OAUTH_CODE_TTL = 300        # auth code lifetime (seconds)
+_OAUTH_TOKEN_TTL = 86400     # access token lifetime (24 hours)
+_OAUTH_CLIENT_TTL = 86400    # registered client lifetime (24 hours)
+_OAUTH_CSRF_TTL = 600        # CSRF token lifetime (10 minutes)
+_MAX_REGISTERED_CLIENTS = 100
+_MAX_PENDING_CODES = 200
+_MAX_ACCESS_TOKENS = 500
 
 
 @app.route('/.well-known/oauth-protected-resource')
@@ -1471,16 +1508,38 @@ def oauth_register():
     else:
         data = {}
 
+    # Clean expired clients and enforce size cap
+    now = time.time()
+    expired = [k for k, v in _oauth_registered_clients.items()
+               if v.get('_expires_at', float('inf')) < now]
+    for k in expired:
+        del _oauth_registered_clients[k]
+    if len(_oauth_registered_clients) >= _MAX_REGISTERED_CLIENTS:
+        return jsonify({'error': 'server_error',
+                        'error_description': 'Too many registered clients'}), 503
+
+    # Validate redirect_uris if provided
+    redirect_uris = data.get('redirect_uris', [])
+    if not isinstance(redirect_uris, list):
+        return jsonify({'error': 'invalid_request',
+                        'error_description': 'redirect_uris must be an array'}), 400
+    for uri in redirect_uris:
+        if not isinstance(uri, str) or not uri.startswith('https://'):
+            if not (isinstance(uri, str) and uri.startswith('http://localhost')):
+                return jsonify({'error': 'invalid_request',
+                                'error_description': 'redirect_uris must use https'}), 400
+
     client_id = _secrets.token_urlsafe(16)
     registration = {
         'client_id': client_id,
         'client_name': data.get('client_name', 'Claude CoWork'),
-        'redirect_uris': data.get('redirect_uris', []),
+        'redirect_uris': redirect_uris,
         'grant_types': data.get('grant_types', ['authorization_code']),
         'response_types': data.get('response_types', ['code']),
         'token_endpoint_auth_method': 'none',
-        'client_id_issued_at': int(time.time()),
+        'client_id_issued_at': int(now),
         'client_secret_expires_at': 0,
+        '_expires_at': now + _OAUTH_CLIENT_TTL,
     }
 
     _oauth_registered_clients[client_id] = registration
@@ -1491,11 +1550,13 @@ def oauth_register():
 def oauth_authorize():
     """Show OAuth approval page.
 
-    Passes all OAuth params (including PKCE code_challenge) as hidden form
-    fields so the POST handler can generate the auth code in the same worker
-    process that will later handle /token (avoids multi-worker memory issues).
+    Validates redirect_uri against registered client. Passes all OAuth params
+    (including PKCE code_challenge) as hidden form fields so the POST handler
+    can generate the auth code in the same worker process that will later
+    handle /token (avoids multi-worker memory issues).
     """
     import html as _html
+    import secrets as _secrets
 
     redirect_uri = request.args.get('redirect_uri', '')
     state = request.args.get('state', '')
@@ -1507,7 +1568,32 @@ def oauth_authorize():
     if response_type != 'code':
         return jsonify({'error': 'unsupported_response_type'}), 400
     if not redirect_uri:
-        return jsonify({'error': 'missing redirect_uri'}), 400
+        return jsonify({'error': 'invalid_request', 'error_description': 'missing redirect_uri'}), 400
+    if not client_id:
+        return jsonify({'error': 'invalid_request', 'error_description': 'missing client_id'}), 400
+
+    # C2 fix: Validate redirect_uri against registered client
+    client = _oauth_registered_clients.get(client_id)
+    if not client:
+        return jsonify({'error': 'invalid_client', 'error_description': 'unknown client_id'}), 400
+    registered_uris = client.get('redirect_uris', [])
+    if registered_uris and redirect_uri not in registered_uris:
+        return jsonify({'error': 'invalid_request',
+                        'error_description': 'redirect_uri not registered for this client'}), 400
+
+    # PKCE is required for public clients
+    if not code_challenge:
+        return jsonify({'error': 'invalid_request',
+                        'error_description': 'code_challenge is required (PKCE S256)'}), 400
+
+    # H5 fix: Generate CSRF token for consent form
+    csrf_token = _secrets.token_urlsafe(24)
+    now = time.time()
+    _oauth_csrf_tokens[csrf_token] = now + _OAUTH_CSRF_TTL
+    # Clean expired CSRF tokens
+    expired = [k for k, v in _oauth_csrf_tokens.items() if v < now]
+    for k in expired:
+        del _oauth_csrf_tokens[k]
 
     # Escape all values for safe HTML embedding
     e_redirect = _html.escape(redirect_uri, quote=True)
@@ -1515,6 +1601,7 @@ def oauth_authorize():
     e_challenge = _html.escape(code_challenge, quote=True)
     e_method = _html.escape(code_challenge_method, quote=True)
     e_client = _html.escape(client_id, quote=True)
+    e_csrf = _html.escape(csrf_token, quote=True)
 
     page = f"""<!DOCTYPE html>
 <html><head><title>Authorize Lead Machine</title>
@@ -1540,6 +1627,7 @@ def oauth_authorize():
     <input type="hidden" name="code_challenge" value="{e_challenge}">
     <input type="hidden" name="code_challenge_method" value="{e_method}">
     <input type="hidden" name="client_id" value="{e_client}">
+    <input type="hidden" name="csrf_token" value="{e_csrf}">
     <button type="submit" class="btn">Approve</button>
   </form>
   <p class="info">This grants access to account data, signals, and Apollo tools.</p>
@@ -1557,25 +1645,44 @@ def oauth_authorize_post():
     code_challenge = request.form.get('code_challenge', '')
     code_challenge_method = request.form.get('code_challenge_method', '')
     client_id = request.form.get('client_id', '')
+    csrf_token = request.form.get('csrf_token', '')
+
+    # H5 fix: Validate CSRF token
+    csrf_expires = _oauth_csrf_tokens.pop(csrf_token, None)
+    if not csrf_expires or csrf_expires < time.time():
+        return jsonify({'error': 'invalid_request', 'error_description': 'invalid or expired CSRF token'}), 403
 
     if not redirect_uri:
         return jsonify({'error': 'invalid_request', 'error_description': 'missing redirect_uri'}), 400
+    if not client_id:
+        return jsonify({'error': 'invalid_request', 'error_description': 'missing client_id'}), 400
 
-    # Generate a fresh auth code and store it with PKCE data
+    # C2 fix: Re-validate redirect_uri against registered client
+    client = _oauth_registered_clients.get(client_id)
+    if not client:
+        return jsonify({'error': 'invalid_client', 'error_description': 'unknown client_id'}), 400
+    registered_uris = client.get('redirect_uris', [])
+    if registered_uris and redirect_uri not in registered_uris:
+        return jsonify({'error': 'invalid_request',
+                        'error_description': 'redirect_uri not registered for this client'}), 400
+
+    # H2 fix: Enforce pending codes size cap
+    now = time.time()
+    expired = [k for k, v in _oauth_pending_codes.items() if v['expires'] < now]
+    for k in expired:
+        del _oauth_pending_codes[k]
+    if len(_oauth_pending_codes) >= _MAX_PENDING_CODES:
+        return jsonify({'error': 'server_error', 'error_description': 'too many pending codes'}), 503
+
+    # Generate a fresh auth code and store it with PKCE + client data
     code = _secrets.token_urlsafe(32)
     _oauth_pending_codes[code] = {
         'redirect_uri': redirect_uri,
         'code_challenge': code_challenge,
         'code_challenge_method': code_challenge_method,
         'client_id': client_id,
-        'expires': time.time() + _OAUTH_CODE_TTL,
+        'expires': now + _OAUTH_CODE_TTL,
     }
-
-    # Clean expired codes
-    now = time.time()
-    expired = [k for k, v in _oauth_pending_codes.items() if v['expires'] < now]
-    for k in expired:
-        del _oauth_pending_codes[k]
 
     sep = '&' if '?' in redirect_uri else '?'
     location = f'{redirect_uri}{sep}code={code}'
@@ -1586,10 +1693,14 @@ def oauth_authorize_post():
 
 @app.route('/token', methods=['POST'])
 def oauth_token():
-    """Exchange auth code for Bearer token (the MCP_API_KEY).
+    """Exchange auth code for a per-session Bearer token.
 
-    Validates PKCE code_verifier against the stored code_challenge (S256).
+    Validates PKCE code_verifier (mandatory), client_id binding, and
+    redirect_uri match. Returns a unique session token (never the raw API key).
     """
+    import hashlib, base64
+    import secrets as _secrets
+
     if request.content_type and 'json' in request.content_type:
         data = request.get_json(silent=True) or {}
     else:
@@ -1598,6 +1709,8 @@ def oauth_token():
     grant_type = data.get('grant_type', '')
     code = data.get('code', '')
     code_verifier = data.get('code_verifier', '')
+    client_id = data.get('client_id', '')
+    token_redirect_uri = data.get('redirect_uri', '')
 
     if grant_type != 'authorization_code':
         return jsonify({'error': 'unsupported_grant_type'}), 400
@@ -1606,23 +1719,53 @@ def oauth_token():
     if not entry or entry['expires'] < time.time():
         return jsonify({'error': 'invalid_grant'}), 400
 
-    # Validate PKCE if code_challenge was provided during authorization
+    # H4 fix: Validate client_id matches the one that requested the code
+    if entry.get('client_id') and entry['client_id'] != client_id:
+        return jsonify({'error': 'invalid_grant',
+                        'error_description': 'client_id mismatch'}), 400
+
+    # C2 fix: Validate redirect_uri matches (RFC 6749 Section 4.1.3)
+    if entry.get('redirect_uri') and entry['redirect_uri'] != token_redirect_uri:
+        return jsonify({'error': 'invalid_grant',
+                        'error_description': 'redirect_uri mismatch'}), 400
+
+    # C1 fix: PKCE is mandatory — reject if code_verifier is missing
     stored_challenge = entry.get('code_challenge', '')
-    if stored_challenge and code_verifier:
-        import hashlib, base64
+    if stored_challenge:
+        if not code_verifier:
+            return jsonify({'error': 'invalid_request',
+                            'error_description': 'code_verifier is required'}), 400
         digest = hashlib.sha256(code_verifier.encode('ascii')).digest()
         computed = base64.urlsafe_b64encode(digest).rstrip(b'=').decode('ascii')
         if computed != stored_challenge:
-            return jsonify({'error': 'invalid_grant', 'error_description': 'PKCE verification failed'}), 400
+            return jsonify({'error': 'invalid_grant',
+                            'error_description': 'PKCE verification failed'}), 400
 
     api_key = os.environ.get('MCP_API_KEY', '')
     if not api_key:
         return jsonify({'error': 'server_error', 'error_description': 'MCP_API_KEY not configured'}), 500
 
+    # C3 fix: Generate a unique per-session token (never expose raw API key)
+    now = time.time()
+    # Clean expired tokens
+    expired = [k for k, v in _oauth_access_tokens.items() if v['expires'] < now]
+    for k in expired:
+        del _oauth_access_tokens[k]
+    if len(_oauth_access_tokens) >= _MAX_ACCESS_TOKENS:
+        return jsonify({'error': 'server_error', 'error_description': 'token limit reached'}), 503
+
+    access_token = _secrets.token_urlsafe(32)
+    _oauth_access_tokens[access_token] = {
+        'api_key': api_key,
+        'client_id': client_id,
+        'issued_at': now,
+        'expires': now + _OAUTH_TOKEN_TTL,
+    }
+
     return jsonify({
-        'access_token': api_key,
+        'access_token': access_token,
         'token_type': 'bearer',
-        'expires_in': 86400,
+        'expires_in': _OAUTH_TOKEN_TTL,
     })
 
 
@@ -1633,14 +1776,38 @@ def oauth_token():
 _MCP_INTERNAL = 'http://localhost:5001'
 
 
+def _translate_bearer_token(auth_header: str):
+    """Translate a per-session OAuth token to the real MCP API key.
+
+    Returns the Authorization header to forward, or None if invalid.
+    """
+    if not auth_header.startswith('Bearer '):
+        return None
+    session_token = auth_header[7:]
+    entry = _oauth_access_tokens.get(session_token)
+    if not entry:
+        return None
+    if entry['expires'] < time.time():
+        _oauth_access_tokens.pop(session_token, None)
+        return None
+    return f"Bearer {entry['api_key']}"
+
+
 @app.route('/sse')
 def proxy_sse():
     """Proxy SSE stream from MCP server, rewriting endpoint URLs."""
     auth = request.headers.get('Authorization', '')
+
+    # C3 fix: Translate per-session token to real API key for internal MCP
+    real_auth = _translate_bearer_token(auth)
+    if not real_auth:
+        return jsonify({'error': 'invalid_token',
+                        'error_description': 'Missing or expired access token'}), 401
+
     try:
         mcp_resp = requests.get(
             f'{_MCP_INTERNAL}/sse',
-            headers={'Authorization': auth},
+            headers={'Authorization': real_auth},
             stream=True,
             timeout=(5, None),  # 5s connect, no read timeout (SSE is long-lived)
         )
@@ -1687,6 +1854,13 @@ def proxy_sse():
 def proxy_messages():
     """Proxy message POSTs to MCP server."""
     auth = request.headers.get('Authorization', '')
+
+    # C3 fix: Translate per-session token to real API key
+    real_auth = _translate_bearer_token(auth)
+    if not real_auth:
+        return jsonify({'error': 'invalid_token',
+                        'error_description': 'Missing or expired access token'}), 401
+
     qs = request.query_string.decode()
     try:
         mcp_resp = requests.post(
@@ -1694,7 +1868,7 @@ def proxy_messages():
             data=request.get_data(),
             headers={
                 'Content-Type': request.content_type or 'application/json',
-                'Authorization': auth,
+                'Authorization': real_auth,
             },
             timeout=30,
         )
