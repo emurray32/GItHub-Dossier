@@ -311,9 +311,32 @@ def api_save_prospects():
         if not prospects or not isinstance(prospects, list):
             return _error('prospects must be a non-empty list')
 
-        # Prepare prospect records
+        # Server-side filtering: reject already-enrolled and DNC contacts
+        from v2.services.prospect_service import is_already_enrolled
+        from email_utils import _filter_personal_email
+
         records = []
+        skipped_enrolled = 0
+        skipped_personal = 0
+        skipped_no_email = 0
         for p in prospects:
+            email = (p.get('email') or '').strip().lower()
+
+            # Skip prospects with no email
+            if not email:
+                skipped_no_email += 1
+                continue
+
+            # Skip personal emails (gmail, yahoo, etc.)
+            if _filter_personal_email(email):
+                skipped_personal += 1
+                continue
+
+            # Skip already-enrolled contacts (across all signals/accounts)
+            if is_already_enrolled(email):
+                skipped_enrolled += 1
+                continue
+
             records.append({
                 'account_id': account_id,
                 'signal_id': signal_id,
@@ -321,14 +344,26 @@ def api_save_prospects():
                 'first_name': p.get('first_name', ''),
                 'last_name': p.get('last_name', ''),
                 'title': p.get('title', ''),
-                'email': p.get('email', ''),
+                'email': email,
                 'email_verified': p.get('email_verified', False),
                 'linkedin_url': p.get('linkedin_url', ''),
                 'apollo_person_id': p.get('apollo_person_id', ''),
             })
 
+        if not records:
+            return _error(
+                f'No valid prospects to save (skipped: {skipped_enrolled} already enrolled, '
+                f'{skipped_personal} personal email, {skipped_no_email} no email)'
+            )
+
         ids = bulk_create_prospects(records)
-        return _success(prospect_ids=ids, count=len(ids))
+        return _success(
+            prospect_ids=ids,
+            count=len(ids),
+            skipped_enrolled=skipped_enrolled,
+            skipped_personal=skipped_personal,
+            skipped_no_email=skipped_no_email,
+        )
     except Exception as e:
         logger.exception("[V2 API] Error saving prospects")
         return _error(str(e), 500)
@@ -378,10 +413,10 @@ def api_list_campaigns():
         with db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute('''
-                SELECT id, campaign_name, sequence_config, campaign_type,
+                SELECT id, name, sequence_config, campaign_type,
                        writing_guidelines
                 FROM campaigns
-                ORDER BY campaign_name
+                ORDER BY name
             ''')
             campaigns = rows_to_dicts(cursor.fetchall())
 

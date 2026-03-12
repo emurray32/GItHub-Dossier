@@ -230,15 +230,35 @@ def get_signal_workspace(signal_id: int) -> Optional[dict]:
     }
 
 
-def check_duplicate_signal(account_id: int, signal_type: str, signal_source: str) -> bool:
-    """Check if a signal with the same type+source already exists for this account."""
+def check_duplicate_signal(
+    account_id: int,
+    signal_type: str,
+    signal_source: str,
+    evidence_value: Optional[str] = None,
+) -> bool:
+    """Check if a signal with the same type+source+evidence already exists.
+
+    When evidence_value is provided, it must also match for the signal to be
+    considered a duplicate. This prevents dropping valid repeat signals that
+    have different evidence (e.g. two dependency_injection signals for
+    different packages at the same company).
+    """
     with db_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute('''
-            SELECT 1 FROM intent_signals
-            WHERE account_id = ? AND signal_type = ? AND signal_source = ?
-            LIMIT 1
-        ''', (account_id, signal_type, signal_source))
+        if evidence_value:
+            cursor.execute('''
+                SELECT 1 FROM intent_signals
+                WHERE account_id = ? AND signal_type = ? AND signal_source = ?
+                  AND evidence_value = ?
+                LIMIT 1
+            ''', (account_id, signal_type, signal_source, evidence_value))
+        else:
+            cursor.execute('''
+                SELECT 1 FROM intent_signals
+                WHERE account_id = ? AND signal_type = ? AND signal_source = ?
+                  AND evidence_value IS NULL
+                LIMIT 1
+            ''', (account_id, signal_type, signal_source))
         return cursor.fetchone() is not None
 
 

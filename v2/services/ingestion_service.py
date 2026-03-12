@@ -282,10 +282,11 @@ def create_signal_from_scan(account_id: int, scan_signal_id: int) -> Optional[in
     signal_type = scan_row.get('signal_type')
     signal_source = 'github_scan'
 
-    # Check for duplicate
-    if signal_service.check_duplicate_signal(account_id, signal_type, signal_source):
-        logger.info("[INGEST] Duplicate signal skipped: account=%d type=%s source=%s",
-                    account_id, signal_type, signal_source)
+    # Check for duplicate (include evidence to avoid dropping valid repeats)
+    evidence_val = scan_row.get('file_path')
+    if signal_service.check_duplicate_signal(account_id, signal_type, signal_source, evidence_value=evidence_val):
+        logger.info("[INGEST] Duplicate signal skipped: account=%d type=%s source=%s evidence=%s",
+                    account_id, signal_type, signal_source, evidence_val)
         return None
 
     # Auto-recommend campaign

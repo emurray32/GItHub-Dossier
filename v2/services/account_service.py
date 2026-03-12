@@ -58,24 +58,51 @@ def update_account_status(account_id: int, new_status: str) -> bool:
 
 
 def mark_account_sequenced(account_id: int) -> bool:
-    """Mark account as sequenced (at least one prospect enrolled)."""
-    return update_account_status(account_id, 'sequenced')
+    """Mark account as sequenced (at least one prospect enrolled).
+
+    Cascades: all 'new' signals for this account move to 'actioned'.
+    """
+    ok = update_account_status(account_id, 'sequenced')
+    if ok:
+        _cascade_signal_status(account_id, new_signal_status='actioned',
+                               only_from_statuses=('new',))
+    return ok
 
 
 def mark_account_revisit(account_id: int) -> bool:
-    """Mark account for revisit (all sequences complete, no reply)."""
-    return update_account_status(account_id, 'revisit')
+    """Mark account for revisit (all sequences complete, no reply).
+
+    Cascades: all 'new' signals for this account move to 'actioned'.
+    """
+    ok = update_account_status(account_id, 'revisit')
+    if ok:
+        _cascade_signal_status(account_id, new_signal_status='actioned',
+                               only_from_statuses=('new',))
+    return ok
 
 
 def mark_account_noise(account_id: int) -> bool:
-    """Mark account as noise (false positive / not worth pursuing)."""
-    return update_account_status(account_id, 'noise')
+    """Mark account as noise (false positive / not worth pursuing).
+
+    Cascades: all non-archived signals for this account move to 'archived'.
+    """
+    ok = update_account_status(account_id, 'noise')
+    if ok:
+        _cascade_signal_status(account_id, new_signal_status='archived',
+                               only_from_statuses=('new', 'actioned'))
+    return ok
 
 
 def check_all_sequences_complete(account_id: int) -> bool:
-    """Check if ALL prospects for this account have completed sequences.
+    """Check if ALL non-DNC prospects for this account have completed sequences.
 
-    Returns True only if there are enrolled prospects AND all are complete.
+    Returns True only when:
+    - There is at least one prospect
+    - Every non-DNC prospect has enrollment_status = 'sequence_complete'
+    - No prospects are still in 'found', 'drafting', or 'enrolled' states
+
+    This prevents premature revisit transitions when some prospects haven't
+    been fully processed yet.
     """
     with db_connection() as conn:
         cursor = conn.cursor()
@@ -86,14 +113,12 @@ def check_all_sequences_complete(account_id: int) -> bool:
         rows = cursor.fetchall()
         if not rows:
             return False
-        enrolled_or_complete = [
+        statuses = [
             r['enrollment_status'] if isinstance(r, dict) else r[0]
             for r in rows
         ]
-        # Must have at least one enrolled prospect, and all must be complete
-        has_enrolled = any(s in ('enrolled', 'sequence_complete') for s in enrolled_or_complete)
-        all_complete = all(s == 'sequence_complete' for s in enrolled_or_complete if s in ('enrolled', 'sequence_complete'))
-        return has_enrolled and all_complete
+        # ALL non-DNC prospects must be sequence_complete — no exceptions
+        return all(s == 'sequence_complete' for s in statuses)
 
 
 # ---------------------------------------------------------------------------
@@ -166,6 +191,39 @@ def find_or_create_account(
         conn.commit()
         logger.info("[ACCOUNT] Created new account %d: %s", account_id, company_name)
         return account_id
+
+
+def _cascade_signal_status(
+    account_id: int,
+    new_signal_status: str,
+    only_from_statuses: tuple = ('new',),
+) -> int:
+    """Update signal statuses when account status changes.
+
+    Args:
+        account_id: the account whose signals to update
+        new_signal_status: the status to set on matching signals
+        only_from_statuses: only update signals currently in one of these statuses
+
+    Returns:
+        Number of signals updated
+    """
+    placeholders = ', '.join(['?'] * len(only_from_statuses))
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(f'''
+            UPDATE intent_signals
+            SET status = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE account_id = ? AND status IN ({placeholders})
+        ''', (new_signal_status, account_id) + only_from_statuses)
+        conn.commit()
+        updated = cursor.rowcount if hasattr(cursor, 'rowcount') else 0
+        if updated:
+            logger.info(
+                "[ACCOUNT] Cascaded %d signals for account %d → %s",
+                updated, account_id, new_signal_status,
+            )
+        return updated
 
 
 def get_account_domain(account_id: int) -> Optional[str]:

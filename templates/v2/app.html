@@ -454,7 +454,7 @@ function CampaignSection({ workspace, onCampaignUpdate, toast }) {
         if (!selectedCampaignId) return;
         setSaving(true);
         try {
-            const campName = selectedCampaign ? selectedCampaign.campaign_name : '';
+            const campName = selectedCampaign ? selectedCampaign.name : '';
             await apiFetch(`/v2/api/signals/${workspace.signal.id}/campaign`, {
                 method: 'PUT',
                 body: JSON.stringify({
@@ -481,7 +481,7 @@ function CampaignSection({ workspace, onCampaignUpdate, toast }) {
             {currentCampaign ? (
                 <div className="mb-3">
                     <div className="flex items-center gap-2 mb-1">
-                        <span className="text-sm font-medium text-slate-800">{currentCampaign.campaign_name}</span>
+                        <span className="text-sm font-medium text-slate-800">{currentCampaign.name}</span>
                         <span className="text-[0.6875rem] bg-green-100 text-green-700 px-2 py-0.5 rounded-full">Active</span>
                     </div>
                     {workspace.signal.recommended_campaign_reasoning && (
@@ -516,7 +516,7 @@ function CampaignSection({ workspace, onCampaignUpdate, toast }) {
                         className="flex-1 text-sm border border-slate-200 rounded-md px-3 py-1.5 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500/20 bg-white">
                         <option value="">Select a campaign...</option>
                         {campaigns.map(c => (
-                            <option key={c.id} value={c.id}>{c.campaign_name}</option>
+                            <option key={c.id} value={c.id}>{c.name}</option>
                         ))}
                     </select>
                     <button onClick={handleConfirm}
@@ -803,6 +803,29 @@ function DraftReview({ workspace, toast }) {
         }
     };
 
+    const handleDraftEdit = async (draftId, field, value) => {
+        try {
+            const payload = {};
+            payload[field] = value;
+            const data = await apiFetch(`/v2/api/drafts/${draftId}`, {
+                method: 'PUT',
+                body: JSON.stringify(payload),
+            });
+            // Update local draft state
+            setDrafts(prev => {
+                const updated = { ...prev };
+                for (const pid of Object.keys(updated)) {
+                    updated[pid] = updated[pid].map(d =>
+                        d.id === draftId ? { ...d, ...payload, status: data.draft?.status || d.status } : d
+                    );
+                }
+                return updated;
+            });
+        } catch (err) {
+            toast('Failed to save edit: ' + err.message, 'error');
+        }
+    };
+
     const handleRegenerate = async (draftId) => {
         if (!critique.trim()) {
             toast('Enter feedback for regeneration', 'error');
@@ -880,11 +903,24 @@ function DraftReview({ workspace, toast }) {
                                 </div>
                                 {draft.subject && (
                                     <input type="text" defaultValue={draft.subject}
+                                        onBlur={e => { if (draft.id && e.target.value !== draft.subject) handleDraftEdit(draft.id, 'subject', e.target.value); }}
                                         className="w-full text-sm font-medium border border-slate-200 rounded-md px-3 py-1.5 mb-1.5 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500/20" />
                                 )}
                                 <AutoTextarea
                                     value={draft.body || ''}
-                                    onChange={() => {}}
+                                    onChange={e => {
+                                        // Update local state immediately for responsive editing
+                                        setDrafts(prev => {
+                                            const updated = { ...prev };
+                                            for (const pid of Object.keys(updated)) {
+                                                updated[pid] = updated[pid].map(d =>
+                                                    d.id === draft.id ? { ...d, body: e.target.value } : d
+                                                );
+                                            }
+                                            return updated;
+                                        });
+                                    }}
+                                    onBlur={e => { if (draft.id && e.target.value !== draft.body) handleDraftEdit(draft.id, 'body', e.target.value); }}
                                     className="text-slate-600"
                                     placeholder="Draft body will appear here..." />
 

@@ -254,6 +254,100 @@ def register_v2_tools(mcp):
             return _safe_json({"error": str(e)})
 
     # ------------------------------------------------------------------
+    # Prospect Persistence
+    # ------------------------------------------------------------------
+
+    @mcp.tool()
+    def save_prospects(signal_id: int, account_id: int, prospects: str) -> str:
+        """Save found prospects to the shared prospects table.
+
+        After using find_prospects to search Apollo, call this tool to persist
+        the selected prospects so they appear in the web UI and can receive
+        draft sequences.
+
+        Args:
+            signal_id: The signal these prospects belong to.
+            account_id: The account these prospects belong to.
+            prospects: JSON array of prospect objects. Each must have at least
+                       'email' and 'full_name'. Optional fields: first_name,
+                       last_name, title, email_verified, linkedin_url,
+                       apollo_person_id.
+        """
+        try:
+            import json as _json
+            prospect_list = _json.loads(prospects) if isinstance(prospects, str) else prospects
+            if not isinstance(prospect_list, list) or not prospect_list:
+                return _safe_json({"error": "prospects must be a non-empty JSON array"})
+
+            from v2.services.prospect_service import bulk_create_prospects, is_already_enrolled
+
+            # Filter: skip already-enrolled and no-email prospects
+            try:
+                from email_utils import _filter_personal_email
+            except ImportError:
+                _filter_personal_email = lambda e: False
+
+            records = []
+            skipped = {'enrolled': 0, 'personal': 0, 'no_email': 0}
+            for p in prospect_list:
+                email = (p.get('email') or '').strip().lower()
+                if not email:
+                    skipped['no_email'] += 1
+                    continue
+                if _filter_personal_email(email):
+                    skipped['personal'] += 1
+                    continue
+                if is_already_enrolled(email):
+                    skipped['enrolled'] += 1
+                    continue
+                records.append({
+                    'account_id': account_id,
+                    'signal_id': signal_id,
+                    'full_name': p.get('full_name', ''),
+                    'first_name': p.get('first_name', ''),
+                    'last_name': p.get('last_name', ''),
+                    'title': p.get('title', ''),
+                    'email': email,
+                    'email_verified': p.get('email_verified', False),
+                    'linkedin_url': p.get('linkedin_url', ''),
+                    'apollo_person_id': p.get('apollo_person_id', ''),
+                })
+
+            if not records:
+                return _safe_json({
+                    "error": f"No valid prospects to save (skipped: {skipped['enrolled']} enrolled, "
+                             f"{skipped['personal']} personal, {skipped['no_email']} no email)",
+                })
+
+            ids = bulk_create_prospects(records)
+
+            try:
+                from v2.services.activity_service import log_activity
+                log_activity(
+                    event_type='prospects_saved',
+                    entity_type='signal',
+                    entity_id=signal_id,
+                    details={
+                        'count': len(ids),
+                        'account_id': account_id,
+                        'skipped': skipped,
+                    },
+                    created_by='mcp',
+                )
+            except Exception:
+                pass
+
+            return _safe_json({
+                "prospect_ids": ids,
+                "count": len(ids),
+                "skipped": skipped,
+                "message": f"Saved {len(ids)} prospects for signal {signal_id}",
+            })
+        except Exception as e:
+            logger.exception("[MCP] save_prospects error")
+            return _safe_json({"error": str(e)})
+
+    # ------------------------------------------------------------------
     # Draft Generation & Management
     # ------------------------------------------------------------------
 
@@ -551,4 +645,4 @@ def register_v2_tools(mcp):
             logger.exception("[MCP] get_activity_log error")
             return _safe_json({"error": str(e)})
 
-    logger.info("[MCP] Registered %d v2 tools", 15)
+    logger.info("[MCP] Registered %d v2 tools", 16)

@@ -282,6 +282,18 @@ def generate_drafts(
     # Build system prompt
     system_prompt = _build_system_prompt(writing_context)
 
+    # Clean up old generated/edited drafts for this prospect to avoid duplicates
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            DELETE FROM drafts
+            WHERE prospect_id = ? AND status IN ('generated', 'edited')
+        ''', (prospect_id,))
+        deleted = cursor.rowcount if hasattr(cursor, 'rowcount') else 0
+        if deleted:
+            logger.info("[DRAFT] Cleaned up %d old drafts for prospect %d", deleted, prospect_id)
+        conn.commit()
+
     created_drafts = []
     generation_model = 'gpt-5-mini'
 

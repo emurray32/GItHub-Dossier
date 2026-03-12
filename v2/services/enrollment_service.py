@@ -75,19 +75,42 @@ def enroll_prospect(prospect_id: int, sequence_id: Optional[str] = None) -> dict
             'message': 'No sequence_id provided and no default could be determined',
         }
 
-    # 4. Call Apollo API
+    # 4. Call Apollo API — inject draft content as custom variables
     apollo_ok = False
     apollo_error = None
     try:
         from apollo_pipeline import apollo_api_call
 
+        # Build custom variable payload from approved drafts so Apollo
+        # sends the actual reviewed/edited email content, not generic
+        # sequence templates.
+        custom_fields = {}
+        for draft in sorted(approved_drafts, key=lambda d: d.get('sequence_step', 0)):
+            step = draft.get('sequence_step', 1)
+            if draft.get('subject'):
+                custom_fields[f'subject_step_{step}'] = draft['subject']
+            if draft.get('body'):
+                custom_fields[f'body_step_{step}'] = draft['body']
+        # Also set top-level subject/body for step-1 (common Apollo variable names)
+        step1 = next((d for d in approved_drafts if d.get('sequence_step') == 1), None)
+        if step1:
+            custom_fields['email_subject'] = step1.get('subject', '')
+            custom_fields['email_body'] = step1.get('body', '')
+
+        enrollment_payload = {
+            'contact_ids': [prospect['apollo_person_id']],
+            'emailer_campaign_id': sequence_id,
+        }
+        if custom_fields:
+            enrollment_payload['send_email_from_email_account_id'] = ''  # use default
+            # Apollo supports injecting custom variables per-contact via
+            # the sequence_active_in_other_campaigns override
+            enrollment_payload['custom_field_values'] = custom_fields
+
         response = apollo_api_call(
             'post',
             f'https://api.apollo.io/api/v1/emailer_campaigns/{sequence_id}/add_contact_ids',
-            json={
-                'contact_ids': [prospect['apollo_person_id']],
-                'emailer_campaign_id': sequence_id,
-            },
+            json=enrollment_payload,
             timeout=30,
         )
         apollo_ok = response.status_code in (200, 201)
