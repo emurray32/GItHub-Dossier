@@ -7935,8 +7935,10 @@ def initialize_on_first_request():
     global _app_initialized
     if _app_initialized:
         return
-    # Skip heavy init for health checks, discovery, and OAuth endpoints
-    if request.path in ('/health',) or request.path.startswith(('/.well-known/', '/register', '/authorize', '/token')):
+    # Skip heavy init for health checks, discovery, and OAuth endpoints.
+    # Critically, '/' is skipped because Replit's deployment health check always
+    # hits '/' — triggering DB queries here causes health check timeouts.
+    if request.path in ('/', '/health') or request.path.startswith(('/.well-known/', '/register', '/authorize', '/token')):
         return
     with _init_lock:
         if _app_initialized:
