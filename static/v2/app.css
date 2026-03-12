@@ -1,0 +1,305 @@
+/* ==========================================================================
+   V2 App — Custom CSS beyond Tailwind
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   Custom scrollbar styling (thin, subtle)
+   -------------------------------------------------------------------------- */
+.v2-scrollbar::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+}
+
+.v2-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.v2-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.3);
+    border-radius: 10px;
+}
+
+.v2-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: rgba(148, 163, 184, 0.5);
+}
+
+/* Dark scrollbar variant for sidebar */
+.v2-scrollbar-dark::-webkit-scrollbar {
+    width: 4px;
+}
+
+.v2-scrollbar-dark::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.v2-scrollbar-dark::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.12);
+    border-radius: 10px;
+}
+
+.v2-scrollbar-dark::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+/* Firefox scrollbar */
+.v2-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(148, 163, 184, 0.3) transparent;
+}
+
+.v2-scrollbar-dark {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
+}
+
+/* --------------------------------------------------------------------------
+   Toast notification animations
+   -------------------------------------------------------------------------- */
+@keyframes v2-toast-in {
+    from {
+        opacity: 0;
+        transform: translateX(100%) scale(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0) scale(1);
+    }
+}
+
+@keyframes v2-toast-out {
+    from {
+        opacity: 1;
+        transform: translateX(0) scale(1);
+    }
+    to {
+        opacity: 0;
+        transform: translateX(100%) scale(0.95);
+    }
+}
+
+.v2-toast-enter {
+    animation: v2-toast-in 0.25s ease-out forwards;
+}
+
+.v2-toast-exit {
+    animation: v2-toast-out 0.2s ease-in forwards;
+}
+
+/* --------------------------------------------------------------------------
+   Signal queue item states
+   -------------------------------------------------------------------------- */
+.v2-signal-item {
+    transition: all 0.15s ease;
+    border-left: 3px solid transparent;
+}
+
+.v2-signal-item:hover {
+    background: rgba(79, 70, 229, 0.06);
+}
+
+.v2-signal-item.active {
+    background: rgba(79, 70, 229, 0.1);
+    border-left-color: #4f46e5;
+}
+
+/* New signal pulse indicator */
+@keyframes v2-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+}
+
+.v2-new-pulse {
+    animation: v2-pulse 2s ease-in-out infinite;
+}
+
+/* --------------------------------------------------------------------------
+   Skeleton loading animation
+   -------------------------------------------------------------------------- */
+@keyframes v2-skeleton {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+}
+
+.v2-skeleton {
+    background: linear-gradient(
+        90deg,
+        #e2e8f0 25%,
+        #f1f5f9 37%,
+        #e2e8f0 63%
+    );
+    background-size: 200% 100%;
+    animation: v2-skeleton 1.5s ease-in-out infinite;
+    border-radius: 4px;
+}
+
+.v2-skeleton-dark {
+    background: linear-gradient(
+        90deg,
+        rgba(255, 255, 255, 0.06) 25%,
+        rgba(255, 255, 255, 0.1) 37%,
+        rgba(255, 255, 255, 0.06) 63%
+    );
+    background-size: 200% 100%;
+    animation: v2-skeleton 1.5s ease-in-out infinite;
+    border-radius: 4px;
+}
+
+/* --------------------------------------------------------------------------
+   Textarea auto-resize helper
+   -------------------------------------------------------------------------- */
+.v2-textarea {
+    overflow: hidden;
+    resize: none;
+    min-height: 80px;
+    field-sizing: content;
+    transition: border-color 0.15s ease;
+}
+
+.v2-textarea:focus {
+    outline: none;
+    border-color: #4f46e5;
+    box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.15);
+}
+
+/* --------------------------------------------------------------------------
+   Section dividers
+   -------------------------------------------------------------------------- */
+.v2-section-divider {
+    position: relative;
+    text-align: center;
+    margin: 1.5rem 0;
+}
+
+.v2-section-divider::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: #e2e8f0;
+}
+
+.v2-section-divider span {
+    position: relative;
+    background: #f8fafc;
+    padding: 0 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+/* --------------------------------------------------------------------------
+   Chip inputs
+   -------------------------------------------------------------------------- */
+.v2-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.25rem 0.625rem;
+    background: #eef2ff;
+    color: #4338ca;
+    border-radius: 9999px;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    transition: all 0.15s ease;
+}
+
+.v2-chip:hover {
+    background: #e0e7ff;
+}
+
+.v2-chip button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1rem;
+    height: 1rem;
+    border-radius: 50%;
+    font-size: 0.75rem;
+    line-height: 1;
+    color: #6366f1;
+    transition: all 0.15s ease;
+}
+
+.v2-chip button:hover {
+    background: rgba(99, 102, 241, 0.15);
+    color: #4338ca;
+}
+
+/* --------------------------------------------------------------------------
+   Collapsible card
+   -------------------------------------------------------------------------- */
+.v2-collapse-content {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease, opacity 0.3s ease;
+    opacity: 0;
+}
+
+.v2-collapse-content.open {
+    max-height: 2000px;
+    opacity: 1;
+}
+
+/* --------------------------------------------------------------------------
+   Status badges
+   -------------------------------------------------------------------------- */
+.v2-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.125rem 0.5rem;
+    border-radius: 9999px;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.025em;
+}
+
+/* --------------------------------------------------------------------------
+   Focus ring override for keyboard nav
+   -------------------------------------------------------------------------- */
+.v2-focus-ring:focus-visible {
+    outline: 2px solid #4f46e5;
+    outline-offset: 2px;
+}
+
+/* --------------------------------------------------------------------------
+   Print styles (hide sidebar)
+   -------------------------------------------------------------------------- */
+@media print {
+    .v2-sidebar {
+        display: none !important;
+    }
+    .v2-main {
+        margin-left: 0 !important;
+        width: 100% !important;
+    }
+    .v2-bottom-bar {
+        display: none !important;
+    }
+    .v2-toast-container {
+        display: none !important;
+    }
+}
+
+/* --------------------------------------------------------------------------
+   Responsive (minimum 1024px)
+   -------------------------------------------------------------------------- */
+@media (max-width: 1023px) {
+    .v2-sidebar {
+        width: 280px !important;
+        position: fixed;
+        z-index: 50;
+        transform: translateX(-100%);
+        transition: transform 0.2s ease;
+    }
+    .v2-sidebar.open {
+        transform: translateX(0);
+    }
+    .v2-main {
+        margin-left: 0 !important;
+    }
+}

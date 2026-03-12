@@ -1,0 +1,1336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Phrase Signal Queue</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='45' fill='%234F46E5'/><path d='M35 30h30v12H47v8h14v12H47v18H35V30z' fill='white'/></svg>">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/geist@1/dist/fonts/geist-sans/style.css">
+    <link rel="stylesheet" href="/static/v2/app.css">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Geist', 'system-ui', 'sans-serif'] },
+                    colors: {
+                        brand: { 50:'#eef2ff', 100:'#e0e7ff', 200:'#c7d2fe', 300:'#a5b4fc', 400:'#818cf8', 500:'#6366f1', 600:'#4f46e5', 700:'#4338ca', 800:'#3730a3', 900:'#312e81', 950:'#1e1b4b' }
+                    }
+                }
+            }
+        }
+    </script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+</head>
+<body class="bg-slate-50 font-sans antialiased">
+<div id="root"></div>
+
+{% raw %}
+<script type="text/babel">
+const { useState, useEffect, useCallback, useRef, useMemo } = React;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CONSTANTS
+// ═══════════════════════════════════════════════════════════════════════════
+
+const SIGNAL_TYPE_COLORS = {
+    dependency_injection: { bg: 'bg-purple-100', text: 'text-purple-700', dot: 'bg-purple-500' },
+    ghost_branch:         { bg: 'bg-teal-100',   text: 'text-teal-700',   dot: 'bg-teal-500' },
+    ghost_branch_active:  { bg: 'bg-teal-100',   text: 'text-teal-700',   dot: 'bg-teal-500' },
+    rfc_discussion:       { bg: 'bg-orange-100',  text: 'text-orange-700', dot: 'bg-orange-500' },
+    rfc_discussion_high:  { bg: 'bg-orange-100',  text: 'text-orange-700', dot: 'bg-orange-500' },
+    smoking_gun_fork:     { bg: 'bg-red-100',     text: 'text-red-700',    dot: 'bg-red-500' },
+    tms_config_file:      { bg: 'bg-blue-100',    text: 'text-blue-700',   dot: 'bg-blue-500' },
+    job_posting_intent:   { bg: 'bg-amber-100',   text: 'text-amber-700',  dot: 'bg-amber-500' },
+    already_launched:     { bg: 'bg-green-100',   text: 'text-green-700',  dot: 'bg-green-500' },
+};
+const DEFAULT_TYPE_COLOR = { bg: 'bg-slate-100', text: 'text-slate-700', dot: 'bg-slate-500' };
+
+const SIGNAL_LABELS = {
+    dependency_injection: 'Dependency Detected',
+    ghost_branch:         'Ghost Branch',
+    ghost_branch_active:  'Active Ghost Branch',
+    rfc_discussion:       'RFC Discussion',
+    rfc_discussion_high:  'RFC Discussion (High)',
+    smoking_gun_fork:     'Competitor Fork',
+    tms_config_file:      'TMS Config Detected',
+    job_posting_intent:   'Job Posting Intent',
+    already_launched:     'Already Launched',
+};
+
+const STATUS_COLORS = {
+    new:       { bg: 'bg-blue-100',  text: 'text-blue-700',  dot: 'bg-blue-500' },
+    sequenced: { bg: 'bg-green-100', text: 'text-green-700', dot: 'bg-green-500' },
+    revisit:   { bg: 'bg-amber-100', text: 'text-amber-700', dot: 'bg-amber-500' },
+    noise:     { bg: 'bg-gray-100',  text: 'text-gray-500',  dot: 'bg-gray-400' },
+};
+
+function signalLabel(type) {
+    if (!type) return 'Unknown';
+    return SIGNAL_LABELS[type] || type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function signalColors(type) {
+    return SIGNAL_TYPE_COLORS[type] || DEFAULT_TYPE_COLOR;
+}
+
+function statusColors(status) {
+    return STATUS_COLORS[status] || STATUS_COLORS.new;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// API HELPERS
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function apiFetch(url, options = {}) {
+    const resp = await fetch(url, {
+        headers: { 'Content-Type': 'application/json', ...options.headers },
+        ...options,
+    });
+    const data = await resp.json();
+    if (!resp.ok || data.status === 'error') {
+        throw new Error(data.message || `API error ${resp.status}`);
+    }
+    return data;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ICONS (inline SVG via lucide patterns)
+// ═══════════════════════════════════════════════════════════════════════════
+
+function Icon({ name, size = 16, className = '' }) {
+    const svgMap = {
+        'chevron-down': <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>,
+        'chevron-up': <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m18 15-6-6-6 6"/></svg>,
+        'chevron-right': <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>,
+        'search': <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>,
+        'x': <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>,
+        'check': <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5"/></svg>,
+        'plus': <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>,
+        'external-link': <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>,
+        'loader': <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="animate-spin"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>,
+        'zap': <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg>,
+        'skip-forward': <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m5 4 10 8-10 8V4z"/><line x1="19" y1="5" x2="19" y2="19"/></svg>,
+        'ban': <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/></svg>,
+        'users': <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>,
+        'mail': <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>,
+        'send': <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"/><path d="m21.854 2.147-10.94 10.939"/></svg>,
+        'refresh-cw': <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>,
+        'building': <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="16" height="20" x="4" y="2" rx="2" ry="2"/><path d="M9 22v-4h6v4"/><path d="M8 6h.01"/><path d="M16 6h.01"/><path d="M12 6h.01"/><path d="M12 10h.01"/><path d="M12 14h.01"/><path d="M16 10h.01"/><path d="M16 14h.01"/><path d="M8 10h.01"/><path d="M8 14h.01"/></svg>,
+        'globe': <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>,
+        'linkedin': <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>,
+        'settings': <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>,
+    };
+    return <span className={`inline-flex items-center ${className}`}>{svgMap[name] || null}</span>;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TOAST SYSTEM
+// ═══════════════════════════════════════════════════════════════════════════
+
+let _toastId = 0;
+const ToastContext = React.createContext(null);
+
+function ToastProvider({ children }) {
+    const [toasts, setToasts] = useState([]);
+
+    const addToast = useCallback((message, type = 'success') => {
+        const id = ++_toastId;
+        setToasts(prev => [...prev, { id, message, type, exiting: false }]);
+        setTimeout(() => {
+            setToasts(prev => prev.map(t => t.id === id ? { ...t, exiting: true } : t));
+            setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 250);
+        }, 3000);
+    }, []);
+
+    return (
+        <ToastContext.Provider value={addToast}>
+            {children}
+            <div className="v2-toast-container fixed bottom-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
+                {toasts.map(t => (
+                    <div key={t.id}
+                         className={`${t.exiting ? 'v2-toast-exit' : 'v2-toast-enter'} pointer-events-auto
+                                     px-4 py-2.5 rounded-lg shadow-lg text-sm font-medium flex items-center gap-2
+                                     ${t.type === 'error' ? 'bg-red-600 text-white' : t.type === 'info' ? 'bg-slate-800 text-white' : 'bg-green-600 text-white'}`}>
+                        {t.type === 'error' ? <Icon name="x" size={14} /> : <Icon name="check" size={14} />}
+                        {t.message}
+                    </div>
+                ))}
+            </div>
+        </ToastContext.Provider>
+    );
+}
+
+function useToast() {
+    return React.useContext(ToastContext);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SKELETON LOADERS
+// ═══════════════════════════════════════════════════════════════════════════
+
+function SkeletonLine({ w = 'w-full', h = 'h-4' }) {
+    return <div className={`v2-skeleton ${w} ${h}`} />;
+}
+
+function SignalSkeleton() {
+    return (
+        <div className="p-3 space-y-2">
+            <SkeletonLine w="w-3/4" h="h-4" />
+            <SkeletonLine w="w-1/2" h="h-3" />
+            <SkeletonLine w="w-full" h="h-3" />
+        </div>
+    );
+}
+
+function WorkspaceSkeleton() {
+    return (
+        <div className="p-6 space-y-6">
+            <div className="space-y-3">
+                <SkeletonLine w="w-1/3" h="h-7" />
+                <SkeletonLine w="w-1/2" h="h-4" />
+                <div className="flex gap-2 mt-2">
+                    <SkeletonLine w="w-20" h="h-6" />
+                    <SkeletonLine w="w-24" h="h-6" />
+                    <SkeletonLine w="w-16" h="h-6" />
+                </div>
+            </div>
+            <div className="bg-white rounded-lg p-5 shadow-sm space-y-3">
+                <SkeletonLine w="w-1/4" h="h-5" />
+                <SkeletonLine w="w-full" h="h-4" />
+                <SkeletonLine w="w-3/4" h="h-4" />
+            </div>
+            <div className="bg-white rounded-lg p-5 shadow-sm space-y-3">
+                <SkeletonLine w="w-1/4" h="h-5" />
+                <SkeletonLine w="w-full" h="h-20" />
+            </div>
+        </div>
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// AUTO-SIZING TEXTAREA
+// ═══════════════════════════════════════════════════════════════════════════
+
+function AutoTextarea({ value, onChange, onBlur, className = '', placeholder = '' }) {
+    const ref = useRef(null);
+    useEffect(() => {
+        if (ref.current) {
+            ref.current.style.height = '0';
+            ref.current.style.height = ref.current.scrollHeight + 'px';
+        }
+    }, [value]);
+    return (
+        <textarea ref={ref} value={value} onChange={onChange} onBlur={onBlur}
+            placeholder={placeholder}
+            className={`v2-textarea w-full border border-slate-200 rounded-md px-3 py-2 text-sm ${className}`}
+            style={{ overflow: 'hidden', resize: 'none' }} />
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// BADGE COMPONENTS
+// ═══════════════════════════════════════════════════════════════════════════
+
+function SignalTypeBadge({ type, size = 'sm' }) {
+    const colors = signalColors(type);
+    const label = signalLabel(type);
+    const cls = size === 'sm' ? 'text-[0.6875rem] px-2 py-0.5' : 'text-xs px-2.5 py-1';
+    return (
+        <span className={`v2-badge ${colors.bg} ${colors.text} ${cls}`}>
+            {label}
+        </span>
+    );
+}
+
+function StatusBadge({ status, size = 'sm' }) {
+    const colors = statusColors(status);
+    const cls = size === 'sm' ? 'text-[0.6875rem] px-2 py-0.5' : 'text-xs px-2.5 py-1';
+    return (
+        <span className={`v2-badge ${colors.bg} ${colors.text} ${cls}`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${colors.dot} mr-1.5 inline-block`} />
+            {status ? status.charAt(0).toUpperCase() + status.slice(1) : 'Unknown'}
+        </span>
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LEFT PANEL — SIGNAL QUEUE
+// ═══════════════════════════════════════════════════════════════════════════
+
+function SignalQueue({ signals, total, loading, activeId, onSelect, statusFilter, onStatusFilter, ownerFilter, onOwnerFilter, owners, counts }) {
+    const listRef = useRef(null);
+
+    return (
+        <div className="v2-sidebar flex flex-col h-full bg-brand-950 text-slate-300 select-none" style={{ width: 350 }}>
+            {/* Header */}
+            <div className="px-4 pt-5 pb-3 border-b border-white/10">
+                <div className="flex items-center gap-2 mb-3">
+                    <Icon name="zap" size={18} className="text-brand-400" />
+                    <h1 className="text-white text-base font-semibold tracking-tight">Signal Queue</h1>
+                    <span className="ml-auto bg-brand-800 text-brand-200 text-[0.6875rem] font-semibold px-2 py-0.5 rounded-full">
+                        {total}
+                    </span>
+                </div>
+
+                {/* Status tabs */}
+                <div className="flex gap-1 mb-3">
+                    {[
+                        { key: 'new', label: 'New', count: counts.new || 0 },
+                        { key: 'actioned', label: 'Actioned', count: counts.actioned || 0 },
+                        { key: null, label: 'All', count: Object.values(counts).reduce((a, b) => a + b, 0) },
+                    ].map(tab => (
+                        <button key={tab.label}
+                            onClick={() => onStatusFilter(tab.key)}
+                            className={`flex-1 text-xs font-medium py-1.5 rounded-md transition-all duration-150
+                                ${statusFilter === tab.key ? 'bg-brand-600 text-white' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>
+                            {tab.label}
+                            {tab.count > 0 && <span className="ml-1 opacity-70">({tab.count})</span>}
+                        </button>
+                    ))}
+                </div>
+
+                {/* Owner filter */}
+                {owners.length > 0 && (
+                    <select value={ownerFilter || ''}
+                        onChange={e => onOwnerFilter(e.target.value || null)}
+                        className="w-full text-xs bg-white/5 border border-white/10 text-slate-300 rounded-md px-2.5 py-1.5 focus:outline-none focus:border-brand-500">
+                        <option value="">All owners</option>
+                        {owners.map(o => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                )}
+            </div>
+
+            {/* Signal list */}
+            <div ref={listRef} className="flex-1 overflow-y-auto v2-scrollbar-dark">
+                {loading && signals.length === 0 ? (
+                    <div className="space-y-0">
+                        {[1,2,3,4,5].map(i => (
+                            <div key={i} className="px-4 py-3 border-b border-white/5">
+                                <div className="v2-skeleton-dark h-4 w-3/4 mb-2 rounded" />
+                                <div className="v2-skeleton-dark h-3 w-1/2 mb-1.5 rounded" />
+                                <div className="v2-skeleton-dark h-3 w-full rounded" />
+                            </div>
+                        ))}
+                    </div>
+                ) : signals.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-full text-center px-6">
+                        <Icon name="zap" size={32} className="text-slate-600 mb-3" />
+                        <p className="text-sm text-slate-400">No signals yet.</p>
+                        <p className="text-xs text-slate-500 mt-1">Import accounts or create signals to get started.</p>
+                    </div>
+                ) : signals.map(sig => (
+                    <button key={sig.id}
+                        onClick={() => onSelect(sig.id)}
+                        className={`v2-signal-item w-full text-left px-4 py-3 border-b border-white/5 v2-focus-ring
+                                   ${activeId === sig.id ? 'active' : ''}`}>
+                        <div className="flex items-center gap-2 mb-1">
+                            <span className="text-sm font-medium text-white truncate flex-1">{sig.company_name || 'Unknown'}</span>
+                            {sig.status === 'new' && (
+                                <span className="v2-new-pulse w-2 h-2 rounded-full bg-blue-400 flex-shrink-0" />
+                            )}
+                        </div>
+                        <div className="flex items-center gap-1.5 mb-1">
+                            <SignalTypeBadge type={sig.signal_type} size="sm" />
+                            {sig.account_owner && (
+                                <span className="text-[0.625rem] text-slate-500 truncate">{sig.account_owner}</span>
+                            )}
+                        </div>
+                        <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed">
+                            {sig.signal_description || 'No description'}
+                        </p>
+                    </button>
+                ))}
+            </div>
+        </div>
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SECTION 1 — SIGNAL CONTEXT
+// ═══════════════════════════════════════════════════════════════════════════
+
+function SignalContext({ workspace }) {
+    const [evidenceOpen, setEvidenceOpen] = useState(false);
+    const { signal, account } = workspace;
+
+    return (
+        <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-5">
+            <div className="flex items-start justify-between gap-4 mb-4">
+                <div className="min-w-0">
+                    <div className="flex items-center gap-3 mb-1">
+                        <h2 className="text-xl font-semibold text-slate-900 truncate">{account.company_name}</h2>
+                        {account.website && (
+                            <a href={account.website.startsWith('http') ? account.website : `https://${account.website}`}
+                               target="_blank" rel="noopener noreferrer"
+                               className="text-brand-600 hover:text-brand-700 flex-shrink-0 transition-colors">
+                                <Icon name="external-link" size={14} />
+                            </a>
+                        )}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                        {account.industry && (
+                            <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded">{account.industry}</span>
+                        )}
+                        {account.company_size && (
+                            <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded">{account.company_size} employees</span>
+                        )}
+                        {account.annual_revenue && (
+                            <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded">{account.annual_revenue}</span>
+                        )}
+                        {account.hq_location && (
+                            <span className="text-slate-400">{account.hq_location}</span>
+                        )}
+                    </div>
+                </div>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                    <StatusBadge status={account.account_status} />
+                    {account.account_owner && (
+                        <span className="text-xs text-slate-500 bg-slate-50 px-2 py-1 rounded">{account.account_owner}</span>
+                    )}
+                </div>
+            </div>
+
+            {/* Signal info */}
+            <div className="border-t border-slate-100 pt-4">
+                <div className="flex items-center gap-2 mb-2">
+                    <SignalTypeBadge type={signal.signal_type} size="md" />
+                    <span className="text-xs text-slate-400">
+                        {signal.created_at ? new Date(signal.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ''}
+                    </span>
+                </div>
+                <p className="text-sm text-slate-700 leading-relaxed">{signal.signal_description}</p>
+            </div>
+
+            {/* Evidence collapsible */}
+            {signal.evidence_value && (
+                <div className="mt-3">
+                    <button onClick={() => setEvidenceOpen(!evidenceOpen)}
+                        className="flex items-center gap-1.5 text-xs text-brand-600 hover:text-brand-700 font-medium transition-colors">
+                        <Icon name={evidenceOpen ? 'chevron-up' : 'chevron-down'} size={14} />
+                        Evidence details
+                    </button>
+                    <div className={`v2-collapse-content ${evidenceOpen ? 'open' : ''}`}>
+                        <pre className="mt-2 bg-slate-50 rounded-md p-3 text-xs text-slate-600 whitespace-pre-wrap break-words font-mono leading-relaxed border border-slate-100">
+                            {typeof signal.evidence_value === 'string' ? signal.evidence_value : JSON.stringify(signal.evidence_value, null, 2)}
+                        </pre>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SECTION 2 — CAMPAIGN RECOMMENDATION
+// ═══════════════════════════════════════════════════════════════════════════
+
+function CampaignSection({ workspace, onCampaignUpdate, toast }) {
+    const [campaigns, setCampaigns] = useState([]);
+    const [loadingCampaigns, setLoadingCampaigns] = useState(false);
+    const [selectedCampaignId, setSelectedCampaignId] = useState(workspace.signal.recommended_campaign_id || '');
+    const [guidelinesOpen, setGuidelinesOpen] = useState(false);
+    const [saving, setSaving] = useState(false);
+
+    useEffect(() => {
+        setLoadingCampaigns(true);
+        apiFetch('/v2/api/campaigns')
+            .then(data => setCampaigns(data.campaigns || []))
+            .catch(() => {})
+            .finally(() => setLoadingCampaigns(false));
+    }, []);
+
+    useEffect(() => {
+        setSelectedCampaignId(workspace.signal.recommended_campaign_id || '');
+    }, [workspace.signal.id]);
+
+    const currentCampaign = workspace.campaign;
+    const selectedCampaign = campaigns.find(c => c.id === Number(selectedCampaignId));
+
+    const handleConfirm = async () => {
+        if (!selectedCampaignId) return;
+        setSaving(true);
+        try {
+            const campName = selectedCampaign ? selectedCampaign.campaign_name : '';
+            await apiFetch(`/v2/api/signals/${workspace.signal.id}/campaign`, {
+                method: 'PUT',
+                body: JSON.stringify({
+                    campaign_id: Number(selectedCampaignId),
+                    reasoning: `Campaign "${campName}" confirmed by rep`,
+                }),
+            });
+            toast('Campaign confirmed');
+            if (onCampaignUpdate) onCampaignUpdate();
+        } catch (err) {
+            toast(err.message, 'error');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    return (
+        <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-5">
+            <h3 className="text-sm font-semibold text-slate-900 mb-3 flex items-center gap-2">
+                <Icon name="mail" size={16} className="text-brand-600" />
+                Campaign Recommendation
+            </h3>
+
+            {currentCampaign ? (
+                <div className="mb-3">
+                    <div className="flex items-center gap-2 mb-1">
+                        <span className="text-sm font-medium text-slate-800">{currentCampaign.campaign_name}</span>
+                        <span className="text-[0.6875rem] bg-green-100 text-green-700 px-2 py-0.5 rounded-full">Active</span>
+                    </div>
+                    {workspace.signal.recommended_campaign_reasoning && (
+                        <p className="text-xs text-slate-500 leading-relaxed">{workspace.signal.recommended_campaign_reasoning}</p>
+                    )}
+                    {currentCampaign.writing_guidelines && (
+                        <div className="mt-2">
+                            <button onClick={() => setGuidelinesOpen(!guidelinesOpen)}
+                                className="flex items-center gap-1 text-xs text-brand-600 hover:text-brand-700 font-medium">
+                                <Icon name={guidelinesOpen ? 'chevron-up' : 'chevron-down'} size={14} />
+                                Writing guidelines
+                            </button>
+                            <div className={`v2-collapse-content ${guidelinesOpen ? 'open' : ''}`}>
+                                <p className="mt-2 text-xs text-slate-600 bg-slate-50 rounded-md p-3 leading-relaxed border border-slate-100">
+                                    {currentCampaign.writing_guidelines}
+                                </p>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            ) : (
+                <p className="text-xs text-slate-400 mb-3">No campaign assigned yet.</p>
+            )}
+
+            <div className="border-t border-slate-100 pt-3">
+                <label className="text-xs font-medium text-slate-600 mb-1 block">
+                    {currentCampaign ? 'Override Campaign' : 'Select Campaign'}
+                </label>
+                <div className="flex gap-2">
+                    <select value={selectedCampaignId}
+                        onChange={e => setSelectedCampaignId(e.target.value)}
+                        className="flex-1 text-sm border border-slate-200 rounded-md px-3 py-1.5 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500/20 bg-white">
+                        <option value="">Select a campaign...</option>
+                        {campaigns.map(c => (
+                            <option key={c.id} value={c.id}>{c.campaign_name}</option>
+                        ))}
+                    </select>
+                    <button onClick={handleConfirm}
+                        disabled={!selectedCampaignId || saving}
+                        className="px-4 py-1.5 bg-brand-600 text-white text-sm font-medium rounded-md hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-150 flex items-center gap-1.5">
+                        {saving ? <Icon name="loader" size={14} /> : <Icon name="check" size={14} />}
+                        Confirm
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SECTION 3 — PERSONA SEARCH
+// ═══════════════════════════════════════════════════════════════════════════
+
+function PersonaSearch({ workspace, onProspectsSaved, toast }) {
+    const defaultPersonas = useMemo(() => {
+        if (workspace.personas && workspace.personas.length > 0) {
+            return workspace.personas.map(p => ({
+                title: p.title || p.titles_json || '',
+                seniority: p.seniority || p.seniorities_json || '',
+            }));
+        }
+        return [{ title: 'VP Engineering', seniority: 'vp' }];
+    }, [workspace.signal.id]);
+
+    const [personas, setPersonas] = useState(defaultPersonas);
+    const [newTitle, setNewTitle] = useState('');
+    const [newSeniority, setNewSeniority] = useState('');
+    const [searching, setSearching] = useState(false);
+    const [results, setResults] = useState([]);
+    const [selected, setSelected] = useState(new Set());
+    const [savingProspects, setSavingProspects] = useState(false);
+
+    useEffect(() => {
+        setPersonas(defaultPersonas);
+        setResults([]);
+        setSelected(new Set());
+    }, [workspace.signal.id]);
+
+    const addPersona = () => {
+        if (!newTitle.trim()) return;
+        setPersonas(prev => [...prev, { title: newTitle.trim(), seniority: newSeniority || '' }]);
+        setNewTitle('');
+        setNewSeniority('');
+    };
+
+    const removePersona = (idx) => {
+        setPersonas(prev => prev.filter((_, i) => i !== idx));
+    };
+
+    const handleSearch = async () => {
+        if (personas.length === 0) {
+            toast('Add at least one persona to search', 'error');
+            return;
+        }
+        setSearching(true);
+        setResults([]);
+        try {
+            const data = await apiFetch(`/v2/api/signals/${workspace.signal.id}/search`, {
+                method: 'POST',
+                body: JSON.stringify({ personas }),
+            });
+            const people = data.people || [];
+            setResults(people);
+            if (people.length === 0) {
+                toast('No contacts found for those personas', 'info');
+            } else {
+                toast(`Found ${people.length} contacts`);
+            }
+        } catch (err) {
+            toast(err.message, 'error');
+        } finally {
+            setSearching(false);
+        }
+    };
+
+    const toggleSelect = (idx) => {
+        setSelected(prev => {
+            const next = new Set(prev);
+            if (next.has(idx)) next.delete(idx);
+            else next.add(idx);
+            return next;
+        });
+    };
+
+    const selectAll = () => {
+        const actionable = results
+            .map((r, i) => ({ r, i }))
+            .filter(({ r }) => !r.do_not_contact && r.enrollment_status !== 'enrolled');
+        setSelected(new Set(actionable.map(({ i }) => i)));
+    };
+
+    const deselectAll = () => setSelected(new Set());
+
+    const handleSave = async () => {
+        const prospects = Array.from(selected).map(i => results[i]).filter(Boolean);
+        if (prospects.length === 0) return;
+        setSavingProspects(true);
+        try {
+            await apiFetch('/v2/api/prospects', {
+                method: 'POST',
+                body: JSON.stringify({
+                    signal_id: workspace.signal.id,
+                    account_id: workspace.account.id,
+                    prospects,
+                }),
+            });
+            toast(`Saved ${prospects.length} prospects`);
+            setSelected(new Set());
+            if (onProspectsSaved) onProspectsSaved();
+        } catch (err) {
+            toast(err.message, 'error');
+        } finally {
+            setSavingProspects(false);
+        }
+    };
+
+    const existingEmails = new Set((workspace.prospects || []).map(p => (p.email || '').toLowerCase()).filter(Boolean));
+
+    return (
+        <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-5">
+            <h3 className="text-sm font-semibold text-slate-900 mb-3 flex items-center gap-2">
+                <Icon name="users" size={16} className="text-brand-600" />
+                Persona Search
+            </h3>
+
+            {/* Persona chips */}
+            <div className="flex flex-wrap gap-2 mb-3">
+                {personas.map((p, i) => (
+                    <div key={i} className="v2-chip">
+                        {p.title}
+                        {p.seniority && <span className="text-[0.625rem] text-indigo-400 ml-0.5">({p.seniority})</span>}
+                        <button onClick={() => removePersona(i)} title="Remove">x</button>
+                    </div>
+                ))}
+            </div>
+
+            {/* Add persona */}
+            <div className="flex gap-2 mb-3">
+                <input value={newTitle} onChange={e => setNewTitle(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && addPersona()}
+                    placeholder="Job title (e.g. Head of Product)"
+                    className="flex-1 text-sm border border-slate-200 rounded-md px-3 py-1.5 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500/20" />
+                <select value={newSeniority} onChange={e => setNewSeniority(e.target.value)}
+                    className="text-sm border border-slate-200 rounded-md px-2.5 py-1.5 focus:outline-none focus:border-brand-500 bg-white w-32">
+                    <option value="">Seniority</option>
+                    <option value="c_suite">C-Suite</option>
+                    <option value="vp">VP</option>
+                    <option value="director">Director</option>
+                    <option value="manager">Manager</option>
+                    <option value="senior">Senior</option>
+                </select>
+                <button onClick={addPersona}
+                    className="px-3 py-1.5 border border-slate-200 rounded-md text-sm text-slate-600 hover:bg-slate-50 transition-all">
+                    <Icon name="plus" size={14} />
+                </button>
+            </div>
+
+            <button onClick={handleSearch}
+                disabled={searching || personas.length === 0}
+                className="w-full px-4 py-2 bg-brand-600 text-white text-sm font-medium rounded-md hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-150 flex items-center justify-center gap-2">
+                {searching ? <Icon name="loader" size={16} /> : <Icon name="search" size={16} />}
+                {searching ? 'Searching Apollo...' : 'Search Apollo'}
+            </button>
+
+            {/* Results */}
+            {results.length > 0 && (
+                <div className="mt-4">
+                    <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-medium text-slate-600">{results.length} results</span>
+                        <div className="flex gap-2">
+                            <button onClick={selectAll} className="text-xs text-brand-600 hover:text-brand-700">Select all</button>
+                            <button onClick={deselectAll} className="text-xs text-slate-400 hover:text-slate-600">Deselect all</button>
+                        </div>
+                    </div>
+                    <div className="border border-slate-200 rounded-lg overflow-hidden">
+                        <table className="w-full text-sm">
+                            <thead>
+                                <tr className="bg-slate-50 text-xs text-slate-500 uppercase tracking-wider">
+                                    <th className="w-8 px-3 py-2"></th>
+                                    <th className="text-left px-3 py-2">Name</th>
+                                    <th className="text-left px-3 py-2">Title</th>
+                                    <th className="text-left px-3 py-2">Email</th>
+                                    <th className="w-10 px-3 py-2"></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {results.map((person, idx) => {
+                                    const alreadyEnrolled = existingEmails.has((person.email || '').toLowerCase());
+                                    const isDnc = person.do_not_contact;
+                                    const disabled = alreadyEnrolled || isDnc;
+                                    return (
+                                        <tr key={idx}
+                                            className={`border-t border-slate-100 transition-colors ${disabled ? 'opacity-50' : 'hover:bg-slate-50'}`}>
+                                            <td className="px-3 py-2 text-center">
+                                                <input type="checkbox"
+                                                    checked={selected.has(idx)}
+                                                    onChange={() => !disabled && toggleSelect(idx)}
+                                                    disabled={disabled}
+                                                    className="rounded border-slate-300 text-brand-600 focus:ring-brand-500" />
+                                            </td>
+                                            <td className="px-3 py-2 font-medium text-slate-800">
+                                                {person.full_name || `${person.first_name || ''} ${person.last_name || ''}`.trim() || '--'}
+                                            </td>
+                                            <td className="px-3 py-2 text-slate-600">{person.title || '--'}</td>
+                                            <td className="px-3 py-2">
+                                                <div className="flex items-center gap-1">
+                                                    <span className="text-slate-600">{person.email || '--'}</span>
+                                                    {person.email_verified && (
+                                                        <span className="text-green-500" title="Verified"><Icon name="check" size={12} /></span>
+                                                    )}
+                                                    {alreadyEnrolled && (
+                                                        <span className="text-[0.625rem] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded ml-1">Already saved</span>
+                                                    )}
+                                                </div>
+                                            </td>
+                                            <td className="px-3 py-2">
+                                                {person.linkedin_url && (
+                                                    <a href={person.linkedin_url} target="_blank" rel="noopener noreferrer"
+                                                       className="text-blue-600 hover:text-blue-700">
+                                                        <Icon name="linkedin" size={14} />
+                                                    </a>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    {selected.size > 0 && (
+                        <button onClick={handleSave}
+                            disabled={savingProspects}
+                            className="mt-3 w-full px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-md hover:bg-green-700 disabled:opacity-40 transition-all duration-150 flex items-center justify-center gap-2">
+                            {savingProspects ? <Icon name="loader" size={16} /> : <Icon name="check" size={16} />}
+                            {savingProspects ? 'Saving...' : `Save ${selected.size} Prospect${selected.size !== 1 ? 's' : ''}`}
+                        </button>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SECTION 4 — DRAFT REVIEW
+// ═══════════════════════════════════════════════════════════════════════════
+
+function DraftReview({ workspace, toast }) {
+    const prospects = workspace.prospects || [];
+    const [drafts, setDrafts] = useState({});
+    const [generating, setGenerating] = useState({});
+    const [regeneratingDraft, setRegeneratingDraft] = useState(null);
+    const [critique, setCritique] = useState('');
+    const [approving, setApproving] = useState(false);
+    const [allApproved, setAllApproved] = useState(false);
+
+    const actionableProspects = prospects.filter(p => !p.do_not_contact);
+
+    if (actionableProspects.length === 0) return null;
+
+    const handleGenerate = async (prospectId) => {
+        setGenerating(prev => ({ ...prev, [prospectId]: true }));
+        try {
+            const data = await apiFetch('/v2/api/drafts/generate', {
+                method: 'POST',
+                body: JSON.stringify({
+                    prospect_id: prospectId,
+                    signal_id: workspace.signal.id,
+                    campaign_id: workspace.signal.recommended_campaign_id || 0,
+                }),
+            });
+            setDrafts(prev => ({ ...prev, [prospectId]: data.drafts || [] }));
+            if (data.message) toast(data.message, 'info');
+        } catch (err) {
+            toast(err.message, 'error');
+        } finally {
+            setGenerating(prev => ({ ...prev, [prospectId]: false }));
+        }
+    };
+
+    const handleRegenerate = async (draftId) => {
+        if (!critique.trim()) {
+            toast('Enter feedback for regeneration', 'error');
+            return;
+        }
+        try {
+            await apiFetch(`/v2/api/drafts/${draftId}/regenerate`, {
+                method: 'POST',
+                body: JSON.stringify({ critique: critique.trim() }),
+            });
+            toast('Draft regeneration requested', 'info');
+            setRegeneratingDraft(null);
+            setCritique('');
+        } catch (err) {
+            toast(err.message, 'error');
+        }
+    };
+
+    const handleApproveAll = async () => {
+        setApproving(true);
+        try {
+            const allDraftIds = Object.values(drafts).flat().map(d => d.id).filter(Boolean);
+            for (const id of allDraftIds) {
+                await apiFetch(`/v2/api/drafts/${id}/approve`, { method: 'POST' });
+            }
+            setAllApproved(true);
+            toast('All drafts approved');
+        } catch (err) {
+            toast(err.message, 'error');
+        } finally {
+            setApproving(false);
+        }
+    };
+
+    return (
+        <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-5">
+            <h3 className="text-sm font-semibold text-slate-900 mb-3 flex items-center gap-2">
+                <Icon name="mail" size={16} className="text-brand-600" />
+                Draft Review
+                {allApproved && <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full ml-auto">All Approved</span>}
+            </h3>
+
+            <div className="space-y-4">
+                {actionableProspects.map(prospect => (
+                    <div key={prospect.id} className="border border-slate-100 rounded-lg p-4">
+                        <div className="flex items-center justify-between mb-3">
+                            <div>
+                                <span className="text-sm font-medium text-slate-800">
+                                    {prospect.full_name || `${prospect.first_name || ''} ${prospect.last_name || ''}`.trim()}
+                                </span>
+                                <span className="text-xs text-slate-500 ml-2">{prospect.title}</span>
+                                <span className="text-xs text-slate-400 ml-2">{prospect.email}</span>
+                            </div>
+                            <button onClick={() => handleGenerate(prospect.id)}
+                                disabled={generating[prospect.id]}
+                                className="px-3 py-1 text-xs font-medium text-brand-600 border border-brand-200 rounded-md hover:bg-brand-50 disabled:opacity-40 transition-all flex items-center gap-1.5">
+                                {generating[prospect.id] ? <Icon name="loader" size={12} /> : <Icon name="zap" size={12} />}
+                                Generate Drafts
+                            </button>
+                        </div>
+
+                        {/* Draft steps */}
+                        {(drafts[prospect.id] || workspace.drafts.filter(d => d.prospect_id === prospect.id)).map((draft, stepIdx) => (
+                            <div key={draft.id || stepIdx} className="mt-3 border-t border-slate-50 pt-3">
+                                <div className="flex items-center justify-between mb-1.5">
+                                    <span className="text-xs font-medium text-slate-500 uppercase">
+                                        Step {draft.sequence_step || stepIdx + 1}
+                                    </span>
+                                    {draft.id && (
+                                        <button onClick={() => { setRegeneratingDraft(regeneratingDraft === draft.id ? null : draft.id); setCritique(''); }}
+                                            className="text-xs text-brand-600 hover:text-brand-700 flex items-center gap-1">
+                                            <Icon name="refresh-cw" size={12} /> Regenerate
+                                        </button>
+                                    )}
+                                </div>
+                                {draft.subject && (
+                                    <input type="text" defaultValue={draft.subject}
+                                        className="w-full text-sm font-medium border border-slate-200 rounded-md px-3 py-1.5 mb-1.5 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500/20" />
+                                )}
+                                <AutoTextarea
+                                    value={draft.body || ''}
+                                    onChange={() => {}}
+                                    className="text-slate-600"
+                                    placeholder="Draft body will appear here..." />
+
+                                {regeneratingDraft === draft.id && (
+                                    <div className="mt-2 flex gap-2">
+                                        <input value={critique} onChange={e => setCritique(e.target.value)}
+                                            onKeyDown={e => e.key === 'Enter' && handleRegenerate(draft.id)}
+                                            placeholder="What should change? (e.g. 'More technical, reference their specific repo')"
+                                            className="flex-1 text-sm border border-slate-200 rounded-md px-3 py-1.5 focus:outline-none focus:border-brand-500" />
+                                        <button onClick={() => handleRegenerate(draft.id)}
+                                            className="px-3 py-1.5 bg-brand-600 text-white text-xs rounded-md hover:bg-brand-700 transition-all">
+                                            Send
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                ))}
+            </div>
+
+            {Object.keys(drafts).length > 0 && !allApproved && (
+                <button onClick={handleApproveAll}
+                    disabled={approving}
+                    className="mt-4 w-full px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-md hover:bg-green-700 disabled:opacity-40 transition-all duration-150 flex items-center justify-center gap-2">
+                    {approving ? <Icon name="loader" size={16} /> : <Icon name="check" size={16} />}
+                    {approving ? 'Approving...' : 'Approve All Drafts'}
+                </button>
+            )}
+        </div>
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SECTION 5 — ENROLLMENT
+// ═══════════════════════════════════════════════════════════════════════════
+
+function Enrollment({ workspace, onNextSignal, toast }) {
+    const prospects = (workspace.prospects || []).filter(p => !p.do_not_contact);
+    const [statuses, setStatuses] = useState({});
+    const [allDone, setAllDone] = useState(false);
+
+    if (prospects.length === 0) return null;
+
+    const handleEnroll = async (prospectId) => {
+        setStatuses(prev => ({ ...prev, [prospectId]: 'enrolling' }));
+        try {
+            await apiFetch('/v2/api/enrollment/enroll', {
+                method: 'POST',
+                body: JSON.stringify({ prospect_id: prospectId }),
+            });
+            setStatuses(prev => ({ ...prev, [prospectId]: 'enrolled' }));
+            toast('Prospect enrolled');
+        } catch (err) {
+            setStatuses(prev => ({ ...prev, [prospectId]: 'failed' }));
+            toast(err.message, 'error');
+        }
+    };
+
+    const handleEnrollAll = async () => {
+        for (const p of prospects) {
+            if (statuses[p.id] === 'enrolled') continue;
+            await handleEnroll(p.id);
+        }
+        setAllDone(true);
+    };
+
+    const enrolledCount = Object.values(statuses).filter(s => s === 'enrolled').length;
+
+    const statusIcon = (pid) => {
+        const s = statuses[pid];
+        if (s === 'enrolling') return <Icon name="loader" size={14} className="text-brand-600" />;
+        if (s === 'enrolled') return <Icon name="check" size={14} className="text-green-600" />;
+        if (s === 'failed') return <Icon name="x" size={14} className="text-red-500" />;
+        return null;
+    };
+
+    const statusLabel = (pid) => {
+        const s = statuses[pid];
+        if (s === 'enrolling') return 'Enrolling...';
+        if (s === 'enrolled') return 'Enrolled';
+        if (s === 'failed') return 'Failed';
+        return 'Pending';
+    };
+
+    return (
+        <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-5">
+            <h3 className="text-sm font-semibold text-slate-900 mb-3 flex items-center gap-2">
+                <Icon name="send" size={16} className="text-brand-600" />
+                Enrollment
+                {enrolledCount > 0 && (
+                    <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full ml-2">
+                        {enrolledCount}/{prospects.length}
+                    </span>
+                )}
+            </h3>
+
+            <div className="space-y-2">
+                {prospects.map(p => (
+                    <div key={p.id}
+                         className="flex items-center justify-between py-2 px-3 rounded-md border border-slate-100 hover:bg-slate-50 transition-colors">
+                        <div className="flex items-center gap-3 min-w-0">
+                            {statusIcon(p.id)}
+                            <div className="min-w-0">
+                                <span className="text-sm font-medium text-slate-800 truncate block">
+                                    {p.full_name || `${p.first_name || ''} ${p.last_name || ''}`.trim()}
+                                </span>
+                                <span className="text-xs text-slate-500">{p.title} {p.email ? `-- ${p.email}` : ''}</span>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                            <span className={`text-xs ${statuses[p.id] === 'enrolled' ? 'text-green-600' : statuses[p.id] === 'failed' ? 'text-red-500' : 'text-slate-400'}`}>
+                                {statusLabel(p.id)}
+                            </span>
+                            {statuses[p.id] !== 'enrolled' && statuses[p.id] !== 'enrolling' && (
+                                <button onClick={() => handleEnroll(p.id)}
+                                    className="px-3 py-1 text-xs font-medium text-brand-600 border border-brand-200 rounded-md hover:bg-brand-50 transition-all">
+                                    Enroll
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                ))}
+            </div>
+
+            {!allDone && (
+                <button onClick={handleEnrollAll}
+                    className="mt-3 w-full px-4 py-2 bg-brand-600 text-white text-sm font-medium rounded-md hover:bg-brand-700 transition-all duration-150 flex items-center justify-center gap-2">
+                    <Icon name="send" size={16} />
+                    Enroll All ({prospects.length - enrolledCount} remaining)
+                </button>
+            )}
+
+            {allDone && (
+                <div className="mt-4 text-center">
+                    <div className="text-green-600 text-sm font-medium mb-2 flex items-center justify-center gap-1.5">
+                        <Icon name="check" size={16} />
+                        All prospects enrolled successfully
+                    </div>
+                    <button onClick={onNextSignal}
+                        className="px-6 py-2 bg-brand-600 text-white text-sm font-medium rounded-md hover:bg-brand-700 transition-all inline-flex items-center gap-2">
+                        Next Signal
+                        <Icon name="chevron-right" size={14} />
+                    </button>
+                </div>
+            )}
+        </div>
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// RIGHT PANEL — WORKSPACE
+// ═══════════════════════════════════════════════════════════════════════════
+
+function Workspace({ signalId, signalIndex, totalSignals, onMarkNoise, onSkip, onNextSignal }) {
+    const toast = useToast();
+    const [workspace, setWorkspace] = useState(null);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState(null);
+
+    const loadWorkspace = useCallback(async () => {
+        if (!signalId) return;
+        setLoading(true);
+        setError(null);
+        try {
+            const data = await apiFetch(`/v2/api/signals/${signalId}`);
+            setWorkspace(data);
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setLoading(false);
+        }
+    }, [signalId]);
+
+    useEffect(() => {
+        loadWorkspace();
+    }, [loadWorkspace]);
+
+    if (!signalId) {
+        return (
+            <div className="flex-1 flex items-center justify-center bg-slate-50">
+                <div className="text-center">
+                    <Icon name="zap" size={48} className="text-slate-300 mx-auto mb-4" />
+                    <p className="text-lg text-slate-400 font-medium">Select a signal from the queue to begin</p>
+                    <p className="text-sm text-slate-300 mt-1">Use arrow keys to navigate, Enter to select</p>
+                </div>
+            </div>
+        );
+    }
+
+    if (loading) {
+        return (
+            <div className="flex-1 overflow-y-auto v2-scrollbar bg-slate-50">
+                <WorkspaceSkeleton />
+            </div>
+        );
+    }
+
+    if (error) {
+        return (
+            <div className="flex-1 flex items-center justify-center bg-slate-50">
+                <div className="text-center">
+                    <p className="text-red-500 text-sm mb-2">{error}</p>
+                    <button onClick={loadWorkspace}
+                        className="px-4 py-2 text-sm text-brand-600 border border-brand-200 rounded-md hover:bg-brand-50">
+                        Retry
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
+    if (!workspace) return null;
+
+    return (
+        <div className="flex-1 flex flex-col bg-slate-50 min-h-0">
+            {/* Main scrollable content */}
+            <div className="flex-1 overflow-y-auto v2-scrollbar p-6 pb-20 space-y-4">
+                {/* Section 1: Signal Context */}
+                <SignalContext workspace={workspace} />
+
+                {/* Divider */}
+                <div className="v2-section-divider"><span>Campaign</span></div>
+
+                {/* Section 2: Campaign Recommendation */}
+                <CampaignSection workspace={workspace} onCampaignUpdate={loadWorkspace} toast={toast} />
+
+                {/* Divider */}
+                <div className="v2-section-divider"><span>Find Contacts</span></div>
+
+                {/* Section 3: Persona Search */}
+                <PersonaSearch workspace={workspace} onProspectsSaved={loadWorkspace} toast={toast} />
+
+                {/* Section 4: Draft Review (visible if prospects exist) */}
+                {workspace.prospects && workspace.prospects.length > 0 && (
+                    <>
+                        <div className="v2-section-divider"><span>Draft Emails</span></div>
+                        <DraftReview workspace={workspace} toast={toast} />
+                    </>
+                )}
+
+                {/* Section 5: Enrollment (visible if prospects exist) */}
+                {workspace.prospects && workspace.prospects.length > 0 && (
+                    <>
+                        <div className="v2-section-divider"><span>Enroll</span></div>
+                        <Enrollment workspace={workspace} onNextSignal={onNextSignal} toast={toast} />
+                    </>
+                )}
+            </div>
+
+            {/* Bottom bar */}
+            <div className="v2-bottom-bar border-t border-slate-200 bg-white px-6 py-2.5 flex items-center justify-between flex-shrink-0">
+                <div className="flex items-center gap-4">
+                    <span className="text-xs text-slate-500">
+                        Signal {signalIndex + 1} of {totalSignals}
+                    </span>
+                    <span className="text-[0.625rem] text-slate-300 hidden sm:inline">
+                        &#x2191;&#x2193; Navigate &bull; Enter Select &bull; Esc Back
+                    </span>
+                </div>
+                <div className="flex items-center gap-2">
+                    <button onClick={onMarkNoise}
+                        className="px-3 py-1.5 text-xs font-medium text-slate-500 border border-slate-200 rounded-md hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-all flex items-center gap-1.5">
+                        <Icon name="ban" size={12} />
+                        Mark as Noise
+                    </button>
+                    <button onClick={onSkip}
+                        className="px-3 py-1.5 text-xs font-medium text-slate-500 border border-slate-200 rounded-md hover:bg-slate-50 transition-all flex items-center gap-1.5">
+                        <Icon name="skip-forward" size={12} />
+                        Skip
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// APP ROOT
+// ═══════════════════════════════════════════════════════════════════════════
+
+function App() {
+    const toast = useToast();
+
+    // Signal queue state
+    const [signals, setSignals] = useState([]);
+    const [total, setTotal] = useState(0);
+    const [loading, setLoading] = useState(true);
+    const [statusFilter, setStatusFilter] = useState('new');
+    const [ownerFilter, setOwnerFilter] = useState(null);
+    const [owners, setOwners] = useState([]);
+    const [counts, setCounts] = useState({});
+    const [activeSignalId, setActiveSignalId] = useState(null);
+    const [activeIndex, setActiveIndex] = useState(-1);
+
+    // Load signals
+    const loadSignals = useCallback(async () => {
+        setLoading(true);
+        try {
+            const params = new URLSearchParams();
+            if (statusFilter) params.set('status', statusFilter);
+            if (ownerFilter) params.set('owner', ownerFilter);
+            params.set('limit', '100');
+
+            const data = await apiFetch(`/v2/api/signals?${params}`);
+            setSignals(data.signals || []);
+            setTotal(data.total || 0);
+        } catch (err) {
+            if (toast) toast(err.message, 'error');
+        } finally {
+            setLoading(false);
+        }
+    }, [statusFilter, ownerFilter]);
+
+    // Load owners + counts on mount
+    useEffect(() => {
+        apiFetch('/v2/api/signals/owners')
+            .then(data => setOwners(data.owners || []))
+            .catch(() => {});
+        apiFetch('/v2/api/signals/counts')
+            .then(data => setCounts(data.counts || {}))
+            .catch(() => {});
+    }, []);
+
+    // Reload counts when signals change
+    useEffect(() => {
+        apiFetch('/v2/api/signals/counts')
+            .then(data => setCounts(data.counts || {}))
+            .catch(() => {});
+    }, [signals.length]);
+
+    useEffect(() => {
+        loadSignals();
+    }, [loadSignals]);
+
+    // Select signal
+    const selectSignal = useCallback((id) => {
+        setActiveSignalId(id);
+        const idx = signals.findIndex(s => s.id === id);
+        setActiveIndex(idx);
+    }, [signals]);
+
+    // Keyboard navigation
+    useEffect(() => {
+        const handler = (e) => {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                const nextIdx = Math.min(activeIndex + 1, signals.length - 1);
+                if (signals[nextIdx]) selectSignal(signals[nextIdx].id);
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                const prevIdx = Math.max(activeIndex - 1, 0);
+                if (signals[prevIdx]) selectSignal(signals[prevIdx].id);
+            } else if (e.key === 'Enter' && activeIndex >= 0) {
+                e.preventDefault();
+                selectSignal(signals[activeIndex].id);
+            } else if (e.key === 'Escape') {
+                setActiveSignalId(null);
+                setActiveIndex(-1);
+            }
+        };
+        window.addEventListener('keydown', handler);
+        return () => window.removeEventListener('keydown', handler);
+    }, [activeIndex, signals, selectSignal]);
+
+    // Navigate to next signal
+    const nextSignal = useCallback(() => {
+        const nextIdx = activeIndex + 1;
+        if (nextIdx < signals.length) {
+            selectSignal(signals[nextIdx].id);
+        } else {
+            // Refresh the queue
+            loadSignals();
+            setActiveSignalId(null);
+            setActiveIndex(-1);
+        }
+    }, [activeIndex, signals, selectSignal, loadSignals]);
+
+    // Skip = same as next
+    const skipSignal = useCallback(() => {
+        nextSignal();
+    }, [nextSignal]);
+
+    // Mark as noise
+    const markNoise = useCallback(async () => {
+        if (!activeSignalId) return;
+        const sig = signals.find(s => s.id === activeSignalId);
+        if (!sig) return;
+
+        try {
+            await apiFetch(`/v2/api/accounts/${sig.account_id}/status`, {
+                method: 'PUT',
+                body: JSON.stringify({ status: 'noise' }),
+            });
+            await apiFetch(`/v2/api/signals/${activeSignalId}/status`, {
+                method: 'PUT',
+                body: JSON.stringify({ status: 'archived' }),
+            });
+            toast('Marked as noise');
+            loadSignals();
+            nextSignal();
+        } catch (err) {
+            toast(err.message, 'error');
+        }
+    }, [activeSignalId, signals, loadSignals, nextSignal, toast]);
+
+    return (
+        <div className="flex h-screen overflow-hidden">
+            <SignalQueue
+                signals={signals}
+                total={total}
+                loading={loading}
+                activeId={activeSignalId}
+                onSelect={selectSignal}
+                statusFilter={statusFilter}
+                onStatusFilter={setStatusFilter}
+                ownerFilter={ownerFilter}
+                onOwnerFilter={setOwnerFilter}
+                owners={owners}
+                counts={counts}
+            />
+            <Workspace
+                signalId={activeSignalId}
+                signalIndex={activeIndex >= 0 ? activeIndex : 0}
+                totalSignals={total}
+                onMarkNoise={markNoise}
+                onSkip={skipSignal}
+                onNextSignal={nextSignal}
+            />
+        </div>
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MOUNT
+// ═══════════════════════════════════════════════════════════════════════════
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(
+    <ToastProvider>
+        <App />
+    </ToastProvider>
+);
+</script>
+{% endraw %}
+</body>
+</html>
