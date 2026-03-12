@@ -14,7 +14,7 @@ This branch adds a complete **intent-signal-first prospecting platform** (v2) in
 - 6 new columns on 2 existing tables
 - 11 service modules (CRUD, business logic, LLM integration)
 - 5 Flask blueprint modules with 27 route handlers
-- 1 MCP tools module with 15 tools for Claude CoWork
+- 1 MCP tools module with 16 tools for Claude CoWork
 - 1 React SPA template (signal-queue UI at `/app`)
 - 1 CSS file for the SPA
 
@@ -93,7 +93,7 @@ v2/
 - Signal queue at `/app` — the new primary interface
 - All `/v2/api/*` endpoints
 - All v2 services
-- 15 new MCP tools (registered alongside legacy tools)
+- 16 new MCP tools (registered alongside legacy tools)
 - `intent_signals`, `prospects`, `drafts`, `feedback_log`, `activity_log`, `writing_preferences` tables
 
 ### Shared (used by both old and new)
@@ -162,7 +162,7 @@ v2/
 
 ## 5. All New/Changed MCP Tools
 
-15 new tools registered via `register_v2_tools(mcp)`:
+16 new tools registered via `register_v2_tools(mcp)`:
 
 | Tool | Purpose |
 |------|---------|
@@ -172,13 +172,14 @@ v2/
 | `ingest_signals_from_csv` | Parse CSV content into signals |
 | `recommend_campaign` | Get campaign recommendation for signal |
 | `find_prospects` | Apollo people search by domain + titles |
+| `save_prospects` | Persist found prospects to shared table (CoWork parity) |
 | `generate_draft_sequence` | Generate email drafts for prospect |
 | `regenerate_draft_step` | Rewrite one draft step with critique |
 | `save_edited_draft` | Save manual edits to draft |
 | `approve_draft` | Mark draft approved |
 | `enroll_prospect` | Enroll in Apollo sequence |
-| `mark_account_noise` | Mark account as noise |
-| `mark_account_revisit` | Mark account for revisit |
+| `mark_account_noise` | Mark account as noise (cascades signals to archived) |
+| `mark_account_revisit` | Mark account for revisit (cascades signals to actioned) |
 | `create_revisit_signal` | Create fresh signal for revisit |
 | `list_feedback_log` | View recent draft critiques |
 
@@ -276,7 +277,7 @@ campaigns: campaign_type TEXT DEFAULT 'signal_based', writing_guidelines TEXT
 ### MCP (Terminal 4)
 | File | Lines | Purpose |
 |------|-------|---------|
-| `v2/mcp_tools.py` | 554 | 15 MCP tools for CoWork |
+| `v2/mcp_tools.py` | 630 | 16 MCP tools for CoWork |
 
 ### Frontend (Terminal 2)
 | File | Lines | Purpose |
@@ -316,7 +317,30 @@ campaigns: campaign_type TEXT DEFAULT 'signal_based', writing_guidelines TEXT
 
 ---
 
-## 9. What Still Feels Incomplete / Risky
+## 9. Codex Audit Findings — All Fixed
+
+All 9 bugs from the initial Codex audit have been resolved in commit `bea6b53`:
+
+### P1 Fixes (Critical)
+| ID | Bug | Fix |
+|----|-----|-----|
+| P1-1 | Enrollment didn't inject draft content into Apollo | `enrollment_service.py`: builds `custom_field_values` dict from approved drafts (subject/body per step + top-level `email_subject`/`email_body`) |
+| P1-2 | Campaign endpoint used nonexistent `campaign_name` column | `api.py` + `app.html`: changed to `name` (the real column) |
+| P1-3 | Web app didn't persist draft edits | `app.html`: added `handleDraftEdit()` → `PUT /v2/api/drafts/<id>` on blur |
+| P1-4 | No server-side contact filtering | `api.py`: added `is_already_enrolled()`, `_filter_personal_email()`, empty-email checks |
+| P1-5 | Account status changes didn't cascade to signals | `account_service.py`: added `_cascade_signal_status()` — sequenced/revisit → signals to 'actioned'; noise → signals to 'archived' |
+| P1-6 | Account revisit triggered prematurely | `account_service.py`: `check_all_sequences_complete()` now requires ALL non-DNC prospects to be `sequence_complete` (not just enrolled ones) |
+
+### P2 Fixes (Important)
+| ID | Bug | Fix |
+|----|-----|-----|
+| P2-1 | Duplicate draft rows on regenerate | `draft_service.py`: `generate_drafts()` deletes old generated/edited drafts before inserting new ones |
+| P2-2 | Signal dedup too aggressive | `signal_service.py`: `check_duplicate_signal()` now includes `evidence_value` in dedup check |
+| P2-3 | CoWork missing save_prospects tool | `mcp_tools.py`: added `save_prospects` tool with same filtering as web endpoint |
+
+---
+
+## 10. What Still Feels Incomplete / Risky
 
 ### Incomplete
 1. **No automated tests**: No pytest files. Services were verified via import + syntax only.
@@ -330,12 +354,11 @@ campaigns: campaign_type TEXT DEFAULT 'signal_based', writing_guidelines TEXT
 1. **Draft generation quality**: The LLM prompt construction in `draft_service.py` is untested against the Replit AI proxy. The template fallback is basic.
 2. **Apollo enrollment**: The enrollment_service calls Apollo API but the exact payload format (especially custom variable injection for email bodies) has not been validated against Apollo's current API.
 3. **Campaign recommendation accuracy**: The `campaign_service.recommend_campaign()` keyword matching depends on campaign names containing expected keywords (e.g., "implementation", "migration"). If existing campaigns have different naming, recommendations will fall back to the first active campaign.
-4. **Concurrent agent file consistency**: The 3 agent terminals (T2, T3, T4) wrote code independently. While file ownership was clean, cross-service contracts (function signatures, return types) may have minor mismatches.
-5. **React SPA size**: `app.html` is 1333 lines of inline JSX. Babel standalone compilation on every page load has performance implications.
+4. **React SPA size**: `app.html` is 1333 lines of inline JSX. Babel standalone compilation on every page load has performance implications.
 
 ---
 
-## 10. What Codex Should Inspect Most Carefully
+## 11. What Codex Should Inspect Most Carefully
 
 1. **Cross-service contracts**: Verify that `api.py` route handlers call service functions with correct argument names and handle return values correctly. Key interfaces:
    - `api.py` → `signal_service.get_signal_workspace()` return shape
@@ -359,7 +382,7 @@ campaigns: campaign_type TEXT DEFAULT 'signal_based', writing_guidelines TEXT
 
 ---
 
-## 11. Assumptions Made Without User Confirmation
+## 12. Assumptions Made Without User Confirmation
 
 1. **Flask + Jinja + React CDN stack**: Kept the existing stack (React 18 via CDN, Babel standalone, Tailwind CDN) rather than introducing a build system. This matches existing patterns in the repo.
 
