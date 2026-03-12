@@ -1801,8 +1801,13 @@ def proxy_sse():
     # C3 fix: Translate per-session token to real API key for internal MCP
     real_auth = _translate_bearer_token(auth)
     if not real_auth:
-        return jsonify({'error': 'invalid_token',
-                        'error_description': 'Missing or expired access token'}), 401
+        resource_url = f"{request.scheme}://{request.host}/.well-known/oauth-protected-resource"
+        return (
+            jsonify({'error': 'invalid_token',
+                     'error_description': 'Missing or expired access token'}),
+            401,
+            {'WWW-Authenticate': f'Bearer realm="Lead Machine MCP", resource_metadata="{resource_url}"'},
+        )
 
     try:
         mcp_resp = requests.get(
@@ -1858,8 +1863,13 @@ def proxy_messages():
     # C3 fix: Translate per-session token to real API key
     real_auth = _translate_bearer_token(auth)
     if not real_auth:
-        return jsonify({'error': 'invalid_token',
-                        'error_description': 'Missing or expired access token'}), 401
+        resource_url = f"{request.scheme}://{request.host}/.well-known/oauth-protected-resource"
+        return (
+            jsonify({'error': 'invalid_token',
+                     'error_description': 'Missing or expired access token'}),
+            401,
+            {'WWW-Authenticate': f'Bearer realm="Lead Machine MCP", resource_metadata="{resource_url}"'},
+        )
 
     qs = request.query_string.decode()
     try:
