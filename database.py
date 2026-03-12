@@ -1027,6 +1027,13 @@ def init_db() -> None:
             ON pipeline_step_results(run_id)
         ''')
 
+        # V2 schema — intent-signal-first domain tables
+        try:
+            from v2.schema import init_v2_schema
+            init_v2_schema(cursor, _adapt_ddl, _safe_add_column)
+        except ImportError:
+            logging.warning("[DB] v2 schema module not found — skipping v2 tables")
+
         conn.commit()
 
     # Run cleanup tasks on initialization

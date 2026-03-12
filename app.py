@@ -129,6 +129,37 @@ app.register_blueprint(email_bp)
 from pipeline_routes import pipeline_bp
 app.register_blueprint(pipeline_bp)
 
+# Register V2 blueprints (intent-signal-first platform)
+try:
+    from v2.routes.web import web_bp
+    app.register_blueprint(web_bp)
+except ImportError:
+    logging.warning("[APP] v2.routes.web not found — skipping web blueprint")
+
+try:
+    from v2.routes.api import api_bp
+    app.register_blueprint(api_bp)
+except ImportError:
+    logging.warning("[APP] v2.routes.api not found — skipping API blueprint")
+
+try:
+    from v2.routes.ingestion import ingestion_bp
+    app.register_blueprint(ingestion_bp)
+except ImportError:
+    logging.warning("[APP] v2.routes.ingestion not found — skipping ingestion blueprint")
+
+try:
+    from v2.routes.draft import draft_bp
+    app.register_blueprint(draft_bp)
+except ImportError:
+    logging.warning("[APP] v2.routes.draft not found — skipping draft blueprint")
+
+try:
+    from v2.routes.enrollment import enrollment_bp
+    app.register_blueprint(enrollment_bp)
+except ImportError:
+    logging.warning("[APP] v2.routes.enrollment not found — skipping enrollment blueprint")
+
 # Initialize rate limiter with route-specific limits
 limiter.init_app(app)
 limiter.set_route_limit('/login', 10, 60)           # 10 login attempts per minute

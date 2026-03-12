@@ -2194,6 +2194,17 @@ def _create_authenticated_sse_app(mcp_instance, api_key: str):
     return inner_app
 
 
+# Register V2 MCP tools (intent-signal-first workflow)
+try:
+    from v2.mcp_tools import register_v2_tools
+    register_v2_tools(mcp)
+    logging.info("[MCP] V2 tools registered successfully")
+except ImportError:
+    logging.warning("[MCP] v2.mcp_tools not found — v2 tools not available")
+except Exception as e:
+    logging.error("[MCP] Failed to register v2 tools: %s", e)
+
+
 if __name__ == "__main__":
     transport = os.environ.get("MCP_TRANSPORT", "stdio")
     if transport == "sse":
