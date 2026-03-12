@@ -1,0 +1,996 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BDR Review - Lead Machine</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='45' fill='%234F46E5'/><circle cx='50' cy='50' r='30' fill='none' stroke='white' stroke-width='4'/><line x1='71' y1='71' x2='90' y2='90' stroke='white' stroke-width='8' stroke-linecap='round'/></svg>">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body>
+<div id="root"></div>
+
+{% raw %}
+<script type="text/babel">
+const { useState, useCallback, useEffect, useRef } = React;
+
+// ═══════════════════════════════════════════════════════════════════
+// API HELPERS
+// ═══════════════════════════════════════════════════════════════════
+
+async function apiFetch(url, options = {}) {
+  const resp = await fetch(url, {
+    headers: { 'Content-Type': 'application/json', ...options.headers },
+    ...options,
+  });
+  const data = await resp.json();
+  if (!resp.ok) throw new Error(data.message || `API error ${resp.status}`);
+  return data;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SIGNAL TYPE DISPLAY LABELS
+// ═══════════════════════════════════════════════════════════════════
+
+const SIGNAL_LABELS = {
+  'dependency_injection': 'Dependency Detected',
+  'ghost_branch': 'Ghost Branch',
+  'ghost_branch_active': 'Active Ghost Branch',
+  'rfc_discussion': 'RFC Discussion',
+  'rfc_discussion_high': 'RFC Discussion (High)',
+  'smoking_gun_fork': 'Competitor Fork',
+  'tms_config_file': 'TMS Config Detected',
+  'job_posting_intent': 'Job Posting Intent',
+  'already_launched': 'Already Launched',
+};
+
+function signalLabel(type) {
+  if (!type) return 'Unknown';
+  return SIGNAL_LABELS[type] || type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SIGNAL → CAMPAIGN REASONING MAPPING
+// ═══════════════════════════════════════════════════════════════════
+
+const SIGNAL_REASONING = {
+  "Enterprise Strategic": {
+    "dependency_injection": "i18n dependencies detected across repos — enterprise-scale infrastructure means a multi-threaded approach to reach engineering and localization leadership.",
+    "smoking_gun_fork": "Competitor TMS fork detected — they're evaluating alternatives. Enterprise approach gets you to the decision-making committee.",
+    "rfc_discussion": "Active RFC discussions about i18n — engineering leadership is already thinking about this. Enterprise multi-thread hits the right stakeholders.",
+    "ghost_branch": "Ghost i18n branch in an enterprise org — someone is championing this internally. Multi-threaded outreach catches both the champion and budget holder.",
+    "tms_config_file": "TMS config detected — they already have a translation management setup. Enterprise approach positions Phrase as the upgrade path.",
+    "job_posting_intent": "Hiring for localization roles — they're investing. Enterprise approach aligns with their scaling plans.",
+    "default": "Enterprise-scale signals detected — multi-threaded outreach to engineering and localization leadership."
+  },
+  "Implementation Partner": {
+    "dependency_injection": "They just added i18n libraries — in the build-vs-buy moment. Partner approach catches them before they over-invest in homegrown tooling.",
+    "ghost_branch": "Active i18n branch = they're building right now. Implementation partner positioning helps them do it right from the start.",
+    "rfc_discussion": "RFC discussions show active planning. Partner approach catches them during the decision window.",
+    "default": "Active implementation signals — partner-led approach catches them in the decision window."
+  },
+  "Greenfield Educator": {
+    "ghost_branch": "Ghost branch = someone on the team is already championing i18n. They need air cover and a business case. Educator approach arms that champion.",
+    "rfc_discussion": "Early RFC discussions about internationalization — educate on best practices before they go down the wrong path.",
+    "default": "Early i18n signals — educate on the business case and arm the internal champion."
+  },
+  "Scale Optimizer": {
+    "dependency_injection": "Multiple i18n libraries detected — they've outgrown their current setup. Scale optimizer positioning addresses their growing pains.",
+    "tms_config_file": "Existing TMS setup with scale issues — they need optimization, not education.",
+    "default": "Growing pains with current i18n setup — optimize for scale."
+  },
+  "Migration Candidate": {
+    "tms_config_file": "Competitor TMS detected — present Phrase as the modern alternative with a clear migration path.",
+    "smoking_gun_fork": "Forked a TMS — they're actively comparing alternatives. Migration path is the play.",
+    "default": "Using a competitor or legacy tool — present migration path to Phrase."
+  },
+  "Pain-Driven": {
+    "rfc_discussion": "Active pain discussions in RFCs — they're feeling the problem. Address their specific pain point directly.",
+    "job_posting_intent": "Hiring for i18n/localization roles — experiencing pain and investing to fix it.",
+    "default": "Experiencing specific i18n pain points — solve their immediate problem."
+  },
+  "Expansion Accelerator": {
+    "already_launched": "Already launched in some markets — help them accelerate expansion to new regions.",
+    "default": "Ready to expand to new markets — accelerate their international rollout."
+  }
+};
+
+function getCampaignReasoning(campaignName, signalType) {
+  const m = SIGNAL_REASONING[campaignName];
+  if (!m) return "This campaign fits the detected signals for this account.";
+  return m[signalType] || m["default"] || "This campaign fits the detected signals for this account.";
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// STEP TEMPLATES (by sequence config type)
+// ═══════════════════════════════════════════════════════════════════
+
+const STEP_TEMPLATES = {
+  one_off: [{ pos: 1, subject: true, label: "One-off" }],
+  threaded_2: [
+    { pos: 1, subject: true, label: "Hook" },
+    { pos: 2, subject: false, label: "Breakup", wait: 5 },
+  ],
+  threaded_3: [
+    { pos: 1, subject: true, label: "Hook" },
+    { pos: 2, subject: false, label: "Follow-up", wait: 4 },
+    { pos: 3, subject: false, label: "Breakup", wait: 5 },
+  ],
+  threaded_4: [
+    { pos: 1, subject: true, label: "Hook" },
+    { pos: 2, subject: false, label: "Bump", wait: 3 },
+    { pos: 3, subject: false, label: "Value add", wait: 4 },
+    { pos: 4, subject: false, label: "Breakup", wait: 5 },
+  ],
+  split_2x2: [
+    { pos: 1, subject: true, label: "Hook" },
+    { pos: 2, subject: false, label: "Follow-up", wait: 3 },
+    { pos: 3, subject: true, label: "New angle", wait: 5 },
+    { pos: 4, subject: false, label: "Breakup", wait: 5 },
+  ],
+};
+
+function getSteps(config) {
+  return STEP_TEMPLATES[config] || STEP_TEMPLATES.threaded_4;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// EMAIL GENERATION (client-side templates)
+// ═══════════════════════════════════════════════════════════════════
+
+function generateEmails(account, steps, prospect) {
+  const sigType = signalLabel(account.signal_type);
+  const sigDesc = account.signal_desc || '';
+  const pName = prospect ? prospect.name.split(" ")[0] : "{{first_name}}";
+  const org = account.github_org || account.company_name;
+  const name = account.company_name;
+
+  const subj1 = sigType + " in " + org + " — quick question";
+  const subj2 = "Different angle on localization at {{company}}";
+
+  const bodies = {
+    "One-off": "Hey " + pName + ",\n\nNoticed " + sigType.toLowerCase() + " activity in your GitHub — " + (sigDesc.split('.')[0] || '').toLowerCase() + ".\n\nThis usually means your team is about to hit the locale-file-management wall. Phrase automates that through GitHub Sync so your devs never touch translation files.\n\nWorth 15 min?\n\n{{sender_first_name}}",
+    "Hook": "Hey " + pName + ",\n\nNoticed " + sigType.toLowerCase() + " activity in " + org + "'s GitHub — " + (sigDesc.split('.')[0] || '').toLowerCase() + ".\n\nThis is usually when teams start wrestling with manual locale file management. Phrase automates that through GitHub Sync — your devs never touch translation files.\n\nWorth a look?\n\n{{sender_first_name}}",
+    "Bump": "Hey " + pName + ",\n\nBumping this — figured it might have gotten buried.\n\nShort version: Phrase automates the dev-to-translator handoff so your engineers stop managing locale files. Syncs directly with GitHub.\n\nWorth 15 min?\n\n{{sender_first_name}}",
+    "Follow-up": "Hey " + pName + ",\n\nFollowing up — teams that automate their i18n pipeline ship localized releases 3x faster. The bottleneck is usually the dev-to-translator handoff.\n\nPhrase plugs into your CI/CD so that handoff is automatic. No JSON wrangling, no merge conflicts on locale files.\n\nOpen to a quick look?\n\n{{sender_first_name}}",
+    "Value add": "Hey " + pName + ",\n\nQuick one — Shopify, Decathlon, and Delivery Hero all use Phrase to manage localization at scale.\n\nCommon thread: they needed something that fit their dev workflow without adding process.\n\nHappy to show you how it maps to what " + name + " is building.\n\n{{sender_first_name}}",
+    "New angle": "Hey " + pName + ",\n\nDifferent angle — the " + sigType.toLowerCase() + " signals in " + org + "'s GitHub suggest your team is getting serious about i18n.\n\nMost teams at this stage underestimate how fast locale file management becomes a bottleneck. Phrase eliminates that before it starts.\n\n15 min to show you?\n\n{{sender_first_name}}",
+    "Breakup": "Hey " + pName + ",\n\nLast note from me. If localization isn't a priority right now, totally get it. But when manual file management becomes a bottleneck, Phrase is worth bookmarking.\n\nGood luck with what you're building at " + name + ".\n\n{{sender_first_name}}",
+  };
+
+  let currentThread = null;
+  return steps.map((step, i) => {
+    let subject;
+    if (step.subject) { subject = i === 0 ? subj1 : subj2; currentThread = subject; }
+    else { subject = "Re: " + (currentThread || subj1); }
+    return { pos: step.pos, label: step.label, subject, body: bodies[step.label] || bodies["Hook"], isThreaded: !step.subject, wait: step.wait || 0 };
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// AUTO-SIZE TEXTAREA
+// ═══════════════════════════════════════════════════════════════════
+
+function AutoTextarea({ value, onChange, className }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    if (ref.current) {
+      ref.current.style.height = "0";
+      ref.current.style.height = ref.current.scrollHeight + "px";
+    }
+  }, [value]);
+  return (
+    <textarea ref={ref} value={value} onChange={onChange}
+      className={className} style={{ overflow: "hidden", resize: "none" }} />
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SHARED — Back button + header bar
+// ═══════════════════════════════════════════════════════════════════
+
+function ScreenHeader({ onBack, title, subtitle, right }) {
+  return (
+    <div className="px-4 py-2 border-b border-slate-200 flex items-center gap-2 shrink-0 bg-white">
+      {onBack && (
+        <button onClick={onBack} className="text-slate-400 hover:text-slate-600 p-0.5" title="Back (Esc)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+      )}
+      <div className="min-w-0">
+        <div className="text-xs font-bold text-slate-900 truncate">{title}</div>
+        {subtitle && <div className="text-[10px] text-slate-400 truncate">{subtitle}</div>}
+      </div>
+      {right && <div className="ml-auto shrink-0">{right}</div>}
+    </div>
+  );
+}
+
+function StepIndicator({ current, total, labels }) {
+  return (
+    <div className="px-4 py-1.5 border-b border-slate-100 flex items-center gap-1 shrink-0 bg-slate-50">
+      {labels.map((label, i) => (
+        <div key={i} className="flex items-center gap-1">
+          <div className={"flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold " + (
+            i < current ? "text-emerald-600 bg-emerald-50" :
+            i === current ? "text-slate-900 bg-white border border-slate-200 shadow-sm" :
+            "text-slate-300"
+          )}>
+            {i < current ? (
+              <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5"><polyline points="20 6 9 17 4 12"/></svg>
+            ) : (
+              <span className="tabular-nums">{i + 1}</span>
+            )}
+            <span>{label}</span>
+          </div>
+          {i < labels.length - 1 && (
+            <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke={i < current ? "#059669" : "#cbd5e1"} strokeWidth="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const STEP_LABELS = ["Campaign", "Personas", "Search", "Select", "Enroll"];
+
+// ═══════════════════════════════════════════════════════════════════
+// LOADING SCREEN
+// ═══════════════════════════════════════════════════════════════════
+
+function LoadingScreen({ message }) {
+  return (
+    <div className="h-screen flex flex-col items-center justify-center bg-slate-50 gap-3">
+      <div className="w-8 h-8 border-2 border-slate-300 border-t-slate-800 rounded-full animate-spin" />
+      <div className="text-xs text-slate-500">{message || "Loading..."}</div>
+    </div>
+  );
+}
+
+function ErrorScreen({ message, onRetry }) {
+  return (
+    <div className="h-screen flex flex-col items-center justify-center bg-slate-50 gap-3">
+      <div className="text-red-500 text-sm font-bold">Error</div>
+      <div className="text-xs text-slate-500 max-w-sm text-center">{message}</div>
+      {onRetry && (
+        <button onClick={onRetry} className="px-4 py-1.5 text-xs font-bold text-white bg-slate-800 rounded hover:bg-slate-900">
+          Retry
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SCREEN 1 — Account List
+// ═══════════════════════════════════════════════════════════════════
+
+const TD = { 1: "bg-amber-400", 2: "bg-emerald-400" };
+const TL = { 1: "Warm", 2: "Hot" };
+
+function AccountList({ accounts, statuses, onSelect }) {
+  return (
+    <div className="flex flex-col h-full">
+      <div className="px-4 py-2.5 border-b border-slate-200 bg-white flex items-center justify-between shrink-0">
+        <div>
+          <div className="flex items-center gap-2">
+            <a href="/accounts" className="text-slate-400 hover:text-slate-600" title="Back to accounts">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="15 18 9 12 15 6"/></svg>
+            </a>
+            <div>
+              <div className="text-sm font-bold text-slate-900">Pipeline Review</div>
+              <div className="text-[10px] text-slate-400">Intent signals queue — select account to attack</div>
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center gap-3 text-[10px] text-slate-500">
+          <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400" /> Enrolled</span>
+          <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-slate-300" /> Pending</span>
+        </div>
+      </div>
+      <div className="flex-1 overflow-auto">
+        {accounts.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-64 text-slate-400 text-xs">
+            No tier 1 or tier 2 accounts found. Scan some accounts first.
+          </div>
+        ) : (
+          <table className="w-full text-xs">
+            <thead className="sticky top-0 bg-slate-50 border-b border-slate-200">
+              <tr className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+                <th className="pl-4 pr-1 py-2 text-left w-8">#</th>
+                <th className="px-2 py-2 text-left">Account</th>
+                <th className="px-2 py-2 text-left">Intent Signal</th>
+                <th className="px-2 py-2 text-center w-20">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {accounts.map((a, i) => {
+                const st = statuses[a.id] || "pending";
+                const done = st === "enrolled";
+                const isPending = st === "pending";
+                return (
+                  <tr key={a.id}
+                    onClick={() => isPending && onSelect(a)}
+                    className={"border-b border-slate-100 transition-colors " + (
+                      isPending ? "cursor-pointer hover:bg-emerald-50" : ""
+                    ) + (done ? " bg-emerald-50/40" : "") + (!isPending && !done ? " opacity-40" : "")}>
+                    <td className="pl-4 pr-1 py-2.5">
+                      <span className="text-slate-300 text-[10px] tabular-nums pl-1">{i + 1}</span>
+                    </td>
+                    <td className="px-2 py-2.5">
+                      <div className="flex items-center gap-1.5">
+                        <span className={"w-1.5 h-1.5 rounded-full shrink-0 " + (TD[a.current_tier] || "bg-slate-300")} />
+                        <span className={"font-bold " + (isPending || done ? "text-slate-900" : "text-slate-400")}>{a.company_name}</span>
+                        <span className="text-[9px] text-slate-400 font-medium">{TL[a.current_tier] || ""}</span>
+                      </div>
+                      <div className="text-[10px] text-slate-400 mt-0.5 pl-3">
+                        {a.industry || ""}{a.annual_revenue ? " · " + a.annual_revenue : ""}
+                        {a.website ? (
+                          <span>{" · "}
+                            <a href={"https://" + a.website} target="_blank" rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="text-blue-500 hover:text-blue-700 hover:underline">{a.website}</a>
+                          </span>
+                        ) : null}
+                      </div>
+                    </td>
+                    <td className="px-2 py-2.5">
+                      <div className="text-[10px] font-semibold text-emerald-700">{signalLabel(a.signal_type)}</div>
+                      <div className="text-[10px] text-slate-500 leading-snug mt-0.5 line-clamp-2">{a.signal_desc}</div>
+                    </td>
+                    <td className="px-2 py-2.5 text-center">
+                      {done && (
+                        <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-emerald-600 bg-emerald-100 px-1.5 py-0.5 rounded-full">
+                          <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                          Done
+                        </span>
+                      )}
+                      {isPending && <span className="text-[9px] text-slate-400">—</span>}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// STEP 1 — Campaign Picker (with reasoning)
+// ═══════════════════════════════════════════════════════════════════
+
+function CampaignPicker({ account, campaigns, onConfirm, onBack }) {
+  const recommended = campaigns.findIndex(c =>
+    c.name.toLowerCase() === (account.outreach_angle || '').toLowerCase()
+  );
+  const [selected, setSelected] = useState(recommended >= 0 ? recommended : 0);
+
+  const campaign = campaigns[selected];
+  if (!campaign) return <ErrorScreen message="No active campaigns found. Create a campaign first." />;
+
+  const reasoning = getCampaignReasoning(campaign.name, account.signal_type);
+
+  return (
+    <div className="flex flex-col h-full">
+      <ScreenHeader onBack={onBack} title={account.company_name}
+        subtitle={signalLabel(account.signal_type) + " · " + (account.industry || "")} />
+      <StepIndicator current={0} total={5} labels={STEP_LABELS} />
+      <div className="flex-1 overflow-auto px-4 py-3">
+        <div className="space-y-2 mb-4">
+          {campaigns.map((c, i) => {
+            const isRec = i === recommended;
+            const isSel = i === selected;
+            return (
+              <button key={c.id} onClick={() => setSelected(i)}
+                className={"w-full text-left rounded-lg border px-4 py-3 transition-all " + (
+                  isSel ? "border-slate-800 bg-white shadow-md ring-1 ring-slate-800" :
+                  isRec ? "border-emerald-200 bg-emerald-50/50" :
+                  "border-slate-200 bg-white hover:border-slate-300"
+                )}>
+                <div className="flex items-center gap-2">
+                  <div className={"w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 " + (
+                    isSel ? "border-slate-800" : "border-slate-300"
+                  )}>
+                    {isSel && <div className="w-2 h-2 rounded-full bg-slate-800" />}
+                  </div>
+                  <span className="text-xs font-bold text-slate-900">{c.name}</span>
+                  {isRec && <span className="text-[8px] font-bold text-emerald-600 bg-emerald-100 px-1.5 py-0.5 rounded-full ml-1">RECOMMENDED</span>}
+                </div>
+                <p className="text-[10px] text-slate-500 mt-1 ml-6">{c.desc}</p>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
+          <div className="text-[9px] font-bold text-amber-700 uppercase tracking-widest mb-1">Why this campaign?</div>
+          <div className="text-[11px] text-amber-900 leading-relaxed">{reasoning}</div>
+          <div className="mt-2 flex items-center gap-2 text-[10px] text-amber-600">
+            <span className="font-semibold">Signal:</span>
+            <span className="bg-amber-100 px-1.5 py-0.5 rounded font-medium">{signalLabel(account.signal_type)}</span>
+            <span className="mx-1">&rarr;</span>
+            <span className="bg-amber-100 px-1.5 py-0.5 rounded font-medium">{campaign.name}</span>
+          </div>
+        </div>
+      </div>
+      <div className="px-4 py-2 border-t border-slate-200 bg-white flex items-center justify-between shrink-0">
+        <span className="text-[10px] text-slate-400">
+          <kbd className="px-1 py-0.5 bg-slate-100 rounded text-[8px] font-mono">Esc</kbd> back
+        </span>
+        <button onClick={() => onConfirm(campaign)}
+          className="px-5 py-1.5 text-xs font-bold text-white bg-slate-800 hover:bg-slate-900 rounded shadow-sm active:scale-[0.98]">
+          Confirm Campaign &rarr;
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// STEP 2 — Persona Confirmation
+// ═══════════════════════════════════════════════════════════════════
+
+function PersonaConfirm({ account, campaign, onConfirm, onBack }) {
+  const [personas, setPersonas] = useState(() =>
+    (campaign.personas || []).map(p => ({ ...p }))
+  );
+
+  const toggle = (idx) => {
+    setPersonas(prev => prev.map((p, i) => i === idx ? { ...p, enabled: !p.enabled } : p));
+  };
+
+  const enabledCount = personas.filter(p => p.enabled).length;
+
+  return (
+    <div className="flex flex-col h-full">
+      <ScreenHeader onBack={onBack} title={account.company_name} subtitle={campaign.name} />
+      <StepIndicator current={1} total={5} labels={STEP_LABELS} />
+      <div className="flex-1 overflow-auto px-4 py-3">
+        <div className="text-[10px] text-slate-500 mb-3">Select which personas to search for in Apollo. Toggle off any titles you want to skip.</div>
+        {personas.length === 0 ? (
+          <div className="text-[10px] text-slate-400 text-center py-8">No personas configured for this campaign.</div>
+        ) : (
+          <div className="space-y-1.5">
+            {personas.map((p, i) => (
+              <button key={i} onClick={() => toggle(i)}
+                className={"w-full text-left rounded-lg border px-4 py-2.5 transition-all flex items-center gap-3 " + (
+                  p.enabled ? "border-slate-200 bg-white" : "border-slate-100 bg-slate-50 opacity-50"
+                )}>
+                <div className={"w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors " + (
+                  p.enabled ? "border-emerald-500 bg-emerald-500" : "border-slate-300 bg-white"
+                )}>
+                  {p.enabled && (
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-bold text-slate-900">{p.title}</div>
+                  <div className="text-[10px] text-slate-400">{p.seniority}</div>
+                </div>
+                <span className={"text-[9px] px-1.5 py-0.5 rounded font-medium " + (
+                  (p.seniority || '').toLowerCase().includes("c-suite") || (p.seniority || '').toLowerCase().includes("owner") ? "bg-purple-100 text-purple-700" :
+                  (p.seniority || '').toLowerCase().includes("vp") ? "bg-blue-100 text-blue-700" :
+                  (p.seniority || '').toLowerCase().includes("director") ? "bg-cyan-100 text-cyan-700" :
+                  "bg-slate-100 text-slate-600"
+                )}>{p.seniority}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="px-4 py-2 border-t border-slate-200 bg-white flex items-center justify-between shrink-0">
+        <span className="text-[10px] text-slate-400">{enabledCount} persona{enabledCount !== 1 ? "s" : ""} selected</span>
+        <button onClick={() => onConfirm(personas.filter(p => p.enabled))}
+          disabled={enabledCount === 0}
+          className={"px-5 py-1.5 text-xs font-bold rounded shadow-sm active:scale-[0.98] " + (
+            enabledCount > 0 ? "text-white bg-slate-800 hover:bg-slate-900" : "text-slate-400 bg-slate-200 cursor-not-allowed"
+          )}>
+          Search Apollo &rarr;
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// STEP 3+4 — Apollo Search Results + Contact Selection
+// ═══════════════════════════════════════════════════════════════════
+
+function ApolloResults({ account, campaign, personas, onConfirm, onBack }) {
+  const [contacts, setContacts] = useState([]);
+  const [searching, setSearching] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const domain = (account.website || '').replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/.*$/, '');
+
+    apiFetch('/api/bdr-review/search', {
+      method: 'POST',
+      body: JSON.stringify({ domain, personas }),
+    })
+    .then(data => {
+      if (cancelled) return;
+      setContacts(data.contacts || []);
+      setSearching(false);
+    })
+    .catch(err => {
+      if (cancelled) return;
+      setError(err.message);
+      setSearching(false);
+    });
+
+    return () => { cancelled = true; };
+  }, []);
+
+  const toggleContact = (id) => {
+    setContacts(prev => prev.map(c => c.id === id ? { ...c, selected: !c.selected } : c));
+  };
+
+  const selectedContacts = contacts.filter(c => c.selected);
+  const withEmail = contacts.filter(c => c.email);
+  const withoutEmail = contacts.filter(c => !c.email);
+
+  if (searching) {
+    return (
+      <div className="flex flex-col h-full">
+        <ScreenHeader onBack={onBack} title={account.company_name} subtitle={campaign.name} />
+        <StepIndicator current={2} total={5} labels={STEP_LABELS} />
+        <div className="flex-1 flex flex-col items-center justify-center gap-3">
+          <div className="w-8 h-8 border-2 border-slate-300 border-t-slate-800 rounded-full animate-spin" />
+          <div className="text-xs text-slate-500">Searching Apollo for {personas.length} persona{personas.length !== 1 ? "s" : ""} at {account.company_name}...</div>
+          <div className="flex flex-wrap gap-1 justify-center px-8">
+            {personas.map((p, i) => (
+              <span key={i} className="text-[9px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">{p.title}</span>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col h-full">
+        <ScreenHeader onBack={onBack} title={account.company_name} subtitle={campaign.name} />
+        <StepIndicator current={2} total={5} labels={STEP_LABELS} />
+        <div className="flex-1 flex flex-col items-center justify-center gap-3">
+          <div className="text-red-500 text-sm font-bold">Search Failed</div>
+          <div className="text-xs text-slate-500 max-w-sm text-center">{error}</div>
+          <button onClick={onBack} className="px-4 py-1.5 text-xs font-bold text-white bg-slate-800 rounded hover:bg-slate-900">Go Back</button>
+        </div>
+      </div>
+    );
+  }
+
+  // Group by persona
+  const grouped = {};
+  contacts.forEach(c => {
+    if (!grouped[c.persona]) grouped[c.persona] = [];
+    grouped[c.persona].push(c);
+  });
+
+  return (
+    <div className="flex flex-col h-full">
+      <ScreenHeader onBack={onBack} title={account.company_name} subtitle={campaign.name}
+        right={
+          <div className="flex items-center gap-2 text-[10px]">
+            <span className="text-slate-400">{withEmail.length} with email</span>
+            <span className="text-slate-300">&middot;</span>
+            <span className="text-slate-400">{withoutEmail.length} no email</span>
+          </div>
+        }
+      />
+      <StepIndicator current={3} total={5} labels={STEP_LABELS} />
+      <div className="flex-1 overflow-auto">
+        <div className="px-4 py-2 text-[10px] text-slate-500">
+          Found {contacts.length} contacts. Select who to enroll — only contacts with emails can be enrolled.
+        </div>
+        {contacts.length === 0 ? (
+          <div className="text-center py-12 text-slate-400 text-xs">No contacts found at {account.company_name} for these personas.</div>
+        ) : (
+          Object.entries(grouped).map(([persona, pContacts]) => (
+            <div key={persona}>
+              <div className="px-4 py-1.5 bg-slate-50 border-y border-slate-100">
+                <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">{persona}</span>
+                <span className="text-[9px] text-slate-400 ml-2">{pContacts.length} found</span>
+              </div>
+              {pContacts.map(c => (
+                <div key={c.id}
+                  onClick={() => c.email && toggleContact(c.id)}
+                  className={"px-4 py-2 border-b border-slate-50 flex items-center gap-3 transition-colors " + (
+                    c.email ? "cursor-pointer hover:bg-emerald-50" : "opacity-40"
+                  )}>
+                  <div className={"w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-colors " + (
+                    c.selected && c.email ? "border-emerald-500 bg-emerald-500" :
+                    c.email ? "border-slate-300 bg-white" :
+                    "border-slate-200 bg-slate-100"
+                  )}>
+                    {c.selected && c.email && (
+                      <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3.5"><polyline points="20 6 9 17 4 12"/></svg>
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-bold text-slate-900">{c.name}</div>
+                    <div className="text-[10px] text-slate-400">{c.title} &middot; {c.seniority}</div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    {c.email ? (
+                      <div className="text-[10px] text-slate-600">{c.email}</div>
+                    ) : (
+                      <div className="text-[10px] text-red-400 italic">no email found</div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ))
+        )}
+      </div>
+      <div className="px-4 py-2 border-t border-slate-200 bg-white flex items-center justify-between shrink-0">
+        <span className="text-[10px] text-slate-400">
+          {selectedContacts.length} contact{selectedContacts.length !== 1 ? "s" : ""} selected
+        </span>
+        <button onClick={() => onConfirm(selectedContacts)}
+          disabled={selectedContacts.length === 0}
+          className={"px-5 py-1.5 text-xs font-bold rounded shadow-sm active:scale-[0.98] " + (
+            selectedContacts.length > 0 ? "text-white bg-slate-800 hover:bg-slate-900" : "text-slate-400 bg-slate-200 cursor-not-allowed"
+          )}>
+          Enroll {selectedContacts.length} &rarr;
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// STEP 5 — Enrollment Queue (one by one)
+// ═══════════════════════════════════════════════════════════════════
+
+function EnrollmentQueue({ account, campaign, contacts, sequences, onDone, onBack }) {
+  const [currentIdx, setCurrentIdx] = useState(0);
+  const [enrolledIds, setEnrolledIds] = useState(new Set());
+  const [enrollErrors, setEnrollErrors] = useState({});
+
+  // Default to the campaign's sequence, or first available
+  const defaultSeqIdx = (() => {
+    if (campaign.sequence_id) {
+      const idx = sequences.findIndex(s => s.id === campaign.sequence_id);
+      if (idx >= 0) return idx;
+    }
+    return 0;
+  })();
+  const [seqIdx, setSeqIdx] = useState(defaultSeqIdx);
+
+  const [step, setStep] = useState(0);
+  const [emailsByContact, setEmailsByContact] = useState(() => {
+    const m = {};
+    contacts.forEach(c => {
+      const bySeq = {};
+      sequences.forEach(s => {
+        const steps = getSteps(s.config);
+        bySeq[s.id] = generateEmails(account, steps, c);
+      });
+      m[c.id] = bySeq;
+    });
+    return m;
+  });
+  const [enrolling, setEnrolling] = useState(false);
+
+  const contact = contacts[currentIdx];
+  if (!contact) return null;
+
+  const seq = sequences[seqIdx];
+  if (!seq) return <ErrorScreen message="No sequences available. Configure sequences in Mapping Sequences first." />;
+
+  const seqSteps = getSteps(seq.config);
+  const emails = emailsByContact[contact.id]?.[seq.id] || [];
+  const e = emails[step];
+
+  const updateEmail = (idx, field, val) => {
+    setEmailsByContact(prev => ({
+      ...prev,
+      [contact.id]: {
+        ...prev[contact.id],
+        [seq.id]: prev[contact.id][seq.id].map((em, i) => i === idx ? { ...em, [field]: val } : em)
+      }
+    }));
+  };
+
+  const handleEnroll = async () => {
+    setEnrolling(true);
+    setEnrollErrors(prev => ({ ...prev, [contact.id]: null }));
+    try {
+      const currentEmails = emailsByContact[contact.id]?.[seq.id] || [];
+      // Build payload for Apollo enrollment
+      const payload = {
+        email: contact.email,
+        first_name: contact.first_name || contact.name.split(' ')[0],
+        last_name: contact.last_name || contact.name.split(' ').slice(1).join(' '),
+        sequence_id: seq.id,
+        company_name: account.company_name,
+      };
+
+      // Map emails to personalized fields
+      const subjectEmails = currentEmails.filter(em => !em.isThreaded);
+      if (subjectEmails[0]) payload.personalized_subject = subjectEmails[0].subject;
+      if (subjectEmails[1]) payload.personalized_subject_2 = subjectEmails[1].subject;
+      currentEmails.forEach((em, i) => {
+        if (i === 0) payload.personalized_email_body = em.body;
+        else if (i === 1) payload.personalized_email_2 = em.body;
+        else if (i === 2) payload.personalized_email_3 = em.body;
+        else if (i === 3) payload.personalized_email_4 = em.body;
+      });
+
+      await apiFetch('/api/apollo/enroll-sequence', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+
+      setEnrolledIds(prev => new Set([...prev, contact.id]));
+      // Auto-advance to next
+      if (currentIdx < contacts.length - 1) {
+        setCurrentIdx(prev => prev + 1);
+        setStep(0);
+      }
+    } catch (err) {
+      setEnrollErrors(prev => ({ ...prev, [contact.id]: err.message }));
+    } finally {
+      setEnrolling(false);
+    }
+  };
+
+  const allDone = enrolledIds.size === contacts.length;
+  const isEnrolled = enrolledIds.has(contact.id);
+  const enrollError = enrollErrors[contact.id];
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="px-3 py-1.5 border-b border-slate-200 flex items-center gap-2 shrink-0 bg-white">
+        <button onClick={onBack} className="text-slate-400 hover:text-slate-600 p-0.5">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <div className="min-w-0">
+          <div className="text-xs font-bold text-slate-900 truncate">{account.company_name}</div>
+          <div className="text-[10px] text-slate-400 truncate">{campaign.name}</div>
+        </div>
+        <div className="ml-auto flex items-center gap-2">
+          <span className="text-[10px] text-slate-400">
+            <span className="font-bold text-emerald-600">{enrolledIds.size}</span> / {contacts.length} enrolled
+          </span>
+          {allDone && (
+            <button onClick={onDone}
+              className="px-3 py-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 rounded hover:bg-emerald-100">
+              Done
+            </button>
+          )}
+        </div>
+      </div>
+
+      <StepIndicator current={4} total={5} labels={STEP_LABELS} />
+
+      {/* Contact tabs */}
+      <div className="px-3 py-1 border-b border-slate-100 flex gap-1 overflow-x-auto shrink-0 bg-white">
+        {contacts.map((c, i) => {
+          const enrolled = enrolledIds.has(c.id);
+          const isCurrent = i === currentIdx;
+          return (
+            <button key={c.id} onClick={() => { setCurrentIdx(i); setStep(0); }}
+              className={"shrink-0 px-2 py-1 text-[10px] font-medium rounded transition-all flex items-center gap-1 " + (
+                isCurrent ? "bg-slate-800 text-white" :
+                enrolled ? "bg-emerald-100 text-emerald-700" :
+                "bg-slate-100 text-slate-500 hover:bg-slate-200"
+              )}>
+              {enrolled && <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5"><polyline points="20 6 9 17 4 12"/></svg>}
+              {c.name.split(" ")[0]}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Contact info bar */}
+      <div className="px-3 py-1.5 border-b border-slate-100 bg-slate-50 flex items-center justify-between shrink-0">
+        <div>
+          <span className="text-xs font-bold text-slate-900">{contact.name}</span>
+          <span className="text-[10px] text-slate-400 ml-2">{contact.title}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-slate-500">{contact.email}</span>
+          <select value={seqIdx} onChange={(ev) => { setSeqIdx(Number(ev.target.value)); setStep(0); }}
+            className="text-[10px] border border-slate-200 rounded px-1.5 py-0.5 bg-white text-slate-600">
+            {sequences.map((s, i) => <option key={s.id} value={i}>{s.name}</option>)}
+          </select>
+        </div>
+      </div>
+
+      {/* Email step tabs */}
+      <div className="px-3 py-1 border-b border-slate-100 flex gap-0.5 shrink-0 bg-white">
+        {emails.map((em, i) => (
+          <button key={i} onClick={() => setStep(i)}
+            className={"shrink-0 px-2 py-1 text-[10px] font-medium rounded transition-all " + (
+              step === i ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+            )}>
+            <span className="font-bold">{em.pos}</span>{em.isThreaded ? "\u21A9" : ""} {em.label}{em.wait ? " +" + em.wait + "d" : ""}
+          </button>
+        ))}
+      </div>
+
+      {/* Email editor */}
+      <div className="flex-1 overflow-auto px-3 py-2">
+        {e && (
+          <>
+            <div className="mb-1.5">
+              <div className="flex items-center gap-1.5 mb-0.5">
+                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Subject</span>
+                {e.isThreaded && <span className="text-[8px] text-slate-400 bg-slate-100 px-1 rounded">threaded &#8617;</span>}
+              </div>
+              {e.isThreaded ? (
+                <div className="w-full border border-slate-100 bg-slate-50 rounded px-2.5 py-1 text-[11px] text-slate-400 italic">{e.subject}</div>
+              ) : (
+                <input type="text" value={e.subject} onChange={(ev) => updateEmail(step, "subject", ev.target.value)}
+                  className="w-full border border-slate-200 rounded px-2.5 py-1 text-[11px] focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent" />
+              )}
+            </div>
+            <div>
+              <div className="flex items-center justify-between mb-0.5">
+                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Body</span>
+                <span className="text-[8px] text-slate-400 tabular-nums">{e.body.split(/\s+/).filter(Boolean).length}w</span>
+              </div>
+              <AutoTextarea value={e.body} onChange={(ev) => updateEmail(step, "body", ev.target.value)}
+                className="w-full border border-slate-200 rounded px-2.5 py-1.5 text-[11px] leading-relaxed focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent" />
+            </div>
+            <div className="mt-0.5 text-[8px] text-slate-400">{"{{first_name}} {{company}} {{sender_first_name}}"} — Apollo merge fields</div>
+          </>
+        )}
+      </div>
+
+      {/* Bottom action */}
+      <div className="px-3 py-1.5 border-t border-slate-200 flex items-center justify-between shrink-0 bg-white">
+        <div className="text-[10px] text-slate-400">
+          {isEnrolled ? (
+            <span className="text-emerald-600 font-bold">Enrolled into Apollo</span>
+          ) : enrollError ? (
+            <span className="text-red-500">{enrollError}</span>
+          ) : (
+            <span>{contact.name} &rarr; {seq.name} sequence</span>
+          )}
+        </div>
+        {!isEnrolled && (
+          <button onClick={handleEnroll} disabled={enrolling}
+            className={"px-4 py-1.5 text-xs font-bold text-white rounded shadow-sm active:scale-[0.98] " + (
+              enrolling ? "bg-slate-400" : "bg-emerald-600 hover:bg-emerald-700"
+            )}>
+            {enrolling ? (
+              <span className="flex items-center gap-1.5">
+                <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                Pushing to Apollo...
+              </span>
+            ) : (
+              "Approve & Enroll \u2192"
+            )}
+          </button>
+        )}
+        {isEnrolled && currentIdx < contacts.length - 1 && (
+          <button onClick={() => { setCurrentIdx(prev => prev + 1); setStep(0); }}
+            className="px-4 py-1.5 text-xs font-bold text-slate-700 bg-slate-100 rounded hover:bg-slate-200">
+            Next Contact &rarr;
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// MAIN — State machine
+// ═══════════════════════════════════════════════════════════════════
+
+function LeadMachineBDR() {
+  // Data from API
+  const [accounts, setAccounts] = useState([]);
+  const [campaigns, setCampaigns] = useState([]);
+  const [sequences, setSequences] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
+
+  // State machine
+  const [screen, setScreen] = useState("list");
+  const [account, setAccount] = useState(null);
+  const [campaign, setCampaign] = useState(null);
+  const [personas, setPersonas] = useState(null);
+  const [contacts, setContacts] = useState(null);
+  const [accountStatuses, setAccountStatuses] = useState({});
+
+  // Load data on mount
+  const loadData = useCallback(() => {
+    setLoading(true);
+    setLoadError(null);
+    apiFetch('/api/bdr-review/data')
+      .then(data => {
+        setAccounts(data.accounts || []);
+        setCampaigns(data.campaigns || []);
+        setSequences(data.sequences || []);
+        // Init statuses
+        const s = {};
+        (data.accounts || []).forEach(a => { s[a.id] = "pending"; });
+        setAccountStatuses(s);
+        setLoading(false);
+      })
+      .catch(err => {
+        setLoadError(err.message);
+        setLoading(false);
+      });
+  }, []);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  const goList = useCallback(() => {
+    setScreen("list"); setAccount(null); setCampaign(null); setPersonas(null); setContacts(null);
+  }, []);
+
+  // Keyboard: Esc goes back
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.key === "Escape") {
+        if (screen === "campaign") goList();
+        else if (screen === "personas") setScreen("campaign");
+        else if (screen === "apollo") setScreen("personas");
+        else if (screen === "enroll") setScreen("apollo");
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [screen, goList]);
+
+  if (loading) return <LoadingScreen message="Loading accounts, campaigns, and sequences..." />;
+  if (loadError) return <ErrorScreen message={loadError} onRetry={loadData} />;
+
+  return (
+    <div className="h-screen flex flex-col bg-slate-50" style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Inter', sans-serif" }}>
+      {screen === "list" && (
+        <AccountList accounts={accounts} statuses={accountStatuses}
+          onSelect={(a) => { setAccount(a); setScreen("campaign"); }} />
+      )}
+      {screen === "campaign" && account && (
+        <CampaignPicker account={account} campaigns={campaigns}
+          onConfirm={(c) => { setCampaign(c); setScreen("personas"); }}
+          onBack={goList} />
+      )}
+      {screen === "personas" && account && campaign && (
+        <PersonaConfirm account={account} campaign={campaign}
+          onConfirm={(p) => { setPersonas(p); setScreen("apollo"); }}
+          onBack={() => setScreen("campaign")} />
+      )}
+      {screen === "apollo" && account && campaign && personas && (
+        <ApolloResults account={account} campaign={campaign} personas={personas}
+          onConfirm={(c) => { setContacts(c); setScreen("enroll"); }}
+          onBack={() => setScreen("personas")} />
+      )}
+      {screen === "enroll" && account && campaign && contacts && sequences.length > 0 && (
+        <EnrollmentQueue account={account} campaign={campaign} contacts={contacts} sequences={sequences}
+          onDone={() => {
+            setAccountStatuses(prev => ({ ...prev, [account.id]: "enrolled" }));
+            goList();
+          }}
+          onBack={() => setScreen("apollo")} />
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// MOUNT
+// ═══════════════════════════════════════════════════════════════════
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(<LeadMachineBDR />);
+</script>
+{% endraw %}
+</body>
+</html>

@@ -47,6 +47,10 @@
                     <i data-lucide="zap" class="sidebar-icon"></i>
                     <span class="sidebar-label">Campaigns</span>
                 </a>
+                <a href="{{ url_for('bdr_review') }}" class="sidebar-item {% if request.endpoint == 'bdr_review' %}active{% endif %}">
+                    <i data-lucide="play-circle" class="sidebar-icon"></i>
+                    <span class="sidebar-label">BDR Review</span>
+                </a>
                 <a href="{{ url_for('grow') }}" class="sidebar-item {% if request.endpoint == 'grow' %}active{% endif %}">
                     <i data-lucide="trending-up" class="sidebar-icon"></i>
                     <span class="sidebar-label">Grow</span>
