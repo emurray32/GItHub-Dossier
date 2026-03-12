@@ -217,8 +217,8 @@ def enforce_authentication():
         return
 
     # Allow any non-API GET requests (HTML pages rendered by Flask)
-    # API routes all start with /api/
-    if not request.path.startswith('/api/') and request.method == 'GET':
+    # API routes live under /api/ and /v2/api/
+    if not request.path.startswith(('/api/', '/v2/api/')) and request.method == 'GET':
         return
 
     # Allow same-origin browser requests (the UI's own JS fetch calls)
