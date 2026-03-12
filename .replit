@@ -33,7 +33,7 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "MCP_TRANSPORT=sse MCP_PORT=5001 python mcp_server.py"
+args = "DASHBOARD_ONLY_MODE=1 MCP_TRANSPORT=sse MCP_PORT=5001 python3 mcp_server.py"
 waitForPort = 5001
 
 [[workflows.workflow]]
@@ -45,7 +45,7 @@ outputType = "webview"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "python app.py"
+args = "DASHBOARD_ONLY_MODE=1 python3 app.py"
 waitForPort = 5000
 
 [[ports]]

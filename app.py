@@ -298,11 +298,51 @@ def health_ping():
 
 @app.context_processor
 def inject_cache_buster():
-    return {'cache_bust': int(time.time())}
+    return {
+        'cache_bust': int(time.time()),
+        'dashboard_only_mode': DASHBOARD_ONLY_MODE,
+    }
 
 
 # Paths that need CORS for Claude CoWork (claude.ai cross-origin requests)
 _CORS_PATHS = ('/.well-known/', '/authorize', '/token', '/register', '/sse', '/messages')
+DASHBOARD_ONLY_MODE = os.environ.get('DASHBOARD_ONLY_MODE', '1').strip().lower() not in ('0', 'false', 'no')
+_RETIRED_PAGE_REDIRECTS = {
+    '/accounts-tabler': 'accounts',
+    '/bdr-review': 'contributors',
+    '/experiment': 'settings',
+    '/grow': 'settings',
+    '/history': 'accounts',
+    '/linkedin-prospector': 'contributors',
+    '/rules': 'settings',
+    '/scorecard': 'accounts',
+    '/search': 'accounts',
+    '/webscraper-accounts': 'accounts',
+}
+_RETIRED_PAGE_PREFIXES = {
+    '/report/': 'accounts',
+    '/scan/': 'accounts',
+    '/stream_scan/': 'accounts',
+}
+_RETIRED_API_PREFIXES = (
+    '/api/ai-discover',
+    '/api/batch-rescan',
+    '/api/discover',
+    '/api/lead-stream',
+    '/api/linkedin',
+    '/api/pipeline/scan-schedule',
+    '/api/report/',
+    '/api/reports',
+    '/api/refresh-pipeline',
+    '/api/rescan',
+    '/api/rules',
+    '/api/scan-pending',
+    '/api/scheduled-rescan',
+    '/api/scorecard',
+    '/api/send-to-bdr',
+    '/api/webscraper',
+    '/api/worker-restart',
+)
 
 
 def _get_allowed_cors_origin():
@@ -323,6 +363,47 @@ def _get_allowed_cors_origin():
     if origin.startswith('http://localhost'):
         return origin
     return None
+
+
+def _dashboard_retired_api_response(message: str) -> Response:
+    """Return a consistent response for features retired in dashboard mode."""
+    return jsonify({
+        'status': 'error',
+        'message': message,
+        'mode': 'dashboard_only',
+    }), 410
+
+
+@app.before_request
+def retire_scan_first_routes():
+    """Retire legacy scan-first surfaces while the app runs as a dashboard/database."""
+    if not DASHBOARD_ONLY_MODE:
+        return
+
+    path = request.path.rstrip('/') or '/'
+
+    if path == '/api/accounts/scan-statuses':
+        return jsonify({'accounts': []})
+
+    if path == '/api/queue-status':
+        return jsonify({'queued_count': 0, 'processing_count': 0})
+
+    if path == '/api/queue-details':
+        return jsonify({'queued': [], 'processing': []})
+
+    target_endpoint = _RETIRED_PAGE_REDIRECTS.get(path)
+    if target_endpoint:
+        return redirect(url_for(target_endpoint))
+
+    for prefix, endpoint_name in _RETIRED_PAGE_PREFIXES.items():
+        if request.path.startswith(prefix):
+            return redirect(url_for(endpoint_name))
+
+    for prefix in _RETIRED_API_PREFIXES:
+        if request.path.startswith(prefix):
+            return _dashboard_retired_api_response(
+                'This legacy scan-first workflow has been retired from the dashboard.'
+            )
 
 
 @app.before_request
@@ -6958,29 +7039,45 @@ def api_check_import_duplicates():
 @app.route('/api/track', methods=['POST'])
 def api_track():
     """
-    Add a specific discovered organization to Tier 0 monitoring.
+    Add an account to the shared database.
 
-    Expects JSON payload: {"org_login": "shopify", "company_name": "Shopify"}
+    Expects JSON payload:
+    {
+        "company_name": "Shopify",
+        "org_login": "shopify",
+        "website": "shopify.com",
+        "annual_revenue": "$8B",
+        "metadata": {...}
+    }
 
     Returns:
         JSON with account creation result.
-
-    After adding the organization to the database, spawns a background scan
-    thread so the organization data is analyzed automatically.
     """
     data = request.get_json() or {}
     org_login = data.get('org_login', '').strip()
     company_name = data.get('company_name', '').strip()
+    website = data.get('website', '').strip()
+    annual_revenue = data.get('annual_revenue', '').strip() or None
+    metadata = data.get('metadata')
 
-    if not org_login or not company_name:
-        return jsonify({'status': 'error', 'message': 'Missing required fields: org_login, company_name'}), 400
+    if not company_name:
+        return jsonify({'status': 'error', 'message': 'Missing required field: company_name'}), 400
 
-    valid, org_login = validate_github_org(org_login)
-    if not valid:
-        return jsonify({'status': 'error', 'message': org_login}), 400
     valid, company_name = validate_company_name(company_name)
     if not valid:
         return jsonify({'status': 'error', 'message': company_name}), 400
+    if org_login:
+        valid, org_login = validate_github_org(org_login)
+        if not valid:
+            return jsonify({'status': 'error', 'message': org_login}), 400
+    if website:
+        if not website.startswith(('http://', 'https://')):
+            website = f'https://{website}'
+        valid, website = validate_url(website)
+        if not valid:
+            return jsonify({'status': 'error', 'message': website}), 400
+    if metadata is not None and not isinstance(metadata, dict):
+        return jsonify({'status': 'error', 'message': 'metadata must be an object'}), 400
 
     try:
         existing = get_account_by_company_case_insensitive(company_name)
@@ -6991,10 +7088,21 @@ def api_track():
                 'github_org': existing.get('github_org')
             }), 409
 
-        result = add_account_to_tier_0(company_name, org_login)
+        result = add_account_to_tier_0(
+            company_name,
+            org_login,
+            annual_revenue=annual_revenue,
+            website=website or None,
+            metadata=metadata,
+        )
 
-        # Spawn background scan immediately after adding to DB
-        spawn_background_scan(company_name)
+        if org_login and not DASHBOARD_ONLY_MODE:
+            spawn_background_scan(company_name)
+            result['scan_status'] = 'queued'
+        else:
+            result['scan_status'] = 'not_started'
+
+        result['dashboard_only_mode'] = DASHBOARD_ONLY_MODE
 
         return jsonify(result)
     except Exception as e:
@@ -7955,6 +8063,14 @@ def initialize_on_first_request():
             return
         logging.info("[APP] First request - initializing executor and cleaning up...")
 
+        if DASHBOARD_ONLY_MODE:
+            from seed_reporadar_campaign import seed_reporadar_campaign
+
+            seed_reporadar_campaign()
+            logging.info("[APP] Dashboard mode active - skipped legacy scan initialization")
+            _app_initialized = True
+            return
+
         # Initialize the executor FIRST
         get_executor()
 
@@ -8163,16 +8279,19 @@ def api_settings():
     })
 
 
-@app.route('/api/settings/zapier', methods=['POST'])
+@app.route('/api/settings/zapier', methods=['GET', 'POST'])
 def api_settings_zapier():
     """
-    Save the Zapier webhook URL for Smart Enrollment.
-
-    POST payload: {"zapier_url": "https://hooks.zapier.com/..."}
+    Get or save the Zapier webhook URL for Smart Enrollment.
 
     Returns:
-        JSON with status and saved URL.
+        JSON with the current or updated URL.
     """
+    if request.method == 'GET':
+        return jsonify({
+            'zapier_url': get_setting('zapier_webhook_url') or ''
+        })
+
     data = request.get_json() or {}
     zapier_url = data.get('zapier_url', '').strip()
 
@@ -10423,98 +10542,99 @@ if __name__ == '__main__':
     # Initialize when running directly
     logging.info("[APP] Starting application...")
     logging.info(f"[APP] ThreadPoolExecutor configured with {MAX_SCAN_WORKERS} workers")
-
-    # Re-tier accounts: either one-time migration (force_retier_all covers everything)
-    # or incremental retier if only scoring files changed.
-    from database import auto_retier_if_version_changed, force_retier_all, get_setting, set_setting
-    if get_setting('website_tiering_applied') != '2':
-        # One-time migration: retier ALL accounts with website data (runs in background).
-        # This also updates the scoring fingerprint, so auto_retier is unnecessary.
-        import threading
-        def _run_website_tiering_migration():
-            try:
-                logging.info("[APP] Applying website tiering migration in background (one-time)...")
-                result = force_retier_all()
-                set_setting('website_tiering_applied', '2')
-                logging.info(f"[APP] Website tiering migration done — {result['updated']} accounts updated. By tier: {result['by_tier']}")
-            except Exception as e:
-                logging.error(f"[APP] Website tiering migration failed: {e}")
-        threading.Thread(target=_run_website_tiering_migration, daemon=True).start()
-    else:
-        retier_count = auto_retier_if_version_changed()
-        if retier_count > 0:
-            logging.info(f"[APP] Re-tiered {retier_count} accounts after scoring version change")
-
-    # Cleanup any duplicate accounts
-    cleanup_result = cleanup_duplicate_accounts()
-    removed_count = cleanup_result.get('deleted', 0)
-    if removed_count > 0:
-        logging.info(f"[APP] Removed {removed_count} duplicate accounts")
-
-    # Initialize the executor BEFORE recovery functions need it
-    get_executor()
-
-    # Start the background watchdog thread
-    start_watchdog()
-
-    # Seed the default RepoRadar campaign (idempotent)
     from seed_reporadar_campaign import seed_reporadar_campaign
     seed_reporadar_campaign()
+    if DASHBOARD_ONLY_MODE:
+        logging.info("[APP] Dashboard mode active - skipped legacy scan startup")
+        _app_initialized = True
+    else:
+        # Re-tier accounts: either one-time migration (force_retier_all covers everything)
+        # or incremental retier if only scoring files changed.
+        from database import auto_retier_if_version_changed, force_retier_all, get_setting, set_setting
+        if get_setting('website_tiering_applied') != '2':
+            # One-time migration: retier ALL accounts with website data (runs in background).
+            # This also updates the scoring fingerprint, so auto_retier is unnecessary.
+            import threading
+            def _run_website_tiering_migration():
+                try:
+                    logging.info("[APP] Applying website tiering migration in background (one-time)...")
+                    result = force_retier_all()
+                    set_setting('website_tiering_applied', '2')
+                    logging.info(f"[APP] Website tiering migration done — {result['updated']} accounts updated. By tier: {result['by_tier']}")
+                except Exception as e:
+                    logging.error(f"[APP] Website tiering migration failed: {e}")
+            threading.Thread(target=_run_website_tiering_migration, daemon=True).start()
+        else:
+            retier_count = auto_retier_if_version_changed()
+            if retier_count > 0:
+                logging.info(f"[APP] Re-tiered {retier_count} accounts after scoring version change")
 
-    # Auto-sync Apollo sequences into sequence_mappings on startup
-    try:
-        seq_synced, seq_err = _sync_sequences_from_apollo()
-        if seq_err:
-            logging.warning(f"[APP] Sequence auto-sync skipped: {seq_err}")
-        elif seq_synced > 0:
-            logging.info(f"[APP] Auto-synced {seq_synced} Apollo sequences into sequence_mappings")
-    except Exception as e:
-        logging.warning(f"[APP] Sequence auto-sync failed (non-fatal): {e}")
+        # Cleanup any duplicate accounts
+        cleanup_result = cleanup_duplicate_accounts()
+        removed_count = cleanup_result.get('deleted', 0)
+        if removed_count > 0:
+            logging.info(f"[APP] Removed {removed_count} duplicate accounts")
 
-    # Start Google Sheets cron scheduler
-    sheets_start_cron()
-    logging.info("[APP] Google Sheets cron scheduler started")
+        # Initialize the executor BEFORE recovery functions need it
+        get_executor()
 
-    # Start the rules scheduler for 7am EST daily updates
-    start_rules_scheduler()
+        # Start the background watchdog thread
+        start_watchdog()
 
-    # Start the deduplication scheduler (runs daily to clean up duplicates)
-    start_deduplication_scheduler()
+        # Auto-sync Apollo sequences into sequence_mappings on startup
+        try:
+            seq_synced, seq_err = _sync_sequences_from_apollo()
+            if seq_err:
+                logging.warning(f"[APP] Sequence auto-sync skipped: {seq_err}")
+            elif seq_synced > 0:
+                logging.info(f"[APP] Auto-synced {seq_synced} Apollo sequences into sequence_mappings")
+        except Exception as e:
+            logging.warning(f"[APP] Sequence auto-sync failed (non-fatal): {e}")
 
-    # Start the Pipeline Orchestrator (sole scan scheduler — replaces legacy ScanScheduler)
-    # PipelineOrchestrator handles finding stale accounts and queuing rescans
-    try:
-        from pipeline import PipelineOrchestrator
-        _pipeline = PipelineOrchestrator.instance()
-        _pipeline.start(app=app)
-        logging.info("[APP] Pipeline orchestrator started (APScheduler)")
-    except ImportError:
-        logging.warning("[APP] Pipeline orchestrator not available (apscheduler not installed?)")
-    except Exception as e:
-        logging.error(f"[APP] Pipeline orchestrator failed to start: {e}")
+        # Start Google Sheets cron scheduler
+        sheets_start_cron()
+        logging.info("[APP] Google Sheets cron scheduler started")
 
-    # IMPORTANT: Recover stuck queued accounts BEFORE reset_all_scan_statuses
-    # This captures accounts stuck in 'queued' state and re-queues them
-    _recover_stuck_queued_accounts()
+        # Start the rules scheduler for 7am EST daily updates
+        start_rules_scheduler()
 
-    # Reset any remaining stale scan statuses (processing accounts)
-    reset_count = reset_all_scan_statuses()
-    if reset_count > 0:
-        logging.info(f"[APP] Reset {reset_count} stale processing statuses from previous run")
+        # Start the deduplication scheduler (runs daily to clean up duplicates)
+        start_deduplication_scheduler()
 
-    # Clear any misclassified errors (tier evidence stored as errors)
-    cleared_errors = clear_misclassified_errors()
-    if cleared_errors > 0:
-        logging.info(f"[APP] Cleared {cleared_errors} misclassified error messages")
+        # Start the Pipeline Orchestrator (sole scan scheduler — replaces legacy ScanScheduler)
+        # PipelineOrchestrator handles finding stale accounts and queuing rescans
+        try:
+            from pipeline import PipelineOrchestrator
+            _pipeline = PipelineOrchestrator.instance()
+            _pipeline.start(app=app)
+            logging.info("[APP] Pipeline orchestrator started (APScheduler)")
+        except ImportError:
+            logging.warning("[APP] Pipeline orchestrator not available (apscheduler not installed?)")
+        except Exception as e:
+            logging.error(f"[APP] Pipeline orchestrator failed to start: {e}")
 
-    # Resume any interrupted import batches
-    _resume_interrupted_import_batches()
+        # IMPORTANT: Recover stuck queued accounts BEFORE reset_all_scan_statuses
+        # This captures accounts stuck in 'queued' state and re-queues them
+        _recover_stuck_queued_accounts()
 
-    # Auto-scan any accounts that were never scanned
-    _auto_scan_pending_accounts()
+        # Reset any remaining stale scan statuses (processing accounts)
+        reset_count = reset_all_scan_statuses()
+        if reset_count > 0:
+            logging.info(f"[APP] Reset {reset_count} stale processing statuses from previous run")
 
-    # Mark as initialized to prevent duplicate auto-scan on first request
-    _app_initialized = True
+        # Clear any misclassified errors (tier evidence stored as errors)
+        cleared_errors = clear_misclassified_errors()
+        if cleared_errors > 0:
+            logging.info(f"[APP] Cleared {cleared_errors} misclassified error messages")
+
+        # Resume any interrupted import batches
+        _resume_interrupted_import_batches()
+
+        # Auto-scan any accounts that were never scanned
+        _auto_scan_pending_accounts()
+
+        # Mark as initialized to prevent duplicate auto-scan on first request
+        _app_initialized = True
 
     port = int(os.environ.get('PORT', 5000))
 

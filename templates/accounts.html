@@ -126,9 +126,9 @@
                 <option value="1000-">Over $1B</option>
             </select>
             <button type="button" class="btn-clear-filters" id="clear-filters-btn">Clear filters</button>
-            <button type="button" class="btn-action-smart" id="batch-rescan-btn" onclick="showBatchRescanModal()" title="Rescan accounts in controlled batches to avoid rate limits">
-                Batch Rescan
-            </button>
+            <a href="{{ url_for('settings') }}#admin-intake" class="btn-action-smart" id="batch-rescan-btn" style="text-decoration:none;display:inline-flex;align-items:center;justify-content:center;">
+                Add Company
+            </a>
         </div>
     </div>
     <div class="accounts-table-container">
@@ -230,13 +230,7 @@
                 <td class="row-num-col">{{ loop.index }}</td>
                 <td class="company-cell">
                     <span class="company-cell-content">
-                        {% if account.latest_report_id %}
-                        <a href="javascript:void(0)" onclick="openReport('{{ url_for('view_report', report_id=account.latest_report_id) }}')">
-                            {{ account.company_name }}
-                        </a>
-                        {% else %}
                         {{ account.company_name }}
-                        {% endif %}
                         <button type="button" class="btn-copy-company" title="Copy company name"
                             data-company="{{ account.company_name|e }}"
                             onclick="copyToClipboard(this.dataset.company, this)">
@@ -362,9 +356,6 @@
     <div class="bulk-command-bar hidden" id="bulk-command-bar">
         <span class="bulk-command-count" id="bulk-selection-count">0 accounts selected</span>
         <div class="bulk-command-actions">
-            <button type="button" class="btn-action-smart" id="bulk-rescan-btn" onclick="bulkRescan()">
-                Rescan Selected
-            </button>
             <button type="button" class="btn-rescan" id="bulk-export-btn" onclick="exportCSV()">
                 Export CSV
             </button>
@@ -464,8 +455,8 @@
             <line x1="20" y1="12" x2="22" y2="12"></line>
         </svg>
         <h3>No accounts being monitored</h3>
-        <p>Add companies to start scanning for localization signals.</p>
-        <a href="{{ url_for('grow') }}" class="btn-primary" style="font-size:0.85rem;padding:0.5rem 1.25rem;border-radius:8px;text-decoration:none;">Add Companies</a>
+        <p>Add companies to the shared database so Replit and CoWork can work from the same records.</p>
+        <a href="{{ url_for('settings') }}#admin-intake" class="btn-primary" style="font-size:0.85rem;padding:0.5rem 1.25rem;border-radius:8px;text-decoration:none;">Open Admin Intake</a>
     </div>
     {% endif %}
 </div>
@@ -1048,15 +1039,15 @@
             }
         });
 
-        // Row-click to open report
+        // Row-click to open account detail
         const tbody = document.querySelector('.accounts-table tbody');
         if (tbody) {
             tbody.addEventListener('click', function(e) {
                 if (e.target.closest('button, a, input, select, .btn-rescan, .btn-action-smart, .btn-delete-account, .btn-invalid, .select-account-checkbox, .btn-copy-company, .github-org-edit, .github-org-input-container')) return;
                 const row = e.target.closest('tr[data-account-id]');
                 if (!row) return;
-                const reportId = row.dataset.reportId;
-                if (reportId) openReport('/report/' + reportId);
+                const accountId = row.dataset.accountId;
+                if (accountId) openDetailPanel(parseInt(accountId, 10));
             });
         }
 
@@ -1514,9 +1505,7 @@
         }
 
         const rows = accounts.map((account, index) => {
-            const companyLink = account.latest_report_id
-                ? `<a href="javascript:void(0)" onclick="openReport('/report/${account.latest_report_id}')"><span class="company-name-text">${escapeHtml(account.company_name)}</span></a>`
-                : `<span class="company-name-text">${escapeHtml(account.company_name)}</span>`;
+            const companyLink = `<span class="company-name-text">${escapeHtml(account.company_name)}</span>`;
 
             const websiteLink = account.website
                 ? `<a href="${normalizeUrl(account.website)}" target="_blank" rel="noopener" class="btn-website-link" title="Visit website"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></a>`
@@ -1812,9 +1801,7 @@
     }
 
     function generateAccountRow(account, rowNumber) {
-        const companyLink = account.latest_report_id
-            ? `<a href="javascript:void(0)" onclick="openReport('/report/${account.latest_report_id}')"><span class="company-name-text">${escapeHtml(account.company_name)}</span></a>`
-            : `<span class="company-name-text">${escapeHtml(account.company_name)}</span>`;
+        const companyLink = `<span class="company-name-text">${escapeHtml(account.company_name)}</span>`;
 
         const websiteLink = account.website
             ? `<a href="${normalizeUrl(account.website)}" target="_blank" rel="noopener" class="btn-website-link" title="Visit website"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></a>`
@@ -3571,14 +3558,7 @@
             // Outreach blurb
             document.getElementById('panel-blurb').textContent = buildOutreachBlurb(account);
 
-            // Report link
-            const reportLink = document.getElementById('panel-report-link');
-            if (account.latest_report_id) {
-                reportLink.href = `/report/${account.latest_report_id}`;
-                reportLink.style.display = 'inline-block';
-            } else {
-                reportLink.style.display = 'none';
-            }
+            document.getElementById('panel-report-link').style.display = 'none';
 
             // Notes (keep value loaded but section stays collapsed)
             document.getElementById('panel-notes').value = account.notes || '';

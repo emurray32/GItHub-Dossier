@@ -43,37 +43,19 @@
                         <li class="nav-item">
                             <a class="nav-link {% if request.endpoint == 'contributors' %}active{% endif %}" href="{{ url_for('contributors') }}">
                                 <span class="nav-link-icon"><i class="ti ti-users"></i></span>
-                                <span class="nav-link-title">Contributors</span>
+                                <span class="nav-link-title">Contacts</span>
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link {% if request.endpoint == 'grow' %}active{% endif %}" href="{{ url_for('grow') }}">
-                                <span class="nav-link-icon"><i class="ti ti-trending-up"></i></span>
-                                <span class="nav-link-title">Grow</span>
+                            <a class="nav-link {% if request.endpoint in ('campaigns', 'campaign_new', 'campaign_edit') %}active{% endif %}" href="{{ url_for('campaigns') }}">
+                                <span class="nav-link-icon"><i class="ti ti-bolt"></i></span>
+                                <span class="nav-link-title">Campaigns</span>
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link {% if request.endpoint == 'history' %}active{% endif %}" href="{{ url_for('history') }}">
-                                <span class="nav-link-icon"><i class="ti ti-clock"></i></span>
-                                <span class="nav-link-title">History</span>
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link {% if request.endpoint == 'webscraper_accounts' %}active{% endif %}" href="{{ url_for('webscraper_accounts') }}">
-                                <span class="nav-link-icon"><i class="ti ti-world"></i></span>
-                                <span class="nav-link-title">WebScraper</span>
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link {% if request.endpoint == 'experiment' %}active{% endif %}" href="{{ url_for('experiment') }}">
-                                <span class="nav-link-icon"><i class="ti ti-tool"></i></span>
-                                <span class="nav-link-title">Analyzer</span>
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link {% if request.endpoint == 'rules' %}active{% endif %}" href="{{ url_for('rules') }}">
-                                <span class="nav-link-icon"><i class="ti ti-shield-check"></i></span>
-                                <span class="nav-link-title">Rules</span>
+                            <a class="nav-link {% if request.endpoint == 'settings' %}active{% endif %}" href="{{ url_for('settings') }}">
+                                <span class="nav-link-icon"><i class="ti ti-settings"></i></span>
+                                <span class="nav-link-title">Settings</span>
                             </a>
                         </li>
                         <li class="nav-item mt-auto">

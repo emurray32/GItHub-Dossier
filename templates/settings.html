@@ -5,127 +5,465 @@
 
 {% block head %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/settings.css') }}?v={{ cache_bust }}">
+<style>
+    .settings-grid {
+        display: grid;
+        gap: 1rem;
+        margin-top: 1rem;
+    }
+
+    .settings-card {
+        background: rgba(255, 255, 255, 0.9);
+        border: 1px solid rgba(15, 23, 42, 0.08);
+        border-radius: 18px;
+        padding: 1.1rem;
+        box-shadow: 0 18px 50px rgba(15, 23, 42, 0.08);
+    }
+
+    .settings-card h3 {
+        margin: 0 0 0.35rem;
+        font-size: 1rem;
+    }
+
+    .settings-card p {
+        margin: 0 0 0.9rem;
+        color: #475569;
+        line-height: 1.5;
+    }
+
+    .settings-form {
+        display: grid;
+        gap: 0.8rem;
+    }
+
+    .settings-form-grid {
+        display: grid;
+        gap: 0.8rem;
+    }
+
+    .settings-field {
+        display: grid;
+        gap: 0.35rem;
+    }
+
+    .settings-field label {
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: #0f172a;
+    }
+
+    .settings-field input,
+    .settings-field textarea {
+        width: 100%;
+        border: 1px solid rgba(15, 23, 42, 0.12);
+        border-radius: 12px;
+        padding: 0.7rem 0.85rem;
+        font: inherit;
+        background: #fff;
+    }
+
+    .settings-field textarea {
+        min-height: 88px;
+        resize: vertical;
+    }
+
+    .settings-checkbox {
+        display: flex;
+        align-items: center;
+        gap: 0.55rem;
+        font-size: 0.9rem;
+        color: #0f172a;
+    }
+
+    .settings-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.65rem;
+    }
+
+    .settings-button {
+        appearance: none;
+        border: 0;
+        border-radius: 999px;
+        padding: 0.72rem 1rem;
+        font: inherit;
+        font-weight: 600;
+        background: #0f172a;
+        color: #fff;
+        cursor: pointer;
+    }
+
+    .settings-button--secondary {
+        background: #e2e8f0;
+        color: #0f172a;
+    }
+
+    .settings-inline-note {
+        font-size: 0.82rem;
+        color: #64748b;
+    }
+
+    .settings-feedback {
+        min-height: 1.2rem;
+        font-size: 0.88rem;
+        color: #0f766e;
+    }
+
+    .settings-feedback.is-error {
+        color: #b91c1c;
+    }
+
+    .settings-log-list {
+        display: grid;
+        gap: 0.55rem;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+    }
+
+    .settings-log-list li {
+        border: 1px solid rgba(15, 23, 42, 0.08);
+        border-radius: 12px;
+        padding: 0.75rem 0.85rem;
+        background: #fff;
+    }
+
+    .settings-log-title {
+        display: flex;
+        justify-content: space-between;
+        gap: 0.75rem;
+        font-size: 0.88rem;
+        font-weight: 600;
+        color: #0f172a;
+    }
+
+    .settings-log-meta {
+        margin-top: 0.2rem;
+        font-size: 0.8rem;
+        color: #64748b;
+    }
+
+    @media (min-width: 960px) {
+        .settings-grid {
+            grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+        }
+
+        .settings-form-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+    }
+</style>
 {% endblock %}
 
 {% block content %}
 <div class="settings-container">
-    <p class="settings-subtitle">Tools, configuration, and scanning management</p>
+    <p class="settings-subtitle">Shared admin tools and integration settings for the Replit dashboard and Claude CoWork.</p>
 
-    <!-- Active Tools -->
     <div class="settings-section">
         <div class="settings-list">
-
-            <a href="{{ url_for('history') }}" class="settings-row">
+            <a href="{{ url_for('accounts') }}" class="settings-row">
                 <div class="settings-row-icon settings-row-icon--indigo">
-                    <i data-lucide="radar"></i>
+                    <i data-lucide="database"></i>
                 </div>
                 <div class="settings-row-body">
-                    <div class="settings-row-title">Scan History</div>
-                    <div class="settings-row-desc">Browse previous deep-dive scans across all tracked accounts</div>
+                    <div class="settings-row-title">Accounts Database</div>
+                    <div class="settings-row-desc">View and maintain the shared company table used by both Replit and CoWork.</div>
                 </div>
-                <span class="settings-row-meta" id="settingsScanMeta"></span>
                 <i data-lucide="chevron-right" class="settings-row-chevron"></i>
             </a>
 
-            <a href="{{ url_for('rules') }}" class="settings-row">
+            <a href="{{ url_for('contributors') }}" class="settings-row">
                 <div class="settings-row-icon settings-row-icon--emerald">
-                    <i data-lucide="sliders-horizontal"></i>
+                    <i data-lucide="users"></i>
                 </div>
                 <div class="settings-row-body">
-                    <div class="settings-row-title">Scanning Rules</div>
-                    <div class="settings-row-desc">Tune intent score weights, Goldilocks thresholds, and signal keyword patterns</div>
+                    <div class="settings-row-title">Contacts</div>
+                    <div class="settings-row-desc">Review discovered contacts, confirm email coverage, and enroll them into Apollo.</div>
                 </div>
-                <span class="settings-row-meta" id="settingsRulesMeta"></span>
                 <i data-lucide="chevron-right" class="settings-row-chevron"></i>
             </a>
 
+            <a href="{{ url_for('campaigns') }}" class="settings-row">
+                <div class="settings-row-icon settings-row-icon--slate">
+                    <i data-lucide="zap"></i>
+                </div>
+                <div class="settings-row-body">
+                    <div class="settings-row-title">Campaigns</div>
+                    <div class="settings-row-desc">Edit sequencing copy, targeting, prompts, and enrollment behavior from the dashboard.</div>
+                </div>
+                <i data-lucide="chevron-right" class="settings-row-chevron"></i>
+            </a>
         </div>
     </div>
 
-    <!-- Experimental -->
-    <div class="settings-section">
-        <div class="settings-section-label">Experimental</div>
-        <div class="settings-list settings-list--muted">
-
-            <a href="{{ url_for('webscraper_accounts') }}" class="settings-row">
-                <div class="settings-row-icon settings-row-icon--slate">
-                    <i data-lucide="scan-search"></i>
-                </div>
-                <div class="settings-row-body">
-                    <div class="settings-row-title">WebScraper
-                        <span class="settings-exp-tag">WIP</span>
+    <div class="settings-grid">
+        <section class="settings-card" id="admin-intake">
+            <h3>Admin Intake</h3>
+            <p>Add a company or intent signal to the shared database without invoking the retired scan-first workflow.</p>
+            <form id="admin-intake-form" class="settings-form">
+                <div class="settings-form-grid">
+                    <div class="settings-field">
+                        <label for="company-name">Company Name</label>
+                        <input id="company-name" name="company_name" placeholder="Acme" required>
                     </div>
-                    <div class="settings-row-desc">Crawl target websites to detect locale selectors, hreflang tags, and translation vendor scripts</div>
-                </div>
-                <span class="settings-row-meta" id="settingsWebMeta"></span>
-                <i data-lucide="chevron-right" class="settings-row-chevron"></i>
-            </a>
-
-            <a href="{{ url_for('experiment') }}" class="settings-row">
-                <div class="settings-row-icon settings-row-icon--slate">
-                    <i data-lucide="flask-conical"></i>
-                </div>
-                <div class="settings-row-body">
-                    <div class="settings-row-title">Analyzer
-                        <span class="settings-exp-tag">WIP</span>
+                    <div class="settings-field">
+                        <label for="github-org">GitHub Org</label>
+                        <input id="github-org" name="org_login" placeholder="acme-inc">
                     </div>
-                    <div class="settings-row-desc">Run custom scoring models and exploratory queries against scanned repo data</div>
-                </div>
-                <i data-lucide="chevron-right" class="settings-row-chevron"></i>
-            </a>
-
-            <a href="{{ url_for('scorecard') }}" class="settings-row">
-                <div class="settings-row-icon settings-row-icon--slate">
-                    <i data-lucide="award"></i>
-                </div>
-                <div class="settings-row-body">
-                    <div class="settings-row-title">ScoreCard
-                        <span class="settings-exp-tag">WIP</span>
+                    <div class="settings-field">
+                        <label for="website">Website</label>
+                        <input id="website" name="website" placeholder="acme.com">
                     </div>
-                    <div class="settings-row-desc">Visual scorecard for account readiness and engagement metrics</div>
-                </div>
-                <i data-lucide="chevron-right" class="settings-row-chevron"></i>
-            </a>
-
-
-            <a href="{{ url_for('linkedin_prospector') }}" class="settings-row">
-                <div class="settings-row-icon settings-row-icon--slate">
-                    <i data-lucide="linkedin"></i>
-                </div>
-                <div class="settings-row-body">
-                    <div class="settings-row-title">LinkedIn Prospector
-                        <span class="settings-exp-tag settings-exp-tag--hold">ON HOLD</span>
+                    <div class="settings-field">
+                        <label for="annual-revenue">Annual Revenue</label>
+                        <input id="annual-revenue" name="annual_revenue" placeholder="$50M">
                     </div>
-                    <div class="settings-row-desc">One-by-one LinkedIn prospect research and outreach helper</div>
                 </div>
-                <i data-lucide="chevron-right" class="settings-row-chevron"></i>
-            </a>
+                <div class="settings-field">
+                    <label for="intake-notes">Intent Notes</label>
+                    <textarea id="intake-notes" name="notes" placeholder="Why is this company worth adding right now?"></textarea>
+                </div>
+                <div class="settings-actions">
+                    <button class="settings-button" type="submit">Add Company</button>
+                    <a class="settings-button settings-button--secondary" href="{{ url_for('accounts') }}" style="text-decoration:none;">Open Accounts</a>
+                </div>
+                <div class="settings-inline-note">CoWork and the web app will read from the same underlying record once it is created.</div>
+                <div id="admin-intake-feedback" class="settings-feedback"></div>
+            </form>
+        </section>
 
-        </div>
+        <section class="settings-card">
+            <h3>Integrations</h3>
+            <p>Keep the outbound handoff layer intact while the rest of the legacy scan-first product stays retired.</p>
+
+            <form id="generic-webhook-form" class="settings-form">
+                <div class="settings-field">
+                    <label for="webhook-url">Generic Webhook URL</label>
+                    <input id="webhook-url" name="webhook_url" placeholder="https://hooks.example.com/...">
+                </div>
+                <label class="settings-checkbox">
+                    <input type="checkbox" id="webhook-enabled">
+                    Enable generic webhook delivery
+                </label>
+                <div class="settings-actions">
+                    <button class="settings-button" type="submit">Save Webhook</button>
+                </div>
+                <div id="generic-webhook-feedback" class="settings-feedback"></div>
+            </form>
+
+            <form id="zapier-form" class="settings-form" style="margin-top:1rem;">
+                <div class="settings-field">
+                    <label for="zapier-url">Zapier Webhook URL</label>
+                    <input id="zapier-url" name="zapier_url" placeholder="https://hooks.zapier.com/...">
+                </div>
+                <div class="settings-actions">
+                    <button class="settings-button" type="submit">Save Zapier</button>
+                </div>
+                <div id="zapier-feedback" class="settings-feedback"></div>
+            </form>
+
+            <form id="gsheet-form" class="settings-form" style="margin-top:1rem;">
+                <div class="settings-field">
+                    <label for="gsheet-url">Google Sheets Webhook URL</label>
+                    <input id="gsheet-url" name="gsheet_webhook_url" placeholder="https://script.google.com/macros/s/.../exec">
+                </div>
+                <label class="settings-checkbox">
+                    <input type="checkbox" id="gsheet-enabled">
+                    Enable Google Sheets export
+                </label>
+                <div class="settings-actions">
+                    <button class="settings-button" type="submit">Save Sheets</button>
+                    <button class="settings-button settings-button--secondary" type="button" id="gsheet-test-btn">Send Test Payload</button>
+                </div>
+                <div id="gsheet-feedback" class="settings-feedback"></div>
+            </form>
+        </section>
     </div>
 
+    <div class="settings-section" style="margin-top:1rem;">
+        <div class="settings-card">
+            <h3>Recent Webhook Activity</h3>
+            <p>Lightweight visibility into whether the remaining handoff integrations are actually firing.</p>
+            <ul id="webhook-log-list" class="settings-log-list">
+                <li>Loading recent webhook deliveries...</li>
+            </ul>
+        </div>
+    </div>
 </div>
 
 <script>
-// Populate inline stats for settings rows
 (function() {
-    fetch('/api/history/stats')
-        .then(function(r) { return r.ok ? r.json() : null; })
-        .then(function(d) {
-            if (d && d.total !== undefined) {
-                var el = document.getElementById('settingsScanMeta');
-                if (el) el.textContent = d.total + ' reports';
-            }
-        }).catch(function(err){ console.error('[Settings] Failed to load scan stats:', err); });
+    function setFeedback(id, message, isError) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        el.textContent = message || '';
+        el.classList.toggle('is-error', !!isError);
+    }
 
-    fetch('/api/webscraper/stats')
-        .then(function(r) { return r.ok ? r.json() : null; })
-        .then(function(d) {
-            if (d && d.total !== undefined) {
-                var el = document.getElementById('settingsWebMeta');
-                if (el) el.textContent = d.total + ' accounts';
+    function escapeHtml(value) {
+        return String(value || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    async function fetchJson(url, options) {
+        var response = await fetch(url, options);
+        var data = await response.json().catch(function() { return {}; });
+        if (!response.ok) {
+            throw new Error(data.message || 'Request failed');
+        }
+        return data;
+    }
+
+    async function loadIntegrationSettings() {
+        try {
+            var generic = await fetchJson('/api/settings');
+            document.getElementById('webhook-url').value = generic.webhook_url || '';
+            document.getElementById('webhook-enabled').checked = !!generic.webhook_enabled;
+        } catch (err) {
+            setFeedback('generic-webhook-feedback', err.message, true);
+        }
+
+        try {
+            var zapier = await fetchJson('/api/settings/zapier');
+            document.getElementById('zapier-url').value = zapier.zapier_url || '';
+        } catch (err) {
+            setFeedback('zapier-feedback', err.message, true);
+        }
+
+        try {
+            var gsheet = await fetchJson('/api/settings/gsheet');
+            document.getElementById('gsheet-url').value = gsheet.gsheet_webhook_url || '';
+            document.getElementById('gsheet-enabled').checked = !!gsheet.gsheet_webhook_enabled;
+        } catch (err) {
+            setFeedback('gsheet-feedback', err.message, true);
+        }
+    }
+
+    async function loadWebhookLogs() {
+        var list = document.getElementById('webhook-log-list');
+        try {
+            var data = await fetchJson('/api/webhook-logs?limit=5');
+            var logs = data.logs || [];
+            if (!logs.length) {
+                list.innerHTML = '<li>No webhook deliveries logged yet.</li>';
+                return;
             }
-        }).catch(function(err){ console.error('[Settings] Failed to load webscraper stats:', err); });
+            list.innerHTML = logs.map(function(log) {
+                return '<li>' +
+                    '<div class="settings-log-title">' +
+                        '<span>' + escapeHtml(log.event_type || 'event') + '</span>' +
+                        '<span>' + escapeHtml(log.status || 'unknown') + '</span>' +
+                    '</div>' +
+                    '<div class="settings-log-meta">' +
+                        escapeHtml(log.company_name || 'No company') + ' · ' + escapeHtml(log.created_at || '') +
+                    '</div>' +
+                '</li>';
+            }).join('');
+        } catch (err) {
+            list.innerHTML = '<li>Unable to load webhook logs: ' + escapeHtml(err.message) + '</li>';
+        }
+    }
+
+    document.getElementById('admin-intake-form').addEventListener('submit', async function(event) {
+        event.preventDefault();
+        setFeedback('admin-intake-feedback', '');
+        var payload = {
+            company_name: document.getElementById('company-name').value.trim(),
+            org_login: document.getElementById('github-org').value.trim(),
+            website: document.getElementById('website').value.trim(),
+            annual_revenue: document.getElementById('annual-revenue').value.trim(),
+            metadata: {
+                intake_notes: document.getElementById('intake-notes').value.trim(),
+                source: 'settings_admin_intake'
+            }
+        };
+
+        try {
+            var data = await fetchJson('/api/track', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload)
+            });
+            setFeedback('admin-intake-feedback', 'Added ' + (data.company_name || payload.company_name) + ' to the shared database.');
+            event.target.reset();
+        } catch (err) {
+            setFeedback('admin-intake-feedback', err.message, true);
+        }
+    });
+
+    document.getElementById('generic-webhook-form').addEventListener('submit', async function(event) {
+        event.preventDefault();
+        setFeedback('generic-webhook-feedback', '');
+        try {
+            await fetchJson('/api/settings', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    webhook_url: document.getElementById('webhook-url').value.trim(),
+                    webhook_enabled: document.getElementById('webhook-enabled').checked
+                })
+            });
+            setFeedback('generic-webhook-feedback', 'Generic webhook settings saved.');
+            loadWebhookLogs();
+        } catch (err) {
+            setFeedback('generic-webhook-feedback', err.message, true);
+        }
+    });
+
+    document.getElementById('zapier-form').addEventListener('submit', async function(event) {
+        event.preventDefault();
+        setFeedback('zapier-feedback', '');
+        try {
+            await fetchJson('/api/settings/zapier', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    zapier_url: document.getElementById('zapier-url').value.trim()
+                })
+            });
+            setFeedback('zapier-feedback', 'Zapier webhook saved.');
+        } catch (err) {
+            setFeedback('zapier-feedback', err.message, true);
+        }
+    });
+
+    document.getElementById('gsheet-form').addEventListener('submit', async function(event) {
+        event.preventDefault();
+        setFeedback('gsheet-feedback', '');
+        try {
+            await fetchJson('/api/settings/gsheet', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    gsheet_webhook_url: document.getElementById('gsheet-url').value.trim(),
+                    gsheet_webhook_enabled: document.getElementById('gsheet-enabled').checked
+                })
+            });
+            setFeedback('gsheet-feedback', 'Google Sheets settings saved.');
+        } catch (err) {
+            setFeedback('gsheet-feedback', err.message, true);
+        }
+    });
+
+    document.getElementById('gsheet-test-btn').addEventListener('click', async function() {
+        setFeedback('gsheet-feedback', '');
+        try {
+            var data = await fetchJson('/api/settings/gsheet/test', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'}
+            });
+            setFeedback('gsheet-feedback', data.message || 'Google Sheets test sent.');
+        } catch (err) {
+            setFeedback('gsheet-feedback', err.message, true);
+        }
+    });
+
+    loadIntegrationSettings();
+    loadWebhookLogs();
 })();
 </script>
 {% endblock %}
