@@ -501,6 +501,14 @@ Three remaining issues resolved in the targeted final pass, plus 2 surgical fixe
 **Problem:** `PUT /v2/api/accounts/<id>/status` called `update_account_status()` directly, which only updates the `account_status` column. The signal-status cascade logic lives in `mark_account_noise()`, `mark_account_sequenced()`, and `mark_account_revisit()`. The route bypassed these helpers, so marking an account as noise via the UI did **not** archive its signals.
 **Fix:** The route now dispatches to the correct cascade-aware helper based on the requested status: `noise` → `mark_account_noise()`, `sequenced` → `mark_account_sequenced()`, `revisit` → `mark_account_revisit()`. Setting status to `new` (reset) uses the plain `update_account_status()` since no cascade is needed. 5 regression tests added.
 
+### Fix 13: Component State Leaks Across Signals (UI Truthfulness)
+**Problem:** `DraftReview` and `Enrollment` used `useState` for local state (`allApproved`, `allDone`, `drafts`, `statuses`), but were rendered without a `key` tied to the active signal. React reused the same component instance when navigating between signals, carrying stale approval/enrollment state into the next signal's workspace.
+**Fix:** Added `key={workspace.signal.id}` to both `<DraftReview>` and `<Enrollment>` in the Workspace component. React now remounts these components with fresh state whenever the signal changes.
+
+### Fix 14: Queue Counts Stale After Status-Changing Actions (UI Truthfulness)
+**Problem:** Sidebar queue counts refreshed only on mount and when `signals.length` changed. If a status-changing action updated counts but the filtered list length stayed the same, counts remained stale.
+**Fix:** Moved count refresh into `loadSignals()` so counts are fetched every time signals are loaded (including after `reloadAndAdvance()`). Removed the redundant `signals.length`-dependent effect.
+
 ---
 
 ## 13. What Still Feels Incomplete / Risky

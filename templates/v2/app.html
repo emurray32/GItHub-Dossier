@@ -1203,7 +1203,7 @@ function Workspace({ signalId, signalIndex, totalSignals, onMarkNoise, onSkip, o
                 {workspace.prospects && workspace.prospects.length > 0 && (
                     <>
                         <div className="v2-section-divider"><span>Draft Emails</span></div>
-                        <DraftReview workspace={workspace} toast={toast} />
+                        <DraftReview key={workspace.signal.id} workspace={workspace} toast={toast} />
                     </>
                 )}
 
@@ -1211,7 +1211,7 @@ function Workspace({ signalId, signalIndex, totalSignals, onMarkNoise, onSkip, o
                 {workspace.prospects && workspace.prospects.length > 0 && (
                     <>
                         <div className="v2-section-divider"><span>Enroll</span></div>
-                        <Enrollment workspace={workspace} onNextSignal={onReloadAndAdvance || onNextSignal} toast={toast} />
+                        <Enrollment key={workspace.signal.id} workspace={workspace} onNextSignal={onReloadAndAdvance || onNextSignal} toast={toast} />
                     </>
                 )}
             </div>
@@ -1261,7 +1261,7 @@ function App() {
     const [activeSignalId, setActiveSignalId] = useState(null);
     const [activeIndex, setActiveIndex] = useState(-1);
 
-    // Load signals
+    // Load signals (also refreshes counts so they stay in sync after any action)
     const loadSignals = useCallback(async () => {
         setLoading(true);
         try {
@@ -1274,6 +1274,12 @@ function App() {
             const fresh = data.signals || [];
             setSignals(fresh);
             setTotal(data.total || 0);
+
+            // Refresh counts every time signals are loaded so sidebar stays truthful
+            apiFetch('/v2/api/signals/counts')
+                .then(c => setCounts(c.counts || {}))
+                .catch(() => {});
+
             return fresh;
         } catch (err) {
             if (toast) toast(err.message, 'error');
@@ -1292,13 +1298,6 @@ function App() {
             .then(data => setCounts(data.counts || {}))
             .catch(() => {});
     }, []);
-
-    // Reload counts when signals change
-    useEffect(() => {
-        apiFetch('/v2/api/signals/counts')
-            .then(data => setCounts(data.counts || {}))
-            .catch(() => {});
-    }, [signals.length]);
 
     useEffect(() => {
         loadSignals();
