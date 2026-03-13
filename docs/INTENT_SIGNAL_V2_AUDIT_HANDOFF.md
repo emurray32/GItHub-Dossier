@@ -467,7 +467,7 @@ Apollo API docs and the existing repo pattern.
 
 ## 12. Pre-Merge Final Fixes
 
-Three remaining issues resolved in the targeted final pass, plus 2 surgical fixes. 31 total regression tests.
+Three remaining issues resolved in the targeted final pass, plus 2 surgical fixes and 2 dogfood findings. 35 total regression tests.
 
 ### Fix 8: Duplicate Approved Drafts Can Stack Up (Merge Blocker)
 **Problem:** `generate_drafts()` only deleted drafts with status `generated`/`edited`. If a rep approved drafts and then regenerated, the old approved drafts remained in the DB. Enrollment could then read multiple approved drafts for the same sequence step, causing ambiguous content in Apollo custom fields.
@@ -509,12 +509,20 @@ Three remaining issues resolved in the targeted final pass, plus 2 surgical fixe
 **Problem:** Sidebar queue counts refreshed only on mount and when `signals.length` changed. If a status-changing action updated counts but the filtered list length stayed the same, counts remained stale.
 **Fix:** Moved count refresh into `loadSignals()` so counts are fetched every time signals are loaded (including after `reloadAndAdvance()`). Removed the redundant `signals.length`-dependent effect.
 
+### Fix 15: Personal Email Filter Inverted (Dogfood Finding — Data Loss Bug)
+**Problem:** `POST /v2/api/prospects` and MCP `save_prospects` used `if _filter_personal_email(email):` to skip personal emails. But `_filter_personal_email()` returns the email string (truthy) for **business** domains and empty string (falsy) for personal domains. The condition was inverted — it was **rejecting business emails and keeping personal ones**.
+**Fix:** Changed to `if not _filter_personal_email(email):` in both `v2/routes/api.py` and `v2/mcp_tools.py`. Also fixed the MCP fallback lambda to return the email (allow-all) instead of `False`.
+
+### Fix 16: Draft Generation Requires campaign_id (Dogfood Finding)
+**Problem:** `POST /v2/api/drafts/generate` returned `400: campaign_id is required` when no campaign was assigned to a signal. The UI sends `campaign_id: 0` when there's no recommendation, which failed validation. The service layer already handles `campaign_id=None`.
+**Fix:** Made `campaign_id` optional in the draft route. If `0`, empty, or missing, it passes `None` to the service layer.
+
 ---
 
 ## 13. What Still Feels Incomplete / Risky
 
 ### Incomplete
-1. **Limited test coverage**: 31 regression tests in `test_v2_repair_pass.py` cover key safety gates (DNC, verified email, PUT vs POST, workflow status, draft dedup, exception hardening, account status cascade). End-to-end integration tests still missing.
+1. **Limited test coverage**: 35 regression tests in `test_v2_repair_pass.py` cover key safety gates (DNC, verified email, PUT vs POST, workflow status, draft dedup, exception hardening, account status cascade, personal email filtering, optional campaign_id). End-to-end integration tests still missing.
 2. **No data migration script**: Existing scan_signals are not auto-converted to intent_signals. The `POST /v2/api/ingest/from-scans` endpoint exists but requires manual triggering.
 3. **No revisit automation**: The `mark_sequence_complete` → `revisit` → fresh signal flow is modeled but there's no automated trigger (e.g., webhook from Apollo when a sequence completes).
 4. **No document/DOCX/PDF ingestion**: The `ingestion_service` supports CSV and manual only. The architecture supports future parsers but none are built.

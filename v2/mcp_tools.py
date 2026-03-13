@@ -303,7 +303,7 @@ def register_v2_tools(mcp):
             try:
                 from email_utils import _filter_personal_email
             except ImportError:
-                _filter_personal_email = lambda e: False
+                _filter_personal_email = lambda e: e  # allow all through if filter unavailable
 
             records = []
             skipped = {'enrolled': 0, 'personal': 0, 'no_email': 0, 'unverified': 0, 'dnc': 0}
@@ -315,7 +315,7 @@ def register_v2_tools(mcp):
                 if not p.get('email_verified'):
                     skipped['unverified'] += 1
                     continue
-                if _filter_personal_email(email):
+                if not _filter_personal_email(email):
                     skipped['personal'] += 1
                     continue
                 if is_do_not_contact(email):

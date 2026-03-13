@@ -48,7 +48,7 @@ def _serialize_list(items):
 def generate():
     """Generate email drafts for a prospect.
 
-    Body: { prospect_id: int, signal_id: int, campaign_id: int }
+    Body: { prospect_id: int, signal_id: int, campaign_id?: int }
     """
     try:
         data = request.get_json()
@@ -71,11 +71,12 @@ def generate():
             return _error(signal_id)
 
         campaign_id = data.get('campaign_id')
-        if not campaign_id:
-            return _error('campaign_id is required')
-        valid, campaign_id = validate_positive_int(campaign_id, 'campaign_id')
-        if not valid:
-            return _error(campaign_id)
+        if campaign_id:
+            valid, campaign_id = validate_positive_int(campaign_id, 'campaign_id')
+            if not valid:
+                return _error(campaign_id)
+        else:
+            campaign_id = None
 
         from v2.services.draft_service import generate_drafts
         drafts = generate_drafts(prospect_id, signal_id, campaign_id)

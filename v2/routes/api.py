@@ -344,7 +344,8 @@ def api_save_prospects():
                 continue
 
             # Skip personal emails (gmail, yahoo, etc.)
-            if _filter_personal_email(email):
+            # _filter_personal_email returns '' for personal domains, the email for business
+            if not _filter_personal_email(email):
                 skipped_personal += 1
                 continue
 

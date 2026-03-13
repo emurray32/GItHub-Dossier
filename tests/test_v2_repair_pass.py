@@ -13,6 +13,8 @@ Tests:
 9. Raw exception strings not leaked in 500 responses
 10. Flask smoke tests
 11. Account status route uses cascade-aware helpers (noise/sequenced/revisit)
+12. Personal email filter direction (business emails kept, personal rejected)
+13. Draft generation works without campaign_id
 """
 import json
 import sqlite3
@@ -800,3 +802,83 @@ class TestAccountStatusCascade:
         conn.close()
 
         assert dict(row)['status'] == 'archived'
+
+
+# =========================================================================
+# 12. Personal email filter direction (dogfood finding)
+# =========================================================================
+
+class TestPersonalEmailFilter:
+    """Verify personal email filtering keeps business emails and rejects personal."""
+
+    def test_business_email_saved(self, flask_app, test_db):
+        """Business domain emails should be saved, not filtered out."""
+        aid = _seed_account(test_db, 'BizCo', website='https://bizco.com')
+        sid = _seed_signal(test_db, aid, 'test')
+
+        resp = flask_app.post('/v2/api/prospects', json={
+            'signal_id': sid,
+            'account_id': aid,
+            'prospects': [
+                {'email': 'jane@bizco.com', 'email_verified': True, 'full_name': 'Jane Biz'},
+                {'email': 'bob@bizco.com', 'email_verified': True, 'full_name': 'Bob Biz'},
+            ],
+        })
+        data = resp.get_json()
+        assert data.get('count') == 2, (
+            f"Expected 2 business emails saved, got {data.get('count')}: {data}"
+        )
+
+    def test_personal_email_rejected(self, flask_app, test_db):
+        """Gmail/Yahoo/etc emails should be filtered out."""
+        aid = _seed_account(test_db, 'FilterCo')
+        sid = _seed_signal(test_db, aid, 'test')
+
+        resp = flask_app.post('/v2/api/prospects', json={
+            'signal_id': sid,
+            'account_id': aid,
+            'prospects': [
+                {'email': 'user@gmail.com', 'email_verified': True, 'full_name': 'Gmail User'},
+                {'email': 'user@yahoo.com', 'email_verified': True, 'full_name': 'Yahoo User'},
+                {'email': 'valid@filterco.com', 'email_verified': True, 'full_name': 'Valid User'},
+            ],
+        })
+        data = resp.get_json()
+        assert data.get('count') == 1, f"Expected 1 saved, got {data.get('count')}"
+        assert data.get('skipped_personal') == 2, f"Expected 2 personal skipped, got {data.get('skipped_personal')}"
+
+
+# =========================================================================
+# 13. Draft generation without campaign_id (dogfood finding)
+# =========================================================================
+
+class TestDraftGenerationNoCampaign:
+    """Verify draft generation works without a campaign_id."""
+
+    def test_generate_without_campaign_id(self, flask_app, test_db):
+        """POST /v2/api/drafts/generate should work without campaign_id."""
+        aid = _seed_account(test_db, 'DraftCo')
+        sid = _seed_signal(test_db, aid, 'test signal')
+        pid = _seed_prospect(test_db, aid, sid, email='dev@draftco.com')
+
+        resp = flask_app.post('/v2/api/drafts/generate', json={
+            'prospect_id': pid,
+            'signal_id': sid,
+        })
+        data = resp.get_json()
+        assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {data}"
+        assert len(data.get('drafts', [])) == 3
+
+    def test_generate_with_campaign_id_zero(self, flask_app, test_db):
+        """POST /v2/api/drafts/generate with campaign_id=0 should treat as no campaign."""
+        aid = _seed_account(test_db, 'ZeroCo')
+        sid = _seed_signal(test_db, aid, 'test signal')
+        pid = _seed_prospect(test_db, aid, sid, email='dev@zeroco.com')
+
+        resp = flask_app.post('/v2/api/drafts/generate', json={
+            'prospect_id': pid,
+            'signal_id': sid,
+            'campaign_id': 0,
+        })
+        data = resp.get_json()
+        assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {data}"
