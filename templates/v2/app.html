@@ -280,7 +280,9 @@ function SignalQueue({ signals, total, loading, activeId, onSelect, statusFilter
                 <div className="flex gap-1 mb-3">
                     {[
                         { key: 'new', label: 'New', count: counts.new || 0 },
-                        { key: 'actioned', label: 'Actioned', count: counts.actioned || 0 },
+                        { key: 'sequenced', label: 'Sequenced', count: counts.sequenced || 0 },
+                        { key: 'revisit', label: 'Revisit', count: counts.revisit || 0 },
+                        { key: 'noise', label: 'Noise', count: counts.noise || 0 },
                         { key: null, label: 'All', count: Object.values(counts).reduce((a, b) => a + b, 0) },
                     ].map(tab => (
                         <button key={tab.label}
@@ -832,11 +834,26 @@ function DraftReview({ workspace, toast }) {
             return;
         }
         try {
-            await apiFetch(`/v2/api/drafts/${draftId}/regenerate`, {
+            const result = await apiFetch(`/v2/api/drafts/${draftId}/regenerate`, {
                 method: 'POST',
                 body: JSON.stringify({ critique: critique.trim() }),
             });
-            toast('Draft regeneration requested', 'info');
+            // Refresh draft state with the regenerated draft from the server
+            if (result && result.draft) {
+                const updated = result.draft;
+                const pid = updated.prospect_id;
+                setDrafts(prev => {
+                    const existing = prev[pid] || [];
+                    const idx = existing.findIndex(d => d.id === updated.id || d.sequence_step === updated.sequence_step);
+                    if (idx >= 0) {
+                        const copy = [...existing];
+                        copy[idx] = updated;
+                        return { ...prev, [pid]: copy };
+                    }
+                    return { ...prev, [pid]: [...existing, updated] };
+                });
+            }
+            toast('Draft regenerated', 'info');
             setRegeneratingDraft(null);
             setCritique('');
         } catch (err) {
@@ -847,7 +864,10 @@ function DraftReview({ workspace, toast }) {
     const handleApproveAll = async () => {
         setApproving(true);
         try {
-            const allDraftIds = Object.values(drafts).flat().map(d => d.id).filter(Boolean);
+            // Collect IDs from both session drafts and server-loaded workspace drafts
+            const sessionIds = Object.values(drafts).flat().map(d => d.id).filter(Boolean);
+            const workspaceIds = (workspace.drafts || []).map(d => d.id).filter(Boolean);
+            const allDraftIds = [...new Set([...sessionIds, ...workspaceIds])];
             for (const id of allDraftIds) {
                 await apiFetch(`/v2/api/drafts/${id}/approve`, { method: 'POST' });
             }
@@ -902,7 +922,8 @@ function DraftReview({ workspace, toast }) {
                                     )}
                                 </div>
                                 {draft.subject && (
-                                    <input type="text" defaultValue={draft.subject}
+                                    <input type="text" key={`subj-${draft.id}-${draft.updated_at || ''}`}
+                                        defaultValue={draft.subject}
                                         onBlur={e => { if (draft.id && e.target.value !== draft.subject) handleDraftEdit(draft.id, 'subject', e.target.value); }}
                                         className="w-full text-sm font-medium border border-slate-200 rounded-md px-3 py-1.5 mb-1.5 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500/20" />
                                 )}
@@ -981,11 +1002,25 @@ function Enrollment({ workspace, onNextSignal, toast }) {
     };
 
     const handleEnrollAll = async () => {
+        let failCount = 0;
         for (const p of prospects) {
             if (statuses[p.id] === 'enrolled') continue;
-            await handleEnroll(p.id);
+            try {
+                await handleEnroll(p.id);
+            } catch (e) {
+                failCount++;
+            }
         }
-        setAllDone(true);
+        // Check actual status after all attempts
+        setStatuses(prev => {
+            const failed = Object.values(prev).filter(s => s === 'failed').length;
+            if (failed === 0) {
+                setAllDone(true);
+            } else {
+                toast(`${failed} prospect(s) failed to enroll`, 'error');
+            }
+            return prev;
+        });
     };
 
     const enrolledCount = Object.values(statuses).filter(s => s === 'enrolled').length;
@@ -1058,7 +1093,7 @@ function Enrollment({ workspace, onNextSignal, toast }) {
                 <div className="mt-4 text-center">
                     <div className="text-green-600 text-sm font-medium mb-2 flex items-center justify-center gap-1.5">
                         <Icon name="check" size={16} />
-                        All prospects enrolled successfully
+                        All prospects enrolled ({enrolledCount}/{prospects.length})
                     </div>
                     <button onClick={onNextSignal}
                         className="px-6 py-2 bg-brand-600 text-white text-sm font-medium rounded-md hover:bg-brand-700 transition-all inline-flex items-center gap-2">

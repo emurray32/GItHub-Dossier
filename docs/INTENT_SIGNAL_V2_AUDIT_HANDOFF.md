@@ -340,7 +340,56 @@ All 9 bugs from the initial Codex audit have been resolved in commit `bea6b53`:
 
 ---
 
-## 10. What Still Feels Incomplete / Risky
+## 10. Repair Pass — 5-Issue Fix (Post-Audit)
+
+Five structural issues were identified after the initial Codex audit. All fixed in a single commit:
+
+### Fix 1: Apollo Enrollment Alignment
+**Problem:** V2 enrollment used `apollo_person_id` (People Search API) and guessed `custom_field_values`. Apollo enrollment requires `apollo_contact_id` (Contacts API).
+**Fix:** Complete rewrite of `enrollment_service.py` to follow the proven v1 pattern from `apollo_pipeline.py`:
+- Search/create/update Contact via Contacts API (not People Search)
+- Build `typed_custom_fields` from approved drafts using `_resolve_custom_field_ids()`
+- Resolve `send_email_from_email_account_id` via `_resolve_email_account()`
+- Enroll using `apollo_contact_id` (not `apollo_person_id`)
+- Store `apollo_contact_id` on prospect record
+- Added `apollo_contact_id TEXT` column to prospects table in `schema.py`
+- Added `update_apollo_contact_id()` to `prospect_service.py`
+
+### Fix 2: Queue/Status Model → Workflow Statuses
+**Problem:** Queue tabs, filters, and counts used internal signal statuses (`new`/`actioned`/`archived`) instead of the intended workflow statuses.
+**Fix:**
+- `signal_service.py`: `list_signals()` now filters on `a.account_status` (not `s.status`)
+- `signal_service.py`: `get_signal_counts_by_status()` now groups by `a.account_status`
+- `api.py`: Signal list endpoint accepts `('new', 'sequenced', 'revisit', 'noise')`
+- `app.html`: Queue tabs show New / Sequenced / Revisit / Noise / All
+- `mcp_tools.py`: `list_signal_queue` docstring updated to workflow statuses
+
+### Fix 3: Verified Email Enforcement
+**Problem:** Both web and MCP prospect-save paths accepted unverified emails.
+**Fix:**
+- `api.py` `api_save_prospects()`: Skips prospects where `email_verified` is falsy
+- `mcp_tools.py` `save_prospects()`: Same enforcement
+- Both paths now report `skipped_unverified` count in response
+
+### Fix 4: MCP Auto Campaign Mapping
+**Problem:** `create_signal` and `create_revisit_signal` MCP tools created signals with no campaign recommendation.
+**Fix:**
+- Both tools now call `campaign_service.recommend_campaign()` before creating the signal
+- `recommended_campaign_id` and `recommended_campaign_reasoning` are set on the signal
+- Both return campaign info in their response
+
+### Fix 5: Web App Workflow/State Fixes
+**Problem:** Multiple UI state management issues.
+**Fixes:**
+- `handleApproveAll`: Now collects draft IDs from both session drafts AND `workspace.drafts` (existing server-loaded drafts)
+- `handleRegenerate`: Now updates local draft state with the regenerated draft from the server response
+- `handleEnrollAll`: Only sets `allDone=true` if zero failures; shows error toast with failure count otherwise
+- Success message shows actual count: "All prospects enrolled (X/Y)"
+- Subject inputs use `key` prop tied to `draft.updated_at` to force re-render after regeneration
+
+---
+
+## 11. What Still Feels Incomplete / Risky
 
 ### Incomplete
 1. **No automated tests**: No pytest files. Services were verified via import + syntax only.
@@ -352,13 +401,13 @@ All 9 bugs from the initial Codex audit have been resolved in commit `bea6b53`:
 
 ### Risky
 1. **Draft generation quality**: The LLM prompt construction in `draft_service.py` is untested against the Replit AI proxy. The template fallback is basic.
-2. **Apollo enrollment**: The enrollment_service calls Apollo API but the exact payload format (especially custom variable injection for email bodies) has not been validated against Apollo's current API.
+2. **Apollo enrollment**: Rewritten to follow the proven v1 pattern from `apollo_pipeline.py`. Uses Contacts API (create/update) with `typed_custom_fields`, resolves sender email account, and enrolls with `apollo_contact_id`. Not yet live-tested against Apollo's API in production.
 3. **Campaign recommendation accuracy**: The `campaign_service.recommend_campaign()` keyword matching depends on campaign names containing expected keywords (e.g., "implementation", "migration"). If existing campaigns have different naming, recommendations will fall back to the first active campaign.
 4. **React SPA size**: `app.html` is 1333 lines of inline JSX. Babel standalone compilation on every page load has performance implications.
 
 ---
 
-## 11. What Codex Should Inspect Most Carefully
+## 12. What Codex Should Inspect Most Carefully
 
 1. **Cross-service contracts**: Verify that `api.py` route handlers call service functions with correct argument names and handle return values correctly. Key interfaces:
    - `api.py` → `signal_service.get_signal_workspace()` return shape
@@ -382,7 +431,7 @@ All 9 bugs from the initial Codex audit have been resolved in commit `bea6b53`:
 
 ---
 
-## 12. Assumptions Made Without User Confirmation
+## 13. Assumptions Made Without User Confirmation
 
 1. **Flask + Jinja + React CDN stack**: Kept the existing stack (React 18 via CDN, Babel standalone, Tailwind CDN) rather than introducing a build system. This matches existing patterns in the repo.
 

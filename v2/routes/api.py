@@ -60,7 +60,7 @@ def api_list_signals():
 
         # Validate status if provided
         if status_filter:
-            valid, result = validate_scope(status_filter, ('new', 'actioned', 'archived'))
+            valid, result = validate_scope(status_filter, ('new', 'sequenced', 'revisit', 'noise'))
             if not valid:
                 return _error(result)
             status_filter = result
@@ -319,12 +319,18 @@ def api_save_prospects():
         skipped_enrolled = 0
         skipped_personal = 0
         skipped_no_email = 0
+        skipped_unverified = 0
         for p in prospects:
             email = (p.get('email') or '').strip().lower()
 
             # Skip prospects with no email
             if not email:
                 skipped_no_email += 1
+                continue
+
+            # Skip unverified emails
+            if not p.get('email_verified'):
+                skipped_unverified += 1
                 continue
 
             # Skip personal emails (gmail, yahoo, etc.)
@@ -353,7 +359,8 @@ def api_save_prospects():
         if not records:
             return _error(
                 f'No valid prospects to save (skipped: {skipped_enrolled} already enrolled, '
-                f'{skipped_personal} personal email, {skipped_no_email} no email)'
+                f'{skipped_personal} personal email, {skipped_no_email} no email, '
+                f'{skipped_unverified} unverified email)'
             )
 
         ids = bulk_create_prospects(records)
@@ -363,6 +370,7 @@ def api_save_prospects():
             skipped_enrolled=skipped_enrolled,
             skipped_personal=skipped_personal,
             skipped_no_email=skipped_no_email,
+            skipped_unverified=skipped_unverified,
         )
     except Exception as e:
         logger.exception("[V2 API] Error saving prospects")

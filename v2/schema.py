@@ -29,6 +29,9 @@ def init_v2_schema(cursor, adapt_ddl, safe_add_column):
     safe_add_column(cursor, 'monitored_accounts', "linkedin_url TEXT")
     safe_add_column(cursor, 'monitored_accounts', "company_size TEXT")
 
+    # prospects: add apollo_contact_id (set after contact create/update in Apollo)
+    safe_add_column(cursor, 'prospects', "apollo_contact_id TEXT")
+
     # campaigns: add campaign_type and writing_guidelines
     safe_add_column(cursor, 'campaigns', "campaign_type TEXT DEFAULT 'signal_based'")
     safe_add_column(cursor, 'campaigns', "writing_guidelines TEXT")

@@ -80,7 +80,7 @@ def list_signals(
         params = []
 
         if status:
-            where_clauses.append("s.status = ?")
+            where_clauses.append("a.account_status = ?")
             params.append(status)
 
         if owner:
@@ -263,15 +263,16 @@ def check_duplicate_signal(
 
 
 def get_signal_counts_by_status() -> dict:
-    """Get signal counts grouped by status."""
+    """Get signal counts grouped by workflow status (account_status)."""
     with db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute('''
-            SELECT status, COUNT(*) as cnt
-            FROM intent_signals
-            GROUP BY status
+            SELECT a.account_status AS workflow_status, COUNT(*) as cnt
+            FROM intent_signals s
+            JOIN monitored_accounts a ON s.account_id = a.id
+            GROUP BY a.account_status
         ''')
-        return {r['status']: r['cnt'] for r in rows_to_dicts(cursor.fetchall())}
+        return {r['workflow_status']: r['cnt'] for r in rows_to_dicts(cursor.fetchall())}
 
 
 def get_owners() -> List[str]:

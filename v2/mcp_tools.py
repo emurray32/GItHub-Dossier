@@ -34,13 +34,13 @@ def register_v2_tools(mcp):
 
     @mcp.tool()
     def list_signal_queue(status: str = "new", owner: str = None, limit: int = 20) -> str:
-        """List intent signals in the queue, filtered by status and/or owner.
+        """List intent signals in the queue, filtered by workflow status and/or owner.
 
         Returns signals sorted newest-first with account info. Use this to see
         what signals need attention.
 
         Args:
-            status: Filter by signal status ('new', 'actioned', 'archived'). Default 'new'.
+            status: Filter by workflow status ('new', 'sequenced', 'revisit', 'noise'). Default 'new'.
             owner: Filter by account owner name. Optional.
             limit: Max signals to return. Default 20.
         """
@@ -91,6 +91,18 @@ def register_v2_tools(mcp):
             from v2.services.signal_service import create_signal as _create
 
             account_id = find_or_create_account(account_name)
+
+            # Auto-recommend campaign based on signal type
+            rec_campaign_id = None
+            rec_campaign_reasoning = None
+            try:
+                from v2.services.campaign_service import recommend_campaign as _rec
+                rec = _rec(signal_type=signal_type, outreach_angle=signal_description)
+                rec_campaign_id = rec.get('campaign_id')
+                rec_campaign_reasoning = rec.get('reasoning')
+            except Exception:
+                pass
+
             signal_id = _create(
                 account_id=account_id,
                 signal_description=signal_description,
@@ -98,6 +110,8 @@ def register_v2_tools(mcp):
                 evidence_type='manual',
                 evidence_value=evidence,
                 signal_source='manual_entry',
+                recommended_campaign_id=rec_campaign_id,
+                recommended_campaign_reasoning=rec_campaign_reasoning,
                 created_by='mcp',
             )
 
@@ -122,6 +136,8 @@ def register_v2_tools(mcp):
                 "signal_id": signal_id,
                 "account_id": account_id,
                 "account_name": account_name,
+                "recommended_campaign_id": rec_campaign_id,
+                "recommended_campaign_reasoning": rec_campaign_reasoning,
                 "message": f"Signal created (id={signal_id}) for {account_name}",
             })
         except Exception as e:
@@ -288,11 +304,14 @@ def register_v2_tools(mcp):
                 _filter_personal_email = lambda e: False
 
             records = []
-            skipped = {'enrolled': 0, 'personal': 0, 'no_email': 0}
+            skipped = {'enrolled': 0, 'personal': 0, 'no_email': 0, 'unverified': 0}
             for p in prospect_list:
                 email = (p.get('email') or '').strip().lower()
                 if not email:
                     skipped['no_email'] += 1
+                    continue
+                if not p.get('email_verified'):
+                    skipped['unverified'] += 1
                     continue
                 if _filter_personal_email(email):
                     skipped['personal'] += 1
@@ -316,7 +335,8 @@ def register_v2_tools(mcp):
             if not records:
                 return _safe_json({
                     "error": f"No valid prospects to save (skipped: {skipped['enrolled']} enrolled, "
-                             f"{skipped['personal']} personal, {skipped['no_email']} no email)",
+                             f"{skipped['personal']} personal, {skipped['no_email']} no email, "
+                             f"{skipped['unverified']} unverified)",
                 })
 
             ids = bulk_create_prospects(records)
@@ -546,6 +566,17 @@ def register_v2_tools(mcp):
         try:
             from v2.services.signal_service import create_signal as _create
 
+            # Auto-recommend campaign for revisit signals
+            rec_campaign_id = None
+            rec_campaign_reasoning = None
+            try:
+                from v2.services.campaign_service import recommend_campaign as _rec
+                rec = _rec(signal_type='revisit', outreach_angle=new_evidence)
+                rec_campaign_id = rec.get('campaign_id')
+                rec_campaign_reasoning = rec.get('reasoning')
+            except Exception:
+                pass
+
             signal_id = _create(
                 account_id=account_id,
                 signal_description=f"Revisit: {new_evidence}",
@@ -553,6 +584,8 @@ def register_v2_tools(mcp):
                 evidence_type='manual',
                 evidence_value=new_evidence,
                 signal_source='cowork',
+                recommended_campaign_id=rec_campaign_id,
+                recommended_campaign_reasoning=rec_campaign_reasoning,
                 created_by='mcp',
             )
 
@@ -574,6 +607,8 @@ def register_v2_tools(mcp):
             return _safe_json({
                 "signal_id": signal_id,
                 "account_id": account_id,
+                "recommended_campaign_id": rec_campaign_id,
+                "recommended_campaign_reasoning": rec_campaign_reasoning,
                 "message": f"Revisit signal created (id={signal_id})",
             })
         except Exception as e:

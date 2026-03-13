@@ -5,10 +5,19 @@ After drafts are approved, this service handles the final step: pushing the
 prospect into an Apollo email sequence. It also tracks completion and triggers
 account-level status transitions.
 
+Apollo enrollment follows the SAME proven pattern as the legacy pipeline
+(apollo_pipeline.py):
+    1. Search for / create an Apollo CONTACT (not just a person)
+    2. Inject approved draft content into the contact's typed custom fields
+    3. Resolve the sending email account
+    4. Enroll the contact into the sequence
+    5. Only mark prospect/drafts as enrolled after all steps succeed
+
 Flow:
     drafts approved -> enroll_prospect -> Apollo API -> prospect.enrollment_status = 'enrolled'
     sequence finishes -> mark_sequence_complete -> check account rollup
 """
+import json
 import logging
 from typing import Optional, List
 
@@ -20,14 +29,14 @@ logger = logging.getLogger(__name__)
 def enroll_prospect(prospect_id: int, sequence_id: Optional[str] = None) -> dict:
     """Enroll a single prospect into an Apollo email sequence.
 
-    Steps:
-        1. Load prospect and validate (not DNC, not already enrolled)
-        2. Load approved drafts
-        3. Determine sequence_id from argument, campaign, or default
-        4. Call Apollo API to add contact to sequence
-        5. Update prospect enrollment status
-        6. Update account status if needed
-        7. Log activity
+    Follows the proven repo pattern (apollo_pipeline._enroll_single_contact):
+        1. Validate prospect (not DNC, not already enrolled, has approved drafts)
+        2. Search for existing Apollo contact by email
+        3. Build typed_custom_fields from approved draft content
+        4. Create or update the Apollo contact with draft content
+        5. Resolve sender email account
+        6. Enroll the Apollo contact into the sequence
+        7. Update prospect/draft statuses and account rollup
 
     Args:
         prospect_id: the prospect to enroll
@@ -36,7 +45,9 @@ def enroll_prospect(prospect_id: int, sequence_id: Optional[str] = None) -> dict
     Returns:
         Dict with status, prospect_id, sequence_id, apollo_response_ok
     """
-    from v2.services.prospect_service import get_prospect, update_prospect_enrollment
+    from v2.services.prospect_service import (
+        get_prospect, update_prospect_enrollment, update_apollo_contact_id,
+    )
     from v2.services.draft_service import get_drafts_for_prospect
 
     # 1. Load and validate prospect
@@ -53,8 +64,9 @@ def enroll_prospect(prospect_id: int, sequence_id: Optional[str] = None) -> dict
             'message': f'Prospect already has status: {prospect["enrollment_status"]}',
         }
 
-    if not prospect.get('apollo_person_id'):
-        return {'status': 'error', 'message': 'Prospect has no Apollo person ID'}
+    email = (prospect.get('email') or '').strip().lower()
+    if not email:
+        return {'status': 'error', 'message': 'Prospect has no email address'}
 
     # 2. Check for approved drafts
     drafts = get_drafts_for_prospect(prospect_id)
@@ -75,70 +87,118 @@ def enroll_prospect(prospect_id: int, sequence_id: Optional[str] = None) -> dict
             'message': 'No sequence_id provided and no default could be determined',
         }
 
-    # 4. Call Apollo API — inject draft content as custom variables
-    apollo_ok = False
-    apollo_error = None
+    # 4. Apollo enrollment — follows proven v1 pattern
     try:
         from apollo_pipeline import apollo_api_call
 
-        # Build custom variable payload from approved drafts so Apollo
-        # sends the actual reviewed/edited email content, not generic
-        # sequence templates.
-        custom_fields = {}
-        for draft in sorted(approved_drafts, key=lambda d: d.get('sequence_step', 0)):
-            step = draft.get('sequence_step', 1)
-            if draft.get('subject'):
-                custom_fields[f'subject_step_{step}'] = draft['subject']
-            if draft.get('body'):
-                custom_fields[f'body_step_{step}'] = draft['body']
-        # Also set top-level subject/body for step-1 (common Apollo variable names)
-        step1 = next((d for d in approved_drafts if d.get('sequence_step') == 1), None)
-        if step1:
-            custom_fields['email_subject'] = step1.get('subject', '')
-            custom_fields['email_body'] = step1.get('body', '')
+        # --- Step A: Resolve custom field IDs (name → Apollo field ID) ---
+        field_id_map = _resolve_custom_field_ids_cached()
 
-        enrollment_payload = {
-            'contact_ids': [prospect['apollo_person_id']],
+        # --- Step B: Build typed_custom_fields from approved drafts ---
+        typed_custom_fields = _build_typed_custom_fields(
+            approved_drafts, field_id_map,
+        )
+
+        # --- Step C: Search for existing Apollo contact ---
+        apollo_contact_id = prospect.get('apollo_contact_id')
+        if not apollo_contact_id:
+            apollo_contact_id = _find_apollo_contact(email)
+
+        # --- Step D: Create or update Apollo contact ---
+        if not apollo_contact_id:
+            # Create new contact with custom fields
+            create_payload = {
+                'first_name': prospect.get('first_name') or email.split('@')[0],
+                'last_name': prospect.get('last_name', ''),
+                'email': email,
+                'organization_name': prospect.get('company_name', ''),
+            }
+            if typed_custom_fields:
+                create_payload['typed_custom_fields'] = typed_custom_fields
+
+            create_resp = apollo_api_call(
+                'post', 'https://api.apollo.io/v1/contacts',
+                json=create_payload,
+            )
+            if create_resp.status_code in (200, 201):
+                apollo_contact_id = create_resp.json().get('contact', {}).get('id')
+            else:
+                err = create_resp.text[:300]
+                logger.warning("[ENROLL] Apollo contact create failed for %s: %s", email, err)
+                return {
+                    'status': 'error',
+                    'message': f'Apollo contact creation failed: {err}',
+                    'prospect_id': prospect_id,
+                    'apollo_response_ok': False,
+                }
+        elif typed_custom_fields:
+            # Update existing contact with draft content
+            apollo_api_call(
+                'post', f'https://api.apollo.io/v1/contacts/{apollo_contact_id}',
+                json={'typed_custom_fields': typed_custom_fields},
+            )
+
+        if not apollo_contact_id:
+            return {
+                'status': 'error',
+                'message': 'Could not create or find Apollo contact',
+                'prospect_id': prospect_id,
+                'apollo_response_ok': False,
+            }
+
+        # Persist apollo_contact_id on the prospect
+        update_apollo_contact_id(prospect_id, apollo_contact_id)
+
+        # --- Step E: Resolve sender email account ---
+        email_account_id = _resolve_sender_email_account(sequence_id)
+
+        # --- Step F: Enroll contact in sequence ---
+        enroll_payload = {
             'emailer_campaign_id': sequence_id,
+            'contact_ids': [apollo_contact_id],
         }
-        if custom_fields:
-            enrollment_payload['send_email_from_email_account_id'] = ''  # use default
-            # Apollo supports injecting custom variables per-contact via
-            # the sequence_active_in_other_campaigns override
-            enrollment_payload['custom_field_values'] = custom_fields
+        if email_account_id:
+            enroll_payload['send_email_from_email_account_id'] = email_account_id
 
-        response = apollo_api_call(
+        enroll_resp = apollo_api_call(
             'post',
             f'https://api.apollo.io/api/v1/emailer_campaigns/{sequence_id}/add_contact_ids',
-            json=enrollment_payload,
+            json=enroll_payload,
             timeout=30,
         )
-        apollo_ok = response.status_code in (200, 201)
+        apollo_ok = enroll_resp.status_code in (200, 201)
         if not apollo_ok:
-            apollo_error = response.text[:300]
+            apollo_error = enroll_resp.text[:300]
             logger.warning(
                 "[ENROLL] Apollo enrollment failed for prospect %d: %s",
                 prospect_id, apollo_error,
             )
-    except RuntimeError as e:
-        apollo_error = str(e)
-        logger.error("[ENROLL] Apollo API error enrolling prospect %d: %s",
-                      prospect_id, e)
-    except Exception as e:
-        apollo_error = str(e)
-        logger.error("[ENROLL] Unexpected error enrolling prospect %d: %s",
-                      prospect_id, e)
+            return {
+                'status': 'error',
+                'message': f'Apollo enrollment failed: {apollo_error}',
+                'prospect_id': prospect_id,
+                'sequence_id': sequence_id,
+                'apollo_response_ok': False,
+            }
 
-    if not apollo_ok:
+    except RuntimeError as e:
+        logger.error("[ENROLL] Apollo API error enrolling prospect %d: %s", prospect_id, e)
         return {
             'status': 'error',
-            'message': f'Apollo enrollment failed: {apollo_error or "unknown error"}',
+            'message': f'Apollo API error: {e}',
             'prospect_id': prospect_id,
-            'sequence_id': sequence_id,
+            'apollo_response_ok': False,
+        }
+    except Exception as e:
+        logger.error("[ENROLL] Unexpected error enrolling prospect %d: %s", prospect_id, e)
+        return {
+            'status': 'error',
+            'message': f'Enrollment error: {e}',
+            'prospect_id': prospect_id,
             'apollo_response_ok': False,
         }
 
-    # 5. Update prospect enrollment status
+    # 5. Update prospect enrollment status (only after Apollo success)
     sequence_name = _lookup_sequence_name(sequence_id)
     update_prospect_enrollment(
         prospect_id,
@@ -176,6 +236,7 @@ def enroll_prospect(prospect_id: int, sequence_id: Optional[str] = None) -> dict
                 'sequence_id': sequence_id,
                 'sequence_name': sequence_name,
                 'account_id': account_id,
+                'apollo_contact_id': apollo_contact_id,
                 'num_approved_drafts': len(approved_drafts),
             },
             created_by='enrollment_service',
@@ -188,6 +249,7 @@ def enroll_prospect(prospect_id: int, sequence_id: Optional[str] = None) -> dict
         'prospect_id': prospect_id,
         'sequence_id': sequence_id,
         'sequence_name': sequence_name,
+        'apollo_contact_id': apollo_contact_id,
         'apollo_response_ok': True,
     }
 
@@ -290,10 +352,133 @@ def mark_sequence_complete(prospect_id: int) -> Optional[dict]:
 
 
 # ---------------------------------------------------------------------------
-# Internal helpers
+# Apollo helpers — reuse proven patterns from apollo_pipeline.py
 # ---------------------------------------------------------------------------
 
-def _resolve_sequence_id(prospect: dict, drafts: List[dict]) -> Optional[str]:
+_CACHED_FIELD_IDS = None
+
+
+def _resolve_custom_field_ids_cached() -> dict:
+    """Fetch Apollo custom field ID mapping, cached for the process lifetime.
+
+    Reuses the same API endpoint as apollo_pipeline._resolve_custom_field_ids().
+    """
+    global _CACHED_FIELD_IDS
+    if _CACHED_FIELD_IDS is not None:
+        return _CACHED_FIELD_IDS
+
+    try:
+        from apollo_pipeline import _resolve_custom_field_ids
+        _CACHED_FIELD_IDS = _resolve_custom_field_ids()
+    except (ImportError, Exception) as e:
+        logger.warning("[ENROLL] Could not resolve custom field IDs: %s", e)
+        _CACHED_FIELD_IDS = {}
+
+    return _CACHED_FIELD_IDS
+
+
+def _build_typed_custom_fields(
+    approved_drafts: list,
+    field_id_map: dict,
+) -> dict:
+    """Build typed_custom_fields dict from approved drafts.
+
+    Maps draft content (subject/body per step) to Apollo custom field IDs.
+    Falls back to field names if IDs aren't resolved.
+    """
+    typed_custom_fields = {}
+
+    for draft in sorted(approved_drafts, key=lambda d: d.get('sequence_step', 0)):
+        step = draft.get('sequence_step', 1)
+
+        subject = draft.get('subject', '')
+        body = draft.get('body', '')
+
+        # Map to custom field IDs if available, otherwise use readable names
+        subject_key = f'subject_step_{step}'
+        body_key = f'body_step_{step}'
+
+        if subject:
+            fid = field_id_map.get(subject_key)
+            typed_custom_fields[fid or subject_key] = subject
+        if body:
+            fid = field_id_map.get(body_key)
+            typed_custom_fields[fid or body_key] = body
+
+    # Also set top-level email_subject / email_body for step 1
+    step1 = next((d for d in approved_drafts if d.get('sequence_step') == 1), None)
+    if step1:
+        subj = step1.get('subject', '')
+        bod = step1.get('body', '')
+        if subj:
+            fid = field_id_map.get('email_subject')
+            typed_custom_fields[fid or 'email_subject'] = subj
+        if bod:
+            fid = field_id_map.get('email_body')
+            typed_custom_fields[fid or 'email_body'] = bod
+
+    return typed_custom_fields
+
+
+def _find_apollo_contact(email: str) -> Optional[str]:
+    """Search for an existing Apollo contact by email.
+
+    Reuses the same API endpoint as apollo_pipeline._enroll_single_contact().
+    Returns the Apollo contact ID if found, else None.
+    """
+    try:
+        from apollo_pipeline import apollo_api_call
+        search_resp = apollo_api_call(
+            'post', 'https://api.apollo.io/api/v1/contacts/search',
+            json={'q_keywords': email, 'per_page': 1},
+        )
+        if search_resp.status_code == 200:
+            found = search_resp.json().get('contacts', [])
+            if found:
+                return found[0].get('id')
+    except Exception as e:
+        logger.warning("[ENROLL] Apollo contact search failed for %s: %s", email, e)
+    return None
+
+
+def _resolve_sender_email_account(sequence_id: str) -> Optional[str]:
+    """Resolve the sending email account for enrollment.
+
+    Resolution order (matches apollo_pipeline.bulk_enroll_contacts):
+        1. Per-sequence override from sequence_mappings.owner_email_account_id
+        2. Global default via apollo_pipeline._resolve_email_account()
+    """
+    # 1. Try per-sequence override
+    if sequence_id:
+        try:
+            with db_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    'SELECT owner_email_account_id FROM sequence_mappings WHERE sequence_id = ?',
+                    (sequence_id,),
+                )
+                row = cursor.fetchone()
+                if row:
+                    val = row['owner_email_account_id'] if isinstance(row, dict) else row[0]
+                    if val:
+                        return val
+        except Exception:
+            pass
+
+    # 2. Global default
+    try:
+        from apollo_pipeline import _resolve_email_account
+        return _resolve_email_account()
+    except (ImportError, Exception) as e:
+        logger.warning("[ENROLL] Could not resolve email account: %s", e)
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Sequence resolution helpers
+# ---------------------------------------------------------------------------
+
+def _resolve_sequence_id(prospect: dict, drafts: list) -> Optional[str]:
     """Try to determine the right Apollo sequence ID.
 
     Resolution order:

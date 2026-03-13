@@ -140,6 +140,18 @@ def update_prospect_enrollment(
         return True
 
 
+def update_apollo_contact_id(prospect_id: int, apollo_contact_id: str) -> bool:
+    """Store the Apollo contact ID after a contact is created/found in Apollo."""
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            UPDATE prospects SET apollo_contact_id = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        ''', (apollo_contact_id, prospect_id))
+        conn.commit()
+        return True
+
+
 def mark_do_not_contact(prospect_id: int) -> bool:
     """Flag a prospect as do-not-contact."""
     with db_connection() as conn:
