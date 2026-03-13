@@ -1,6 +1,6 @@
 """
 V2 Ingestion Routes — Flask blueprint for importing signals via CSV,
-manual entry, or bulk scan-signal conversion.
+Excel, manual entry, or bulk scan-signal conversion.
 
 Blueprint name: ingestion_bp
 URL prefix:     /v2/api/ingest
@@ -16,9 +16,81 @@ logger = logging.getLogger(__name__)
 
 ingestion_bp = Blueprint('v2_ingestion', __name__, url_prefix='/v2/api/ingest')
 
+_ALLOWED_EXTENSIONS = {'.csv', '.xlsx', '.xls'}
+
 
 # ---------------------------------------------------------------------------
-# POST /v2/api/ingest/csv
+# POST /v2/api/ingest/file  — unified upload (CSV + Excel)
+# ---------------------------------------------------------------------------
+
+@ingestion_bp.route('/file', methods=['POST'])
+def ingest_file():
+    """Upload a CSV or Excel file to create intent signals in bulk.
+
+    Accepts multipart/form-data with:
+        file          — CSV (.csv) or Excel (.xlsx, .xls) file
+        source_label  — optional label for tracking
+        created_by    — optional user identifier
+    """
+    if 'file' not in request.files:
+        return jsonify({'status': 'error', 'message': 'No file provided'}), 400
+
+    file = request.files['file']
+    if not file or not file.filename:
+        return jsonify({'status': 'error', 'message': 'No file selected'}), 400
+
+    filename_lower = file.filename.lower()
+    ext = None
+    for allowed in _ALLOWED_EXTENSIONS:
+        if filename_lower.endswith(allowed):
+            ext = allowed
+            break
+
+    if not ext:
+        return jsonify({
+            'status': 'error',
+            'message': f'Unsupported file type. Accepted: {", ".join(sorted(_ALLOWED_EXTENSIONS))}'
+        }), 400
+
+    try:
+        file_content = file.read()
+    except Exception as exc:
+        logger.exception("[INGEST ROUTE] Failed to read uploaded file")
+        return jsonify({'status': 'error', 'message': 'Failed to read file'}), 400
+
+    if not file_content:
+        return jsonify({'status': 'error', 'message': 'File is empty'}), 400
+
+    # 10 MB limit for Excel (multi-sheet can be larger than CSV)
+    max_size = 10 * 1024 * 1024
+    if len(file_content) > max_size:
+        return jsonify({'status': 'error', 'message': f'File exceeds {max_size // (1024*1024)} MB limit'}), 400
+
+    source_label = (request.form.get('source_label') or 'file_upload').strip()
+    created_by = (request.form.get('created_by') or '').strip() or None
+
+    try:
+        if ext == '.csv':
+            result = ingestion_service.ingest_csv(
+                file_content=file_content,
+                source_label=source_label,
+                created_by=created_by,
+            )
+            return jsonify({'status': 'success', 'result': result}), 200
+        else:
+            result = ingestion_service.ingest_excel(
+                file_content=file_content,
+                source_label=source_label,
+                created_by=created_by,
+            )
+            return jsonify({'status': 'success', 'result': result}), 200
+    except Exception as exc:
+        logger.exception("[INGEST ROUTE] File ingestion failed")
+        return jsonify({'status': 'error', 'message': 'Ingestion failed'}), 500
+
+
+# ---------------------------------------------------------------------------
+# POST /v2/api/ingest/csv  — legacy endpoint, still works
 # ---------------------------------------------------------------------------
 
 @ingestion_bp.route('/csv', methods=['POST'])
@@ -30,7 +102,6 @@ def ingest_csv():
         source_label  — optional label for tracking (default: 'csv_upload')
         created_by    — optional user identifier
     """
-    # --- Validate file ---
     if 'file' not in request.files:
         return jsonify({'status': 'error', 'message': 'No file provided'}), 400
 
@@ -41,25 +112,21 @@ def ingest_csv():
     if not file.filename.lower().endswith('.csv'):
         return jsonify({'status': 'error', 'message': 'File must be a .csv file'}), 400
 
-    # Read content
     try:
         file_content = file.read()
     except Exception as exc:
         logger.exception("[INGEST ROUTE] Failed to read uploaded file")
-        return jsonify({'status': 'error', 'message': f'Failed to read file: {str(exc)[:100]}'}), 400
+        return jsonify({'status': 'error', 'message': 'Failed to read file'}), 400
 
     if not file_content:
         return jsonify({'status': 'error', 'message': 'File is empty'}), 400
 
-    # 5 MB limit
     if len(file_content) > 5 * 1024 * 1024:
         return jsonify({'status': 'error', 'message': 'File exceeds 5 MB limit'}), 400
 
-    # Optional form fields
     source_label = (request.form.get('source_label') or 'csv_upload').strip()
     created_by = (request.form.get('created_by') or '').strip() or None
 
-    # --- Run ingestion ---
     try:
         result = ingestion_service.ingest_csv(
             file_content=file_content,
