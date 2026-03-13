@@ -128,6 +128,26 @@ function statusColors(status) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// TIME HELPERS
+// ═══════════════════════════════════════════════════════════════════════════
+
+function timeAgo(dateStr) {
+    if (!dateStr) return '';
+    const d = new Date(dateStr);
+    const now = new Date();
+    const diffMs = now - d;
+    const mins = Math.floor(diffMs / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    const days = Math.floor(hrs / 24);
+    if (days < 7) return `${days}d ago`;
+    if (days < 30) return `${Math.floor(days / 7)}w ago`;
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // API HELPERS
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -383,6 +403,18 @@ function StatusBadge({ status, size = 'sm' }) {
 
 function SignalQueue({ signals, total, loading, activeId, onSelect, statusFilter, onStatusFilter, ownerFilter, onOwnerFilter, owners, counts, onAddSignals }) {
     const listRef = useRef(null);
+    const [searchTerm, setSearchTerm] = useState('');
+
+    const filteredSignals = useMemo(() => {
+        if (!searchTerm.trim()) return signals;
+        const q = searchTerm.toLowerCase();
+        return signals.filter(s =>
+            (s.company_name || '').toLowerCase().includes(q) ||
+            (s.signal_description || '').toLowerCase().includes(q) ||
+            (s.signal_type || '').toLowerCase().includes(q) ||
+            (s.account_owner || '').toLowerCase().includes(q)
+        );
+    }, [signals, searchTerm]);
 
     return (
         <div className="v2-sidebar flex flex-col h-full bg-brand-950 text-slate-300 select-none" style={{ width: 350 }}>
@@ -396,7 +428,7 @@ function SignalQueue({ signals, total, loading, activeId, onSelect, statusFilter
                     </span>
                     {onAddSignals && (
                         <button onClick={onAddSignals}
-                            title="Add signals"
+                            title="Add signals (I)"
                             className="w-6 h-6 flex items-center justify-center rounded-md text-slate-400 hover:text-white hover:bg-white/10 transition-all">
                             <Icon name="plus" size={14} />
                         </button>
@@ -422,15 +454,30 @@ function SignalQueue({ signals, total, loading, activeId, onSelect, statusFilter
                     ))}
                 </div>
 
-                {/* Owner filter */}
-                {owners.length > 0 && (
-                    <select value={ownerFilter || ''}
-                        onChange={e => onOwnerFilter(e.target.value || null)}
-                        className="w-full text-xs bg-white/5 border border-white/10 text-slate-300 rounded-md px-2.5 py-1.5 focus:outline-none focus:border-brand-500">
-                        <option value="">All owners</option>
-                        {owners.map(o => <option key={o} value={o}>{o}</option>)}
-                    </select>
-                )}
+                {/* Search + Owner filter */}
+                <div className="flex gap-2">
+                    <div className="relative flex-1">
+                        <Icon name="search" size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+                        <input value={searchTerm}
+                            onChange={e => setSearchTerm(e.target.value)}
+                            placeholder="Search signals..."
+                            className="w-full text-xs bg-white/5 border border-white/10 text-slate-300 rounded-md pl-7 pr-2.5 py-1.5 focus:outline-none focus:border-brand-500 placeholder-slate-500" />
+                        {searchTerm && (
+                            <button onClick={() => setSearchTerm('')}
+                                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white">
+                                <Icon name="x" size={10} />
+                            </button>
+                        )}
+                    </div>
+                    {owners.length > 0 && (
+                        <select value={ownerFilter || ''}
+                            onChange={e => onOwnerFilter(e.target.value || null)}
+                            className="text-xs bg-white/5 border border-white/10 text-slate-300 rounded-md px-2.5 py-1.5 focus:outline-none focus:border-brand-500 w-28">
+                            <option value="">All owners</option>
+                            {owners.map(o => <option key={o} value={o}>{o}</option>)}
+                        </select>
+                    )}
+                </div>
             </div>
 
             {/* Signal list */}
@@ -445,13 +492,22 @@ function SignalQueue({ signals, total, loading, activeId, onSelect, statusFilter
                             </div>
                         ))}
                     </div>
-                ) : signals.length === 0 ? (
+                ) : filteredSignals.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-full text-center px-6">
                         <Icon name="zap" size={32} className="text-slate-600 mb-3" />
-                        <p className="text-sm text-slate-400">No signals yet.</p>
-                        <p className="text-xs text-slate-500 mt-1">Import accounts or create signals to get started.</p>
+                        {searchTerm ? (
+                            <>
+                                <p className="text-sm text-slate-400">No signals match "{searchTerm}"</p>
+                                <button onClick={() => setSearchTerm('')} className="text-xs text-brand-400 hover:text-brand-300 mt-2">Clear search</button>
+                            </>
+                        ) : (
+                            <>
+                                <p className="text-sm text-slate-400">No signals yet.</p>
+                                <p className="text-xs text-slate-500 mt-1">Import accounts or create signals to get started.</p>
+                            </>
+                        )}
                     </div>
-                ) : signals.map(sig => (
+                ) : filteredSignals.map(sig => (
                     <button key={sig.id}
                         onClick={() => onSelect(sig.id)}
                         className={`v2-signal-item w-full text-left px-4 py-3 border-b border-white/5 v2-focus-ring
@@ -466,6 +522,9 @@ function SignalQueue({ signals, total, loading, activeId, onSelect, statusFilter
                             <SignalTypeBadge type={sig.signal_type} size="sm" />
                             {sig.account_owner && (
                                 <span className="text-[0.625rem] text-slate-500 truncate">{sig.account_owner}</span>
+                            )}
+                            {sig.created_at && (
+                                <span className="text-[0.625rem] text-slate-600 ml-auto flex-shrink-0">{timeAgo(sig.created_at)}</span>
                             )}
                         </div>
                         <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed">
@@ -756,7 +815,7 @@ function PersonaSearch({ workspace, onProspectsSaved, toast, actionsRef }) {
         if (prospects.length === 0) return;
         setSavingProspects(true);
         try {
-            await apiFetch('/v2/api/prospects', {
+            const result = await apiFetch('/v2/api/prospects', {
                 method: 'POST',
                 body: JSON.stringify({
                     signal_id: workspace.signal.id,
@@ -764,7 +823,20 @@ function PersonaSearch({ workspace, onProspectsSaved, toast, actionsRef }) {
                     prospects,
                 }),
             });
-            toast(`Saved ${prospects.length} prospects`);
+            const saved = result.count || 0;
+            const skipped = (result.skipped_enrolled || 0) + (result.skipped_personal || 0) +
+                            (result.skipped_no_email || 0) + (result.skipped_unverified || 0) + (result.skipped_dnc || 0);
+            let msg = `Saved ${saved} prospect${saved !== 1 ? 's' : ''}`;
+            if (skipped > 0) {
+                const reasons = [];
+                if (result.skipped_unverified) reasons.push(`${result.skipped_unverified} unverified`);
+                if (result.skipped_personal) reasons.push(`${result.skipped_personal} personal email`);
+                if (result.skipped_enrolled) reasons.push(`${result.skipped_enrolled} already enrolled`);
+                if (result.skipped_no_email) reasons.push(`${result.skipped_no_email} no email`);
+                if (result.skipped_dnc) reasons.push(`${result.skipped_dnc} DNC`);
+                msg += ` (filtered: ${reasons.join(', ')})`;
+            }
+            toast(msg, skipped > 0 ? 'info' : 'success');
             setSelected(new Set());
             if (onProspectsSaved) onProspectsSaved();
         } catch (err) {
@@ -1043,6 +1115,16 @@ function DraftReview({ workspace, toast, actionsRef }) {
                 {allApproved && <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full ml-auto">All Approved</span>}
             </h3>
 
+            {workspace.campaign && workspace.campaign.writing_guidelines && (
+                <div className="mb-3 p-3 bg-indigo-50 border border-indigo-100 rounded-lg">
+                    <div className="text-[0.6875rem] font-semibold text-indigo-700 mb-1 flex items-center gap-1.5">
+                        <Icon name="edit" size={12} />
+                        {workspace.campaign.name || 'Campaign'} Guidelines
+                    </div>
+                    <p className="text-xs text-indigo-600 leading-relaxed">{workspace.campaign.writing_guidelines}</p>
+                </div>
+            )}
+
             <div className="space-y-4">
                 {actionableProspects.map(prospect => (
                     <div key={prospect.id} className="border border-slate-100 rounded-lg p-4">
@@ -1066,9 +1148,21 @@ function DraftReview({ workspace, toast, actionsRef }) {
                         {(drafts[prospect.id] || workspace.drafts.filter(d => d.prospect_id === prospect.id)).map((draft, stepIdx) => (
                             <div key={draft.id || stepIdx} className="mt-3 border-t border-slate-50 pt-3">
                                 <div className="flex items-center justify-between mb-1.5">
-                                    <span className="text-xs font-medium text-slate-500 uppercase">
-                                        Step {draft.sequence_step || stepIdx + 1}
-                                    </span>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-xs font-medium text-slate-500 uppercase">
+                                            Step {draft.sequence_step || stepIdx + 1}
+                                        </span>
+                                        {draft.status && (
+                                            <span className={`text-[0.625rem] px-1.5 py-0.5 rounded-full font-medium ${
+                                                draft.status === 'approved' ? 'bg-green-100 text-green-700' :
+                                                draft.status === 'enrolled' ? 'bg-blue-100 text-blue-700' :
+                                                draft.status === 'edited' ? 'bg-amber-100 text-amber-700' :
+                                                'bg-slate-100 text-slate-500'
+                                            }`}>
+                                                {draft.status}
+                                            </span>
+                                        )}
+                                    </div>
                                     {draft.id && (
                                         <button onClick={() => { setRegeneratingDraft(regeneratingDraft === draft.id ? null : draft.id); setCritique(''); }}
                                             className="text-xs text-brand-600 hover:text-brand-700 flex items-center gap-1">
@@ -1996,20 +2090,21 @@ function App() {
         }
     }, [activeIndex, loadSignals]);
 
-    // Mark as noise
+    // Mark as noise (with confirmation — cascades to ALL signals for this account)
     const markNoise = useCallback(async () => {
         if (!activeSignalId) return;
         const sig = signals.find(s => s.id === activeSignalId);
         if (!sig) return;
 
+        const company = sig.company_name || 'this account';
+        if (!window.confirm(`Mark "${company}" as noise?\n\nThis will archive ALL signals for this account.`)) return;
+
         try {
-            // Mark the account as noise — this automatically cascades
-            // all non-archived signals for this account to 'archived'
             await apiFetch(`/v2/api/accounts/${sig.account_id}/status`, {
                 method: 'PUT',
                 body: JSON.stringify({ status: 'noise' }),
             });
-            toast('Marked as noise');
+            toast(`"${company}" marked as noise`);
             await reloadAndAdvance();
         } catch (err) {
             toast(err.message, 'error');
