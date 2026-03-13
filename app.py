@@ -160,6 +160,12 @@ try:
 except ImportError:
     logging.warning("[APP] v2.routes.enrollment not found — skipping enrollment blueprint")
 
+try:
+    from v2.routes.webhooks import webhooks_bp
+    app.register_blueprint(webhooks_bp)
+except ImportError:
+    logging.warning("[APP] v2.routes.webhooks not found — skipping webhooks blueprint")
+
 # Initialize rate limiter with route-specific limits
 limiter.init_app(app)
 limiter.set_route_limit('/login', 10, 60)           # 10 login attempts per minute
