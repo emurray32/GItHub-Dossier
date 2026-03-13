@@ -68,7 +68,7 @@ def api_list_signals():
 
         # Validate limit/offset
         limit = request.args.get('limit', '50')
-        valid, limit = validate_positive_int(limit, 'limit', max_val=200)
+        valid, limit = validate_positive_int(limit, 'limit', max_val=1000)
         if not valid:
             return _error(limit)
 

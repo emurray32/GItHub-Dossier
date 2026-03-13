@@ -395,6 +395,303 @@ def batch_import_from_scans(tier_filter: Optional[list] = None) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Excel / Smart File Ingestion
+# ---------------------------------------------------------------------------
+
+# Canonical field → list of header substrings that match (checked via 'in', case-insensitive).
+# Order matters: first match wins.  Entries are (canonical_key, match_phrases).
+_COLUMN_MATCHERS = [
+    ('company_name',        ['company_name', 'company', 'account_name', 'account', 'name']),
+    ('signal_description',  ['signal detail', 'signal_description', 'description', 'detail']),
+    ('website',             ['domain', 'website_url', 'website', 'url']),
+    ('signal_type',         ['signal type', 'signal_type', 'type']),
+    ('evidence_value',      ['source url', 'source_url', 'evidence_value', 'evidence']),
+    ('company_size',        ['estimated size', 'company_size', 'size', 'employees']),
+    ('industry',            ['industry', 'sector', 'vertical']),
+    ('account_owner',       ['account_owner', 'owner', 'rep', 'assigned']),
+    ('score',               ['score', 'priority', 'weight', 'rating']),
+    ('outreach_angle',      ['outreach angle', 'outreach_angle', 'outreach', 'angle']),
+    ('status',              ['status']),
+    ('notes',               ['notes', 'comment']),
+    ('date_found',          ['date found', 'date_found', 'date', 'created']),
+    ('buyer_persona',       ['buyer persona', 'buyer_persona', 'persona']),
+    ('video_url',           ['video content url', 'video_url', 'video url', 'video']),
+]
+
+# Headers to skip when matching (too generic or ambiguous when alone)
+_SKIP_EXACT = {'none', ''}
+
+
+def _smart_match_columns(headers):
+    """Fuzzy-match spreadsheet headers to canonical field names.
+
+    Returns a dict of {canonical_key: original_header_name}.
+    Unmatched headers are ignored (their data lands in raw_payload).
+    """
+    mapping = {}
+    used_headers = set()
+    headers_lower = [(h or '').strip().lower() for h in headers]
+
+    for canonical, phrases in _COLUMN_MATCHERS:
+        for phrase in phrases:
+            for idx, low in enumerate(headers_lower):
+                if low in _SKIP_EXACT or idx in used_headers:
+                    continue
+                # "source url" should not match "website" (avoid the generic 'url' grabbing it)
+                if low == phrase or phrase in low:
+                    mapping[canonical] = headers[idx]
+                    used_headers.add(idx)
+                    break
+            if canonical in mapping:
+                break
+
+    return mapping
+
+
+def _normalize_signal_type(raw_type):
+    """Convert human-readable signal type to snake_case identifier.
+
+    'Hiring - Localization' → 'hiring_localization'
+    'YouTube Channel + Academy' → 'youtube_channel_academy'
+    'Hiring - Hidden Role (i18n)' → 'hiring_hidden_role_i18n'
+    """
+    if not raw_type:
+        return None
+    import re
+    # Remove parens but keep their content: "(i18n)" → " i18n"
+    cleaned = re.sub(r'[()]', ' ', str(raw_type)).strip().lower()
+    cleaned = re.sub(r'[\s\-/+]+', '_', cleaned)
+    cleaned = re.sub(r'[^a-z0-9_]', '', cleaned)
+    cleaned = re.sub(r'_+', '_', cleaned).strip('_')
+    return cleaned or None
+
+
+def _coerce_str(val):
+    """Convert a cell value to a trimmed string (handles dates, numbers, None)."""
+    if val is None:
+        return ''
+    if hasattr(val, 'isoformat'):
+        return val.isoformat()
+    return str(val).strip()
+
+
+def _process_rows(rows, source_label, created_by, sheet_name=None):
+    """Process a list of dicts (one per row) into intent signals.
+
+    This is the shared core logic used by both CSV and Excel ingestion.
+    Each dict should have canonical keys from _smart_match_columns.
+
+    Returns a result dict with signals_created, accounts_created, etc.
+    """
+    batch_id = uuid.uuid4().hex[:12]
+    result = {
+        'signals_created': 0,
+        'accounts_created': 0,
+        'accounts_matched': 0,
+        'skipped': 0,
+        'skipped_duplicates': 0,
+        'errors': [],
+        'batch_id': batch_id,
+        'sheet_name': sheet_name,
+    }
+
+    for row_num, row in enumerate(rows, start=2):
+        try:
+            company_name = _coerce_str(row.get('company_name'))
+            signal_desc = _coerce_str(row.get('signal_description'))
+
+            if not company_name:
+                # Skip silently — likely an empty row
+                result['skipped'] += 1
+                continue
+            if not signal_desc:
+                # Try outreach_angle as fallback description
+                signal_desc = _coerce_str(row.get('outreach_angle'))
+            if not signal_desc:
+                result['errors'].append(f'Row {row_num}: missing signal description')
+                continue
+
+            website = _coerce_str(row.get('website')) or None
+            raw_signal_type = _coerce_str(row.get('signal_type')) or None
+            signal_type = _normalize_signal_type(raw_signal_type)
+            evidence = _coerce_str(row.get('evidence_value')) or None
+            industry = _coerce_str(row.get('industry')) or None
+            company_size = _coerce_str(row.get('company_size')) or None
+            account_owner = _coerce_str(row.get('account_owner')) or None
+
+            # 1. Find or create account
+            existing = account_service.find_account_by_name(company_name)
+            if existing:
+                account_id = existing['id']
+                result['accounts_matched'] += 1
+            else:
+                account_id = account_service.find_or_create_account(
+                    company_name=company_name,
+                    website=website,
+                    industry=industry,
+                    company_size=company_size,
+                    account_owner=account_owner,
+                )
+                result['accounts_created'] += 1
+
+            # 2. Check for duplicate signal
+            if signal_service.check_duplicate_signal(account_id, signal_type, source_label, evidence_value=evidence):
+                result['skipped_duplicates'] += 1
+                continue
+
+            # 3. Auto-recommend campaign
+            rec = campaign_service.recommend_campaign(signal_type=signal_type)
+
+            # 4. Build raw_payload with ALL original data (preserves unmapped fields)
+            raw_payload = {k: _coerce_str(v) for k, v in row.items() if v is not None and _coerce_str(v)}
+
+            # 5. Create intent signal
+            signal_id = signal_service.create_signal(
+                account_id=account_id,
+                signal_description=signal_desc,
+                signal_type=signal_type,
+                evidence_type='file_import',
+                evidence_value=evidence,
+                signal_source=source_label,
+                recommended_campaign_id=rec.get('campaign_id'),
+                recommended_campaign_reasoning=rec.get('reasoning'),
+                created_by=created_by,
+                ingestion_batch_id=batch_id,
+                raw_payload=safe_json_dumps(raw_payload),
+            )
+
+            result['signals_created'] += 1
+
+            # 6. Log activity
+            activity_service.log_activity(
+                event_type='signal_created',
+                entity_type='signal',
+                entity_id=signal_id,
+                details={
+                    'source': source_label,
+                    'batch_id': batch_id,
+                    'company_name': company_name,
+                    'signal_type': signal_type,
+                    'sheet_name': sheet_name,
+                },
+                created_by=created_by,
+            )
+
+        except Exception as exc:
+            logger.exception("[INGEST] Error on row %d", row_num)
+            result['errors'].append(f'Row {row_num}: {str(exc)[:200]}')
+
+    # Log batch-level activity
+    activity_service.log_activity(
+        event_type='file_imported',
+        entity_type='batch',
+        entity_id=None,
+        details={
+            'batch_id': batch_id,
+            'source_label': source_label,
+            'sheet_name': sheet_name,
+            'signals_created': result['signals_created'],
+            'accounts_created': result['accounts_created'],
+            'accounts_matched': result['accounts_matched'],
+            'skipped': result['skipped'],
+            'error_count': len(result['errors']),
+        },
+        created_by=created_by,
+    )
+
+    return result
+
+
+def ingest_excel(file_content, source_label='excel_upload', created_by=None):
+    """Parse an Excel workbook and create intent signals from all valid sheets.
+
+    Returns:
+        dict with keys: sheets (list of per-sheet results), totals.
+    """
+    import openpyxl
+
+    wb = openpyxl.load_workbook(
+        filename=io.BytesIO(file_content),
+        data_only=True,
+        read_only=True,
+    )
+
+    all_results = []
+    totals = {'signals_created': 0, 'accounts_created': 0, 'accounts_matched': 0,
+              'skipped': 0, 'errors': []}
+
+    for sheet_name in wb.sheetnames:
+        ws = wb[sheet_name]
+
+        # Read all rows into memory (read_only worksheets are generators)
+        raw_rows = list(ws.iter_rows(values_only=True))
+        if len(raw_rows) < 2:
+            continue  # Need at least header + 1 data row
+
+        # First non-empty row is the header
+        header_row = raw_rows[0]
+        headers = [str(h).strip() if h else '' for h in header_row]
+
+        # Skip sheets with no recognizable headers
+        col_map = _smart_match_columns(headers)
+        if 'company_name' not in col_map:
+            logger.info("[INGEST] Sheet '%s' skipped — no company column found in headers: %s",
+                        sheet_name, headers)
+            continue
+
+        # Build canonical dicts from data rows
+        canonical_rows = []
+        for raw_row in raw_rows[1:]:
+            row_dict = {}
+            for canonical_key, original_header in col_map.items():
+                col_idx = headers.index(original_header)
+                row_dict[canonical_key] = raw_row[col_idx] if col_idx < len(raw_row) else None
+
+            # Also capture ALL columns for raw_payload
+            for idx, hdr in enumerate(headers):
+                if hdr and idx < len(raw_row):
+                    safe_key = hdr.strip().lower().replace(' ', '_')
+                    if safe_key not in row_dict:
+                        row_dict[safe_key] = raw_row[idx]
+
+            canonical_rows.append(row_dict)
+
+        if not canonical_rows:
+            continue
+
+        # Count non-empty rows (at least company_name has a value)
+        real_rows = [r for r in canonical_rows if _coerce_str(r.get('company_name'))]
+        if not real_rows:
+            logger.info("[INGEST] Sheet '%s' skipped — all rows empty", sheet_name)
+            continue
+
+        logger.info("[INGEST] Processing sheet '%s': %d data rows, columns mapped: %s",
+                    sheet_name, len(real_rows), list(col_map.keys()))
+
+        sheet_result = _process_rows(
+            real_rows,
+            source_label=source_label,
+            created_by=created_by,
+            sheet_name=sheet_name,
+        )
+        all_results.append(sheet_result)
+
+        # Accumulate totals
+        for key in ('signals_created', 'accounts_created', 'accounts_matched', 'skipped'):
+            totals[key] += sheet_result.get(key, 0)
+        totals['errors'].extend(sheet_result.get('errors', []))
+
+    wb.close()
+
+    return {
+        'sheets': all_results,
+        'totals': totals,
+        'sheets_processed': len(all_results),
+        'sheets_total': len(wb.sheetnames),
+    }
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 

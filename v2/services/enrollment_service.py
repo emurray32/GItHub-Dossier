@@ -284,40 +284,70 @@ def enroll_prospect(prospect_id: int, sequence_id: Optional[str] = None) -> dict
 
 
 def bulk_enroll(prospect_ids: List[int]) -> dict:
-    """Enroll multiple prospects, collecting results.
+    """Enroll multiple prospects, collecting per-prospect results.
 
     Args:
         prospect_ids: list of prospect ids to enroll
 
     Returns:
-        Dict with enrolled count, failed count, and per-prospect results
+        Dict with enrolled/failed/skipped counts and a details list with
+        per-prospect outcome: {prospect_id, full_name, email, success, error}
     """
+    from v2.services.prospect_service import get_prospect as _get_prospect
+
     enrolled = 0
     failed = 0
-    results = []
+    skipped = 0
+    details = []
 
     for pid in prospect_ids:
+        # Pre-fetch prospect metadata for the response
+        meta = _get_prospect(pid)
+        full_name = (meta or {}).get('full_name', '')
+        email = (meta or {}).get('email', '')
+
         try:
             result = enroll_prospect(pid)
             if result.get('status') == 'success':
                 enrolled += 1
+                details.append({
+                    'prospect_id': pid,
+                    'full_name': full_name,
+                    'email': email,
+                    'success': True,
+                    'error': None,
+                })
             else:
-                failed += 1
-            results.append(result)
+                error_msg = result.get('message', 'Enrollment failed')
+                # Distinguish skipped (already enrolled / DNC) from real failures
+                if 'already has status' in error_msg or 'do-not-contact' in error_msg:
+                    skipped += 1
+                else:
+                    failed += 1
+                details.append({
+                    'prospect_id': pid,
+                    'full_name': full_name,
+                    'email': email,
+                    'success': False,
+                    'error': error_msg,
+                })
         except Exception as e:
             failed += 1
-            results.append({
-                'status': 'error',
+            details.append({
                 'prospect_id': pid,
-                'message': str(e)[:300],
+                'full_name': full_name,
+                'email': email,
+                'success': False,
+                'error': str(e)[:300],
             })
             logger.error("[ENROLL] Bulk enroll error for prospect %d: %s", pid, e)
 
     return {
         'enrolled': enrolled,
         'failed': failed,
+        'skipped': skipped,
         'total': len(prospect_ids),
-        'results': results,
+        'details': details,
     }
 
 

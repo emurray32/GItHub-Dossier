@@ -685,4 +685,381 @@ def register_v2_tools(mcp):
             logger.exception("[MCP] get_activity_log error")
             return _safe_json({"error": str(e)})
 
-    logger.info("[MCP] Registered %d v2 tools", 16)
+    # ------------------------------------------------------------------
+    # Analytics
+    # ------------------------------------------------------------------
+
+    @mcp.tool()
+    def pipeline_analytics() -> str:
+        """Get full pipeline conversion metrics.
+
+        Returns the funnel from signals → prospects → drafts → enrollments
+        with conversion rates at each stage, plus account status breakdown.
+        """
+        try:
+            from v2.services.analytics_service import get_pipeline_summary, get_account_status_breakdown
+            return _safe_json({
+                "pipeline": get_pipeline_summary(),
+                "accounts": get_account_status_breakdown(),
+            })
+        except Exception as e:
+            logger.exception("[MCP] pipeline_analytics error")
+            return _safe_json({"error": str(e)})
+
+    @mcp.tool()
+    def campaign_analytics() -> str:
+        """Get per-campaign performance metrics.
+
+        Shows signal count, prospect count, enrollment count, and conversion
+        rate for each campaign. Useful for identifying which campaigns perform best.
+        """
+        try:
+            from v2.services.analytics_service import get_campaign_performance
+            campaigns = get_campaign_performance()
+            return _safe_json({"campaigns": campaigns, "count": len(campaigns)})
+        except Exception as e:
+            logger.exception("[MCP] campaign_analytics error")
+            return _safe_json({"error": str(e)})
+
+    @mcp.tool()
+    def draft_analytics() -> str:
+        """Get draft quality and regeneration metrics.
+
+        Shows total drafts, approval rate, and average regenerations per
+        prospect. Useful for understanding writing quality trends.
+        """
+        try:
+            from v2.services.analytics_service import get_draft_quality_metrics
+            return _safe_json(get_draft_quality_metrics())
+        except Exception as e:
+            logger.exception("[MCP] draft_analytics error")
+            return _safe_json({"error": str(e)})
+
+    # ------------------------------------------------------------------
+    # Dedup
+    # ------------------------------------------------------------------
+
+    @mcp.tool()
+    def find_duplicate_signals() -> str:
+        """Find exact duplicate signals in the queue.
+
+        Returns clusters of signals that share the same account + signal_type +
+        evidence_value. Each cluster identifies which signal to keep (oldest)
+        and which are duplicates.
+        """
+        try:
+            from v2.services.dedup_service import find_exact_duplicates, get_dedup_summary
+            clusters = find_exact_duplicates()
+            summary = get_dedup_summary()
+            return _safe_json({
+                "summary": summary,
+                "clusters": clusters,
+                "total_clusters": len(clusters),
+            })
+        except Exception as e:
+            logger.exception("[MCP] find_duplicate_signals error")
+            return _safe_json({"error": str(e)})
+
+    @mcp.tool()
+    def auto_clean_duplicates() -> str:
+        """Automatically archive all exact duplicate signals.
+
+        Keeps the oldest signal in each duplicate cluster and archives the rest.
+        Returns how many clusters were processed and signals archived.
+        """
+        try:
+            from v2.services.dedup_service import auto_archive_exact_duplicates
+            result = auto_archive_exact_duplicates()
+            return _safe_json(result)
+        except Exception as e:
+            logger.exception("[MCP] auto_clean_duplicates error")
+            return _safe_json({"error": str(e)})
+
+    # ------------------------------------------------------------------
+    # Bulk Enrollment
+    # ------------------------------------------------------------------
+
+    @mcp.tool()
+    def bulk_enroll_prospects(prospect_ids: str) -> str:
+        """Enroll multiple prospects into Apollo sequences at once.
+
+        Returns per-prospect results showing who enrolled successfully,
+        who failed and why, and who was skipped (already enrolled or DNC).
+
+        Args:
+            prospect_ids: Comma-separated prospect IDs (e.g. '12,34,56').
+        """
+        try:
+            ids = [int(x.strip()) for x in prospect_ids.split(',') if x.strip()]
+            if not ids:
+                return _safe_json({"error": "No valid prospect IDs provided"})
+            if len(ids) > 100:
+                return _safe_json({"error": "Cannot enroll more than 100 prospects at once"})
+
+            from v2.services.enrollment_service import bulk_enroll
+            result = bulk_enroll(ids)
+            return _safe_json(result)
+        except ValueError:
+            return _safe_json({"error": "prospect_ids must be comma-separated integers"})
+        except Exception as e:
+            logger.exception("[MCP] bulk_enroll_prospects error")
+            return _safe_json({"error": str(e)})
+
+    # ------------------------------------------------------------------
+    # Parity: Signal Management
+    # ------------------------------------------------------------------
+
+    @mcp.tool()
+    def get_signal_counts() -> str:
+        """Get signal counts grouped by workflow status.
+
+        Returns a dict like {"new": 12, "sequenced": 5, "revisit": 3, "noise": 1}.
+        Useful for understanding queue load at a glance.
+        """
+        try:
+            from v2.services.signal_service import get_signal_counts_by_status
+            return _safe_json(get_signal_counts_by_status())
+        except Exception as e:
+            logger.exception("[MCP] get_signal_counts error")
+            return _safe_json({"error": str(e)})
+
+    @mcp.tool()
+    def get_signal_owners() -> str:
+        """Get the list of distinct account owners who have signals in the queue.
+
+        Useful for filtering the queue by owner.
+        """
+        try:
+            from v2.services.signal_service import get_owners
+            owners = get_owners()
+            return _safe_json({"owners": owners, "count": len(owners)})
+        except Exception as e:
+            logger.exception("[MCP] get_signal_owners error")
+            return _safe_json({"error": str(e)})
+
+    @mcp.tool()
+    def update_signal_campaign(signal_id: int, campaign_id: int, reasoning: str = "") -> str:
+        """Change the recommended campaign for a signal.
+
+        Use this when the auto-recommended campaign isn't the best fit
+        and you want to assign a different one.
+
+        Args:
+            signal_id: The signal to update.
+            campaign_id: The new campaign ID to assign.
+            reasoning: Optional explanation for why this campaign fits better.
+        """
+        try:
+            from v2.services.signal_service import update_signal_campaign as _update
+            ok = _update(signal_id, campaign_id, reasoning=reasoning)
+            if not ok:
+                return _safe_json({"error": f"Signal {signal_id} not found"})
+            return _safe_json({
+                "signal_id": signal_id,
+                "campaign_id": campaign_id,
+                "message": f"Campaign updated for signal {signal_id}",
+            })
+        except Exception as e:
+            logger.exception("[MCP] update_signal_campaign error")
+            return _safe_json({"error": str(e)})
+
+    @mcp.tool()
+    def archive_signal(signal_id: int) -> str:
+        """Archive a signal (soft delete from the queue).
+
+        Use this to remove a signal from the active queue without deleting it.
+
+        Args:
+            signal_id: The signal to archive.
+        """
+        try:
+            from v2.services.signal_service import archive_signal as _archive
+            ok = _archive(signal_id)
+            if not ok:
+                return _safe_json({"error": f"Signal {signal_id} not found"})
+            return _safe_json({"signal_id": signal_id, "status": "archived"})
+        except Exception as e:
+            logger.exception("[MCP] archive_signal error")
+            return _safe_json({"error": str(e)})
+
+    # ------------------------------------------------------------------
+    # Parity: Prospects
+    # ------------------------------------------------------------------
+
+    @mcp.tool()
+    def get_prospects(signal_id: int) -> str:
+        """Get all prospects linked to a signal.
+
+        Returns prospect details including enrollment status, email,
+        and Apollo IDs.
+
+        Args:
+            signal_id: The signal to get prospects for.
+        """
+        try:
+            from v2.services.prospect_service import get_prospects_for_signal
+            prospects = get_prospects_for_signal(signal_id)
+            return _safe_json({"prospects": prospects, "count": len(prospects)})
+        except Exception as e:
+            logger.exception("[MCP] get_prospects error")
+            return _safe_json({"error": str(e)})
+
+    # ------------------------------------------------------------------
+    # Parity: Drafts
+    # ------------------------------------------------------------------
+
+    @mcp.tool()
+    def approve_all_drafts(prospect_id: int) -> str:
+        """Approve all drafts for a prospect at once.
+
+        Marks all generated/edited drafts as approved, making them ready
+        for enrollment.
+
+        Args:
+            prospect_id: The prospect whose drafts to approve.
+        """
+        try:
+            from v2.services.draft_service import approve_all_drafts as _approve_all
+            drafts = _approve_all(prospect_id)
+            return _safe_json({"drafts": drafts, "count": len(drafts)})
+        except Exception as e:
+            logger.exception("[MCP] approve_all_drafts error")
+            return _safe_json({"error": str(e)})
+
+    # ------------------------------------------------------------------
+    # Parity: Enrollment
+    # ------------------------------------------------------------------
+
+    @mcp.tool()
+    def mark_sequence_complete(prospect_id: int) -> str:
+        """Mark a prospect's Apollo sequence as complete.
+
+        Triggers account-level rollup check — if ALL prospects for the
+        account are complete, the account moves to 'revisit' status.
+
+        Args:
+            prospect_id: The prospect whose sequence finished.
+        """
+        try:
+            from v2.services.enrollment_service import mark_sequence_complete as _mark
+            result = _mark(prospect_id)
+            if not result:
+                return _safe_json({"error": f"Prospect {prospect_id} not found"})
+            return _safe_json(result)
+        except Exception as e:
+            logger.exception("[MCP] mark_sequence_complete error")
+            return _safe_json({"error": str(e)})
+
+    # ------------------------------------------------------------------
+    # Parity: Campaigns & Writing Preferences
+    # ------------------------------------------------------------------
+
+    @mcp.tool()
+    def list_campaigns() -> str:
+        """List all available campaigns.
+
+        Returns campaign names, types, and writing guidelines.
+        Useful for choosing which campaign to assign to a signal.
+        """
+        try:
+            from v2.db import db_connection, rows_to_dicts
+            with db_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT id, name, sequence_config, campaign_type, writing_guidelines
+                    FROM campaigns ORDER BY name
+                ''')
+                campaigns = rows_to_dicts(cursor.fetchall())
+            return _safe_json({"campaigns": campaigns, "count": len(campaigns)})
+        except Exception as e:
+            logger.exception("[MCP] list_campaigns error")
+            return _safe_json({"error": str(e)})
+
+    @mcp.tool()
+    def get_writing_preferences() -> str:
+        """Get the org-wide writing preferences.
+
+        Returns tone, banned phrases, preferred structure, CTA guidance,
+        signoff guidance, and custom rules used for draft generation.
+        """
+        try:
+            from v2.services.writing_prefs_service import get_writing_preferences as _get
+            prefs = _get()
+            return _safe_json({"preferences": prefs})
+        except Exception as e:
+            logger.exception("[MCP] get_writing_preferences error")
+            return _safe_json({"error": str(e)})
+
+    @mcp.tool()
+    def update_writing_preference(key: str, value: str) -> str:
+        """Update a single writing preference.
+
+        Valid keys: tone, banned_phrases, preferred_structure, cta_guidance,
+        signoff_guidance, custom_rules.
+
+        Args:
+            key: The preference key to update.
+            value: The new value.
+        """
+        try:
+            from v2.services.writing_prefs_service import update_writing_preferences as _update
+            ok = _update({key: value})
+            if not ok:
+                return _safe_json({"error": "Failed to update preference"})
+            return _safe_json({"key": key, "message": f"Updated '{key}' preference"})
+        except Exception as e:
+            logger.exception("[MCP] update_writing_preference error")
+            return _safe_json({"error": str(e)})
+
+    # ------------------------------------------------------------------
+    # Parity: Account Status (full set)
+    # ------------------------------------------------------------------
+
+    @mcp.tool()
+    def mark_account_sequenced(account_id: int) -> str:
+        """Mark an account as sequenced (at least one prospect enrolled).
+
+        Cascades: all 'new' signals for this account move to 'actioned'.
+
+        Args:
+            account_id: The account to mark as sequenced.
+        """
+        try:
+            from v2.services.account_service import mark_account_sequenced as _mark
+            ok = _mark(account_id)
+            if not ok:
+                return _safe_json({"error": f"Failed to mark account {account_id} as sequenced"})
+            return _safe_json({
+                "account_id": account_id,
+                "status": "sequenced",
+                "message": f"Account {account_id} marked as sequenced",
+            })
+        except Exception as e:
+            logger.exception("[MCP] mark_account_sequenced error")
+            return _safe_json({"error": str(e)})
+
+    @mcp.tool()
+    def reset_account_status(account_id: int) -> str:
+        """Reset an account back to 'new' status.
+
+        Use this to undo a noise/revisit/sequenced designation.
+        No signal cascade — signals keep their current status.
+
+        Args:
+            account_id: The account to reset.
+        """
+        try:
+            from v2.services.account_service import update_account_status
+            ok = update_account_status(account_id, 'new')
+            if not ok:
+                return _safe_json({"error": f"Failed to reset account {account_id}"})
+            return _safe_json({
+                "account_id": account_id,
+                "status": "new",
+                "message": f"Account {account_id} reset to new",
+            })
+        except Exception as e:
+            logger.exception("[MCP] reset_account_status error")
+            return _safe_json({"error": str(e)})
+
+    logger.info("[MCP] Registered %d v2 tools", 35)
