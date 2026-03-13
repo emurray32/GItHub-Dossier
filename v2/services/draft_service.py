@@ -106,8 +106,8 @@ _STEP_TEMPLATES = {
 def _generate_template_draft(step: int, prospect: dict, signal: dict) -> dict:
     """Generate a template-based draft for one sequence step."""
     tmpl = _STEP_TEMPLATES.get(step, _STEP_TEMPLATES[3])
-    company = prospect.get('company_name', 'your company')
-    first_name = prospect.get('first_name', 'there')
+    company = prospect.get('company_name') or 'your company'
+    first_name = prospect.get('first_name') or 'there'
     hook = f"I noticed localization-related activity at {company}."
     if signal:
         desc = signal.get('signal_description', '')
@@ -282,12 +282,14 @@ def generate_drafts(
     # Build system prompt
     system_prompt = _build_system_prompt(writing_context)
 
-    # Clean up old generated/edited drafts for this prospect to avoid duplicates
+    # Clean up ALL prior non-enrolled drafts for this prospect.
+    # This includes previously approved drafts — regeneration supersedes them.
+    # Only enrolled drafts (already pushed to Apollo) are preserved.
     with db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute('''
             DELETE FROM drafts
-            WHERE prospect_id = ? AND status IN ('generated', 'edited')
+            WHERE prospect_id = ? AND status != 'enrolled'
         ''', (prospect_id,))
         deleted = cursor.rowcount if hasattr(cursor, 'rowcount') else 0
         if deleted:

@@ -74,14 +74,23 @@ def enroll_prospect(prospect_id: int, sequence_id: Optional[str] = None) -> dict
             'message': 'Prospect email is not verified. Only verified emails can be enrolled.',
         }
 
-    # 2. Check for approved drafts
+    # 2. Check for approved drafts — dedup by step (use most recent per step)
     drafts = get_drafts_for_prospect(prospect_id)
-    approved_drafts = [d for d in drafts if d.get('status') == 'approved']
-    if not approved_drafts:
+    all_approved = [d for d in drafts if d.get('status') == 'approved']
+    if not all_approved:
         return {
             'status': 'error',
             'message': 'No approved drafts found. Approve drafts before enrolling.',
         }
+
+    # If multiple approved drafts exist for the same step (should not happen
+    # after the generate_drafts cleanup, but defensive), keep only the latest.
+    best_by_step = {}
+    for d in sorted(all_approved, key=lambda x: x.get('updated_at') or x.get('created_at') or '', reverse=True):
+        step = d.get('sequence_step')
+        if step not in best_by_step:
+            best_by_step[step] = d
+    approved_drafts = sorted(best_by_step.values(), key=lambda x: x.get('sequence_step', 0))
 
     # 3. Determine sequence_id
     if not sequence_id:

@@ -8,6 +8,9 @@ Tests:
 4. Signal status endpoint only accepts internal statuses
 5. Unverified prospects cannot be enrolled
 6. MCP-created signals use 'cowork' source (not 'manual_entry')
+7. Duplicate draft prevention — generate_drafts replaces approved drafts
+8. Enrollment uses deterministic draft per step
+9. Raw exception strings not leaked in 500 responses
 """
 import json
 import sqlite3
@@ -432,7 +435,219 @@ class TestMCPSourceAttribution:
 
 
 # =========================================================================
-# 7. Flask smoke tests
+# 7. Duplicate draft prevention
+# =========================================================================
+
+class TestDuplicateDraftPrevention:
+    """Verify that generate_drafts replaces ALL prior non-enrolled drafts."""
+
+    def test_regenerate_replaces_approved_drafts(self, test_db):
+        """Generating drafts a second time must replace previously approved drafts."""
+        account_id = _seed_account(test_db)
+        signal_id = _seed_signal(test_db, account_id)
+        prospect_id = _seed_prospect(test_db, account_id, signal_id)
+
+        # Create initial drafts and approve them
+        _seed_draft(test_db, prospect_id, signal_id, step=1, status='approved',
+                    subject='Old Subject 1', body='Old Body 1')
+        _seed_draft(test_db, prospect_id, signal_id, step=2, status='approved',
+                    subject='Old Subject 2', body='Old Body 2')
+        _seed_draft(test_db, prospect_id, signal_id, step=3, status='approved',
+                    subject='Old Subject 3', body='Old Body 3')
+
+        # Verify 3 approved drafts exist
+        conn = sqlite3.connect(test_db)
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT * FROM drafts WHERE prospect_id = ? AND status = 'approved'",
+            (prospect_id,),
+        ).fetchall()
+        assert len(rows) == 3
+        conn.close()
+
+        # Now generate drafts again — this should delete the old approved ones
+        from v2.services.draft_service import generate_drafts
+        new_drafts = generate_drafts(prospect_id, signal_id, campaign_id=None)
+
+        # Check DB: should have exactly 3 drafts (all new 'generated' status)
+        conn = sqlite3.connect(test_db)
+        conn.row_factory = sqlite3.Row
+        all_rows = conn.execute(
+            "SELECT * FROM drafts WHERE prospect_id = ?",
+            (prospect_id,),
+        ).fetchall()
+        approved_rows = conn.execute(
+            "SELECT * FROM drafts WHERE prospect_id = ? AND status = 'approved'",
+            (prospect_id,),
+        ).fetchall()
+        conn.close()
+
+        assert len(all_rows) == 3, (
+            f"Expected 3 drafts total, got {len(all_rows)} "
+            f"(statuses: {[dict(r)['status'] for r in all_rows]})"
+        )
+        assert len(approved_rows) == 0, "Old approved drafts should have been deleted"
+
+    def test_enrolled_drafts_preserved(self, test_db):
+        """generate_drafts must NOT delete enrolled drafts."""
+        account_id = _seed_account(test_db)
+        signal_id = _seed_signal(test_db, account_id)
+        prospect_id = _seed_prospect(test_db, account_id, signal_id)
+
+        # Create an enrolled draft (already sent to Apollo)
+        _seed_draft(test_db, prospect_id, signal_id, step=1, status='enrolled',
+                    subject='Sent Subject', body='Sent Body')
+
+        from v2.services.draft_service import generate_drafts
+        new_drafts = generate_drafts(prospect_id, signal_id, campaign_id=None)
+
+        conn = sqlite3.connect(test_db)
+        conn.row_factory = sqlite3.Row
+        all_rows = conn.execute(
+            "SELECT * FROM drafts WHERE prospect_id = ?",
+            (prospect_id,),
+        ).fetchall()
+        enrolled = [dict(r) for r in all_rows if dict(r)['status'] == 'enrolled']
+        generated = [dict(r) for r in all_rows if dict(r)['status'] == 'generated']
+        conn.close()
+
+        assert len(enrolled) == 1, "Enrolled draft must be preserved"
+        assert len(generated) == 3, "3 new generated drafts expected"
+
+    def test_no_duplicate_steps_after_approval_and_regeneration(self, test_db):
+        """After approve+regenerate, there should be exactly one draft per step."""
+        account_id = _seed_account(test_db)
+        signal_id = _seed_signal(test_db, account_id)
+        prospect_id = _seed_prospect(test_db, account_id, signal_id)
+
+        # First generation
+        from v2.services.draft_service import generate_drafts, approve_all_drafts
+        drafts1 = generate_drafts(prospect_id, signal_id, campaign_id=None)
+        assert len(drafts1) == 3
+
+        # Approve all
+        approve_all_drafts(prospect_id)
+
+        # Second generation (should replace approved)
+        drafts2 = generate_drafts(prospect_id, signal_id, campaign_id=None)
+        assert len(drafts2) == 3
+
+        # Check: exactly one draft per step
+        conn = sqlite3.connect(test_db)
+        conn.row_factory = sqlite3.Row
+        all_rows = conn.execute(
+            "SELECT sequence_step, COUNT(*) as cnt FROM drafts WHERE prospect_id = ? GROUP BY sequence_step",
+            (prospect_id,),
+        ).fetchall()
+        conn.close()
+
+        for row in all_rows:
+            assert dict(row)['cnt'] == 1, (
+                f"Step {dict(row)['sequence_step']} has {dict(row)['cnt']} drafts (expected 1)"
+            )
+
+
+# =========================================================================
+# 8. Enrollment uses deterministic draft per step
+# =========================================================================
+
+class TestEnrollmentDraftDedup:
+    """Verify enrollment picks one draft per step if duplicates somehow exist."""
+
+    def test_enrollment_dedup_by_step(self, test_db, monkeypatch):
+        """If multiple approved drafts exist for same step, enrollment uses latest."""
+        account_id = _seed_account(test_db)
+        signal_id = _seed_signal(test_db, account_id)
+        prospect_id = _seed_prospect(test_db, account_id, signal_id)
+
+        # Seed TWO approved drafts for step 1 with different timestamps
+        conn = sqlite3.connect(test_db)
+        conn.row_factory = sqlite3.Row
+        conn.execute(
+            """INSERT INTO drafts (prospect_id, signal_id, sequence_step, status,
+               subject, body, updated_at) VALUES (?, ?, 1, 'approved', 'Old Subject', 'Old Body',
+               '2025-01-01 00:00:00')""",
+            (prospect_id, signal_id),
+        )
+        conn.execute(
+            """INSERT INTO drafts (prospect_id, signal_id, sequence_step, status,
+               subject, body, updated_at) VALUES (?, ?, 1, 'approved', 'New Subject', 'New Body',
+               '2025-06-01 00:00:00')""",
+            (prospect_id, signal_id),
+        )
+        conn.commit()
+        conn.close()
+
+        # Track what typed_custom_fields get sent to Apollo
+        captured_fields = {}
+
+        def mock_apollo_call(method, url, json=None, timeout=None):
+            if json and 'typed_custom_fields' in (json or {}):
+                captured_fields.update(json['typed_custom_fields'])
+            resp = MagicMock()
+            resp.status_code = 200
+            resp.json.return_value = {'contact': {'id': 'test_abc'}, 'typed_custom_fields': [],
+                                       'contacts': [{'id': 'test_abc'}],
+                                       'email_accounts': [{'id': 'ea_1'}]}
+            resp.text = ''
+            return resp
+
+        monkeypatch.setattr('apollo_pipeline.apollo_api_call', mock_apollo_call)
+
+        from v2.services.enrollment_service import enroll_prospect
+        result = enroll_prospect(prospect_id, sequence_id='seq_test')
+
+        # The subject used should be 'New Subject' (the later one), not 'Old Subject'
+        # Check captured fields contain the newer content
+        has_new = any('New Subject' in str(v) for v in captured_fields.values())
+        has_old = any('Old Subject' in str(v) for v in captured_fields.values())
+
+        # If Apollo call was made, new content should be used
+        if captured_fields:
+            assert has_new, f"Expected 'New Subject' in custom fields, got: {captured_fields}"
+            assert not has_old, f"Old subject should not be in custom fields: {captured_fields}"
+
+
+# =========================================================================
+# 9. Raw exception strings not leaked in 500 responses
+# =========================================================================
+
+class TestExceptionHardening:
+    """Verify 500 responses don't leak internal exception details."""
+
+    def test_api_500_generic_message(self, flask_app, test_db):
+        """Internal errors should return generic message, not str(exception)."""
+        # Hit an endpoint that will trigger an error — use a nonexistent signal workspace
+        # The normal 404 path should work, but if something unexpected fails internally,
+        # it should return 'Internal server error' not the exception text
+        import inspect
+        from v2.routes import api
+
+        source = inspect.getsource(api)
+        # Verify no str(e) in 500 returns
+        assert "return _error(str(e), 500)" not in source, (
+            "API routes should not return str(e) in 500 responses"
+        )
+
+    def test_draft_500_generic_message(self, flask_app, test_db):
+        """Draft routes should not leak exception details."""
+        import inspect
+        from v2.routes import draft
+
+        source = inspect.getsource(draft)
+        assert "return _error(str(e), 500)" not in source
+
+    def test_enrollment_500_generic_message(self, flask_app, test_db):
+        """Enrollment routes should not leak exception details."""
+        import inspect
+        from v2.routes import enrollment
+
+        source = inspect.getsource(enrollment)
+        assert "return _error(str(e), 500)" not in source
+
+
+# =========================================================================
+# 10. Flask smoke tests
 # =========================================================================
 
 class TestFlaskSmoke:

@@ -65,7 +65,7 @@ def enroll():
 
     except Exception as e:
         logger.exception("[ENROLLMENT ROUTE] Error enrolling prospect")
-        return _error(str(e), 500)
+        return _error('Internal server error', 500)
 
 
 @enrollment_bp.route('/bulk', methods=['POST'])
@@ -100,7 +100,7 @@ def bulk():
 
     except Exception as e:
         logger.exception("[ENROLLMENT ROUTE] Error in bulk enrollment")
-        return _error(str(e), 500)
+        return _error('Internal server error', 500)
 
 
 @enrollment_bp.route('/complete', methods=['POST'])
@@ -131,4 +131,4 @@ def complete():
 
     except Exception as e:
         logger.exception("[ENROLLMENT ROUTE] Error marking sequence complete")
-        return _error(str(e), 500)
+        return _error('Internal server error', 500)

@@ -69,7 +69,7 @@ def ingest_csv():
         return jsonify({'status': 'success', 'result': result}), 200
     except Exception as exc:
         logger.exception("[INGEST ROUTE] CSV ingestion failed")
-        return jsonify({'status': 'error', 'message': f'Ingestion failed: {str(exc)[:200]}'}), 500
+        return jsonify({'status': 'error', 'message': 'Ingestion failed'}), 500
 
 
 # ---------------------------------------------------------------------------
@@ -124,7 +124,7 @@ def ingest_manual():
         return jsonify({'status': 'success', 'signal_id': signal_id}), 200
     except Exception as exc:
         logger.exception("[INGEST ROUTE] Manual ingestion failed")
-        return jsonify({'status': 'error', 'message': f'Ingestion failed: {str(exc)[:200]}'}), 500
+        return jsonify({'status': 'error', 'message': 'Ingestion failed'}), 500
 
 
 # ---------------------------------------------------------------------------
@@ -164,4 +164,4 @@ def ingest_from_scans():
         return jsonify({'status': 'success', 'result': result}), 200
     except Exception as exc:
         logger.exception("[INGEST ROUTE] Scan import failed")
-        return jsonify({'status': 'error', 'message': f'Scan import failed: {str(exc)[:200]}'}), 500
+        return jsonify({'status': 'error', 'message': 'Scan import failed'}), 500

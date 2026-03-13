@@ -85,7 +85,7 @@ def generate():
         return _error(str(e), 404)
     except Exception as e:
         logger.exception("[DRAFT ROUTE] Error generating drafts")
-        return _error(str(e), 500)
+        return _error('Internal server error', 500)
 
 
 @draft_bp.route('/', methods=['GET'])
@@ -109,7 +109,7 @@ def list_drafts():
 
     except Exception as e:
         logger.exception("[DRAFT ROUTE] Error listing drafts")
-        return _error(str(e), 500)
+        return _error('Internal server error', 500)
 
 
 @draft_bp.route('/<int:draft_id>', methods=['GET'])
@@ -124,7 +124,7 @@ def get_single_draft(draft_id):
 
     except Exception as e:
         logger.exception("[DRAFT ROUTE] Error getting draft %d", draft_id)
-        return _error(str(e), 500)
+        return _error('Internal server error', 500)
 
 
 @draft_bp.route('/<int:draft_id>', methods=['PUT'])
@@ -164,7 +164,7 @@ def update_single_draft(draft_id):
 
     except Exception as e:
         logger.exception("[DRAFT ROUTE] Error updating draft %d", draft_id)
-        return _error(str(e), 500)
+        return _error('Internal server error', 500)
 
 
 @draft_bp.route('/<int:draft_id>/regenerate', methods=['POST'])
@@ -195,7 +195,7 @@ def regenerate(draft_id):
 
     except Exception as e:
         logger.exception("[DRAFT ROUTE] Error regenerating draft %d", draft_id)
-        return _error(str(e), 500)
+        return _error('Internal server error', 500)
 
 
 @draft_bp.route('/<int:draft_id>/approve', methods=['POST'])
@@ -211,7 +211,7 @@ def approve(draft_id):
 
     except Exception as e:
         logger.exception("[DRAFT ROUTE] Error approving draft %d", draft_id)
-        return _error(str(e), 500)
+        return _error('Internal server error', 500)
 
 
 @draft_bp.route('/approve-all', methods=['POST'])
@@ -239,4 +239,4 @@ def approve_all():
 
     except Exception as e:
         logger.exception("[DRAFT ROUTE] Error approving all drafts")
-        return _error(str(e), 500)
+        return _error('Internal server error', 500)

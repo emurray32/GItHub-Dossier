@@ -99,7 +99,7 @@ def api_list_signals():
         return _success(signals=result['signals'], total=result['total'])
     except Exception as e:
         logger.exception("[V2 API] Error listing signals")
-        return _error(str(e), 500)
+        return _error('Internal server error', 500)
 
 
 @api_bp.route('/signals/<int:signal_id>', methods=['GET'])
@@ -116,7 +116,7 @@ def api_get_signal(signal_id):
         return _success(**workspace)
     except Exception as e:
         logger.exception("[V2 API] Error getting signal %d", signal_id)
-        return _error(str(e), 500)
+        return _error('Internal server error', 500)
 
 
 @api_bp.route('/signals/counts', methods=['GET'])
@@ -127,7 +127,7 @@ def api_signal_counts():
         return _success(counts=counts)
     except Exception as e:
         logger.exception("[V2 API] Error getting signal counts")
-        return _error(str(e), 500)
+        return _error('Internal server error', 500)
 
 
 @api_bp.route('/signals/owners', methods=['GET'])
@@ -138,7 +138,7 @@ def api_signal_owners():
         return _success(owners=owners)
     except Exception as e:
         logger.exception("[V2 API] Error getting owners")
-        return _error(str(e), 500)
+        return _error('Internal server error', 500)
 
 
 @api_bp.route('/signals/<int:signal_id>/status', methods=['PUT'])
@@ -168,7 +168,7 @@ def api_update_signal_status(signal_id):
         return _success(signal_id=signal_id, status=status)
     except Exception as e:
         logger.exception("[V2 API] Error updating signal status")
-        return _error(str(e), 500)
+        return _error('Internal server error', 500)
 
 
 @api_bp.route('/signals/<int:signal_id>/campaign', methods=['PUT'])
@@ -196,7 +196,7 @@ def api_update_signal_campaign(signal_id):
         return _success(signal_id=signal_id, campaign_id=campaign_id)
     except Exception as e:
         logger.exception("[V2 API] Error updating signal campaign")
-        return _error(str(e), 500)
+        return _error('Internal server error', 500)
 
 
 # ---------------------------------------------------------------------------
@@ -286,7 +286,7 @@ def api_apollo_search(signal_id):
         )
     except Exception as e:
         logger.exception("[V2 API] Error in Apollo search for signal %d", signal_id)
-        return _error(str(e), 500)
+        return _error('Internal server error', 500)
 
 
 # ---------------------------------------------------------------------------
@@ -389,7 +389,7 @@ def api_save_prospects():
         )
     except Exception as e:
         logger.exception("[V2 API] Error saving prospects")
-        return _error(str(e), 500)
+        return _error('Internal server error', 500)
 
 
 @api_bp.route('/prospects', methods=['GET'])
@@ -415,7 +415,7 @@ def api_get_prospects():
         return _success(prospects=prospects)
     except Exception as e:
         logger.exception("[V2 API] Error getting prospects")
-        return _error(str(e), 500)
+        return _error('Internal server error', 500)
 
 
 # ---------------------------------------------------------------------------
@@ -446,7 +446,7 @@ def api_list_campaigns():
         return _success(campaigns=campaigns)
     except Exception as e:
         logger.exception("[V2 API] Error listing campaigns")
-        return _error(str(e), 500)
+        return _error('Internal server error', 500)
 
 
 # ---------------------------------------------------------------------------
@@ -461,7 +461,7 @@ def api_get_writing_preferences():
         return _success(preferences=prefs)
     except Exception as e:
         logger.exception("[V2 API] Error getting writing preferences")
-        return _error(str(e), 500)
+        return _error('Internal server error', 500)
 
 
 @api_bp.route('/writing-preferences', methods=['PUT'])
@@ -491,7 +491,7 @@ def api_update_writing_preferences():
         return _success(updated=list(cleaned.keys()))
     except Exception as e:
         logger.exception("[V2 API] Error updating writing preferences")
-        return _error(str(e), 500)
+        return _error('Internal server error', 500)
 
 
 # ---------------------------------------------------------------------------
@@ -517,7 +517,7 @@ def api_update_account_status(account_id):
         return _success(account_id=account_id, status=new_status)
     except Exception as e:
         logger.exception("[V2 API] Error updating account status")
-        return _error(str(e), 500)
+        return _error('Internal server error', 500)
 
 
 # ---------------------------------------------------------------------------

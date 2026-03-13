@@ -1120,7 +1120,7 @@ function Enrollment({ workspace, onNextSignal, toast }) {
 // RIGHT PANEL — WORKSPACE
 // ═══════════════════════════════════════════════════════════════════════════
 
-function Workspace({ signalId, signalIndex, totalSignals, onMarkNoise, onSkip, onNextSignal }) {
+function Workspace({ signalId, signalIndex, totalSignals, onMarkNoise, onSkip, onNextSignal, onReloadAndAdvance }) {
     const toast = useToast();
     const [workspace, setWorkspace] = useState(null);
     const [loading, setLoading] = useState(false);
@@ -1211,7 +1211,7 @@ function Workspace({ signalId, signalIndex, totalSignals, onMarkNoise, onSkip, o
                 {workspace.prospects && workspace.prospects.length > 0 && (
                     <>
                         <div className="v2-section-divider"><span>Enroll</span></div>
-                        <Enrollment workspace={workspace} onNextSignal={onNextSignal} toast={toast} />
+                        <Enrollment workspace={workspace} onNextSignal={onReloadAndAdvance || onNextSignal} toast={toast} />
                     </>
                 )}
             </div>
@@ -1271,10 +1271,13 @@ function App() {
             params.set('limit', '100');
 
             const data = await apiFetch(`/v2/api/signals?${params}`);
-            setSignals(data.signals || []);
+            const fresh = data.signals || [];
+            setSignals(fresh);
             setTotal(data.total || 0);
+            return fresh;
         } catch (err) {
             if (toast) toast(err.message, 'error');
+            return null;
         } finally {
             setLoading(false);
         }
@@ -1351,6 +1354,21 @@ function App() {
         nextSignal();
     }, [nextSignal]);
 
+    // Reload queue and select next signal from FRESH data.
+    // Used after any action that changes queue membership (noise, enrollment, etc).
+    const reloadAndAdvance = useCallback(async () => {
+        const prevIdx = activeIndex;
+        const fresh = await loadSignals();
+        if (fresh && fresh.length > 0) {
+            // Select the signal at the same position (item was removed, so this is the next one)
+            const nextIdx = Math.min(Math.max(prevIdx, 0), fresh.length - 1);
+            selectSignal(fresh[nextIdx].id);
+        } else {
+            setActiveSignalId(null);
+            setActiveIndex(-1);
+        }
+    }, [activeIndex, loadSignals, selectSignal]);
+
     // Mark as noise
     const markNoise = useCallback(async () => {
         if (!activeSignalId) return;
@@ -1365,12 +1383,11 @@ function App() {
                 body: JSON.stringify({ status: 'noise' }),
             });
             toast('Marked as noise');
-            loadSignals();
-            nextSignal();
+            await reloadAndAdvance();
         } catch (err) {
             toast(err.message, 'error');
         }
-    }, [activeSignalId, signals, loadSignals, nextSignal, toast]);
+    }, [activeSignalId, signals, reloadAndAdvance, toast]);
 
     return (
         <div className="flex h-screen overflow-hidden">
@@ -1394,6 +1411,7 @@ function App() {
                 onMarkNoise={markNoise}
                 onSkip={skipSignal}
                 onNextSignal={nextSignal}
+                onReloadAndAdvance={reloadAndAdvance}
             />
         </div>
     );

@@ -443,7 +443,7 @@ Apollo API docs and the existing repo pattern.
 **Fix:** Changed `create_signal()` to use `evidence_type='cowork_push'` and `signal_source='cowork'`. `create_revisit_signal()` already used `signal_source='cowork'` correctly. Both now consistently attribute MCP-created signals to the CoWork channel.
 
 ### Regression Tests Added
-`tests/test_v2_repair_pass.py` — 19 tests covering:
+`tests/test_v2_repair_pass.py` — 26 tests covering:
 - Apollo contact update uses PUT (mocked Apollo calls, asserts no POST to update endpoint)
 - `is_do_not_contact()` correctly identifies DNC emails
 - API save path rejects DNC contacts
@@ -458,13 +458,47 @@ Apollo API docs and the existing repo pattern.
 - MCP-created signals use `signal_source='cowork'` and `evidence_type='cowork_push'`
 - MCP revisit signals also use `signal_source='cowork'`
 - Flask smoke tests: `/app`, `/v2/api/campaigns`, `/v2/api/signals/counts`
+- Repeated draft generation replaces previously approved drafts (3 tests)
+- Enrolled drafts preserved across regeneration
+- Enrollment dedup picks latest draft per step when duplicates exist
+- v2 route 500 responses use generic messages (3 source-level checks)
 
 ---
 
-## 12. What Still Feels Incomplete / Risky
+## 12. Pre-Merge Final Fixes
+
+Three remaining issues resolved in the targeted final pass. 26 total regression tests.
+
+### Fix 8: Duplicate Approved Drafts Can Stack Up (Merge Blocker)
+**Problem:** `generate_drafts()` only deleted drafts with status `generated`/`edited`. If a rep approved drafts and then regenerated, the old approved drafts remained in the DB. Enrollment could then read multiple approved drafts for the same sequence step, causing ambiguous content in Apollo custom fields.
+**Fix (two layers):**
+1. **Service level:** `generate_drafts()` now deletes ALL prior non-enrolled drafts for the prospect (`status != 'enrolled'`), including previously approved ones. Only enrolled drafts (already pushed to Apollo) are preserved.
+2. **Defensive enrollment:** `enroll_prospect()` deduplicates approved drafts by `sequence_step`, keeping only the most recently updated draft per step. This guards against any edge case where duplicates still exist.
+**Result:** For each prospect+step, there is exactly one current draft used for approval and enrollment. Regeneration cleanly supersedes prior approvals.
+
+### Fix 9: Queue Navigation Uses Stale State After Status-Changing Actions (Merge Blocker)
+**Problem:** `markNoise()` called `loadSignals()` (async) then immediately `nextSignal()`. Since `nextSignal()` read from the stale in-memory `signals` array, the queue could navigate to signals that should no longer be in the filtered view (e.g., signals whose account was just marked noise).
+**Fix:**
+- `loadSignals()` now returns the fresh signal array from the API response.
+- Added `reloadAndAdvance()` helper that awaits `loadSignals()`, then selects the signal at the current position from the **fresh** data (or clears selection if the queue is empty).
+- `markNoise()` now uses `await reloadAndAdvance()` instead of `loadSignals(); nextSignal()`.
+- Post-enrollment "Next Signal" button uses `reloadAndAdvance` so it also navigates from fresh queue data.
+- Simple skip/keyboard navigation (`nextSignal`) still uses the current array (signals aren't removed from queue on skip).
+**Result:** After any action that changes queue membership, the next selected signal comes from refreshed server data.
+
+### Fix 10: Raw Exception Strings in 500 Responses (Hardening)
+**Problem:** All v2 route handlers returned `_error(str(e), 500)` in generic exception handlers, leaking internal exception details (DB errors, file paths, stack info) to API clients.
+**Fix:** All 500 responses across `api.py`, `draft.py`, `enrollment.py`, and `ingestion.py` now return `'Internal server error'` (or `'Ingestion failed'`) as the user-facing message. Full exception details are still logged via `logger.exception()` for debugging.
+
+### Additional Fix: Template Draft None Handling
+`_generate_template_draft()` used `.get('company_name', 'your company')` which returns `None` when the key exists but is null. Changed to `or` fallback pattern to handle both missing and null values.
+
+---
+
+## 13. What Still Feels Incomplete / Risky
 
 ### Incomplete
-1. **Limited test coverage**: 19 regression tests in `test_v2_repair_pass.py` cover key safety gates (DNC, verified email, PUT vs POST, workflow status). End-to-end integration tests still missing.
+1. **Limited test coverage**: 26 regression tests in `test_v2_repair_pass.py` cover key safety gates (DNC, verified email, PUT vs POST, workflow status, draft dedup, exception hardening). End-to-end integration tests still missing.
 2. **No data migration script**: Existing scan_signals are not auto-converted to intent_signals. The `POST /v2/api/ingest/from-scans` endpoint exists but requires manual triggering.
 3. **No revisit automation**: The `mark_sequence_complete` → `revisit` → fresh signal flow is modeled but there's no automated trigger (e.g., webhook from Apollo when a sequence completes).
 4. **No document/DOCX/PDF ingestion**: The `ingestion_service` supports CSV and manual only. The architecture supports future parsers but none are built.
@@ -479,7 +513,7 @@ Apollo API docs and the existing repo pattern.
 
 ---
 
-## 13. What Codex Should Inspect Most Carefully
+## 14. What Codex Should Inspect Most Carefully
 
 1. **Cross-service contracts**: Verify that `api.py` route handlers call service functions with correct argument names and handle return values correctly. Key interfaces:
    - `api.py` → `signal_service.get_signal_workspace()` return shape
@@ -503,7 +537,7 @@ Apollo API docs and the existing repo pattern.
 
 ---
 
-## 14. Assumptions Made Without User Confirmation
+## 15. Assumptions Made Without User Confirmation
 
 1. **Flask + Jinja + React CDN stack**: Kept the existing stack (React 18 via CDN, Babel standalone, Tailwind CDN) rather than introducing a build system. This matches existing patterns in the repo.
 
