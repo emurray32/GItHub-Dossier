@@ -774,7 +774,16 @@ function PersonaSearch({ workspace, onProspectsSaved, toast }) {
 
 function DraftReview({ workspace, toast }) {
     const prospects = workspace.prospects || [];
-    const [drafts, setDrafts] = useState({});
+    const [drafts, setDrafts] = useState(() => {
+        // Initialize from workspace.drafts so server-loaded drafts are editable
+        const init = {};
+        for (const d of (workspace.drafts || [])) {
+            const pid = d.prospect_id;
+            if (!init[pid]) init[pid] = [];
+            init[pid].push(d);
+        }
+        return init;
+    });
     const [generating, setGenerating] = useState({});
     const [regeneratingDraft, setRegeneratingDraft] = useState(null);
     const [critique, setCritique] = useState('');
@@ -986,6 +995,7 @@ function Enrollment({ workspace, onNextSignal, toast }) {
 
     if (prospects.length === 0) return null;
 
+    // Returns 'enrolled' or 'failed' so callers can track results directly
     const handleEnroll = async (prospectId) => {
         setStatuses(prev => ({ ...prev, [prospectId]: 'enrolling' }));
         try {
@@ -995,32 +1005,32 @@ function Enrollment({ workspace, onNextSignal, toast }) {
             });
             setStatuses(prev => ({ ...prev, [prospectId]: 'enrolled' }));
             toast('Prospect enrolled');
+            return 'enrolled';
         } catch (err) {
             setStatuses(prev => ({ ...prev, [prospectId]: 'failed' }));
             toast(err.message, 'error');
+            return 'failed';
         }
     };
 
     const handleEnrollAll = async () => {
+        // Use an explicit accumulator — do not rely on async React state
+        let successCount = 0;
         let failCount = 0;
         for (const p of prospects) {
-            if (statuses[p.id] === 'enrolled') continue;
-            try {
-                await handleEnroll(p.id);
-            } catch (e) {
-                failCount++;
+            if (statuses[p.id] === 'enrolled') {
+                successCount++;
+                continue;
             }
+            const result = await handleEnroll(p.id);
+            if (result === 'enrolled') successCount++;
+            else failCount++;
         }
-        // Check actual status after all attempts
-        setStatuses(prev => {
-            const failed = Object.values(prev).filter(s => s === 'failed').length;
-            if (failed === 0) {
-                setAllDone(true);
-            } else {
-                toast(`${failed} prospect(s) failed to enroll`, 'error');
-            }
-            return prev;
-        });
+        if (failCount === 0) {
+            setAllDone(true);
+        } else {
+            toast(`${failCount} prospect(s) failed to enroll`, 'error');
+        }
     };
 
     const enrolledCount = Object.values(statuses).filter(s => s === 'enrolled').length;
@@ -1081,7 +1091,7 @@ function Enrollment({ workspace, onNextSignal, toast }) {
                 ))}
             </div>
 
-            {!allDone && (
+            {!allDone && enrolledCount < prospects.length && (
                 <button onClick={handleEnrollAll}
                     className="mt-3 w-full px-4 py-2 bg-brand-600 text-white text-sm font-medium rounded-md hover:bg-brand-700 transition-all duration-150 flex items-center justify-center gap-2">
                     <Icon name="send" size={16} />
@@ -1093,7 +1103,7 @@ function Enrollment({ workspace, onNextSignal, toast }) {
                 <div className="mt-4 text-center">
                     <div className="text-green-600 text-sm font-medium mb-2 flex items-center justify-center gap-1.5">
                         <Icon name="check" size={16} />
-                        All prospects enrolled ({enrolledCount}/{prospects.length})
+                        Enrollment complete ({enrolledCount}/{prospects.length} enrolled)
                     </div>
                     <button onClick={onNextSignal}
                         className="px-6 py-2 bg-brand-600 text-white text-sm font-medium rounded-md hover:bg-brand-700 transition-all inline-flex items-center gap-2">
@@ -1348,13 +1358,11 @@ function App() {
         if (!sig) return;
 
         try {
+            // Mark the account as noise — this automatically cascades
+            // all non-archived signals for this account to 'archived'
             await apiFetch(`/v2/api/accounts/${sig.account_id}/status`, {
                 method: 'PUT',
                 body: JSON.stringify({ status: 'noise' }),
-            });
-            await apiFetch(`/v2/api/signals/${activeSignalId}/status`, {
-                method: 'PUT',
-                body: JSON.stringify({ status: 'archived' }),
             });
             toast('Marked as noise');
             loadSignals();

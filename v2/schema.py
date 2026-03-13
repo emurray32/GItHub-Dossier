@@ -29,9 +29,6 @@ def init_v2_schema(cursor, adapt_ddl, safe_add_column):
     safe_add_column(cursor, 'monitored_accounts', "linkedin_url TEXT")
     safe_add_column(cursor, 'monitored_accounts', "company_size TEXT")
 
-    # prospects: add apollo_contact_id (set after contact create/update in Apollo)
-    safe_add_column(cursor, 'prospects', "apollo_contact_id TEXT")
-
     # campaigns: add campaign_type and writing_guidelines
     safe_add_column(cursor, 'campaigns', "campaign_type TEXT DEFAULT 'signal_based'")
     safe_add_column(cursor, 'campaigns', "writing_guidelines TEXT")
@@ -103,6 +100,7 @@ def init_v2_schema(cursor, adapt_ddl, safe_add_column):
             email_verified INTEGER DEFAULT 0,
             linkedin_url TEXT,
             apollo_person_id TEXT,
+            apollo_contact_id TEXT,
             do_not_contact INTEGER DEFAULT 0,
             enrollment_status TEXT DEFAULT 'found',
             sequence_id TEXT,
@@ -134,6 +132,9 @@ def init_v2_schema(cursor, adapt_ddl, safe_add_column):
         CREATE INDEX IF NOT EXISTS idx_prospects_apollo
         ON prospects(apollo_person_id)
     ''')
+
+    # Backwards compat: add apollo_contact_id if table existed before this column was added
+    safe_add_column(cursor, 'prospects', "apollo_contact_id TEXT")
 
     # -----------------------------------------------------------------------
     # drafts — persisted, editable email drafts per prospect per step

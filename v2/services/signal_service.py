@@ -103,10 +103,11 @@ def list_signals(
         row = cursor.fetchone()
         total = row['cnt'] if isinstance(row, dict) else row[0]
 
-        # Fetch
+        # Fetch — account_status is exposed as workflow_status for the public API
         cursor.execute(f'''
             SELECT s.*, a.company_name, a.website, a.industry,
                    a.company_size, a.annual_revenue, a.account_status,
+                   a.account_status AS workflow_status,
                    a.account_owner
             FROM intent_signals s
             JOIN monitored_accounts a ON s.account_id = a.id

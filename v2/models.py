@@ -23,6 +23,14 @@ class AccountStatus(str, Enum):
 
 
 class SignalStatus(str, Enum):
+    """Internal bookkeeping status for individual signals.
+
+    NOT the user-facing workflow status. The product workflow is driven
+    by AccountStatus (new/sequenced/revisit/noise). Signal status is set
+    automatically via cascade when account status changes:
+      - account → sequenced/revisit: signals cascade to 'actioned'
+      - account → noise: signals cascade to 'archived'
+    """
     NEW = "new"
     ACTIONED = "actioned"
     ARCHIVED = "archived"

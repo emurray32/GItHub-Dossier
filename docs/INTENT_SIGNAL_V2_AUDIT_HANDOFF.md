@@ -389,10 +389,82 @@ Five structural issues were identified after the initial Codex audit. All fixed 
 
 ---
 
-## 11. What Still Feels Incomplete / Risky
+## 11. Final Repair Pass — Merge Hardening
+
+Seven issues resolved in the final pass before main. 19 regression tests added.
+
+### Fix 1: Apollo Existing-Contact Update — POST → PUT
+**Problem:** v2 used `POST /v1/contacts/{id}` to update existing Apollo contacts.
+The proven pattern throughout `app.py` (3 instances) uses `PUT /v1/contacts/{id}`.
+**Fix:** Changed `enrollment_service.py` to use `'put'` for existing contact updates.
+Added explicit error handling for failed contact updates — returns error to caller
+instead of silently proceeding. Comment documents that PUT /v1/ is correct per
+Apollo API docs and the existing repo pattern.
+
+### Fix 2: Status Model Cleanup
+**Problem:** Two competing lifecycle systems: workflow status (account_status: new/sequenced/revisit/noise) and signal status (status: new/actioned/archived) were both exposed as user-facing concepts.
+**Fix:**
+- **Workflow status is the primary product lifecycle.** Queue tabs, counts, filters, and MCP listing all use account_status.
+- **Signal status is internal bookkeeping only.** It cascades automatically when account status changes (sequenced → signals actioned, noise → signals archived).
+- `PUT /v2/api/signals/<id>/status` is documented as internal-only and accepts only (new/actioned/archived). Normal UI flows do not call it.
+- `markNoise` in the web app now only calls the account status endpoint — the signal cascade happens server-side automatically via `mark_account_noise()`.
+- Signal rows returned from `list_signals()` now include an explicit `workflow_status` field (aliased from `account_status`).
+- `SignalStatus` enum in `models.py` documented as internal.
+- **Contract:** `GET /v2/api/signals?status=` accepts workflow statuses only. `GET /v2/api/signals/counts` groups by workflow status. Queue tabs show New/Sequenced/Revisit/Noise/All.
+
+### Fix 3: Do-Not-Contact Enforcement on Save Paths
+**Problem:** Backend save paths (web API + MCP) blocked enrolled, personal-email, no-email, and unverified contacts, but did NOT block contacts flagged as do-not-contact in existing prospect data.
+**Fix:**
+- Added `is_do_not_contact(email)` helper in `prospect_service.py` — queries across all prospect records.
+- Both `api.py` `api_save_prospects()` and `mcp_tools.py` `save_prospects()` now call it before persisting.
+- Skip summary includes `skipped_dnc` count.
+- Check runs before the enrolled check (DNC is a harder block).
+
+### Fix 4: Draft/Enrollment UI State Truthfulness
+**Problem:** Draft editing and enrollment used inconsistent state sources. `handleEnrollAll` relied on async React state timing for success/failure determination.
+**Fix:**
+- `DraftReview` initializes local `drafts` state from `workspace.drafts` on mount — so server-loaded drafts are immediately editable without needing "Generate Drafts" first.
+- `handleEnrollAll` uses an explicit `successCount`/`failCount` accumulator from actual request results, not from `setStatuses` callback timing.
+- `handleEnroll` returns `'enrolled'` or `'failed'` directly to callers.
+- Success/failure messaging is based on the accumulator, not React state.
+- "Enroll All" button hidden once all prospects are already enrolled.
+- `markNoise` removed the redundant signal-status API call (cascade handles it).
+
+### Fix 5: Schema Ordering Bug
+**Problem:** `schema.py` called `safe_add_column('prospects', 'apollo_contact_id')` before the prospects table was created, causing `OperationalError` on fresh databases (including test runs).
+**Fix:** Added `apollo_contact_id` to the CREATE TABLE definition and moved the `safe_add_column` call to after the table creation (for backwards compat with existing DBs).
+
+### Fix 6: Verified-Email Enforcement on Enroll Step
+**Problem:** `enroll_prospect()` did not check `email_verified` before starting Apollo work. Bad legacy data, manually inserted data, or future regressions could push unverified emails into Apollo sequences.
+**Fix:** Added an explicit `email_verified` check in `enrollment_service.py` immediately after loading the prospect. If the prospect's email is not verified, enrollment returns an error: "Prospect email is not verified. Only verified emails can be enrolled." This gate is enforced server-side in the final enroll path, independent of earlier save-path filtering.
+
+### Fix 7: MCP Source Attribution
+**Problem:** MCP `create_signal()` used `signal_source='manual_entry'` and `evidence_type='manual'`, making CoWork/MCP-created signals indistinguishable from manual web entries.
+**Fix:** Changed `create_signal()` to use `evidence_type='cowork_push'` and `signal_source='cowork'`. `create_revisit_signal()` already used `signal_source='cowork'` correctly. Both now consistently attribute MCP-created signals to the CoWork channel.
+
+### Regression Tests Added
+`tests/test_v2_repair_pass.py` — 19 tests covering:
+- Apollo contact update uses PUT (mocked Apollo calls, asserts no POST to update endpoint)
+- `is_do_not_contact()` correctly identifies DNC emails
+- API save path rejects DNC contacts
+- `list_signals()` filters by workflow status (account_status)
+- Signal counts group by workflow status
+- Signal rows include `workflow_status` field
+- API accepts workflow statuses on `/v2/api/signals?status=`
+- API rejects old signal statuses (`actioned`) on queue endpoint
+- Signal status endpoint accepts internal values only
+- Unverified prospects cannot be enrolled (returns error with "not verified")
+- Verified prospects pass the email verification gate
+- MCP-created signals use `signal_source='cowork'` and `evidence_type='cowork_push'`
+- MCP revisit signals also use `signal_source='cowork'`
+- Flask smoke tests: `/app`, `/v2/api/campaigns`, `/v2/api/signals/counts`
+
+---
+
+## 12. What Still Feels Incomplete / Risky
 
 ### Incomplete
-1. **No automated tests**: No pytest files. Services were verified via import + syntax only.
+1. **Limited test coverage**: 19 regression tests in `test_v2_repair_pass.py` cover key safety gates (DNC, verified email, PUT vs POST, workflow status). End-to-end integration tests still missing.
 2. **No data migration script**: Existing scan_signals are not auto-converted to intent_signals. The `POST /v2/api/ingest/from-scans` endpoint exists but requires manual triggering.
 3. **No revisit automation**: The `mark_sequence_complete` → `revisit` → fresh signal flow is modeled but there's no automated trigger (e.g., webhook from Apollo when a sequence completes).
 4. **No document/DOCX/PDF ingestion**: The `ingestion_service` supports CSV and manual only. The architecture supports future parsers but none are built.
@@ -407,7 +479,7 @@ Five structural issues were identified after the initial Codex audit. All fixed 
 
 ---
 
-## 12. What Codex Should Inspect Most Carefully
+## 13. What Codex Should Inspect Most Carefully
 
 1. **Cross-service contracts**: Verify that `api.py` route handlers call service functions with correct argument names and handle return values correctly. Key interfaces:
    - `api.py` → `signal_service.get_signal_workspace()` return shape
@@ -431,7 +503,7 @@ Five structural issues were identified after the initial Codex audit. All fixed 
 
 ---
 
-## 13. Assumptions Made Without User Confirmation
+## 14. Assumptions Made Without User Confirmation
 
 1. **Flask + Jinja + React CDN stack**: Kept the existing stack (React 18 via CDN, Babel standalone, Tailwind CDN) rather than introducing a build system. This matches existing patterns in the repo.
 

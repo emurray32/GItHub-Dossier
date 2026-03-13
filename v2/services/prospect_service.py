@@ -178,6 +178,20 @@ def is_already_enrolled(email: str) -> bool:
         return cursor.fetchone() is not None
 
 
+def is_do_not_contact(email: str) -> bool:
+    """Check if this email is flagged do-not-contact in any existing prospect record."""
+    if not email:
+        return False
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT 1 FROM prospects
+            WHERE email = ? AND do_not_contact = 1
+            LIMIT 1
+        ''', (email,))
+        return cursor.fetchone() is not None
+
+
 def filter_actionable_prospects(signal_id: int) -> List[dict]:
     """Get prospects for a signal that are actionable (not DNC, not already enrolled)."""
     with db_connection() as conn:

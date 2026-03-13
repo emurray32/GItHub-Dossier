@@ -143,7 +143,15 @@ def api_signal_owners():
 
 @api_bp.route('/signals/<int:signal_id>/status', methods=['PUT'])
 def api_update_signal_status(signal_id):
-    """Update signal status."""
+    """Update a signal's internal bookkeeping status.
+
+    NOTE: This is NOT the primary workflow status. The user-facing workflow
+    is driven by account_status (new/sequenced/revisit/noise) via the
+    /accounts/<id>/status endpoint. This endpoint only manages the
+    signal-level archival state (new/actioned/archived) for internal
+    bookkeeping. Normal UI flows should not call this directly — account
+    status changes cascade to signals automatically.
+    """
     try:
         data = request.get_json()
         if not data or 'status' not in data:
@@ -311,8 +319,8 @@ def api_save_prospects():
         if not prospects or not isinstance(prospects, list):
             return _error('prospects must be a non-empty list')
 
-        # Server-side filtering: reject already-enrolled and DNC contacts
-        from v2.services.prospect_service import is_already_enrolled
+        # Server-side filtering: reject DNC, enrolled, unverified, personal email
+        from v2.services.prospect_service import is_already_enrolled, is_do_not_contact
         from email_utils import _filter_personal_email
 
         records = []
@@ -320,6 +328,7 @@ def api_save_prospects():
         skipped_personal = 0
         skipped_no_email = 0
         skipped_unverified = 0
+        skipped_dnc = 0
         for p in prospects:
             email = (p.get('email') or '').strip().lower()
 
@@ -336,6 +345,11 @@ def api_save_prospects():
             # Skip personal emails (gmail, yahoo, etc.)
             if _filter_personal_email(email):
                 skipped_personal += 1
+                continue
+
+            # Skip do-not-contact (flagged in any prior prospect record)
+            if is_do_not_contact(email):
+                skipped_dnc += 1
                 continue
 
             # Skip already-enrolled contacts (across all signals/accounts)
@@ -360,7 +374,7 @@ def api_save_prospects():
             return _error(
                 f'No valid prospects to save (skipped: {skipped_enrolled} already enrolled, '
                 f'{skipped_personal} personal email, {skipped_no_email} no email, '
-                f'{skipped_unverified} unverified email)'
+                f'{skipped_unverified} unverified email, {skipped_dnc} do-not-contact)'
             )
 
         ids = bulk_create_prospects(records)
@@ -371,6 +385,7 @@ def api_save_prospects():
             skipped_personal=skipped_personal,
             skipped_no_email=skipped_no_email,
             skipped_unverified=skipped_unverified,
+            skipped_dnc=skipped_dnc,
         )
     except Exception as e:
         logger.exception("[V2 API] Error saving prospects")

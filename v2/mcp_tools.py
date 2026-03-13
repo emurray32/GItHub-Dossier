@@ -107,9 +107,9 @@ def register_v2_tools(mcp):
                 account_id=account_id,
                 signal_description=signal_description,
                 signal_type=signal_type,
-                evidence_type='manual',
+                evidence_type='cowork_push',
                 evidence_value=evidence,
-                signal_source='manual_entry',
+                signal_source='cowork',
                 recommended_campaign_id=rec_campaign_id,
                 recommended_campaign_reasoning=rec_campaign_reasoning,
                 created_by='mcp',
@@ -295,16 +295,18 @@ def register_v2_tools(mcp):
             if not isinstance(prospect_list, list) or not prospect_list:
                 return _safe_json({"error": "prospects must be a non-empty JSON array"})
 
-            from v2.services.prospect_service import bulk_create_prospects, is_already_enrolled
+            from v2.services.prospect_service import (
+                bulk_create_prospects, is_already_enrolled, is_do_not_contact,
+            )
 
-            # Filter: skip already-enrolled and no-email prospects
+            # Filter: skip DNC, enrolled, unverified, personal, no-email
             try:
                 from email_utils import _filter_personal_email
             except ImportError:
                 _filter_personal_email = lambda e: False
 
             records = []
-            skipped = {'enrolled': 0, 'personal': 0, 'no_email': 0, 'unverified': 0}
+            skipped = {'enrolled': 0, 'personal': 0, 'no_email': 0, 'unverified': 0, 'dnc': 0}
             for p in prospect_list:
                 email = (p.get('email') or '').strip().lower()
                 if not email:
@@ -315,6 +317,9 @@ def register_v2_tools(mcp):
                     continue
                 if _filter_personal_email(email):
                     skipped['personal'] += 1
+                    continue
+                if is_do_not_contact(email):
+                    skipped['dnc'] += 1
                     continue
                 if is_already_enrolled(email):
                     skipped['enrolled'] += 1
@@ -336,7 +341,7 @@ def register_v2_tools(mcp):
                 return _safe_json({
                     "error": f"No valid prospects to save (skipped: {skipped['enrolled']} enrolled, "
                              f"{skipped['personal']} personal, {skipped['no_email']} no email, "
-                             f"{skipped['unverified']} unverified)",
+                             f"{skipped['unverified']} unverified, {skipped['dnc']} do-not-contact)",
                 })
 
             ids = bulk_create_prospects(records)

@@ -68,6 +68,12 @@ def enroll_prospect(prospect_id: int, sequence_id: Optional[str] = None) -> dict
     if not email:
         return {'status': 'error', 'message': 'Prospect has no email address'}
 
+    if not prospect.get('email_verified'):
+        return {
+            'status': 'error',
+            'message': 'Prospect email is not verified. Only verified emails can be enrolled.',
+        }
+
     # 2. Check for approved drafts
     drafts = get_drafts_for_prospect(prospect_id)
     approved_drafts = [d for d in drafts if d.get('status') == 'approved']
@@ -132,11 +138,25 @@ def enroll_prospect(prospect_id: int, sequence_id: Optional[str] = None) -> dict
                     'apollo_response_ok': False,
                 }
         elif typed_custom_fields:
-            # Update existing contact with draft content
-            apollo_api_call(
-                'post', f'https://api.apollo.io/v1/contacts/{apollo_contact_id}',
+            # Update existing contact with draft content.
+            # Must use PUT /v1/ (not POST or PATCH /api/v1/) — see Apollo API docs
+            # and proven pattern in app.py.
+            update_resp = apollo_api_call(
+                'put', f'https://api.apollo.io/v1/contacts/{apollo_contact_id}',
                 json={'typed_custom_fields': typed_custom_fields},
             )
+            if update_resp.status_code not in (200, 201):
+                err = update_resp.text[:300]
+                logger.warning(
+                    "[ENROLL] Apollo contact update failed for %s (contact %s): %s",
+                    email, apollo_contact_id, err,
+                )
+                return {
+                    'status': 'error',
+                    'message': f'Apollo contact update failed: {err}',
+                    'prospect_id': prospect_id,
+                    'apollo_response_ok': False,
+                }
 
         if not apollo_contact_id:
             return {
