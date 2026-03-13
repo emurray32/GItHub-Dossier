@@ -467,7 +467,7 @@ Apollo API docs and the existing repo pattern.
 
 ## 12. Pre-Merge Final Fixes
 
-Three remaining issues resolved in the targeted final pass. 26 total regression tests.
+Three remaining issues resolved in the targeted final pass, plus 2 surgical fixes. 31 total regression tests.
 
 ### Fix 8: Duplicate Approved Drafts Can Stack Up (Merge Blocker)
 **Problem:** `generate_drafts()` only deleted drafts with status `generated`/`edited`. If a rep approved drafts and then regenerated, the old approved drafts remained in the DB. Enrollment could then read multiple approved drafts for the same sequence step, causing ambiguous content in Apollo custom fields.
@@ -493,12 +493,20 @@ Three remaining issues resolved in the targeted final pass. 26 total regression 
 ### Additional Fix: Template Draft None Handling
 `_generate_template_draft()` used `.get('company_name', 'your company')` which returns `None` when the key exists but is null. Changed to `or` fallback pattern to handle both missing and null values.
 
+### Fix 11: reloadAndAdvance Stale Index (Surgical Fix)
+**Problem:** `reloadAndAdvance()` called `selectSignal(fresh[nextIdx].id)`, but `selectSignal` computed `activeIndex` by searching the **old** `signals` array from its closure. This meant the UI could have the correct `activeSignalId` but a wrong `activeIndex`, breaking "Signal X of Y" display and subsequent keyboard navigation.
+**Fix:** `reloadAndAdvance()` now sets both `setActiveSignalId()` and `setActiveIndex()` directly from the fresh array, bypassing `selectSignal` entirely. This ensures both pieces of state are derived from the same fresh snapshot.
+
+### Fix 12: Account Status Route Bypasses Cascade Helpers (Workflow Bug)
+**Problem:** `PUT /v2/api/accounts/<id>/status` called `update_account_status()` directly, which only updates the `account_status` column. The signal-status cascade logic lives in `mark_account_noise()`, `mark_account_sequenced()`, and `mark_account_revisit()`. The route bypassed these helpers, so marking an account as noise via the UI did **not** archive its signals.
+**Fix:** The route now dispatches to the correct cascade-aware helper based on the requested status: `noise` → `mark_account_noise()`, `sequenced` → `mark_account_sequenced()`, `revisit` → `mark_account_revisit()`. Setting status to `new` (reset) uses the plain `update_account_status()` since no cascade is needed. 5 regression tests added.
+
 ---
 
 ## 13. What Still Feels Incomplete / Risky
 
 ### Incomplete
-1. **Limited test coverage**: 26 regression tests in `test_v2_repair_pass.py` cover key safety gates (DNC, verified email, PUT vs POST, workflow status, draft dedup, exception hardening). End-to-end integration tests still missing.
+1. **Limited test coverage**: 31 regression tests in `test_v2_repair_pass.py` cover key safety gates (DNC, verified email, PUT vs POST, workflow status, draft dedup, exception hardening, account status cascade). End-to-end integration tests still missing.
 2. **No data migration script**: Existing scan_signals are not auto-converted to intent_signals. The `POST /v2/api/ingest/from-scans` endpoint exists but requires manual triggering.
 3. **No revisit automation**: The `mark_sequence_complete` → `revisit` → fresh signal flow is modeled but there's no automated trigger (e.g., webhook from Apollo when a sequence completes).
 4. **No document/DOCX/PDF ingestion**: The `ingestion_service` supports CSV and manual only. The architecture supports future parsers but none are built.

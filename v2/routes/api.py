@@ -15,7 +15,8 @@ from v2.services.signal_service import (
     get_signal_counts_by_status, get_owners,
 )
 from v2.services.account_service import (
-    get_account, update_account_status, get_account_domain, mark_account_noise,
+    get_account, update_account_status, get_account_domain,
+    mark_account_noise, mark_account_sequenced, mark_account_revisit,
 )
 from v2.services.prospect_service import (
     get_prospects_for_signal, bulk_create_prospects, filter_actionable_prospects,
@@ -500,7 +501,15 @@ def api_update_writing_preferences():
 
 @api_bp.route('/accounts/<int:account_id>/status', methods=['PUT'])
 def api_update_account_status(account_id):
-    """Update account status (noise/revisit/etc)."""
+    """Update account status using workflow-aware helpers.
+
+    Dispatches to the correct cascade helper so signal bookkeeping
+    happens automatically:
+      - noise    → mark_account_noise()    (archives all non-archived signals)
+      - sequenced → mark_account_sequenced() (actions all new signals)
+      - revisit  → mark_account_revisit()  (actions all new signals)
+      - new      → plain update (reset, no cascade needed)
+    """
     try:
         data = request.get_json()
         if not data or 'status' not in data:
@@ -510,7 +519,19 @@ def api_update_account_status(account_id):
         if not valid:
             return _error(new_status)
 
-        ok = update_account_status(account_id, new_status)
+        # Dispatch to the correct cascade-aware helper
+        dispatch = {
+            'noise': mark_account_noise,
+            'sequenced': mark_account_sequenced,
+            'revisit': mark_account_revisit,
+        }
+        handler = dispatch.get(new_status)
+        if handler:
+            ok = handler(account_id)
+        else:
+            # 'new' is a reset — no signal cascade needed
+            ok = update_account_status(account_id, new_status)
+
         if not ok:
             return _error('Account not found or invalid status', 404)
 

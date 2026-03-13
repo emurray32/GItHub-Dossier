@@ -1356,18 +1356,20 @@ function App() {
 
     // Reload queue and select next signal from FRESH data.
     // Used after any action that changes queue membership (noise, enrollment, etc).
+    // Sets both activeSignalId and activeIndex directly from the fresh array
+    // to avoid the stale-closure bug where selectSignal searches the old signals array.
     const reloadAndAdvance = useCallback(async () => {
         const prevIdx = activeIndex;
         const fresh = await loadSignals();
         if (fresh && fresh.length > 0) {
-            // Select the signal at the same position (item was removed, so this is the next one)
             const nextIdx = Math.min(Math.max(prevIdx, 0), fresh.length - 1);
-            selectSignal(fresh[nextIdx].id);
+            setActiveSignalId(fresh[nextIdx].id);
+            setActiveIndex(nextIdx);
         } else {
             setActiveSignalId(null);
             setActiveIndex(-1);
         }
-    }, [activeIndex, loadSignals, selectSignal]);
+    }, [activeIndex, loadSignals]);
 
     // Mark as noise
     const markNoise = useCallback(async () => {

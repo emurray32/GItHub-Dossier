@@ -11,6 +11,8 @@ Tests:
 7. Duplicate draft prevention — generate_drafts replaces approved drafts
 8. Enrollment uses deterministic draft per step
 9. Raw exception strings not leaked in 500 responses
+10. Flask smoke tests
+11. Account status route uses cascade-aware helpers (noise/sequenced/revisit)
 """
 import json
 import sqlite3
@@ -670,3 +672,131 @@ class TestFlaskSmoke:
         data = resp.get_json()
         assert data.get('status') == 'success'
         assert 'counts' in data
+
+
+# =========================================================================
+# 11. Account status route uses cascade-aware helpers
+# =========================================================================
+
+class TestAccountStatusCascade:
+    """Verify PUT /v2/api/accounts/<id>/status dispatches to cascade helpers."""
+
+    def test_noise_cascades_signals_to_archived(self, flask_app, test_db):
+        """Marking account as noise via route should archive its signals."""
+        aid = _seed_account(test_db, 'NoisyCo', account_status='new')
+        sid1 = _seed_signal(test_db, aid, 'signal one')
+        sid2 = _seed_signal(test_db, aid, 'signal two')
+
+        resp = flask_app.put(
+            f'/v2/api/accounts/{aid}/status',
+            json={'status': 'noise'},
+        )
+        assert resp.status_code == 200
+
+        # Verify signals were cascaded to 'archived'
+        conn = sqlite3.connect(test_db)
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT status FROM intent_signals WHERE account_id = ?", (aid,)
+        ).fetchall()
+        conn.close()
+
+        statuses = [dict(r)['status'] for r in rows]
+        assert all(s == 'archived' for s in statuses), (
+            f"Expected all signals archived after noise, got: {statuses}"
+        )
+
+    def test_sequenced_cascades_signals_to_actioned(self, flask_app, test_db):
+        """Marking account as sequenced via route should action its new signals."""
+        aid = _seed_account(test_db, 'SeqCo', account_status='new')
+        sid = _seed_signal(test_db, aid, 'new signal')
+
+        resp = flask_app.put(
+            f'/v2/api/accounts/{aid}/status',
+            json={'status': 'sequenced'},
+        )
+        assert resp.status_code == 200
+
+        conn = sqlite3.connect(test_db)
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT status FROM intent_signals WHERE id = ?", (sid,)
+        ).fetchone()
+        conn.close()
+
+        assert dict(row)['status'] == 'actioned', (
+            f"Expected signal actioned after sequenced, got: {dict(row)['status']}"
+        )
+
+    def test_revisit_cascades_signals_to_actioned(self, flask_app, test_db):
+        """Marking account as revisit via route should action its new signals."""
+        aid = _seed_account(test_db, 'RevCo', account_status='new')
+        sid = _seed_signal(test_db, aid, 'new signal')
+
+        resp = flask_app.put(
+            f'/v2/api/accounts/{aid}/status',
+            json={'status': 'revisit'},
+        )
+        assert resp.status_code == 200
+
+        conn = sqlite3.connect(test_db)
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT status FROM intent_signals WHERE id = ?", (sid,)
+        ).fetchone()
+        conn.close()
+
+        assert dict(row)['status'] == 'actioned'
+
+    def test_new_status_does_not_cascade(self, flask_app, test_db):
+        """Setting account to 'new' should not change signal statuses."""
+        aid = _seed_account(test_db, 'ResetCo', account_status='sequenced')
+        sid = _seed_signal(test_db, aid, 'actioned signal')
+
+        # Manually set signal to 'actioned'
+        conn = sqlite3.connect(test_db)
+        conn.execute("UPDATE intent_signals SET status = 'actioned' WHERE id = ?", (sid,))
+        conn.commit()
+        conn.close()
+
+        resp = flask_app.put(
+            f'/v2/api/accounts/{aid}/status',
+            json={'status': 'new'},
+        )
+        assert resp.status_code == 200
+
+        conn = sqlite3.connect(test_db)
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT status FROM intent_signals WHERE id = ?", (sid,)
+        ).fetchone()
+        conn.close()
+
+        # Signal should still be 'actioned' — no cascade for 'new'
+        assert dict(row)['status'] == 'actioned'
+
+    def test_noise_already_archived_signals_unchanged(self, flask_app, test_db):
+        """Noise should not re-archive already-archived signals (no-op is fine)."""
+        aid = _seed_account(test_db, 'ArchCo', account_status='new')
+        sid = _seed_signal(test_db, aid, 'already archived')
+
+        # Pre-archive the signal
+        conn = sqlite3.connect(test_db)
+        conn.execute("UPDATE intent_signals SET status = 'archived' WHERE id = ?", (sid,))
+        conn.commit()
+        conn.close()
+
+        resp = flask_app.put(
+            f'/v2/api/accounts/{aid}/status',
+            json={'status': 'noise'},
+        )
+        assert resp.status_code == 200
+
+        conn = sqlite3.connect(test_db)
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT status FROM intent_signals WHERE id = ?", (sid,)
+        ).fetchone()
+        conn.close()
+
+        assert dict(row)['status'] == 'archived'
