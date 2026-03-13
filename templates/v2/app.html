@@ -672,7 +672,8 @@ function CampaignSection({ workspace, onCampaignUpdate, toast }) {
                         <span className="text-sm font-medium text-slate-800">{currentCampaign.name}</span>
                         <span className="text-[0.6875rem] bg-green-100 text-green-700 px-2 py-0.5 rounded-full">Active</span>
                     </div>
-                    {workspace.signal.recommended_campaign_reasoning && (
+                    {workspace.signal.recommended_campaign_reasoning &&
+                     !workspace.signal.recommended_campaign_reasoning.toLowerCase().includes('no campaign matched') && (
                         <p className="text-xs text-slate-500 leading-relaxed">{workspace.signal.recommended_campaign_reasoning}</p>
                     )}
                     {currentCampaign.writing_guidelines && (
@@ -691,7 +692,7 @@ function CampaignSection({ workspace, onCampaignUpdate, toast }) {
                     )}
                 </div>
             ) : (
-                <p className="text-xs text-slate-400 mb-3">No campaign assigned yet.</p>
+                <p className="text-xs text-slate-400 mb-3">Select a campaign below to get started.</p>
             )}
 
             <div className="border-t border-slate-100 pt-3">
@@ -1936,7 +1937,7 @@ function App() {
             const params = new URLSearchParams();
             if (statusFilter) params.set('status', statusFilter);
             if (ownerFilter) params.set('owner', ownerFilter);
-            params.set('limit', '100');
+            params.set('limit', '500');
 
             const data = await apiFetch(`/v2/api/signals?${params}`);
             const fresh = data.signals || [];
@@ -1977,6 +1978,70 @@ function App() {
         const idx = signals.findIndex(s => s.id === id);
         setActiveIndex(idx);
     }, [signals]);
+
+    // Navigate to next signal
+    const nextSignal = useCallback(() => {
+        const nextIdx = activeIndex + 1;
+        if (nextIdx < signals.length) {
+            selectSignal(signals[nextIdx].id);
+        } else {
+            // Refresh the queue
+            loadSignals();
+            setActiveSignalId(null);
+            setActiveIndex(-1);
+        }
+    }, [activeIndex, signals, selectSignal, loadSignals]);
+
+    // Skip = same as next
+    const skipSignal = useCallback(() => {
+        nextSignal();
+    }, [nextSignal]);
+
+    // Reload queue and select next signal from FRESH data.
+    // Used after any action that changes queue membership (noise, enrollment, etc).
+    // Sets both activeSignalId and activeIndex directly from the fresh array
+    // to avoid the stale-closure bug where selectSignal searches the old signals array.
+    const reloadAndAdvance = useCallback(async () => {
+        const prevIdx = activeIndex;
+        const fresh = await loadSignals();
+        if (fresh && fresh.length > 0) {
+            const nextIdx = Math.min(Math.max(prevIdx, 0), fresh.length - 1);
+            setActiveSignalId(fresh[nextIdx].id);
+            setActiveIndex(nextIdx);
+        } else {
+            setActiveSignalId(null);
+            setActiveIndex(-1);
+        }
+    }, [activeIndex, loadSignals]);
+
+    // Mark as noise (with confirmation — cascades to ALL signals for this account)
+    const markNoise = useCallback(async () => {
+        if (!activeSignalId) return;
+        const sig = signals.find(s => s.id === activeSignalId);
+        if (!sig) return;
+
+        const company = sig.company_name || 'this account';
+        if (!window.confirm(`Mark "${company}" as noise?\n\nThis will archive ALL signals for this account.`)) return;
+
+        try {
+            await apiFetch(`/v2/api/accounts/${sig.account_id}/status`, {
+                method: 'PUT',
+                body: JSON.stringify({ status: 'noise' }),
+            });
+            toast(`"${company}" marked as noise`);
+            await reloadAndAdvance();
+        } catch (err) {
+            toast(err.message, 'error');
+        }
+    }, [activeSignalId, signals, reloadAndAdvance, toast]);
+
+    // Auto-select first signal on initial load
+    useEffect(() => {
+        if (!loading && signals.length > 0 && activeSignalId === null && activeIndex === -1) {
+            setActiveSignalId(signals[0].id);
+            setActiveIndex(0);
+        }
+    }, [loading, signals]);
 
     // Keyboard navigation + workflow shortcuts
     useEffect(() => {
@@ -2054,62 +2119,6 @@ function App() {
         window.addEventListener('keydown', handler);
         return () => window.removeEventListener('keydown', handler);
     }, [activeIndex, signals, selectSignal, activeSignalId, showIntake, showHelp, markNoise, skipSignal]);
-
-    // Navigate to next signal
-    const nextSignal = useCallback(() => {
-        const nextIdx = activeIndex + 1;
-        if (nextIdx < signals.length) {
-            selectSignal(signals[nextIdx].id);
-        } else {
-            // Refresh the queue
-            loadSignals();
-            setActiveSignalId(null);
-            setActiveIndex(-1);
-        }
-    }, [activeIndex, signals, selectSignal, loadSignals]);
-
-    // Skip = same as next
-    const skipSignal = useCallback(() => {
-        nextSignal();
-    }, [nextSignal]);
-
-    // Reload queue and select next signal from FRESH data.
-    // Used after any action that changes queue membership (noise, enrollment, etc).
-    // Sets both activeSignalId and activeIndex directly from the fresh array
-    // to avoid the stale-closure bug where selectSignal searches the old signals array.
-    const reloadAndAdvance = useCallback(async () => {
-        const prevIdx = activeIndex;
-        const fresh = await loadSignals();
-        if (fresh && fresh.length > 0) {
-            const nextIdx = Math.min(Math.max(prevIdx, 0), fresh.length - 1);
-            setActiveSignalId(fresh[nextIdx].id);
-            setActiveIndex(nextIdx);
-        } else {
-            setActiveSignalId(null);
-            setActiveIndex(-1);
-        }
-    }, [activeIndex, loadSignals]);
-
-    // Mark as noise (with confirmation — cascades to ALL signals for this account)
-    const markNoise = useCallback(async () => {
-        if (!activeSignalId) return;
-        const sig = signals.find(s => s.id === activeSignalId);
-        if (!sig) return;
-
-        const company = sig.company_name || 'this account';
-        if (!window.confirm(`Mark "${company}" as noise?\n\nThis will archive ALL signals for this account.`)) return;
-
-        try {
-            await apiFetch(`/v2/api/accounts/${sig.account_id}/status`, {
-                method: 'PUT',
-                body: JSON.stringify({ status: 'noise' }),
-            });
-            toast(`"${company}" marked as noise`);
-            await reloadAndAdvance();
-        } catch (err) {
-            toast(err.message, 'error');
-        }
-    }, [activeSignalId, signals, reloadAndAdvance, toast]);
 
     return (
         <div className="flex h-screen overflow-hidden">

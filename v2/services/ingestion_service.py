@@ -489,6 +489,7 @@ def _process_rows(rows, source_label, created_by, sheet_name=None):
         'accounts_created': 0,
         'accounts_matched': 0,
         'skipped': 0,
+        'skipped_duplicates': 0,
         'errors': [],
         'batch_id': batch_id,
         'sheet_name': sheet_name,
@@ -533,13 +534,18 @@ def _process_rows(rows, source_label, created_by, sheet_name=None):
                 )
                 result['accounts_created'] += 1
 
-            # 2. Auto-recommend campaign
+            # 2. Check for duplicate signal
+            if signal_service.check_duplicate_signal(account_id, signal_type, source_label, evidence_value=evidence):
+                result['skipped_duplicates'] += 1
+                continue
+
+            # 3. Auto-recommend campaign
             rec = campaign_service.recommend_campaign(signal_type=signal_type)
 
-            # 3. Build raw_payload with ALL original data (preserves unmapped fields)
+            # 4. Build raw_payload with ALL original data (preserves unmapped fields)
             raw_payload = {k: _coerce_str(v) for k, v in row.items() if v is not None and _coerce_str(v)}
 
-            # 4. Create intent signal
+            # 5. Create intent signal
             signal_id = signal_service.create_signal(
                 account_id=account_id,
                 signal_description=signal_desc,
@@ -556,7 +562,7 @@ def _process_rows(rows, source_label, created_by, sheet_name=None):
 
             result['signals_created'] += 1
 
-            # 5. Log activity
+            # 6. Log activity
             activity_service.log_activity(
                 event_type='signal_created',
                 entity_type='signal',

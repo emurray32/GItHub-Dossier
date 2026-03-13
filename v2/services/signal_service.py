@@ -91,7 +91,8 @@ def list_signals(
             where_clauses.append("s.signal_type = ?")
             params.append(signal_type)
 
-        where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
+        where_clauses.append("s.status != 'archived'")
+        where_sql = " AND ".join(where_clauses)
 
         # Count
         cursor.execute(f'''
@@ -112,7 +113,7 @@ def list_signals(
             FROM intent_signals s
             JOIN monitored_accounts a ON s.account_id = a.id
             WHERE {where_sql}
-            ORDER BY s.created_at DESC
+            ORDER BY a.current_tier ASC, s.created_at DESC
             LIMIT ? OFFSET ?
         ''', tuple(params) + (limit, offset))
 
@@ -271,6 +272,7 @@ def get_signal_counts_by_status() -> dict:
             SELECT a.account_status AS workflow_status, COUNT(*) as cnt
             FROM intent_signals s
             JOIN monitored_accounts a ON s.account_id = a.id
+            WHERE s.status != 'archived'
             GROUP BY a.account_status
         ''')
         return {r['workflow_status']: r['cnt'] for r in rows_to_dicts(cursor.fetchall())}

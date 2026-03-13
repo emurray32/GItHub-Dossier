@@ -92,7 +92,7 @@ def get_campaign_performance() -> list:
         cursor.execute('''
             SELECT
                 c.id as campaign_id,
-                c.campaign_name,
+                c.name,
                 COUNT(DISTINCT s.id) as signal_count,
                 COUNT(DISTINCT p.id) as prospect_count,
                 COUNT(DISTINCT CASE WHEN p.enrollment_status = 'enrolled' THEN p.id END) as enrolled_count,
@@ -100,7 +100,7 @@ def get_campaign_performance() -> list:
             FROM campaigns c
             LEFT JOIN intent_signals s ON s.recommended_campaign_id = c.id
             LEFT JOIN prospects p ON p.signal_id = s.id AND p.do_not_contact = 0
-            GROUP BY c.id, c.campaign_name
+            GROUP BY c.id, c.name
             HAVING signal_count > 0
             ORDER BY signal_count DESC
         ''')

@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 ingestion_bp = Blueprint('v2_ingestion', __name__, url_prefix='/v2/api/ingest')
 
-_ALLOWED_EXTENSIONS = {'.csv', '.xlsx', '.xls'}
+_ALLOWED_EXTENSIONS = {'.csv', '.xlsx'}
 
 
 # ---------------------------------------------------------------------------
