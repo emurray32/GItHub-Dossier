@@ -685,4 +685,124 @@ def register_v2_tools(mcp):
             logger.exception("[MCP] get_activity_log error")
             return _safe_json({"error": str(e)})
 
-    logger.info("[MCP] Registered %d v2 tools", 16)
+    # ------------------------------------------------------------------
+    # Analytics
+    # ------------------------------------------------------------------
+
+    @mcp.tool()
+    def pipeline_analytics() -> str:
+        """Get full pipeline conversion metrics.
+
+        Returns the funnel from signals → prospects → drafts → enrollments
+        with conversion rates at each stage, plus account status breakdown.
+        """
+        try:
+            from v2.services.analytics_service import get_pipeline_summary, get_account_status_breakdown
+            return _safe_json({
+                "pipeline": get_pipeline_summary(),
+                "accounts": get_account_status_breakdown(),
+            })
+        except Exception as e:
+            logger.exception("[MCP] pipeline_analytics error")
+            return _safe_json({"error": str(e)})
+
+    @mcp.tool()
+    def campaign_analytics() -> str:
+        """Get per-campaign performance metrics.
+
+        Shows signal count, prospect count, enrollment count, and conversion
+        rate for each campaign. Useful for identifying which campaigns perform best.
+        """
+        try:
+            from v2.services.analytics_service import get_campaign_performance
+            campaigns = get_campaign_performance()
+            return _safe_json({"campaigns": campaigns, "count": len(campaigns)})
+        except Exception as e:
+            logger.exception("[MCP] campaign_analytics error")
+            return _safe_json({"error": str(e)})
+
+    @mcp.tool()
+    def draft_analytics() -> str:
+        """Get draft quality and regeneration metrics.
+
+        Shows total drafts, approval rate, and average regenerations per
+        prospect. Useful for understanding writing quality trends.
+        """
+        try:
+            from v2.services.analytics_service import get_draft_quality_metrics
+            return _safe_json(get_draft_quality_metrics())
+        except Exception as e:
+            logger.exception("[MCP] draft_analytics error")
+            return _safe_json({"error": str(e)})
+
+    # ------------------------------------------------------------------
+    # Dedup
+    # ------------------------------------------------------------------
+
+    @mcp.tool()
+    def find_duplicate_signals() -> str:
+        """Find exact duplicate signals in the queue.
+
+        Returns clusters of signals that share the same account + signal_type +
+        evidence_value. Each cluster identifies which signal to keep (oldest)
+        and which are duplicates.
+        """
+        try:
+            from v2.services.dedup_service import find_exact_duplicates, get_dedup_summary
+            clusters = find_exact_duplicates()
+            summary = get_dedup_summary()
+            return _safe_json({
+                "summary": summary,
+                "clusters": clusters,
+                "total_clusters": len(clusters),
+            })
+        except Exception as e:
+            logger.exception("[MCP] find_duplicate_signals error")
+            return _safe_json({"error": str(e)})
+
+    @mcp.tool()
+    def auto_clean_duplicates() -> str:
+        """Automatically archive all exact duplicate signals.
+
+        Keeps the oldest signal in each duplicate cluster and archives the rest.
+        Returns how many clusters were processed and signals archived.
+        """
+        try:
+            from v2.services.dedup_service import auto_archive_exact_duplicates
+            result = auto_archive_exact_duplicates()
+            return _safe_json(result)
+        except Exception as e:
+            logger.exception("[MCP] auto_clean_duplicates error")
+            return _safe_json({"error": str(e)})
+
+    # ------------------------------------------------------------------
+    # Bulk Enrollment
+    # ------------------------------------------------------------------
+
+    @mcp.tool()
+    def bulk_enroll_prospects(prospect_ids: str) -> str:
+        """Enroll multiple prospects into Apollo sequences at once.
+
+        Returns per-prospect results showing who enrolled successfully,
+        who failed and why, and who was skipped (already enrolled or DNC).
+
+        Args:
+            prospect_ids: Comma-separated prospect IDs (e.g. '12,34,56').
+        """
+        try:
+            ids = [int(x.strip()) for x in prospect_ids.split(',') if x.strip()]
+            if not ids:
+                return _safe_json({"error": "No valid prospect IDs provided"})
+            if len(ids) > 100:
+                return _safe_json({"error": "Cannot enroll more than 100 prospects at once"})
+
+            from v2.services.enrollment_service import bulk_enroll
+            result = bulk_enroll(ids)
+            return _safe_json(result)
+        except ValueError:
+            return _safe_json({"error": "prospect_ids must be comma-separated integers"})
+        except Exception as e:
+            logger.exception("[MCP] bulk_enroll_prospects error")
+            return _safe_json({"error": str(e)})
+
+    logger.info("[MCP] Registered %d v2 tools", 23)
