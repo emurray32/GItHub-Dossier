@@ -24,7 +24,7 @@
                     <span class="navbar-toggler-icon"></span>
                 </button>
                 <h1 class="navbar-brand navbar-brand-autodark">
-                    <a href="{{ url_for('accounts') }}">
+                    <a href="/app">
                         <svg class="navbar-brand-image" viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <circle cx="11" cy="11" r="7"></circle>
                             <line x1="16.65" y1="16.65" x2="21" y2="21"></line>
@@ -35,9 +35,9 @@
                 <div class="collapse navbar-collapse" id="sidebar-menu">
                     <ul class="navbar-nav pt-lg-3">
                         <li class="nav-item">
-                            <a class="nav-link {% if request.endpoint == 'accounts' or request.endpoint == 'accounts_tabler' %}active{% endif %}" href="{{ url_for('accounts') }}">
-                                <span class="nav-link-icon"><i class="ti ti-building-community"></i></span>
-                                <span class="nav-link-title">Accounts</span>
+                            <a class="nav-link" href="/app">
+                                <span class="nav-link-icon"><i class="ti ti-bolt"></i></span>
+                                <span class="nav-link-title">Signal Queue</span>
                             </a>
                         </li>
                         <li class="nav-item">

@@ -2013,8 +2013,8 @@ def favicon():
 
 @app.route('/')
 def index():
-    """Redirect to accounts page."""
-    return redirect(url_for('accounts'))
+    """Redirect to the v2 signal-queue UI."""
+    return redirect('/app')
 
 
 @app.route('/scan/<company>')

@@ -17,7 +17,7 @@
         <!-- Sidebar Navigation -->
         <aside class="sidebar" id="sidebar" role="navigation" aria-label="Main navigation">
             <div class="sidebar-header">
-                <a href="{{ url_for('accounts') }}" class="sidebar-brand">
+                <a href="/app" class="sidebar-brand">
                     <svg class="sidebar-brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                         <circle cx="11" cy="11" r="7"></circle>
@@ -35,9 +35,9 @@
             </div>
 
             <nav class="sidebar-nav">
-                <a href="{{ url_for('accounts') }}" class="sidebar-item {% if request.endpoint == 'accounts' %}active{% endif %}">
-                    <i data-lucide="radar" class="sidebar-icon"></i>
-                    <span class="sidebar-label">Accounts</span>
+                <a href="/app" class="sidebar-item {% if request.endpoint == 'v2_web.app_page' %}active{% endif %}">
+                    <i data-lucide="zap" class="sidebar-icon"></i>
+                    <span class="sidebar-label">Signal Queue</span>
                 </a>
                 <a href="{{ url_for('contributors') }}" class="sidebar-item {% if request.endpoint == 'contributors' %}active{% endif %}">
                     <i data-lucide="users" class="sidebar-icon"></i>
