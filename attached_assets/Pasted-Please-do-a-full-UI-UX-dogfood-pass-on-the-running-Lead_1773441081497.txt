@@ -1,0 +1,192 @@
+Please do a full UI/UX dogfood pass on the running Lead Machine app in Replit.
+
+Important context:
+- This product is supposed to be a fast, keyboard-first BDR workflow.
+- KEYBOARD COMMANDS and SPEED matter more than almost anything else.
+- The intended new product is the signal-first app at `/app`.
+- The old RepoRadar/accounts experience at `/accounts` is legacy and may still exist.
+- A major question is whether the product actually feels like the new workflow yet, or still feels like the old one.
+
+Your job:
+- Do NOT start by coding.
+- First, actually use the app in Preview like a real operator.
+- Treat this as exploratory QA + UX review + workflow review.
+- Use your own judgment. If you disagree with any of the assumptions below, say so.
+- Be brutally honest but practical.
+
+Primary goal:
+Figure out whether a BDR/AE could move quickly through:
+1. selecting an intent signal
+2. understanding why the signal matters
+3. seeing the recommended campaign
+4. finding contacts
+5. reviewing/editing drafts
+6. enrolling contacts
+with minimal friction, minimal clicks, and strong keyboard support.
+
+Please test from two perspectives:
+1. First-time user
+2. High-volume power user trying to move very fast
+
+What to inspect carefully:
+
+A. ENTRY / INFORMATION ARCHITECTURE
+- What route does the app naturally land on?
+- Does it open in the old `/accounts` RepoRadar table or the new `/app` signal queue?
+- If it lands on the old view, how confusing is that for a first-time user?
+- Is it obvious where the “real” new workflow lives?
+- If I were non-technical and opened this for the first time, would I understand where to go?
+
+B. KEYBOARD-FIRST EXPERIENCE
+This is the most important section.
+Please test actual keyboard behavior wherever possible:
+- Arrow key navigation
+- Enter to select/open
+- Escape/back behavior
+- Tab order
+- Shift+Tab behavior
+- Any shortcut hints shown in the UI
+- Whether important actions still require too much mouse usage
+
+Please answer:
+- Can a user move through the queue mostly by keyboard?
+- Can a user move from signal to next signal quickly?
+- Can a user review drafts quickly without constant clicking?
+- Can a user enroll efficiently at speed?
+- What actions still force mouse use unnecessarily?
+- Are shortcuts discoverable, hidden, inconsistent, or missing?
+- Does the app feel optimized for speed, or just technically functional?
+
+C. SPEED / RESPONSIVENESS
+Please note perceived performance:
+- first load
+- switching between signals
+- loading a workspace
+- opening campaign/draft/enrollment sections
+- draft generation/regeneration
+- enrollment feedback
+- intake/import interactions
+
+Call out anything that feels:
+- sluggish
+- visually jumpy
+- confusing while loading
+- too many steps for a high-volume workflow
+
+D. NEW SIGNAL-FIRST WORKFLOW
+Evaluate `/app` as the intended v2 product.
+Please inspect:
+- left signal queue
+- selected signal workspace
+- campaign section
+- contact search/save flow
+- draft review
+- enrollment section
+- next-signal progression
+
+Questions to answer:
+- Does the UI clearly communicate “everything starts from an intent signal”?
+- Does the queue feel like the center of the product?
+- Does the right panel feel like one continuous workflow?
+- Is anything confusing, redundant, or out of order?
+- Does anything still feel like legacy product baggage?
+
+E. INTAKE / EMPTY STATE
+If the queue is empty, or if there is an “Add Signals” flow:
+- Is the intake panel understandable?
+- Are the options clear?
+- Does file upload/manual add/import-from-scans make sense?
+- Is it obvious what kind of data belongs here?
+- Are error messages useful?
+- Does this feel safe enough for a non-technical operator?
+
+F. LEGACY VS NEW PRODUCT CONFUSION
+This is important.
+Please explicitly compare:
+- `/accounts`
+- `/app`
+
+I want your honest take on:
+- whether the current default experience makes the rebuild feel unfinished
+- whether the old UI is visually/mentally overpowering the new one
+- whether a user would think “this is still the old app”
+
+G. BDR WORKFLOW REALISM
+Please judge whether this actually supports the intended day-to-day job.
+
+The intended experience is something like:
+- open app
+- see queue
+- pick signal
+- confirm campaign/persona
+- find contacts
+- verify/save usable contacts
+- review/edit drafts
+- enroll
+- move on fast
+
+Please say where this breaks down in reality.
+
+H. TRUST / TRUTHFULNESS
+Watch for UI states that might mislead users:
+- stale counts
+- stale selection
+- misleading success messages
+- unclear failure states
+- mixed old/new terminology
+- actions that appear complete but are not really complete
+
+Output requirements:
+Please create a report in:
+`docs/REPLIT_UI_UX_DOGFOOD_REPORT.md`
+
+Also give me a chat summary.
+
+Format the report with these sections:
+
+1. Executive Summary
+- Is the app ready for real dogfooding by BDRs right now?
+- Short answer: yes / almost / no
+- 1 paragraph on why
+
+2. Biggest Findings
+- Prioritize the top 5-10 issues
+- Order by severity / impact on daily workflow
+
+3. Keyboard & Speed Review
+- What works
+- What is missing
+- What is slowing operators down
+- What mouse dependency still exists
+
+4. First-Time User Confusion
+- Especially around `/accounts` vs `/app`
+
+5. Detailed Issues
+For each issue include:
+- Title
+- Severity: Critical / High / Medium / Low
+- Where it happens
+- Exact repro steps
+- Expected behavior
+- Actual behavior
+- Why it matters for a high-speed BDR workflow
+- Suggested fix
+
+6. Fastest Wins
+- What 3-5 changes would most improve operator speed immediately
+
+7. Longer-Term UX Improvements
+- What should be improved after the immediate fixes
+
+Important instructions:
+- Only report issues you actually observed or strongly validated.
+- If you are unsure, say you are unsure.
+- If you cannot test part of the workflow because of missing data or blocked state, say exactly what blocked you.
+- Do not code yet unless I explicitly ask later.
+- This is a testing and product-clarity pass, not an implementation pass.
+
+Most important lens:
+This product should feel fast, intentional, keyboard-forward, and operationally sharp for a BDR trying to move through a lot of work quickly.
+
+If it doesn’t, say so clearly.
