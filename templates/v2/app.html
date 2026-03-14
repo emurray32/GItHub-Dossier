@@ -727,10 +727,18 @@ function CampaignSection({ workspace, onCampaignUpdate, toast }) {
 function PersonaSearch({ workspace, onProspectsSaved, toast, actionsRef }) {
     const defaultPersonas = useMemo(() => {
         if (workspace.personas && workspace.personas.length > 0) {
-            return workspace.personas.map(p => ({
-                title: p.title || p.titles_json || '',
-                seniority: p.seniority || p.seniorities_json || '',
-            }));
+            const parsed = [];
+            for (const p of workspace.personas) {
+                let titles = [];
+                let seniorities = [];
+                try { titles = typeof p.titles_json === 'string' ? JSON.parse(p.titles_json) : (p.titles_json || []); } catch { titles = []; }
+                try { seniorities = typeof p.seniorities_json === 'string' ? JSON.parse(p.seniorities_json) : (p.seniorities_json || []); } catch { seniorities = []; }
+                const sen = seniorities[0] || '';
+                for (const t of titles) {
+                    if (t) parsed.push({ title: t, seniority: sen });
+                }
+            }
+            if (parsed.length > 0) return parsed;
         }
         return [{ title: 'VP Engineering', seniority: 'vp' }];
     }, [workspace.signal.id]);
