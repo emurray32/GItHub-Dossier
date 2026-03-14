@@ -533,6 +533,22 @@ function SignalQueue({ signals, total, loading, activeId, onSelect, statusFilter
                     </button>
                 ))}
             </div>
+
+            {/* Navigation footer */}
+            <div className="mt-auto border-t border-white/10 px-4 py-3 flex gap-2">
+                <a href="/campaigns"
+                   className="flex-1 flex items-center justify-center gap-1.5 text-xs font-medium text-slate-400 hover:text-white hover:bg-white/5 rounded-md py-2 transition-all">
+                    <Icon name="send" size={13} /> Campaigns
+                </a>
+                <a href="/mapping-sequences"
+                   className="flex-1 flex items-center justify-center gap-1.5 text-xs font-medium text-slate-400 hover:text-white hover:bg-white/5 rounded-md py-2 transition-all">
+                    <Icon name="mail" size={13} /> Sequences
+                </a>
+                <a href="/accounts"
+                   className="flex-1 flex items-center justify-center gap-1.5 text-xs font-medium text-slate-400 hover:text-white hover:bg-white/5 rounded-md py-2 transition-all">
+                    <Icon name="building" size={13} /> Accounts
+                </a>
+            </div>
         </div>
     );
 }
