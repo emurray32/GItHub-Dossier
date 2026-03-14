@@ -11,7 +11,7 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta
 from typing import Optional
 from config import Config
-from signal_verifier import verify_signals
+# signal_verifier removed — signals are now generated externally
 
 
 class _ConnectionProxy:
@@ -1596,14 +1596,23 @@ def calculate_tier_from_scan(scan_data: dict, skip_verification: bool = False, w
     # ============================================================
     scoring_v2 = scan_data.get('scoring_v2')
     if scoring_v2 and isinstance(scoring_v2, dict):
-        from scoring.compat import MATURITY_VALUE_TO_TIER
+        # Maturity-to-tier mapping (was in scoring.compat)
+        _MATURITY_VALUE_TO_TIER = {
+            'PRE_I18N': 0,
+            'THINKING': 1,
+            'PREPARING': 2,
+            'ACTIVE_IMPLEMENTATION': 2,
+            'RECENTLY_LAUNCHED': 3,
+            'MATURE_MIDMARKET': 3,
+            'ENTERPRISE_SCALE': 1,
+        }
 
         maturity = scoring_v2.get('org_maturity_level', '')
         maturity_label = scoring_v2.get('org_maturity_label', '')
         confidence = scoring_v2.get('confidence_percent', 0)
         readiness = scoring_v2.get('readiness_index', 0)
 
-        tier = MATURITY_VALUE_TO_TIER.get(maturity, 0)
+        tier = _MATURITY_VALUE_TO_TIER.get(maturity, 0)
         outreach = scoring_v2.get('outreach_angle_label', '')
         evidence = (
             f"V2: {maturity_label} (confidence: {confidence:.0f}%, "
@@ -1623,20 +1632,7 @@ def calculate_tier_from_scan(scan_data: dict, skip_verification: bool = False, w
     # ============================================================
     # SIGNAL VERIFICATION: Filter false positives before tiering
     # ============================================================
-    if not skip_verification:
-        try:
-            scan_data = verify_signals(scan_data, use_llm=True)
-            verification = scan_data.get('verification', {})
-
-            # If verification flagged as definitive false positive, downgrade to Tier 0
-            if verification.get('is_false_positive'):
-                recommended_tier = verification.get('recommended_tier', 0)
-                fp_reasons = verification.get('false_positive_reasons', ['Unknown reason'])
-                evidence = f"VERIFIED FALSE POSITIVE: {fp_reasons[0]}"
-                print(f"[TIER] Signal verification overrode tier: {evidence}")
-                return recommended_tier, evidence
-        except Exception as e:
-            print(f"[TIER] Signal verification error (continuing with normal tiering): {e}")
+    # Signal verification removed — signals are now generated externally
 
     signal_summary = scan_data.get('signal_summary', {})
 
@@ -3469,166 +3465,8 @@ def set_setting(key: str, value: str) -> None:
 
 
 def auto_retier_if_version_changed() -> int:
-    """Re-calculate tiers from stored scan data if scoring files have changed.
-
-    Computes a fingerprint of all scoring files that affect tier classification.
-    If the fingerprint differs from the last-applied one in system_settings,
-    re-reads each account's latest report scan_data and re-applies the
-    maturity-to-tier mapping.
-
-    Includes safety guards:
-    - Snapshots tier counts before/after for audit trail
-    - Preserves previous_tier on each account so changes are reversible
-    - If >50% of accounts would change tier, logs a WARNING (mass-change guard)
-    - All changes are recorded in tier_audit_log table
-
-    No API calls or rescanning needed — uses existing data only.
-    No manual version bumping needed — file changes are detected automatically.
-
-    Returns:
-        Number of accounts whose tier was updated (0 if no change needed).
-    """
-    from scoring import get_scoring_fingerprint
-
-    current_fp = get_scoring_fingerprint()
-    stored_fp = get_setting('scoring_fingerprint')
-    if stored_fp == current_fp:
-        return 0
-
-    logging.warning(
-        f"[RETIER] Scoring files changed (fingerprint {stored_fp} → {current_fp}), "
-        f"re-tiering accounts..."
-    )
-
-    with db_connection() as conn:
-        cursor = conn.cursor()
-
-        # Snapshot tier counts BEFORE re-tiering
-        cursor.execute('''
-            SELECT current_tier, COUNT(*) as count
-            FROM monitored_accounts WHERE archived_at IS NULL
-            GROUP BY current_tier
-        ''')
-        tier_counts_before = {str(r['current_tier'] or 0): r['count'] for r in cursor.fetchall()}
-
-        cursor.execute('''
-            SELECT ma.id, ma.company_name, ma.current_tier, r.scan_data,
-                   wa.localization_score, wa.analysis_details_json,
-                   ws.locale_count, ws.hreflang_tags
-            FROM monitored_accounts ma
-            JOIN reports r ON r.id = ma.latest_report_id
-            LEFT JOIN website_analyses wa ON LOWER(wa.company_name) = LOWER(ma.company_name)
-                AND wa.id = (SELECT id FROM website_analyses WHERE LOWER(company_name) = LOWER(ma.company_name) ORDER BY analyzed_at DESC LIMIT 1)
-            LEFT JOIN webscraper_accounts ws ON ws.monitored_account_id = ma.id
-                AND ws.scan_status = 'completed' AND ws.archived_at IS NULL
-            WHERE ma.latest_report_id IS NOT NULL
-        ''')
-        rows = cursor.fetchall()
-
-        # First pass: re-score and calculate new tiers without writing
-        # (to check for mass change). Re-runs the V2 scoring pipeline on
-        # stored signals so that filter/threshold changes take effect
-        # without a rescan.
-        from scoring import score_scan_results
-
-        pending_changes = []
-        for row in rows:
-            try:
-                scan_data = json.loads(row['scan_data']) if isinstance(row['scan_data'], str) else row['scan_data']
-            except (json.JSONDecodeError, TypeError):
-                continue
-
-            if not scan_data:
-                continue
-
-            # Re-run V2 scoring pipeline with updated filters/thresholds
-            if scan_data.get('signals'):
-                try:
-                    v2_result = score_scan_results(scan_data)
-                    v2_result.apply_to_scan_results(scan_data)
-                    scan_data['scoring_v2'] = v2_result.to_structured_output()
-                except Exception as e:
-                    logging.warning(f"[RETIER] V2 re-score failed for {row['company_name']}: {e}")
-
-            website_data = _build_website_data_from_row(row)
-
-            new_tier, evidence = calculate_tier_from_scan(
-                scan_data, skip_verification=True,
-                website_data=website_data
-            )
-            if new_tier != row['current_tier']:
-                pending_changes.append({
-                    'id': row['id'],
-                    'company_name': row['company_name'],
-                    'old_tier': row['current_tier'],
-                    'new_tier': new_tier,
-                    'evidence': evidence,
-                })
-
-        total_with_reports = len(rows)
-        change_count = len(pending_changes)
-        mass_change_blocked = False
-
-        # Mass-change guard: if >50% of accounts would change, log warning
-        if total_with_reports > 0 and change_count > total_with_reports * 0.5:
-            logging.warning(
-                f"[RETIER] MASS CHANGE DETECTED: {change_count}/{total_with_reports} accounts "
-                f"({100 * change_count // total_with_reports}%) would change tier. "
-                f"Proceeding but preserving previous_tier for rollback."
-            )
-            mass_change_blocked = True
-
-        # Second pass: apply changes with previous_tier preservation
-        for change in pending_changes:
-            cursor.execute(
-                'UPDATE monitored_accounts SET previous_tier = current_tier, '
-                'current_tier = ?, evidence_summary = ? WHERE id = ?',
-                (change['new_tier'], change['evidence'], change['id'])
-            )
-
-        conn.commit()
-
-        # Snapshot tier counts AFTER re-tiering
-        cursor.execute('''
-            SELECT current_tier, COUNT(*) as count
-            FROM monitored_accounts WHERE archived_at IS NULL
-            GROUP BY current_tier
-        ''')
-        tier_counts_after = {str(r['current_tier'] or 0): r['count'] for r in cursor.fetchall()}
-
-        # Build changes detail for audit log (limit to 100 to keep manageable)
-        changes_summary = [
-            {'id': c['id'], 'company': c['company_name'],
-             'old': c['old_tier'], 'new': c['new_tier']}
-            for c in pending_changes[:100]
-        ]
-
-        # Write audit log entry
-        now = datetime.now().isoformat()
-        _insert_returning_id(cursor, '''
-            INSERT INTO tier_audit_log (
-                triggered_at, old_fingerprint, new_fingerprint,
-                total_accounts, accounts_changed,
-                tier_counts_before, tier_counts_after,
-                changes_detail, mass_change_blocked
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (now, stored_fp or 'initial', current_fp,
-              total_with_reports, change_count,
-              json.dumps(tier_counts_before), json.dumps(tier_counts_after),
-              json.dumps(changes_summary), 1 if mass_change_blocked else 0))
-        conn.commit()
-
-    set_setting('scoring_fingerprint', current_fp)
-
-    # Log summary
-    if change_count == 0:
-        logging.info(f"[RETIER] Done — no tier changes (fingerprint updated, {total_with_reports} accounts checked).")
-    else:
-        logging.warning(
-            f"[RETIER] Done — updated {change_count} of {total_with_reports} accounts. "
-            f"Before: {tier_counts_before} → After: {tier_counts_after}"
-        )
-    return change_count
+    """Legacy — scoring pipeline removed. No-op."""
+    return 0
 
 
 def get_tier_audit_log(limit: int = 20) -> list:
@@ -3644,69 +3482,8 @@ def get_tier_audit_log(limit: int = 20) -> list:
 
 
 def force_retier_all() -> dict:
-    """Force re-tier ALL accounts from stored scan data (ignores fingerprint).
-
-    Unlike auto_retier_if_version_changed(), this always runs and also
-    processes accounts that lack scoring_v2 data (using legacy tiering).
-
-    Returns:
-        dict with 'total', 'updated', 'by_tier' counts.
-    """
-    with db_connection() as conn:
-        cursor = conn.cursor()
-
-        cursor.execute('''
-            SELECT ma.id, ma.company_name, ma.current_tier, r.scan_data,
-                   wa.localization_score, wa.analysis_details_json,
-                   ws.locale_count, ws.hreflang_tags
-            FROM monitored_accounts ma
-            JOIN reports r ON r.id = ma.latest_report_id
-            LEFT JOIN website_analyses wa ON LOWER(wa.company_name) = LOWER(ma.company_name)
-                AND wa.id = (SELECT id FROM website_analyses WHERE LOWER(company_name) = LOWER(ma.company_name) ORDER BY analyzed_at DESC LIMIT 1)
-            LEFT JOIN webscraper_accounts ws ON ws.monitored_account_id = ma.id
-                AND ws.scan_status = 'completed' AND ws.archived_at IS NULL
-            WHERE ma.latest_report_id IS NOT NULL
-        ''')
-        rows = cursor.fetchall()
-
-        updated = 0
-        by_tier = {0: 0, 1: 0, 2: 0, 3: 0, 4: 0}
-        for row in rows:
-            try:
-                scan_data = json.loads(row['scan_data']) if isinstance(row['scan_data'], str) else row['scan_data']
-            except (json.JSONDecodeError, TypeError):
-                continue
-
-            if not scan_data:
-                continue
-
-            website_data = _build_website_data_from_row(row)
-
-            try:
-                new_tier, evidence = calculate_tier_from_scan(
-                    scan_data, skip_verification=True,
-                    website_data=website_data
-                )
-            except Exception as e:
-                logging.warning(f"[RETIER] Error re-tiering account {row['id']} ({row['company_name']}): {e}")
-                continue
-
-            by_tier[new_tier] = by_tier.get(new_tier, 0) + 1
-            cursor.execute(
-                'UPDATE monitored_accounts SET current_tier = ?, evidence_summary = ? WHERE id = ?',
-                (new_tier, evidence, row['id'])
-            )
-            updated += 1
-
-        conn.commit()
-
-    # Also update the fingerprint so auto_retier doesn't re-run
-    from scoring import get_scoring_fingerprint
-    set_setting('scoring_fingerprint', get_scoring_fingerprint())
-
-    logging.info(f"[RETIER] Force re-tier done — updated {updated} of {len(rows)} accounts. "
-                 f"By tier: {by_tier}")
-    return {'total': len(rows), 'updated': updated, 'by_tier': by_tier}
+    """Legacy — scoring pipeline removed. No-op."""
+    return {'total': 0, 'updated': 0, 'by_tier': {}}
 
 
 def increment_daily_stat(stat_name: str, amount: int = 1) -> None:

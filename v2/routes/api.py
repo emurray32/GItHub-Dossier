@@ -229,7 +229,7 @@ def api_apollo_search(signal_id):
                 return _error('Each persona must have a "title" field')
 
         # Build Apollo people search request
-        from apollo_pipeline import apollo_api_call
+        from apollo_client import apollo_api_call
 
         all_people = []
         for persona in personas:

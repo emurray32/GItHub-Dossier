@@ -215,7 +215,7 @@ def register_v2_tools(mcp):
             title_list = [t.strip() for t in titles.split(',') if t.strip()]
             seniority_list = [s.strip() for s in seniorities.split(',') if s.strip()]
 
-            from apollo_pipeline import apollo_api_call
+            from apollo_client import apollo_api_call
 
             search_body = {
                 'q_organization_domains': domain,
