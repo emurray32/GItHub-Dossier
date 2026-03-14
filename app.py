@@ -234,10 +234,10 @@ def enforce_authentication():
     if request.endpoint in _PUBLIC_ENDPOINTS:
         return
 
-    # Allow non-API GET requests EXCEPT /app (v2 SPA requires auth)
+    # Allow any non-API GET requests (HTML pages rendered by Flask)
+    # API routes live under /api/ and /v2/api/
     if not request.path.startswith(('/api/', '/v2/api/')) and request.method == 'GET':
-        if request.path != '/app':
-            return
+        return
 
     # Allow same-origin browser requests (the UI's own JS fetch calls)
     # Uses strict netloc comparison via urlparse to prevent subdomain/substring spoofing
