@@ -247,6 +247,64 @@ def auto_archive_exact_duplicates() -> dict:
     }
 
 
+def consolidate_same_type_duplicates() -> dict:
+    """Archive same-account + same-type duplicates, keeping the oldest signal.
+
+    This is more aggressive than exact dedup — it collapses ALL signals of the
+    same type for the same company into one, regardless of evidence value.
+    e.g. 5 'timezone_library' signals for Air → keep 1, archive 4.
+    """
+    with db_connection() as conn:
+        cursor = conn.cursor()
+
+        # Find account+type groups with 2+ signals
+        cursor.execute('''
+            SELECT account_id, signal_type, COUNT(*) as cnt
+            FROM intent_signals
+            WHERE status != 'archived'
+            GROUP BY account_id, signal_type
+            HAVING cnt > 1
+            ORDER BY cnt DESC
+        ''')
+        groups = rows_to_dicts(cursor.fetchall())
+
+        total_archived = 0
+        clusters_processed = 0
+
+        for g in groups:
+            cursor.execute('''
+                SELECT id FROM intent_signals
+                WHERE account_id = ? AND signal_type = ? AND status != 'archived'
+                ORDER BY created_at ASC
+            ''', (g['account_id'], g['signal_type']))
+            ids = [r['id'] if isinstance(r, dict) else r[0] for r in cursor.fetchall()]
+
+            if len(ids) < 2:
+                continue
+
+            keep_id = ids[0]
+            archive_ids = ids[1:]
+
+            placeholders = ', '.join(['?'] * len(archive_ids))
+            cursor.execute(f'''
+                UPDATE intent_signals
+                SET status = 'archived', updated_at = CURRENT_TIMESTAMP
+                WHERE id IN ({placeholders}) AND status != 'archived'
+            ''', tuple(archive_ids))
+            archived = cursor.rowcount if hasattr(cursor, 'rowcount') else len(archive_ids)
+            total_archived += archived
+            clusters_processed += 1
+
+        conn.commit()
+
+    logger.info("[DEDUP] Consolidated %d clusters, archived %d same-type duplicates",
+                clusters_processed, total_archived)
+    return {
+        'clusters_processed': clusters_processed,
+        'signals_archived': total_archived,
+    }
+
+
 def _val(row):
     if row is None:
         return 0

@@ -133,3 +133,19 @@ def auto_clean():
     except Exception:
         logger.exception("[DEDUP] Error in auto-clean")
         return _error('Internal server error', 500)
+
+
+@dedup_bp.route('/consolidate', methods=['POST'])
+def consolidate():
+    """Consolidate same-account + same-type signals into one per company per type.
+
+    More aggressive than auto-clean — archives ALL same-type duplicates per
+    company regardless of evidence, keeping the oldest signal.
+    """
+    try:
+        from v2.services.dedup_service import consolidate_same_type_duplicates
+        result = consolidate_same_type_duplicates()
+        return _success(**result)
+    except Exception:
+        logger.exception("[DEDUP] Error in consolidate")
+        return _error('Internal server error', 500)

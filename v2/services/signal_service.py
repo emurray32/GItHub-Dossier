@@ -269,32 +269,22 @@ def get_signal_workspace(signal_id: int) -> Optional[dict]:
 def check_duplicate_signal(
     account_id: int,
     signal_type: str,
-    signal_source: str,
+    signal_source: str = None,
     evidence_value: Optional[str] = None,
 ) -> bool:
-    """Check if a signal with the same type+source+evidence already exists.
+    """Check if a signal with the same account + type already exists.
 
-    When evidence_value is provided, it must also match for the signal to be
-    considered a duplicate. This prevents dropping valid repeat signals that
-    have different evidence (e.g. two dependency_injection signals for
-    different packages at the same company).
+    Only one signal per company per signal_type — BDRs don't need 5 separate
+    'timezone_library' signals for the same company. Additional evidence is
+    captured in the first signal's description, not as separate queue items.
     """
     with db_connection() as conn:
         cursor = conn.cursor()
-        if evidence_value:
-            cursor.execute('''
-                SELECT 1 FROM intent_signals
-                WHERE account_id = ? AND signal_type = ? AND signal_source = ?
-                  AND evidence_value = ?
-                LIMIT 1
-            ''', (account_id, signal_type, signal_source, evidence_value))
-        else:
-            cursor.execute('''
-                SELECT 1 FROM intent_signals
-                WHERE account_id = ? AND signal_type = ? AND signal_source = ?
-                  AND evidence_value IS NULL
-                LIMIT 1
-            ''', (account_id, signal_type, signal_source))
+        cursor.execute('''
+            SELECT 1 FROM intent_signals
+            WHERE account_id = ? AND signal_type = ? AND status != 'archived'
+            LIMIT 1
+        ''', (account_id, signal_type))
         return cursor.fetchone() is not None
 
 
