@@ -1080,8 +1080,16 @@ function DraftReview({ workspace, toast, actionsRef }) {
     const handleApproveAll = async () => {
         setApproving(true);
         try {
-            // Collect IDs from both session drafts and server-loaded workspace drafts
-            const sessionIds = Object.values(drafts).flat().map(d => d.id).filter(Boolean);
+            // Step 1: Flush all local edits to server before approving
+            const allLocalDrafts = Object.values(drafts).flat().filter(d => d.id);
+            for (const d of allLocalDrafts) {
+                await apiFetch(`/v2/api/drafts/${d.id}`, {
+                    method: 'PUT',
+                    body: JSON.stringify({ subject: d.subject, body: d.body }),
+                });
+            }
+            // Step 2: Approve all drafts (local + workspace, deduped)
+            const sessionIds = allLocalDrafts.map(d => d.id);
             const workspaceIds = (workspace.drafts || []).map(d => d.id).filter(Boolean);
             const allDraftIds = [...new Set([...sessionIds, ...workspaceIds])];
             for (const id of allDraftIds) {

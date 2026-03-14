@@ -11,7 +11,9 @@ Rules for multi-signal accounts:
 - Each signal is independent in the queue regardless of account status
 """
 import logging
+import re
 from typing import Optional, List
+from urllib.parse import urlparse
 
 from v2.db import db_connection, insert_returning_id, row_to_dict, rows_to_dicts
 
@@ -153,17 +155,76 @@ def get_all_owners() -> List[str]:
 # Account Lookup / Dedup
 # ---------------------------------------------------------------------------
 
+_COMPANY_SUFFIXES = re.compile(
+    r'\b(inc\.?|llc\.?|ltd\.?|corp\.?|corporation|co\.?|gmbh|s\.?a\.?|b\.?v\.?|'
+    r'pty\.?\s*ltd\.?|plc\.?|ag|sa|srl|limited)\s*$',
+    re.IGNORECASE,
+)
+
+
+def _normalize_company_name(name: str) -> str:
+    """Normalize a company name for dedup comparison."""
+    name = name.strip().lower()
+    name = _COMPANY_SUFFIXES.sub('', name)
+    name = re.sub(r'[,.\-]+$', '', name)       # trailing punctuation
+    name = re.sub(r'\s+', ' ', name).strip()    # collapse whitespace
+    return name
+
+
+def _extract_domain(url: str) -> Optional[str]:
+    """Extract bare domain from a URL (strips www. prefix)."""
+    if not url:
+        return None
+    url = url.strip()
+    if not url.startswith(('http://', 'https://')):
+        url = 'https://' + url
+    domain = urlparse(url).netloc.lower().split(':')[0]
+    if domain.startswith('www.'):
+        domain = domain[4:]
+    return domain or None
+
+
 def find_account_by_name(company_name: str) -> Optional[dict]:
-    """Find account by company name (case-insensitive)."""
+    """Find account by company name (case-insensitive, suffix-normalized)."""
+    normalized = _normalize_company_name(company_name)
     with db_connection() as conn:
         cursor = conn.cursor()
+        # Try exact case-insensitive first (fast path)
         cursor.execute('''
             SELECT * FROM monitored_accounts
             WHERE LOWER(company_name) = LOWER(?)
             AND archived_at IS NULL
             LIMIT 1
         ''', (company_name,))
-        return row_to_dict(cursor.fetchone())
+        row = row_to_dict(cursor.fetchone())
+        if row:
+            return row
+
+        # Fallback: load candidates and compare normalized forms
+        cursor.execute('''
+            SELECT * FROM monitored_accounts WHERE archived_at IS NULL
+        ''')
+        for r in cursor.fetchall():
+            r = row_to_dict(r) if not isinstance(r, dict) else r
+            if _normalize_company_name(r.get('company_name', '')) == normalized:
+                return r
+    return None
+
+
+def find_account_by_domain(domain: str) -> Optional[dict]:
+    """Find account whose website matches the given domain."""
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT * FROM monitored_accounts
+            WHERE website IS NOT NULL AND archived_at IS NULL
+        ''')
+        for r in cursor.fetchall():
+            r = row_to_dict(r) if not isinstance(r, dict) else r
+            acct_domain = _extract_domain(r.get('website', ''))
+            if acct_domain and acct_domain == domain:
+                return r
+    return None
 
 
 def find_or_create_account(
@@ -174,10 +235,18 @@ def find_or_create_account(
     annual_revenue: Optional[str] = None,
     account_owner: Optional[str] = None,
 ) -> int:
-    """Find existing account by name or create a new one. Returns account_id."""
+    """Find existing account by name (normalized) or domain, or create new. Returns account_id."""
     existing = find_account_by_name(company_name)
     if existing:
         return existing['id']
+
+    # Domain fallback: if website provided, check for domain match
+    if website:
+        domain = _extract_domain(website)
+        if domain:
+            existing = find_account_by_domain(domain)
+            if existing:
+                return existing['id']
 
     with db_connection() as conn:
         cursor = conn.cursor()

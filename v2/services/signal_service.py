@@ -57,7 +57,8 @@ def get_signal(signal_id: int) -> Optional[dict]:
         cursor.execute('''
             SELECT s.*, a.company_name, a.website, a.industry,
                    a.company_size, a.annual_revenue, a.account_status,
-                   a.account_owner, a.github_org, a.linkedin_url, a.hq_location
+                   a.account_owner, a.github_org, a.linkedin_url, a.hq_location,
+                   a.current_tier, a.evidence_summary, a.employee_count, a.funding_stage
             FROM intent_signals s
             JOIN monitored_accounts a ON s.account_id = a.id
             WHERE s.id = ?
@@ -209,6 +210,34 @@ def get_signal_workspace(signal_id: int) -> Optional[dict]:
         cursor.execute("SELECT preference_key, preference_value FROM writing_preferences")
         prefs = {r['preference_key']: r['preference_value'] for r in rows_to_dicts(cursor.fetchall())}
 
+        # Scorecard from latest scan report
+        scorecard = None
+        cursor.execute('''
+            SELECT r.scan_data FROM reports r
+            JOIN monitored_accounts ma ON ma.latest_report_id = r.id
+            WHERE ma.id = ?
+        ''', (signal['account_id'],))
+        report_row = cursor.fetchone()
+        if report_row:
+            import json
+            scan_data = report_row['scan_data'] if isinstance(report_row, dict) else report_row[0]
+            if isinstance(scan_data, str):
+                try:
+                    scan_data = json.loads(scan_data)
+                except (json.JSONDecodeError, TypeError):
+                    scan_data = {}
+            scoring = scan_data.get('scoring_v2', {}) if isinstance(scan_data, dict) else {}
+            if scoring:
+                scorecard = {
+                    'maturity_level': scoring.get('org_maturity_level'),
+                    'maturity_label': scoring.get('org_maturity_label'),
+                    'intent_score': scoring.get('org_intent_score'),
+                    'readiness_index': scoring.get('readiness_index'),
+                    'confidence_percent': scoring.get('confidence_percent'),
+                    'outreach_angle': scoring.get('outreach_angle_label'),
+                    'risk_level': scoring.get('risk_level'),
+                }
+
     return {
         'signal': signal,
         'account': {
@@ -223,7 +252,12 @@ def get_signal_workspace(signal_id: int) -> Optional[dict]:
             'github_org': signal.get('github_org'),
             'linkedin_url': signal.get('linkedin_url'),
             'hq_location': signal.get('hq_location'),
+            'current_tier': signal.get('current_tier'),
+            'evidence_summary': signal.get('evidence_summary'),
+            'employee_count': signal.get('employee_count'),
+            'funding_stage': signal.get('funding_stage'),
         },
+        'scorecard': scorecard,
         'campaign': campaign,
         'personas': personas,
         'prospects': prospects,

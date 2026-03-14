@@ -421,6 +421,65 @@ def api_get_prospects():
 
 
 # ---------------------------------------------------------------------------
+# Export
+# ---------------------------------------------------------------------------
+
+@api_bp.route('/signals/export', methods=['GET'])
+def export_signals_csv():
+    """Export signals + account context as CSV.
+
+    Query params: status, owner, signal_type (same filters as list_signals)
+    """
+    import csv
+    import io
+    from flask import Response
+
+    try:
+        status = request.args.get('status')
+        owner = request.args.get('owner')
+        signal_type = request.args.get('signal_type')
+
+        result = list_signals(
+            status=status, owner=owner, signal_type=signal_type,
+            limit=10000, offset=0,
+        )
+        signals = result.get('signals', [])
+
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow([
+            'company_name', 'signal_type', 'signal_description', 'evidence_value',
+            'signal_source', 'status', 'account_status', 'account_owner',
+            'industry', 'company_size', 'current_tier', 'website', 'created_at',
+        ])
+        for s in signals:
+            writer.writerow([
+                s.get('company_name', ''),
+                s.get('signal_type', ''),
+                s.get('signal_description', ''),
+                s.get('evidence_value', ''),
+                s.get('signal_source', ''),
+                s.get('status', ''),
+                s.get('account_status', ''),
+                s.get('account_owner', ''),
+                s.get('industry', ''),
+                s.get('company_size', ''),
+                s.get('current_tier', ''),
+                s.get('website', ''),
+                s.get('created_at', ''),
+            ])
+
+        return Response(
+            output.getvalue(),
+            mimetype='text/csv',
+            headers={'Content-Disposition': 'attachment; filename=signals_export.csv'},
+        )
+    except Exception:
+        logger.exception("[V2 API] Error exporting signals CSV")
+        return _error('Internal server error', 500)
+
+
+# ---------------------------------------------------------------------------
 # Drafts — routed to v2.routes.draft blueprint at /v2/api/drafts/*
 # Enrollment — routed to v2.routes.enrollment blueprint at /v2/api/enrollment/*
 # The frontend calls those blueprints directly (no stubs needed here).

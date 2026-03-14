@@ -8,6 +8,7 @@ LLM generation uses the Replit AI proxy (GPT-5-mini via OpenAI client).
 import json
 import logging
 import os
+import re
 from datetime import datetime
 from typing import Optional, List
 
@@ -185,23 +186,49 @@ SIGNAL:
 Keep the email under 120 words. Be specific. Reference their signal. No fluff."""
 
 
+_PREAMBLE_RE = re.compile(
+    r'^(sure|of course|certainly|okay|ok|absolutely|no problem)[,!.:\s]',
+    re.IGNORECASE,
+)
+
+
 def _parse_llm_output(text: str) -> dict:
-    """Parse LLM output in SUBJECT: ... BODY: ... format."""
+    """Parse LLM output in SUBJECT: ... BODY: ... format.
+
+    Handles chatty preambles, markdown code fences, and case variations.
+    """
+    # Strip markdown code fences
+    text = re.sub(r'```[\w]*\n?', '', text).strip()
+
     subject = ''
     body = ''
-    if 'SUBJECT:' in text and 'BODY:' in text:
-        parts = text.split('BODY:', 1)
-        subject_part = parts[0]
-        body = parts[1].strip() if len(parts) > 1 else ''
-        # Extract subject line
-        subject_lines = subject_part.split('SUBJECT:', 1)
-        if len(subject_lines) > 1:
-            subject = subject_lines[1].strip().split('\n')[0].strip()
+
+    # Try regex extraction (handles preamble before SUBJECT:)
+    subject_match = re.search(r'SUBJECT:\s*(.+?)(?:\n|$)', text, re.IGNORECASE)
+    body_match = re.search(r'BODY:\s*(.*)', text, re.IGNORECASE | re.DOTALL)
+
+    if subject_match and body_match:
+        subject = subject_match.group(1).strip()
+        body = body_match.group(1).strip()
+    elif subject_match:
+        # SUBJECT found but no BODY marker — everything after subject line is body
+        subject = subject_match.group(1).strip()
+        after = text[subject_match.end():].strip()
+        body = after
     else:
-        # Fallback: treat first line as subject, rest as body
-        lines = text.strip().split('\n', 1)
-        subject = lines[0].strip()
-        body = lines[1].strip() if len(lines) > 1 else ''
+        # Fallback: skip preamble lines, first real line = subject
+        lines = text.strip().split('\n')
+        start = 0
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if not stripped or _PREAMBLE_RE.match(stripped):
+                start = i + 1
+                continue
+            break
+        remaining = lines[start:]
+        if remaining:
+            subject = remaining[0].strip()
+            body = '\n'.join(remaining[1:]).strip() if len(remaining) > 1 else ''
 
     return {'subject': subject, 'body': body}
 
