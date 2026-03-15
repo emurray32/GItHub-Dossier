@@ -324,6 +324,7 @@ function KeyboardHelp({ onClose }) {
 
     const sections = [
         { title: 'Navigation', keys: [
+            { key: '1-9', desc: 'Jump to signal #N from table' },
             { key: '\u2191 / \u2193', desc: 'Navigate signals in queue' },
             { key: 'j / k', desc: 'Navigate prospects in workspace' },
             { key: 'Enter', desc: 'Select signal / confirm action' },
@@ -2729,10 +2730,20 @@ function App() {
                 e.preventDefault();
                 const action = workspaceActionsRef.current.prevProspect;
                 if (action) action();
-            } else if ((key === '1' || key === '2' || key === '3') && activeSignalId && !showIntake) {
+            } else if (key >= '1' && key <= '9' && !showIntake) {
                 e.preventDefault();
-                const action = workspaceActionsRef.current.setDraftStep;
-                if (action) action(Number(key));
+                const num = Number(key);
+                if (!activeSignalId) {
+                    // On the table: jump to signal #N
+                    const idx = num - 1;
+                    if (signals[idx]) selectSignal(signals[idx].id);
+                } else {
+                    // In workspace: switch draft step tab (1/2/3)
+                    if (num <= 3) {
+                        const action = workspaceActionsRef.current.setDraftStep;
+                        if (action) action(num);
+                    }
+                }
             }
         };
         window.addEventListener('keydown', handler);
