@@ -1,6 +1,6 @@
 """
 V2 Ingestion Routes — Flask blueprint for importing signals via CSV,
-Excel, manual entry, or bulk scan-signal conversion.
+Excel, Word documents, or manual entry.
 
 Blueprint name: ingestion_bp
 URL prefix:     /v2/api/ingest
@@ -16,19 +16,19 @@ logger = logging.getLogger(__name__)
 
 ingestion_bp = Blueprint('v2_ingestion', __name__, url_prefix='/v2/api/ingest')
 
-_ALLOWED_EXTENSIONS = {'.csv', '.xlsx'}
+_ALLOWED_EXTENSIONS = {'.csv', '.xlsx', '.docx', '.txt', '.pdf'}
 
 
 # ---------------------------------------------------------------------------
-# POST /v2/api/ingest/file  — unified upload (CSV + Excel)
+# POST /v2/api/ingest/file  — unified upload (CSV + Excel + DOCX)
 # ---------------------------------------------------------------------------
 
 @ingestion_bp.route('/file', methods=['POST'])
 def ingest_file():
-    """Upload a CSV or Excel file to create intent signals in bulk.
+    """Upload a CSV, Excel, or Word file to create intent signals in bulk.
 
     Accepts multipart/form-data with:
-        file          — CSV (.csv) or Excel (.xlsx, .xls) file
+        file          — CSV (.csv), Excel (.xlsx), or Word (.docx) file
         source_label  — optional label for tracking
         created_by    — optional user identifier
     """
@@ -61,7 +61,7 @@ def ingest_file():
     if not file_content:
         return jsonify({'status': 'error', 'message': 'File is empty'}), 400
 
-    # 10 MB limit for Excel (multi-sheet can be larger than CSV)
+    # 10 MB limit
     max_size = 10 * 1024 * 1024
     if len(file_content) > max_size:
         return jsonify({'status': 'error', 'message': f'File exceeds {max_size // (1024*1024)} MB limit'}), 400
@@ -70,20 +70,19 @@ def ingest_file():
     created_by = (request.form.get('created_by') or '').strip() or None
 
     try:
-        if ext == '.csv':
-            result = ingestion_service.ingest_csv(
-                file_content=file_content,
-                source_label=source_label,
-                created_by=created_by,
-            )
-            return jsonify({'status': 'success', 'result': result}), 200
-        else:
-            result = ingestion_service.ingest_excel(
-                file_content=file_content,
-                source_label=source_label,
-                created_by=created_by,
-            )
-            return jsonify({'status': 'success', 'result': result}), 200
+        handlers = {
+            '.csv': ingestion_service.ingest_csv,
+            '.docx': ingestion_service.ingest_docx,
+            '.txt': ingestion_service.ingest_text,
+            '.pdf': ingestion_service.ingest_pdf,
+        }
+        handler = handlers.get(ext, ingestion_service.ingest_excel)
+        result = handler(
+            file_content=file_content,
+            source_label=source_label,
+            created_by=created_by,
+        )
+        return jsonify({'status': 'success', 'result': result}), 200
     except Exception as exc:
         logger.exception("[INGEST ROUTE] File ingestion failed")
         return jsonify({'status': 'error', 'message': 'Ingestion failed'}), 500
@@ -192,43 +191,3 @@ def ingest_manual():
     except Exception as exc:
         logger.exception("[INGEST ROUTE] Manual ingestion failed")
         return jsonify({'status': 'error', 'message': 'Ingestion failed'}), 500
-
-
-# ---------------------------------------------------------------------------
-# POST /v2/api/ingest/from-scans
-# ---------------------------------------------------------------------------
-
-@ingestion_bp.route('/from-scans', methods=['POST'])
-def ingest_from_scans():
-    """Bulk-convert scan signals into intent signals.
-
-    JSON body (optional):
-        tier_filter — list of ints, e.g. [1, 2]
-    """
-    data = request.get_json(silent=True) or {}
-
-    tier_filter = data.get('tier_filter')
-
-    # Validate tier_filter if provided
-    if tier_filter is not None:
-        if not isinstance(tier_filter, list):
-            return jsonify({'status': 'error', 'message': 'tier_filter must be a list of integers'}), 400
-
-        validated_tiers = []
-        for t in tier_filter:
-            try:
-                t_int = int(t)
-            except (TypeError, ValueError):
-                return jsonify({'status': 'error', 'message': f'Invalid tier value: {t}'}), 400
-            if t_int < 0 or t_int > 4:
-                return jsonify({'status': 'error', 'message': f'Tier must be 0-4, got {t_int}'}), 400
-            validated_tiers.append(t_int)
-
-        tier_filter = validated_tiers if validated_tiers else None
-
-    try:
-        result = ingestion_service.batch_import_from_scans(tier_filter=tier_filter)
-        return jsonify({'status': 'success', 'result': result}), 200
-    except Exception as exc:
-        logger.exception("[INGEST ROUTE] Scan import failed")
-        return jsonify({'status': 'error', 'message': 'Scan import failed'}), 500

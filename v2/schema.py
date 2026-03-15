@@ -245,6 +245,32 @@ def init_v2_schema(cursor, adapt_ddl, safe_add_column):
     # Seed default writing preferences if empty
     _seed_writing_preferences(cursor)
 
+    # -----------------------------------------------------------------------
+    # bdr_writing_preferences — per-BDR personal writing overrides
+    # -----------------------------------------------------------------------
+    cursor.execute(adapt_ddl('''
+        CREATE TABLE IF NOT EXISTS bdr_writing_preferences (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_email TEXT NOT NULL,
+            preference_key TEXT NOT NULL,
+            preference_value TEXT NOT NULL,
+            override_mode TEXT NOT NULL DEFAULT 'add',
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_email, preference_key, override_mode)
+        )
+    '''))
+
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_bdr_prefs_email
+        ON bdr_writing_preferences(user_email)
+    ''')
+
+    # -----------------------------------------------------------------------
+    # Smart Ingestion — BDR evaluation columns on intent_signals
+    # -----------------------------------------------------------------------
+    safe_add_column(cursor, 'intent_signals', "bdr_quality_score INTEGER")
+    safe_add_column(cursor, 'intent_signals', "bdr_positioning TEXT")
+
     logger.info("[V2] Schema initialization complete.")
 
 

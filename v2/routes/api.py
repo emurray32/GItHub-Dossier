@@ -23,6 +23,8 @@ from v2.services.prospect_service import (
 )
 from v2.services.writing_prefs_service import (
     get_writing_preferences, update_writing_preferences,
+    get_bdr_preferences, update_bdr_preference, delete_bdr_preference,
+    get_merged_preferences,
 )
 from v2.db import db_connection, rows_to_dicts, row_to_dict
 from validators import (
@@ -552,6 +554,128 @@ def api_update_writing_preferences():
         return _success(updated=list(cleaned.keys()))
     except Exception as e:
         logger.exception("[V2 API] Error updating writing preferences")
+        return _error('Internal server error', 500)
+
+
+# ---------------------------------------------------------------------------
+# BDR Writing Preferences (per-user overrides)
+# ---------------------------------------------------------------------------
+
+@api_bp.route('/bdr-writing-preferences/<email>', methods=['GET'])
+def api_get_bdr_preferences(email):
+    """Get a BDR's personal writing preferences + merged view.
+
+    Returns:
+        personal: list of raw BDR overrides
+        merged: org prefs with BDR overrides applied
+    """
+    try:
+        valid, email = validate_search_query(email)
+        if not valid:
+            return _error(email)
+
+        personal = get_bdr_preferences(email)
+        merged = get_merged_preferences(email)
+
+        return _success(
+            user_email=email,
+            personal=personal,
+            merged=merged,
+        )
+    except Exception as e:
+        logger.exception("[V2 API] Error getting BDR preferences for %s", email)
+        return _error('Internal server error', 500)
+
+
+@api_bp.route('/bdr-writing-preferences/<email>', methods=['PUT'])
+def api_update_bdr_preference(email):
+    """Create or update a BDR personal writing preference.
+
+    Body: { "key": "banned_phrases", "value": "circle back, ping", "override_mode": "add" }
+    """
+    try:
+        valid, email = validate_search_query(email)
+        if not valid:
+            return _error(email)
+
+        data = request.get_json()
+        if not data:
+            return _error('Request body is required')
+
+        key = data.get('key', '').strip()
+        value = data.get('value', '').strip()
+        override_mode = data.get('override_mode', 'add').strip()
+
+        if not key:
+            return _error('key is required')
+        if not value:
+            return _error('value is required')
+
+        valid_mode, mode = validate_scope(override_mode, ('add', 'replace', 'remove'))
+        if not valid_mode:
+            return _error(f'Invalid override_mode: {mode}')
+
+        valid_val, cleaned_value = validate_notes(value)
+        if not valid_val:
+            return _error(f'Invalid value: {cleaned_value}')
+
+        update_bdr_preference(email, key, cleaned_value, mode)
+
+        # Return the updated merged view
+        merged = get_merged_preferences(email)
+        return _success(
+            user_email=email,
+            key=key,
+            override_mode=mode,
+            merged=merged,
+        )
+    except Exception as e:
+        logger.exception("[V2 API] Error updating BDR preference for %s", email)
+        return _error('Internal server error', 500)
+
+
+@api_bp.route('/bdr-writing-preferences/<email>/<key>', methods=['DELETE'])
+def api_delete_bdr_preference(email, key):
+    """Delete a BDR personal writing preference.
+
+    Optional query param: override_mode (if omitted, deletes all modes for this key)
+    """
+    try:
+        valid, email = validate_search_query(email)
+        if not valid:
+            return _error(email)
+
+        override_mode = request.args.get('override_mode')
+        if override_mode:
+            valid_mode, mode = validate_scope(override_mode, ('add', 'replace', 'remove'))
+            if not valid_mode:
+                return _error(f'Invalid override_mode: {mode}')
+            override_mode = mode
+
+        delete_bdr_preference(email, key, override_mode)
+        return _success(user_email=email, key=key, deleted=True)
+    except Exception as e:
+        logger.exception("[V2 API] Error deleting BDR preference for %s", email)
+        return _error('Internal server error', 500)
+
+
+@api_bp.route('/bdr-writing-preferences', methods=['GET'])
+def api_list_all_bdr_preferences():
+    """List all BDRs who have personal preferences (admin view)."""
+    try:
+        with db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT DISTINCT user_email
+                FROM bdr_writing_preferences
+                ORDER BY user_email
+            ''')
+            rows = rows_to_dicts(cursor.fetchall())
+            emails = [r['user_email'] for r in rows]
+
+        return _success(bdr_emails=emails, count=len(emails))
+    except Exception as e:
+        logger.exception("[V2 API] Error listing BDR preferences")
         return _error('Internal server error', 500)
 
 

@@ -449,21 +449,26 @@ def register_v2_tools(mcp):
     # ------------------------------------------------------------------
 
     @mcp.tool()
-    def generate_draft_sequence(prospect_id: int, signal_id: int, campaign_id: int) -> str:
+    def generate_draft_sequence(prospect_id: int, signal_id: int, campaign_id: int,
+                               user_email: str = "") -> str:
         """Generate a multi-step email draft sequence for a prospect.
 
         Creates 3 drafts (initial outreach, follow-up, breakup) using the
-        signal context and campaign guidelines. Uses AI when available,
-        falls back to templates.
+        signal context, campaign guidelines, and BDR's personal writing
+        preferences. Uses AI when available, falls back to templates.
 
         Args:
             prospect_id: The prospect to generate drafts for.
             signal_id: The intent signal providing context.
             campaign_id: The campaign with writing guidelines.
+            user_email: BDR's email for personal writing preference lookup.
         """
         try:
             from v2.services.draft_service import generate_drafts
-            drafts = generate_drafts(prospect_id, signal_id, campaign_id)
+            drafts = generate_drafts(
+                prospect_id, signal_id, campaign_id,
+                user_email=user_email if user_email else None,
+            )
             return _safe_json({
                 "drafts": drafts,
                 "count": len(drafts),
@@ -1081,6 +1086,99 @@ def register_v2_tools(mcp):
             return _safe_json({"key": key, "message": f"Updated '{key}' preference"})
         except Exception as e:
             logger.exception("[MCP] update_writing_preference error")
+            return _safe_json({"error": str(e)})
+
+    # ------------------------------------------------------------------
+    # Per-BDR Writing Preferences
+    # ------------------------------------------------------------------
+
+    @mcp.tool()
+    def get_bdr_writing_preferences(user_email: str) -> str:
+        """Get a BDR's personal writing preferences.
+
+        Returns both the org-wide defaults and the BDR's personal
+        overrides, plus the final merged result.
+
+        Args:
+            user_email: The BDR's email address.
+        """
+        try:
+            from v2.services.writing_prefs_service import (
+                get_writing_preferences as _get_org,
+                get_bdr_preferences as _get_bdr,
+                get_merged_preferences as _get_merged,
+            )
+            org = _get_org()
+            bdr = _get_bdr(user_email)
+            merged = _get_merged(user_email)
+            return _safe_json({
+                "user_email": user_email,
+                "org_preferences": org,
+                "personal_overrides": bdr,
+                "merged_result": merged,
+            })
+        except Exception as e:
+            logger.exception("[MCP] get_bdr_writing_preferences error")
+            return _safe_json({"error": str(e)})
+
+    @mcp.tool()
+    def update_bdr_writing_preference(user_email: str, key: str, value: str,
+                                      override_mode: str = "add") -> str:
+        """Set a personal writing preference for a BDR.
+
+        This creates a personal override that layers on top of org-wide rules.
+        Use this when a BDR wants to customize their email style.
+
+        Args:
+            user_email: The BDR's email address.
+            key: Preference key. Common keys: 'banned_phrases', 'tone',
+                 'signoff_guidance', 'cta_guidance', 'custom_rules'.
+            value: The preference value.
+            override_mode: How to apply the override:
+                - 'add': Append to the org value (e.g., add more banned words)
+                - 'replace': Fully replace the org value for this BDR
+                - 'remove': Remove specific items from the org list (e.g., un-ban a word)
+        """
+        try:
+            from v2.services.writing_prefs_service import update_bdr_preference as _update
+            ok = _update(user_email, key, value, override_mode)
+            if not ok:
+                return _safe_json({"error": "Failed to update BDR preference"})
+            return _safe_json({
+                "user_email": user_email,
+                "key": key,
+                "override_mode": override_mode,
+                "message": f"Updated personal '{key}' preference ({override_mode})",
+            })
+        except Exception as e:
+            logger.exception("[MCP] update_bdr_writing_preference error")
+            return _safe_json({"error": str(e)})
+
+    @mcp.tool()
+    def delete_bdr_writing_preference(user_email: str, key: str,
+                                      override_mode: str = "") -> str:
+        """Remove a personal writing preference for a BDR.
+
+        Removes the BDR's override for the specified key, reverting
+        to the org-wide default for that preference.
+
+        Args:
+            user_email: The BDR's email address.
+            key: The preference key to remove.
+            override_mode: Specific mode to remove ('add', 'replace', 'remove').
+                          If empty, removes all modes for that key.
+        """
+        try:
+            from v2.services.writing_prefs_service import delete_bdr_preference as _delete
+            mode = override_mode if override_mode else None
+            ok = _delete(user_email, key, mode)
+            return _safe_json({
+                "user_email": user_email,
+                "key": key,
+                "message": f"Removed personal '{key}' preference override",
+            })
+        except Exception as e:
+            logger.exception("[MCP] delete_bdr_writing_preference error")
             return _safe_json({"error": str(e)})
 
     # ------------------------------------------------------------------

@@ -333,6 +333,7 @@ function KeyboardHelp({ onClose }) {
             { key: 'N', desc: 'Mark as noise' },
             { key: 'S', desc: 'Skip to next signal' },
             { key: 'I', desc: 'Open intake panel' },
+            { key: 'W', desc: 'Writing preferences' },
         ]},
         { title: 'Drafts & Enrollment', keys: [
             { key: '1  2  3', desc: 'Switch draft step tab' },
@@ -382,6 +383,376 @@ function KeyboardHelp({ onClose }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// WRITING PREFERENCES PANEL
+// ═══════════════════════════════════════════════════════════════════════════
+
+const ORG_PREF_LABELS = {
+    tone: { label: 'Tone', help: 'How emails should sound — peer vs. salesy, formal vs. casual' },
+    banned_phrases: { label: 'Banned Phrases', help: 'Comma-separated list of phrases to never use in emails' },
+    preferred_structure: { label: 'Email Structure', help: 'Default structure for cold emails (hook, pain, bridge, CTA)' },
+    cta_guidance: { label: 'CTA Guidance', help: 'Rules for calls-to-action — what to propose, what to avoid' },
+    signoff_guidance: { label: 'Signoff', help: 'How to close emails — name only, no "Best regards"' },
+    custom_rules: { label: 'Custom Rules', help: 'Any additional rules for email generation' },
+};
+
+const ORG_PREF_ORDER = ['tone', 'banned_phrases', 'preferred_structure', 'cta_guidance', 'signoff_guidance', 'custom_rules'];
+
+const OVERRIDE_MODES = [
+    { value: 'add', label: 'Add', desc: 'Appends to the org value' },
+    { value: 'replace', label: 'Replace', desc: 'Fully overrides the org value' },
+    { value: 'remove', label: 'Remove', desc: 'Subtracts items from org list' },
+];
+
+function WritingPrefsPanel({ onClose }) {
+    const toast = useToast();
+    const [activeSection, setActiveSection] = useState('org');
+
+    // Org-wide state
+    const [orgPrefs, setOrgPrefs] = useState({});
+    const [orgLoading, setOrgLoading] = useState(true);
+    const [orgSaving, setOrgSaving] = useState(false);
+    const [orgDirty, setOrgDirty] = useState(false);
+
+    // BDR override state
+    const [bdrEmails, setBdrEmails] = useState([]);
+    const [selectedBdr, setSelectedBdr] = useState('');
+    const [bdrPersonal, setBdrPersonal] = useState([]);
+    const [bdrMerged, setBdrMerged] = useState({});
+    const [bdrLoading, setBdrLoading] = useState(false);
+    const [newOverride, setNewOverride] = useState({ key: 'banned_phrases', value: '', override_mode: 'add' });
+    const [addingSaving, setAddingSaving] = useState(false);
+
+    // Close on Escape or W (toggle)
+    useEffect(() => {
+        const handler = (e) => {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') {
+                if (e.key === 'Escape') { e.target.blur(); e.preventDefault(); }
+                return;
+            }
+            if (e.key === 'Escape' || e.key === 'w') { e.preventDefault(); onClose(); }
+        };
+        window.addEventListener('keydown', handler);
+        return () => window.removeEventListener('keydown', handler);
+    }, [onClose]);
+
+    // Load org prefs on mount
+    useEffect(() => {
+        setOrgLoading(true);
+        apiFetch('/v2/api/writing-preferences')
+            .then(data => { setOrgPrefs(data.preferences || {}); })
+            .catch(err => toast(err.message, 'error'))
+            .finally(() => setOrgLoading(false));
+    }, []);
+
+    // Load BDR email list on mount
+    useEffect(() => {
+        apiFetch('/v2/api/bdr-writing-preferences')
+            .then(data => setBdrEmails(data.bdr_emails || []))
+            .catch(() => {});
+    }, []);
+
+    // Load BDR prefs when selected
+    useEffect(() => {
+        if (!selectedBdr) { setBdrPersonal([]); setBdrMerged({}); return; }
+        setBdrLoading(true);
+        apiFetch(`/v2/api/bdr-writing-preferences/${encodeURIComponent(selectedBdr)}`)
+            .then(data => {
+                setBdrPersonal(data.personal || []);
+                setBdrMerged(data.merged || {});
+            })
+            .catch(err => toast(err.message, 'error'))
+            .finally(() => setBdrLoading(false));
+    }, [selectedBdr]);
+
+    // Save org prefs
+    const saveOrgPrefs = async () => {
+        setOrgSaving(true);
+        try {
+            await apiFetch('/v2/api/writing-preferences', {
+                method: 'PUT',
+                body: JSON.stringify(orgPrefs),
+            });
+            toast('Writing preferences saved');
+            setOrgDirty(false);
+        } catch (err) {
+            toast(err.message, 'error');
+        } finally {
+            setOrgSaving(false);
+        }
+    };
+
+    // Add BDR override
+    const addBdrOverride = async () => {
+        if (!selectedBdr || !newOverride.key || !newOverride.value.trim()) {
+            toast('Key and value are required', 'error');
+            return;
+        }
+        setAddingSaving(true);
+        try {
+            const data = await apiFetch(`/v2/api/bdr-writing-preferences/${encodeURIComponent(selectedBdr)}`, {
+                method: 'PUT',
+                body: JSON.stringify(newOverride),
+            });
+            setBdrMerged(data.merged || {});
+            setNewOverride(prev => ({ ...prev, value: '' }));
+            toast('Override saved');
+            // Reload personal list
+            const reloaded = await apiFetch(`/v2/api/bdr-writing-preferences/${encodeURIComponent(selectedBdr)}`);
+            setBdrPersonal(reloaded.personal || []);
+            // Add email to list if new
+            if (!bdrEmails.includes(selectedBdr)) setBdrEmails(prev => [...prev, selectedBdr].sort());
+        } catch (err) {
+            toast(err.message, 'error');
+        } finally {
+            setAddingSaving(false);
+        }
+    };
+
+    // Delete BDR override
+    const deleteBdrOverride = async (key, mode) => {
+        try {
+            await apiFetch(`/v2/api/bdr-writing-preferences/${encodeURIComponent(selectedBdr)}/${encodeURIComponent(key)}?override_mode=${mode}`, {
+                method: 'DELETE',
+            });
+            toast('Override removed');
+            const reloaded = await apiFetch(`/v2/api/bdr-writing-preferences/${encodeURIComponent(selectedBdr)}`);
+            setBdrPersonal(reloaded.personal || []);
+            setBdrMerged(reloaded.merged || {});
+        } catch (err) {
+            toast(err.message, 'error');
+        }
+    };
+
+    const sections = [
+        { key: 'org', label: 'Org-Wide', icon: 'building' },
+        { key: 'bdr', label: 'BDR Overrides', icon: 'user' },
+    ];
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-stretch bg-black/40 backdrop-blur-sm" onClick={onClose}>
+            <div className="ml-auto w-full max-w-2xl bg-white shadow-2xl flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+                {/* Header */}
+                <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between flex-shrink-0">
+                    <div className="flex items-center gap-2">
+                        <Icon name="pen-tool" size={18} className="text-brand-600" />
+                        <h2 className="text-base font-semibold text-slate-900">Writing Preferences</h2>
+                    </div>
+                    <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors">
+                        <Icon name="x" size={18} />
+                    </button>
+                </div>
+
+                {/* Section tabs */}
+                <div className="px-6 pt-3 flex gap-1 bg-slate-50 border-b border-slate-200 flex-shrink-0">
+                    {sections.map(s => (
+                        <button key={s.key}
+                            onClick={() => setActiveSection(s.key)}
+                            className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-t-md transition-all border-b-2
+                                ${activeSection === s.key
+                                    ? 'bg-white text-brand-700 border-brand-500 shadow-sm'
+                                    : 'text-slate-500 hover:text-slate-700 border-transparent'}`}>
+                            <Icon name={s.icon} size={14} />
+                            {s.label}
+                        </button>
+                    ))}
+                </div>
+
+                {/* Body */}
+                <div className="flex-1 overflow-y-auto v2-scrollbar">
+                    {activeSection === 'org' && (
+                        <div className="p-6 space-y-5">
+                            <p className="text-xs text-slate-500">
+                                These preferences apply to all BDRs globally. They guide AI-generated email drafts.
+                            </p>
+                            {orgLoading ? (
+                                <div className="flex items-center justify-center py-12">
+                                    <Icon name="loader" size={20} className="text-slate-400 animate-spin" />
+                                </div>
+                            ) : (
+                                <>
+                                    {ORG_PREF_ORDER.map(key => {
+                                        const meta = ORG_PREF_LABELS[key] || { label: key, help: '' };
+                                        return (
+                                            <div key={key}>
+                                                <label className="block text-xs font-semibold text-slate-700 mb-1">{meta.label}</label>
+                                                {meta.help && <p className="text-[11px] text-slate-400 mb-1.5">{meta.help}</p>}
+                                                <textarea
+                                                    value={orgPrefs[key] || ''}
+                                                    onChange={e => { setOrgPrefs(prev => ({ ...prev, [key]: e.target.value })); setOrgDirty(true); }}
+                                                    rows={key === 'banned_phrases' ? 2 : 3}
+                                                    className="w-full border border-slate-200 rounded-md px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent resize-none" />
+                                            </div>
+                                        );
+                                    })}
+                                    <div className="flex items-center gap-3 pt-2">
+                                        <button onClick={saveOrgPrefs}
+                                            disabled={orgSaving || !orgDirty}
+                                            className="px-4 py-2 bg-brand-600 text-white text-sm font-medium rounded-lg hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-2">
+                                            {orgSaving ? <Icon name="loader" size={14} className="animate-spin" /> : <Icon name="save" size={14} />}
+                                            Save Preferences
+                                        </button>
+                                        {orgDirty && <span className="text-xs text-amber-600">Unsaved changes</span>}
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    )}
+
+                    {activeSection === 'bdr' && (
+                        <div className="p-6 space-y-5">
+                            <p className="text-xs text-slate-500">
+                                Per-BDR overrides let individual reps customize their writing rules on top of org defaults.
+                            </p>
+
+                            {/* BDR selector */}
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-700 mb-1">Select BDR</label>
+                                <div className="flex gap-2">
+                                    {bdrEmails.length > 0 ? (
+                                        <select value={selectedBdr}
+                                            onChange={e => setSelectedBdr(e.target.value)}
+                                            className="flex-1 border border-slate-200 rounded-md px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white">
+                                            <option value="">Choose a BDR...</option>
+                                            {bdrEmails.map(em => <option key={em} value={em}>{em}</option>)}
+                                        </select>
+                                    ) : (
+                                        <input type="email" placeholder="Enter BDR email address..."
+                                            value={selectedBdr}
+                                            onChange={e => setSelectedBdr(e.target.value)}
+                                            className="flex-1 border border-slate-200 rounded-md px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+                                    )}
+                                    {bdrEmails.length > 0 && (
+                                        <input type="email" placeholder="Or type new email..."
+                                            onKeyDown={e => { if (e.key === 'Enter' && e.target.value.trim()) { setSelectedBdr(e.target.value.trim()); e.target.value = ''; } }}
+                                            className="w-48 border border-slate-200 rounded-md px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+                                    )}
+                                </div>
+                            </div>
+
+                            {selectedBdr && bdrLoading && (
+                                <div className="flex items-center justify-center py-8">
+                                    <Icon name="loader" size={20} className="text-slate-400 animate-spin" />
+                                </div>
+                            )}
+
+                            {selectedBdr && !bdrLoading && (
+                                <>
+                                    {/* Existing personal overrides */}
+                                    {bdrPersonal.length > 0 && (
+                                        <div>
+                                            <h4 className="text-xs font-semibold text-slate-700 mb-2">Active Overrides</h4>
+                                            <div className="space-y-2">
+                                                {bdrPersonal.map((p, i) => (
+                                                    <div key={i} className="flex items-start gap-2 bg-slate-50 rounded-md px-3 py-2 border border-slate-100">
+                                                        <div className="flex-1 min-w-0">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-xs font-semibold text-slate-700">
+                                                                    {(ORG_PREF_LABELS[p.preference_key] || {}).label || p.preference_key}
+                                                                </span>
+                                                                <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded
+                                                                    ${p.override_mode === 'add' ? 'bg-green-100 text-green-700'
+                                                                    : p.override_mode === 'replace' ? 'bg-blue-100 text-blue-700'
+                                                                    : 'bg-red-100 text-red-700'}`}>
+                                                                    {p.override_mode}
+                                                                </span>
+                                                            </div>
+                                                            <p className="text-xs text-slate-500 mt-0.5 break-words">{p.preference_value}</p>
+                                                        </div>
+                                                        <button onClick={() => deleteBdrOverride(p.preference_key, p.override_mode)}
+                                                            className="text-slate-400 hover:text-red-500 transition-colors flex-shrink-0 mt-0.5"
+                                                            title="Remove override">
+                                                            <Icon name="trash-2" size={13} />
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Add new override */}
+                                    <div className="border border-slate-200 rounded-lg p-4">
+                                        <h4 className="text-xs font-semibold text-slate-700 mb-3">Add Override</h4>
+                                        <div className="grid grid-cols-2 gap-3 mb-3">
+                                            <div>
+                                                <label className="block text-[11px] text-slate-500 mb-1">Preference</label>
+                                                <select value={newOverride.key}
+                                                    onChange={e => setNewOverride(prev => ({ ...prev, key: e.target.value }))}
+                                                    className="w-full border border-slate-200 rounded-md px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white">
+                                                    {ORG_PREF_ORDER.map(k => (
+                                                        <option key={k} value={k}>{(ORG_PREF_LABELS[k] || {}).label || k}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <label className="block text-[11px] text-slate-500 mb-1">Mode</label>
+                                                <select value={newOverride.override_mode}
+                                                    onChange={e => setNewOverride(prev => ({ ...prev, override_mode: e.target.value }))}
+                                                    className="w-full border border-slate-200 rounded-md px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white">
+                                                    {OVERRIDE_MODES.map(m => (
+                                                        <option key={m.value} value={m.value}>{m.label} — {m.desc}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <div className="mb-3">
+                                            <label className="block text-[11px] text-slate-500 mb-1">Value</label>
+                                            <textarea value={newOverride.value}
+                                                onChange={e => setNewOverride(prev => ({ ...prev, value: e.target.value }))}
+                                                rows={2}
+                                                placeholder={newOverride.override_mode === 'add' ? 'Items to add (comma-separated for lists)...'
+                                                    : newOverride.override_mode === 'remove' ? 'Items to remove from org list...'
+                                                    : 'Full replacement value...'}
+                                                className="w-full border border-slate-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none" />
+                                        </div>
+                                        <button onClick={addBdrOverride}
+                                            disabled={addingSaving || !newOverride.value.trim()}
+                                            className="px-3 py-1.5 bg-brand-600 text-white text-xs font-medium rounded-md hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-1.5">
+                                            {addingSaving ? <Icon name="loader" size={12} className="animate-spin" /> : <Icon name="plus" size={12} />}
+                                            Save Override
+                                        </button>
+                                    </div>
+
+                                    {/* Merged view */}
+                                    {Object.keys(bdrMerged).length > 0 && (
+                                        <div>
+                                            <h4 className="text-xs font-semibold text-slate-700 mb-2">
+                                                Merged View <span className="font-normal text-slate-400">(what this BDR will see)</span>
+                                            </h4>
+                                            <div className="space-y-2">
+                                                {ORG_PREF_ORDER.map(key => {
+                                                    if (!bdrMerged[key]) return null;
+                                                    const meta = ORG_PREF_LABELS[key] || { label: key };
+                                                    const isOverridden = bdrPersonal.some(p => p.preference_key === key);
+                                                    return (
+                                                        <div key={key} className={`rounded-md px-3 py-2 border ${isOverridden ? 'bg-brand-50 border-brand-100' : 'bg-slate-50 border-slate-100'}`}>
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-xs font-semibold text-slate-700">{meta.label}</span>
+                                                                {isOverridden && <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-brand-100 text-brand-700">customized</span>}
+                                                            </div>
+                                                            <p className="text-xs text-slate-500 mt-1 whitespace-pre-wrap break-words">{bdrMerged[key]}</p>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
+                                </>
+                            )}
+                        </div>
+                    )}
+                </div>
+
+                {/* Footer */}
+                <div className="px-6 py-3 bg-slate-50 border-t border-slate-100 text-center flex-shrink-0">
+                    <span className="text-xs text-slate-400">Press <Kbd>W</Kbd> or <Kbd>Esc</Kbd> to close</span>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════
 // BADGE COMPONENTS
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -393,6 +764,18 @@ function SignalTypeBadge({ type, size = 'sm' }) {
         <span className={`v2-badge ${colors.bg} ${colors.text} ${cls}`}>
             {label}
         </span>
+    );
+}
+
+function QualityDots({ score }) {
+    if (!score) return <span className="text-xs text-slate-300">--</span>;
+    const colors = ['', 'bg-red-400', 'bg-orange-400', 'bg-yellow-400', 'bg-green-400', 'bg-emerald-500'];
+    return (
+        <div className="flex items-center gap-0.5" title={`BDR quality: ${score}/5`}>
+            {[1,2,3,4,5].map(i => (
+                <span key={i} className={`w-1.5 h-1.5 rounded-full ${i <= score ? colors[score] : 'bg-slate-200'}`} />
+            ))}
+        </div>
     );
 }
 
@@ -453,6 +836,7 @@ function SignalTable({ signals, loading, activeIndex, onSelect, searchTerm }) {
                         <th className="text-left px-3 py-2 font-medium">Description</th>
                         <th className="text-left px-3 py-2 font-medium w-20">Owner</th>
                         <th className="text-left px-3 py-2 font-medium w-14">Age</th>
+                        <th className="text-left px-3 py-2 font-medium w-10">Score</th>
                         <th className="text-left px-3 py-2 font-medium w-20">Status</th>
                     </tr>
                 </thead>
@@ -474,6 +858,7 @@ function SignalTable({ signals, loading, activeIndex, onSelect, searchTerm }) {
                             <td className="px-3 py-1 text-slate-500 truncate max-w-sm">{sig.signal_description || '--'}</td>
                             <td className="px-3 py-1 text-xs text-slate-400 truncate">{sig.account_owner || '--'}</td>
                             <td className="px-3 py-1 text-xs text-slate-400 tabular-nums">{timeAgo(sig.created_at)}</td>
+                            <td className="px-3 py-1"><QualityDots score={sig.bdr_quality_score} /></td>
                             <td className="px-3 py-1">
                                 <StatusBadge status={sig.account_status || sig.status} size="sm" />
                             </td>
@@ -485,7 +870,7 @@ function SignalTable({ signals, loading, activeIndex, onSelect, searchTerm }) {
     );
 }
 
-function TopBar({ statusFilter, onStatusFilter, counts, searchTerm, onSearchChange, ownerFilter, onOwnerFilter, owners, total, onAddSignals, onShowHelp, onBack, showBack }) {
+function TopBar({ statusFilter, onStatusFilter, counts, searchTerm, onSearchChange, ownerFilter, onOwnerFilter, owners, total, onAddSignals, onShowHelp, onShowWritingPrefs, onBack, showBack }) {
     return (
         <div className="bg-white border-b border-slate-200 px-4 py-2 flex items-center gap-3 flex-shrink-0">
             {showBack ? (
@@ -553,6 +938,9 @@ function TopBar({ statusFilter, onStatusFilter, counts, searchTerm, onSearchChan
                 )}
                 <a href="/campaigns" className="px-2.5 py-1.5 text-xs text-slate-500 border border-slate-200 rounded-md hover:bg-slate-50 transition-all">Campaigns</a>
                 <a href="/mapping-sequences" className="px-2.5 py-1.5 text-xs text-slate-500 border border-slate-200 rounded-md hover:bg-slate-50 transition-all">Sequences</a>
+                <button onClick={onShowWritingPrefs} className="w-7 h-7 flex items-center justify-center text-slate-400 hover:text-slate-600 rounded-md hover:bg-slate-50 transition-all" title="Writing Preferences (W)">
+                    <Icon name="settings" size={14} />
+                </button>
                 <button onClick={onShowHelp} className="w-7 h-7 flex items-center justify-center text-slate-400 hover:text-slate-600 rounded-md hover:bg-slate-50 transition-all" title="Keyboard shortcuts (?)">
                     <Kbd>?</Kbd>
                 </button>
@@ -615,6 +1003,22 @@ function SignalContext({ workspace }) {
                     </span>
                 </div>
                 <p className="text-sm text-slate-700 leading-relaxed">{signal.signal_description}</p>
+
+                {/* BDR positioning angle from smart ingestion */}
+                {signal.bdr_positioning && (
+                    <div className="mt-3 flex items-start gap-2 bg-brand-50 border border-brand-100 rounded-md px-3 py-2">
+                        <Icon name="target" size={14} className="text-brand-500 mt-0.5 flex-shrink-0" />
+                        <div>
+                            <span className="text-xs font-medium text-brand-700">Outreach angle</span>
+                            <p className="text-xs text-brand-600 mt-0.5">{signal.bdr_positioning}</p>
+                        </div>
+                        {signal.bdr_quality_score && (
+                            <div className="ml-auto flex-shrink-0">
+                                <QualityDots score={signal.bdr_quality_score} />
+                            </div>
+                        )}
+                    </div>
+                )}
             </div>
 
             {/* Evidence collapsible */}
@@ -1658,9 +2062,7 @@ function Enrollment({ workspace, onNextSignal, toast, actionsRef }) {
 
 function IntakePanel({ onSignalsAdded }) {
     const toast = useToast();
-    const [activeTab, setActiveTab] = useState('scans');
-    const [importing, setImporting] = useState(false);
-    const [scanResult, setScanResult] = useState(null);
+    const [activeTab, setActiveTab] = useState('csv');
 
     // CSV state
     const [csvFile, setCsvFile] = useState(null);
@@ -1693,31 +2095,7 @@ function IntakePanel({ onSignalsAdded }) {
         return () => clearTimeout(timer);
     }, [accountSearch, searchAccounts]);
 
-    // Import from scans
-    const handleImportScans = async (tierFilter) => {
-        setImporting(true);
-        setScanResult(null);
-        try {
-            const body = tierFilter ? { tier_filter: tierFilter } : {};
-            const data = await apiFetch('/v2/api/ingest/from-scans', {
-                method: 'POST',
-                body: JSON.stringify(body),
-            });
-            setScanResult(data.result);
-            if (data.result.signals_created > 0) {
-                toast(`Imported ${data.result.signals_created} signals from ${data.result.accounts_processed} accounts`);
-                onSignalsAdded();
-            } else {
-                toast('No new signals found in scan data', 'info');
-            }
-        } catch (err) {
-            toast(err.message, 'error');
-        } finally {
-            setImporting(false);
-        }
-    };
-
-    // File upload (CSV or Excel)
+    // File upload (CSV, Excel, or DOCX)
     const handleFileUpload = async () => {
         if (!csvFile) return;
         setCsvUploading(true);
@@ -1732,15 +2110,20 @@ function IntakePanel({ onSignalsAdded }) {
             const data = await resp.json();
             if (!resp.ok || data.status === 'error') throw new Error(data.message || 'Upload failed');
             setCsvResult(data.result);
-            // Handle Excel (multi-sheet) vs CSV (flat) result shapes
+            // Handle Excel (multi-sheet) vs CSV/DOCX (flat) result shapes
             const created = data.result.totals
                 ? data.result.totals.signals_created
                 : data.result.signals_created;
             const sheetsInfo = data.result.sheets_processed
                 ? ` across ${data.result.sheets_processed} sheet${data.result.sheets_processed > 1 ? 's' : ''}`
                 : '';
+            const enrichment = data.result.enrichment || (data.result.sheets?.[0]?.enrichment);
+            const enrichParts = [];
+            if (enrichment?.accounts_enriched) enrichParts.push(`${enrichment.accounts_enriched} enriched via Apollo`);
+            if (enrichment?.signals_evaluated) enrichParts.push(`${enrichment.signals_evaluated} scored`);
+            const enrichInfo = enrichParts.length ? ` (${enrichParts.join(', ')})` : '';
             if (created > 0) {
-                toast(`Created ${created} signals${sheetsInfo}`);
+                toast(`Created ${created} signals${sheetsInfo}${enrichInfo}`);
                 onSignalsAdded();
             } else {
                 toast('No signals created — check results below', 'info');
@@ -1782,7 +2165,6 @@ function IntakePanel({ onSignalsAdded }) {
     };
 
     const tabs = [
-        { key: 'scans', label: 'Import from Scans', icon: 'database' },
         { key: 'csv', label: 'Upload File', icon: 'upload' },
         { key: 'manual', label: 'Add Manually', icon: 'edit' },
     ];
@@ -1796,7 +2178,7 @@ function IntakePanel({ onSignalsAdded }) {
                     </div>
                     <h2 className="text-2xl font-semibold text-slate-900 mb-2">Get Started</h2>
                     <p className="text-sm text-slate-500 max-w-md mx-auto">
-                        Your signal queue is empty. Import signals from your existing scan data, upload a CSV, or add one manually.
+                        Your signal queue is empty. Upload a spreadsheet or document to get started, or add a signal manually.
                     </p>
                 </div>
 
@@ -1813,73 +2195,35 @@ function IntakePanel({ onSignalsAdded }) {
                     ))}
                 </div>
 
-                {/* Import from Scans */}
-                {activeTab === 'scans' && (
-                    <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
-                        <h3 className="text-base font-semibold text-slate-900 mb-2">Import from Scan Data</h3>
-                        <p className="text-sm text-slate-500 mb-5">
-                            Convert existing GitHub scan signals into your intent signal queue. Each scan finding becomes a workable signal.
-                        </p>
-                        <div className="space-y-3">
-                            <button onClick={() => handleImportScans([1, 2])}
-                                disabled={importing}
-                                className="w-full flex items-center justify-between px-4 py-3 bg-brand-600 text-white rounded-lg hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all">
-                                <div className="text-left">
-                                    <span className="text-sm font-medium">Import Top-Tier Accounts (Tier 1-2)</span>
-                                    <p className="text-xs text-brand-200 mt-0.5">Recommended — highest-intent signals first</p>
-                                </div>
-                                {importing ? <Icon name="loader" size={18} /> : <Icon name="arrow-right" size={18} />}
-                            </button>
-                            <button onClick={() => handleImportScans(null)}
-                                disabled={importing}
-                                className="w-full flex items-center justify-between px-4 py-3 border border-slate-200 text-slate-700 rounded-lg hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all">
-                                <div className="text-left">
-                                    <span className="text-sm font-medium">Import All Accounts</span>
-                                    <p className="text-xs text-slate-400 mt-0.5">All tiers — may create many signals</p>
-                                </div>
-                                {importing ? <Icon name="loader" size={18} /> : <Icon name="arrow-right" size={18} />}
-                            </button>
-                        </div>
-                        {scanResult && (
-                            <div className="mt-4 bg-green-50 border border-green-200 rounded-lg p-4">
-                                <p className="text-sm font-medium text-green-800">
-                                    {scanResult.signals_created} signals created from {scanResult.accounts_processed} accounts
-                                </p>
-                            </div>
-                        )}
-                    </div>
-                )}
-
-                {/* CSV Upload */}
+                {/* File Upload */}
                 {activeTab === 'csv' && (
                     <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
-                        <h3 className="text-base font-semibold text-slate-900 mb-2">Upload Spreadsheet</h3>
+                        <h3 className="text-base font-semibold text-slate-900 mb-2">Upload Signals</h3>
                         <p className="text-sm text-slate-500 mb-2">
-                            Upload an Excel (.xlsx) or CSV file. Columns are auto-detected — just make sure there's a <code className="text-xs bg-slate-100 px-1.5 py-0.5 rounded">Company</code> column.
+                            Upload an Excel, CSV, or Word document. Structured files auto-detect columns. Unstructured documents are parsed by AI.
                         </p>
                         <p className="text-xs text-slate-400 mb-4">
-                            Recognized columns: Company, Signal Detail/Description, Domain/Website, Signal Type, Source URL, Industry, Size, Score, Outreach Angle, Owner, Notes.
-                            Multi-sheet Excel files are processed automatically.
+                            After import, new accounts are enriched via Apollo (industry, size, revenue) and each signal is scored for outreach potential (1-5).
                         </p>
                         <div
                             onClick={() => fileInputRef.current?.click()}
                             onDragOver={e => { e.preventDefault(); e.currentTarget.classList.add('border-brand-400', 'bg-brand-50'); }}
                             onDragLeave={e => { e.currentTarget.classList.remove('border-brand-400', 'bg-brand-50'); }}
-                            onDrop={e => { e.preventDefault(); e.currentTarget.classList.remove('border-brand-400', 'bg-brand-50'); const f = e.dataTransfer.files[0]; if (f && /\.(csv|xlsx|xls)$/i.test(f.name)) setCsvFile(f); else toast('Please drop a .csv, .xlsx, or .xls file', 'error'); }}
+                            onDrop={e => { e.preventDefault(); e.currentTarget.classList.remove('border-brand-400', 'bg-brand-50'); const f = e.dataTransfer.files[0]; if (f && /\.(csv|xlsx|xls|docx|txt|pdf)$/i.test(f.name)) setCsvFile(f); else toast('Please drop a .csv, .xlsx, .docx, .txt, or .pdf file', 'error'); }}
                             className="border-2 border-dashed border-slate-200 rounded-lg p-8 text-center cursor-pointer hover:border-brand-400 hover:bg-brand-50/50 transition-all">
                             <Icon name="upload" size={32} className="text-slate-400 mx-auto mb-3" />
                             {csvFile ? (
                                 <div>
                                     <p className="text-sm font-medium text-slate-700">{csvFile.name}</p>
-                                    <p className="text-xs text-slate-400 mt-1">{(csvFile.size / 1024).toFixed(1)} KB — {csvFile.name.endsWith('.csv') ? 'CSV' : 'Excel'}</p>
+                                    <p className="text-xs text-slate-400 mt-1">{(csvFile.size / 1024).toFixed(1)} KB — {csvFile.name.endsWith('.csv') ? 'CSV' : csvFile.name.endsWith('.docx') ? 'Word Document' : csvFile.name.endsWith('.txt') ? 'Text File' : csvFile.name.endsWith('.pdf') ? 'PDF Document' : 'Excel'}</p>
                                 </div>
                             ) : (
                                 <div>
-                                    <p className="text-sm text-slate-600 font-medium">Drop a spreadsheet here or click to browse</p>
-                                    <p className="text-xs text-slate-400 mt-1">.xlsx, .xls, or .csv — max 10 MB</p>
+                                    <p className="text-sm text-slate-600 font-medium">Drop a file here or click to browse</p>
+                                    <p className="text-xs text-slate-400 mt-1">.xlsx, .csv, .docx, .txt, .pdf — max 10 MB</p>
                                 </div>
                             )}
-                            <input ref={fileInputRef} type="file" accept=".csv,.xlsx,.xls" className="hidden"
+                            <input ref={fileInputRef} type="file" accept=".csv,.xlsx,.xls,.docx,.txt,.pdf" className="hidden"
                                 onChange={e => setCsvFile(e.target.files?.[0] || null)} />
                         </div>
                         {csvFile && (
@@ -1900,6 +2244,15 @@ function IntakePanel({ onSignalsAdded }) {
                                         {created} signals created, {totals.accounts_created || 0} new accounts, {totals.accounts_matched || 0} matched
                                         {totals.skipped > 0 && <span className="text-slate-500"> ({totals.skipped} empty rows skipped)</span>}
                                     </p>
+                                    {(() => {
+                                        const enrich = csvResult.enrichment || (sheets.length > 0 && sheets[0].enrichment);
+                                        if (!enrich) return null;
+                                        const parts = [];
+                                        if (enrich.accounts_enriched > 0) parts.push(`${enrich.accounts_enriched} accounts enriched via Apollo`);
+                                        if (enrich.signals_evaluated > 0) parts.push(`${enrich.signals_evaluated} signals scored`);
+                                        if (!parts.length) return null;
+                                        return <p className="text-xs text-green-600 mt-1">{parts.join(' · ')}</p>;
+                                    })()}
                                     {sheets.length > 1 && (
                                         <div className="mt-2 space-y-1">
                                             {sheets.map((s, i) => (
@@ -2157,6 +2510,7 @@ function App() {
     const [activeIndex, setActiveIndex] = useState(-1);
     const [showIntake, setShowIntake] = useState(false);
     const [showHelp, setShowHelp] = useState(false);
+    const [showWritingPrefs, setShowWritingPrefs] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
 
     // Ref for workspace child components to register their keyboard-triggered actions
@@ -2294,8 +2648,8 @@ function App() {
                 return;
             }
 
-            // Skip shortcuts when help modal is open
-            if (showHelp) return;
+            // Skip shortcuts when help or writing prefs modal is open
+            if (showHelp || showWritingPrefs) return;
 
             const key = e.key;
 
@@ -2338,10 +2692,13 @@ function App() {
                 if (action) action();
             }
 
-            // --- Intake ---
+            // --- Panels ---
             else if (key === 'i') {
                 e.preventDefault();
                 setShowIntake(prev => !prev);
+            } else if (key === 'w') {
+                e.preventDefault();
+                setShowWritingPrefs(prev => !prev);
             }
 
             // --- Workflow shortcuts (delegated to workspace child components) ---
@@ -2380,7 +2737,7 @@ function App() {
         };
         window.addEventListener('keydown', handler);
         return () => window.removeEventListener('keydown', handler);
-    }, [activeIndex, signals, selectSignal, activeSignalId, showIntake, showHelp, markNoise, skipSignal]);
+    }, [activeIndex, signals, selectSignal, activeSignalId, showIntake, showHelp, showWritingPrefs, markNoise, skipSignal]);
 
     const goBackToTable = useCallback(() => {
         setActiveSignalId(null);
@@ -2402,6 +2759,7 @@ function App() {
                 total={total}
                 onAddSignals={() => { setActiveSignalId(null); setActiveIndex(-1); setShowIntake(true); }}
                 onShowHelp={() => setShowHelp(true)}
+                onShowWritingPrefs={() => setShowWritingPrefs(true)}
                 onBack={goBackToTable}
                 showBack={!!activeSignalId}
             />
@@ -2429,6 +2787,7 @@ function App() {
                 />
             )}
             {showHelp && <KeyboardHelp onClose={() => setShowHelp(false)} />}
+            {showWritingPrefs && <WritingPrefsPanel onClose={() => setShowWritingPrefs(false)} />}
         </div>
     );
 }
