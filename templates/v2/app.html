@@ -199,6 +199,14 @@ function Icon({ name, size = 16, className = '' }) {
     return <span className={`inline-flex items-center ${className}`}>{svgMap[name] || null}</span>;
 }
 
+function Kbd({ children }) {
+    return (
+        <kbd className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 text-[10px] font-mono font-semibold bg-slate-100 text-slate-500 border border-slate-300 rounded shadow-sm">
+            {children}
+        </kbd>
+    );
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // TOAST SYSTEM
 // ═══════════════════════════════════════════════════════════════════════════
@@ -315,17 +323,19 @@ function KeyboardHelp({ onClose }) {
     }, [onClose]);
 
     const sections = [
-        { title: 'Queue Navigation', keys: [
-            { key: '\u2191 / \u2193', desc: 'Navigate signals' },
-            { key: 'Enter', desc: 'Select signal' },
-            { key: 'Esc', desc: 'Deselect / close' },
+        { title: 'Navigation', keys: [
+            { key: '\u2191 / \u2193', desc: 'Navigate signals in queue' },
+            { key: 'j / k', desc: 'Navigate prospects in workspace' },
+            { key: 'Enter', desc: 'Select signal / confirm action' },
+            { key: 'Esc', desc: 'Close modal / blur input / deselect' },
         ]},
         { title: 'Signal Actions', keys: [
             { key: 'N', desc: 'Mark as noise' },
             { key: 'S', desc: 'Skip to next signal' },
             { key: 'I', desc: 'Open intake panel' },
         ]},
-        { title: 'Workflow', keys: [
+        { title: 'Drafts & Enrollment', keys: [
+            { key: '1  2  3', desc: 'Switch draft step tab' },
             { key: 'F', desc: 'Search Apollo for contacts' },
             { key: 'G', desc: 'Generate drafts' },
             { key: 'A', desc: 'Approve all drafts' },
@@ -966,7 +976,7 @@ function PersonaSearch({ workspace, onProspectsSaved, toast, actionsRef }) {
                                                         <span className="text-green-500" title="Verified"><Icon name="check" size={12} /></span>
                                                     )}
                                                     {alreadyEnrolled && (
-                                                        <span className="text-[0.625rem] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded ml-1">Already saved</span>
+                                                        <span className="text-[0.625rem] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded ml-1">Already enrolled</span>
                                                     )}
                                                 </div>
                                             </td>
@@ -990,7 +1000,7 @@ function PersonaSearch({ workspace, onProspectsSaved, toast, actionsRef }) {
                             disabled={savingProspects}
                             className="mt-3 w-full px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-md hover:bg-green-700 disabled:opacity-40 transition-all duration-150 flex items-center justify-center gap-2">
                             {savingProspects ? <Icon name="loader" size={16} /> : <Icon name="check" size={16} />}
-                            {savingProspects ? 'Saving...' : `Save ${selected.size} Prospect${selected.size !== 1 ? 's' : ''}`}
+                            {savingProspects ? 'Enrolling...' : `Enroll ${selected.size} Contact${selected.size !== 1 ? 's' : ''}`}
                         </button>
                     )}
                 </div>
@@ -1020,6 +1030,8 @@ function DraftReview({ workspace, toast, actionsRef }) {
     const [critique, setCritique] = useState('');
     const [approving, setApproving] = useState(false);
     const [allApproved, setAllApproved] = useState(false);
+    const [focusedProspectIdx, setFocusedProspectIdx] = useState(0);
+    const [activeSteps, setActiveSteps] = useState({});
 
     const actionableProspects = prospects.filter(p => !p.do_not_contact);
 
@@ -1136,8 +1148,14 @@ function DraftReview({ workspace, toast, actionsRef }) {
             if (firstWithout) handleGenerate(firstWithout.id);
             else toast('All prospects already have drafts', 'info');
         };
-        actionsRef.current = { ...actionsRef.current, generateDrafts: generateFirst, approveAll: handleApproveAll };
-        return () => { const c = { ...actionsRef.current }; delete c.generateDrafts; delete c.approveAll; actionsRef.current = c; };
+        const nextProspect = () => setFocusedProspectIdx(i => Math.min(i + 1, actionableProspects.length - 1));
+        const prevProspect = () => setFocusedProspectIdx(i => Math.max(i - 1, 0));
+        const setDraftStep = (step) => {
+            const p = actionableProspects[focusedProspectIdx];
+            if (p) setActiveSteps(prev => ({ ...prev, [p.id]: step }));
+        };
+        actionsRef.current = { ...actionsRef.current, generateDrafts: generateFirst, approveAll: handleApproveAll, nextProspect, prevProspect, setDraftStep };
+        return () => { const c = { ...actionsRef.current }; delete c.generateDrafts; delete c.approveAll; delete c.nextProspect; delete c.prevProspect; delete c.setDraftStep; actionsRef.current = c; };
     });
 
     return (
@@ -1158,9 +1176,20 @@ function DraftReview({ workspace, toast, actionsRef }) {
                 </div>
             )}
 
+            {/* Shortcut hints */}
+            <div className="flex items-center gap-3 text-[0.6875rem] text-slate-400 mb-3">
+                <span className="flex items-center gap-1"><Kbd>j</Kbd><Kbd>k</Kbd> navigate prospects</span>
+                <span className="flex items-center gap-1"><Kbd>1</Kbd><Kbd>2</Kbd><Kbd>3</Kbd> draft steps</span>
+                <span className="flex items-center gap-1"><Kbd>G</Kbd> generate</span>
+                <span className="flex items-center gap-1"><Kbd>A</Kbd> approve all</span>
+            </div>
+
             <div className="space-y-4">
-                {actionableProspects.map(prospect => (
-                    <div key={prospect.id} className="border border-slate-100 rounded-lg p-4">
+                {actionableProspects.map((prospect, pIdx) => (
+                    <div key={prospect.id}
+                         className={`border rounded-lg p-4 transition-all ${
+                             pIdx === focusedProspectIdx ? 'ring-2 ring-blue-400 border-blue-300' : 'border-slate-100'
+                         }`}>
                         <div className="flex items-center justify-between mb-3">
                             <div>
                                 <span className="text-sm font-medium text-slate-800">
@@ -1177,70 +1206,92 @@ function DraftReview({ workspace, toast, actionsRef }) {
                             </button>
                         </div>
 
-                        {/* Draft steps */}
-                        {(drafts[prospect.id] || workspace.drafts.filter(d => d.prospect_id === prospect.id)).map((draft, stepIdx) => (
-                            <div key={draft.id || stepIdx} className="mt-3 border-t border-slate-50 pt-3">
-                                <div className="flex items-center justify-between mb-1.5">
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-xs font-medium text-slate-500 uppercase">
-                                            Step {draft.sequence_step || stepIdx + 1}
-                                        </span>
-                                        {draft.status && (
-                                            <span className={`text-[0.625rem] px-1.5 py-0.5 rounded-full font-medium ${
-                                                draft.status === 'approved' ? 'bg-green-100 text-green-700' :
-                                                draft.status === 'enrolled' ? 'bg-blue-100 text-blue-700' :
-                                                draft.status === 'edited' ? 'bg-amber-100 text-amber-700' :
-                                                'bg-slate-100 text-slate-500'
-                                            }`}>
-                                                {draft.status}
-                                            </span>
-                                        )}
+                        {/* Draft step tabs */}
+                        {(() => {
+                            const prospectDrafts = drafts[prospect.id] || workspace.drafts.filter(d => d.prospect_id === prospect.id);
+                            if (!prospectDrafts || prospectDrafts.length === 0) return null;
+                            const currentStep = activeSteps[prospect.id] || 1;
+                            const activeDraft = prospectDrafts.find(d => (d.sequence_step || d.step_number) === currentStep) || prospectDrafts[0];
+                            return (
+                                <div className="mt-3 border-t border-slate-50 pt-3">
+                                    {/* Step tabs */}
+                                    <div className="flex gap-1 mb-2 border-b border-slate-100">
+                                        {prospectDrafts.map((d, si) => {
+                                            const step = d.sequence_step || d.step_number || si + 1;
+                                            return (
+                                                <button key={d.id || si}
+                                                    onClick={() => setActiveSteps(prev => ({ ...prev, [prospect.id]: step }))}
+                                                    className={`px-3 py-1.5 text-xs font-medium border-b-2 transition ${
+                                                        currentStep === step
+                                                            ? 'border-brand-500 text-brand-600'
+                                                            : 'border-transparent text-slate-400 hover:text-slate-600'
+                                                    }`}>
+                                                    Step {step}
+                                                    {d.status && d.status !== 'generated' && (
+                                                        <span className="ml-1 w-1.5 h-1.5 rounded-full inline-block bg-brand-500" />
+                                                    )}
+                                                </button>
+                                            );
+                                        })}
                                     </div>
-                                    {draft.id && (
-                                        <button onClick={() => { setRegeneratingDraft(regeneratingDraft === draft.id ? null : draft.id); setCritique(''); }}
-                                            className="text-xs text-brand-600 hover:text-brand-700 flex items-center gap-1">
-                                            <Icon name="refresh-cw" size={12} /> Regenerate
-                                        </button>
+                                    {/* Active draft editor */}
+                                    {activeDraft && (
+                                        <>
+                                            <div className="flex items-center justify-between mb-1.5">
+                                                <span className={`text-[0.625rem] px-1.5 py-0.5 rounded-full font-medium ${
+                                                    activeDraft.status === 'approved' ? 'bg-green-100 text-green-700' :
+                                                    activeDraft.status === 'enrolled' ? 'bg-blue-100 text-blue-700' :
+                                                    activeDraft.status === 'edited' ? 'bg-amber-100 text-amber-700' :
+                                                    'bg-slate-100 text-slate-500'
+                                                }`}>
+                                                    {activeDraft.status || 'draft'}
+                                                </span>
+                                                {activeDraft.id && (
+                                                    <button onClick={() => { setRegeneratingDraft(regeneratingDraft === activeDraft.id ? null : activeDraft.id); setCritique(''); }}
+                                                        className="text-xs text-brand-600 hover:text-brand-700 flex items-center gap-1">
+                                                        <Icon name="refresh-cw" size={12} /> Regenerate
+                                                    </button>
+                                                )}
+                                            </div>
+                                            {activeDraft.subject && (
+                                                <input type="text" key={`subj-${activeDraft.id}-${activeDraft.updated_at || ''}`}
+                                                    defaultValue={activeDraft.subject}
+                                                    onBlur={e => { if (activeDraft.id && e.target.value !== activeDraft.subject) handleDraftEdit(activeDraft.id, 'subject', e.target.value); }}
+                                                    className="w-full text-sm font-medium border border-slate-200 rounded-md px-3 py-1.5 mb-1.5 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500/20" />
+                                            )}
+                                            <AutoTextarea
+                                                value={activeDraft.body || ''}
+                                                onChange={e => {
+                                                    setDrafts(prev => {
+                                                        const updated = { ...prev };
+                                                        for (const pid of Object.keys(updated)) {
+                                                            updated[pid] = updated[pid].map(d =>
+                                                                d.id === activeDraft.id ? { ...d, body: e.target.value } : d
+                                                            );
+                                                        }
+                                                        return updated;
+                                                    });
+                                                }}
+                                                onBlur={e => { if (activeDraft.id && e.target.value !== activeDraft.body) handleDraftEdit(activeDraft.id, 'body', e.target.value); }}
+                                                className="text-slate-600"
+                                                placeholder="Draft body will appear here..." />
+                                            {regeneratingDraft === activeDraft.id && (
+                                                <div className="mt-2 flex gap-2">
+                                                    <input value={critique} onChange={e => setCritique(e.target.value)}
+                                                        onKeyDown={e => e.key === 'Enter' && handleRegenerate(activeDraft.id)}
+                                                        placeholder="What should change?"
+                                                        className="flex-1 text-sm border border-slate-200 rounded-md px-3 py-1.5 focus:outline-none focus:border-brand-500" />
+                                                    <button onClick={() => handleRegenerate(activeDraft.id)}
+                                                        className="px-3 py-1.5 bg-brand-600 text-white text-xs rounded-md hover:bg-brand-700 transition-all">
+                                                        Send
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </>
                                     )}
                                 </div>
-                                {draft.subject && (
-                                    <input type="text" key={`subj-${draft.id}-${draft.updated_at || ''}`}
-                                        defaultValue={draft.subject}
-                                        onBlur={e => { if (draft.id && e.target.value !== draft.subject) handleDraftEdit(draft.id, 'subject', e.target.value); }}
-                                        className="w-full text-sm font-medium border border-slate-200 rounded-md px-3 py-1.5 mb-1.5 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500/20" />
-                                )}
-                                <AutoTextarea
-                                    value={draft.body || ''}
-                                    onChange={e => {
-                                        // Update local state immediately for responsive editing
-                                        setDrafts(prev => {
-                                            const updated = { ...prev };
-                                            for (const pid of Object.keys(updated)) {
-                                                updated[pid] = updated[pid].map(d =>
-                                                    d.id === draft.id ? { ...d, body: e.target.value } : d
-                                                );
-                                            }
-                                            return updated;
-                                        });
-                                    }}
-                                    onBlur={e => { if (draft.id && e.target.value !== draft.body) handleDraftEdit(draft.id, 'body', e.target.value); }}
-                                    className="text-slate-600"
-                                    placeholder="Draft body will appear here..." />
-
-                                {regeneratingDraft === draft.id && (
-                                    <div className="mt-2 flex gap-2">
-                                        <input value={critique} onChange={e => setCritique(e.target.value)}
-                                            onKeyDown={e => e.key === 'Enter' && handleRegenerate(draft.id)}
-                                            placeholder="What should change? (e.g. 'More technical, reference their specific repo')"
-                                            className="flex-1 text-sm border border-slate-200 rounded-md px-3 py-1.5 focus:outline-none focus:border-brand-500" />
-                                        <button onClick={() => handleRegenerate(draft.id)}
-                                            className="px-3 py-1.5 bg-brand-600 text-white text-xs rounded-md hover:bg-brand-700 transition-all">
-                                            Send
-                                        </button>
-                                    </div>
-                                )}
-                            </div>
-                        ))}
+                            );
+                        })()}
                     </div>
                 ))}
             </div>
@@ -1250,7 +1301,7 @@ function DraftReview({ workspace, toast, actionsRef }) {
                     disabled={approving}
                     className="mt-4 w-full px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-md hover:bg-green-700 disabled:opacity-40 transition-all duration-150 flex items-center justify-center gap-2">
                     {approving ? <Icon name="loader" size={16} /> : <Icon name="check" size={16} />}
-                    {approving ? 'Approving...' : 'Approve All Drafts'}
+                    {approving ? 'Approving...' : <><span>Approve All Drafts</span> <Kbd>A</Kbd></>}
                 </button>
             )}
         </div>
@@ -1427,7 +1478,7 @@ function Enrollment({ workspace, onNextSignal, toast, actionsRef }) {
                     {enrollingAll ? (
                         <><Icon name="loader" size={16} /> Enrolling...</>
                     ) : (
-                        <><Icon name="send" size={16} /> Enroll All ({prospects.length - enrolledCount} remaining)</>
+                        <><Icon name="send" size={16} /> Enroll {prospects.length - enrolledCount} <Kbd>E</Kbd></>
                     )}
                 </button>
             )}
@@ -1910,28 +1961,24 @@ function Workspace({ signalId, signalIndex, totalSignals, onMarkNoise, onSkip, o
                     <span className="text-xs text-slate-500">
                         Signal {signalIndex + 1} of {totalSignals}
                     </span>
-                    <span className="text-[0.625rem] text-slate-300 hidden sm:inline">
-                        <kbd className="px-1 py-0.5 rounded bg-slate-100 text-slate-500 border border-slate-200 font-mono">&#x2191;&#x2193;</kbd> Nav
-                        &nbsp;&bull;&nbsp;
-                        <kbd className="px-1 py-0.5 rounded bg-slate-100 text-slate-500 border border-slate-200 font-mono">N</kbd> Noise
-                        &nbsp;&bull;&nbsp;
-                        <kbd className="px-1 py-0.5 rounded bg-slate-100 text-slate-500 border border-slate-200 font-mono">S</kbd> Skip
-                        &nbsp;&bull;&nbsp;
-                        <kbd className="px-1 py-0.5 rounded bg-slate-100 text-slate-500 border border-slate-200 font-mono">F</kbd> Find
-                        &nbsp;&bull;&nbsp;
-                        <kbd className="px-1 py-0.5 rounded bg-slate-100 text-slate-500 border border-slate-200 font-mono">?</kbd> Help
+                    <span className="text-[0.625rem] text-slate-300 hidden sm:inline flex items-center gap-1.5">
+                        <Kbd>j</Kbd><Kbd>k</Kbd> navigate
+                        <span className="text-slate-200 mx-1">&bull;</span>
+                        <Kbd>s</Kbd> toggle
+                        <span className="text-slate-200 mx-1">&bull;</span>
+                        <Kbd>1</Kbd><Kbd>2</Kbd><Kbd>3</Kbd> steps
+                        <span className="text-slate-200 mx-1">&bull;</span>
+                        <Kbd>?</Kbd> help
                     </span>
                 </div>
                 <div className="flex items-center gap-2">
                     <button onClick={onMarkNoise}
                         className="px-3 py-1.5 text-xs font-medium text-slate-500 border border-slate-200 rounded-md hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-all flex items-center gap-1.5">
-                        <Icon name="ban" size={12} />
-                        Noise
+                        Noise <Kbd>n</Kbd>
                     </button>
                     <button onClick={onSkip}
                         className="px-3 py-1.5 text-xs font-medium text-slate-500 border border-slate-200 rounded-md hover:bg-slate-50 transition-all flex items-center gap-1.5">
-                        <Icon name="skip-forward" size={12} />
-                        Skip
+                        Skip <Kbd>s</Kbd>
                     </button>
                 </div>
             </div>
@@ -2085,8 +2132,14 @@ function App() {
                 return;
             }
 
-            // Skip shortcuts when in form fields
-            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+            // When in form fields, only Escape works (blurs the field)
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') {
+                if (e.key === 'Escape') {
+                    e.target.blur();
+                    e.preventDefault();
+                }
+                return;
+            }
 
             // Skip shortcuts when help modal is open
             if (showHelp) return;
@@ -2146,6 +2199,21 @@ function App() {
                 e.preventDefault();
                 const action = workspaceActionsRef.current.enrollAll;
                 if (action) action();
+            }
+
+            // --- Prospect navigation (j/k) and draft step tabs (1/2/3) ---
+            else if (key === 'j' && activeSignalId && !showIntake) {
+                e.preventDefault();
+                const action = workspaceActionsRef.current.nextProspect;
+                if (action) action();
+            } else if (key === 'k' && activeSignalId && !showIntake) {
+                e.preventDefault();
+                const action = workspaceActionsRef.current.prevProspect;
+                if (action) action();
+            } else if ((key === '1' || key === '2' || key === '3') && activeSignalId && !showIntake) {
+                e.preventDefault();
+                const action = workspaceActionsRef.current.setDraftStep;
+                if (action) action(Number(key));
             }
         };
         window.addEventListener('keydown', handler);

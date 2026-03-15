@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 
 // ═══════════════════════════════════════════════════════════════════
 // DATA INJECTION — Replace these constants with actual workspace data
@@ -76,6 +76,10 @@ const ALL_CAMPAIGNS = [
   { id: 4, name: "Learning Platform" },
 ];
 
+// Queue context — injected by command so BDR knows position
+const QUEUE_POSITION = 1;   // current position (1-indexed)
+const QUEUE_TOTAL = 12;     // total signals in queue
+
 // ═══════════════════════════════════════════════════════════════════
 // HELPERS
 // ═══════════════════════════════════════════════════════════════════
@@ -124,80 +128,79 @@ function Badge({ status, colorMap }) {
   );
 }
 
+function Kbd({ children }) {
+  return (
+    <kbd className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 text-[10px] font-mono font-semibold bg-slate-100 text-slate-500 border border-slate-300 rounded shadow-sm">
+      {children}
+    </kbd>
+  );
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // COMPONENTS
 // ═══════════════════════════════════════════════════════════════════
 
 function SignalHeader() {
   return (
-    <div className="bg-white rounded-lg shadow-sm border p-6 mb-4">
+    <div className="bg-white rounded-lg shadow-sm border p-4 mb-3">
       <div className="flex items-start justify-between">
-        <div>
-          <div className="flex items-center gap-3 mb-2">
-            <h1 className="text-2xl font-bold text-slate-900">{ACCOUNT.company_name}</h1>
+        <div className="min-w-0">
+          <div className="flex items-center gap-3 mb-1">
+            <h1 className="text-xl font-bold text-slate-900 truncate">{ACCOUNT.company_name}</h1>
             <Badge status={ACCOUNT.account_status} colorMap={STATUS_COLORS} />
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
+              {SIGNAL.signal_type?.replace(/_/g, " ")}
+            </span>
           </div>
-          <div className="flex items-center gap-4 text-sm text-slate-500 mb-3">
+          <div className="flex items-center gap-3 text-xs text-slate-400">
             {ACCOUNT.website && <a href={ACCOUNT.website} target="_blank" className="hover:text-blue-600">{ACCOUNT.website}</a>}
             {ACCOUNT.industry && <span>{ACCOUNT.industry}</span>}
-            {ACCOUNT.company_size && <span>{ACCOUNT.company_size} employees</span>}
+            {ACCOUNT.company_size && <span>{ACCOUNT.company_size}</span>}
+            <span>via {SIGNAL.signal_source}</span>
+            <span>{timeAgo(SIGNAL.created_at)}</span>
           </div>
         </div>
-        <span className="text-xs text-slate-400">{timeAgo(SIGNAL.created_at)}</span>
-      </div>
-
-      <div className="mt-3 p-3 bg-amber-50 rounded-lg border border-amber-200">
-        <div className="flex items-center gap-2 mb-1">
-          <span className="text-amber-600 font-medium text-sm">
-            {SIGNAL.signal_type?.replace(/_/g, " ") || "Signal"}
-          </span>
-          <span className="text-xs text-slate-400">via {SIGNAL.signal_source}</span>
+        <div className="text-xs text-slate-400 font-mono whitespace-nowrap ml-3">
+          {QUEUE_POSITION}/{QUEUE_TOTAL}
         </div>
-        <p className="text-sm text-slate-700">{SIGNAL.signal_description}</p>
       </div>
+      <p className="text-sm text-slate-600 mt-2 bg-amber-50 rounded px-3 py-2 border border-amber-100">
+        {SIGNAL.signal_description}
+      </p>
     </div>
   );
 }
 
 function CampaignBanner({ selectedId, onSelect }) {
   return (
-    <div className="bg-white rounded-lg shadow-sm border p-4 mb-4">
-      <div className="flex items-center justify-between mb-2">
-        <h3 className="font-medium text-slate-700">Campaign</h3>
+    <div className="bg-white rounded-lg shadow-sm border p-3 mb-3">
+      <div className="flex items-center gap-3">
+        <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">Campaign</span>
         <select
           value={selectedId}
           onChange={(e) => onSelect(Number(e.target.value))}
-          className="text-sm border rounded px-2 py-1"
+          className="text-sm border rounded px-2 py-1 flex-1 max-w-xs"
         >
           {ALL_CAMPAIGNS.map((c) => (
             <option key={c.id} value={c.id}>
-              {c.name} {c.id === CAMPAIGN.id ? "(Recommended)" : ""}
+              {c.name} {c.id === CAMPAIGN.id ? "(rec)" : ""}
             </option>
           ))}
         </select>
-      </div>
-      {CAMPAIGN.reasoning && (
-        <p className="text-xs text-slate-500">{CAMPAIGN.reasoning}</p>
-      )}
-      {CAMPAIGN.writing_guidelines && (
-        <details className="mt-2">
-          <summary className="text-xs text-slate-400 cursor-pointer hover:text-slate-600">
-            Writing guidelines
-          </summary>
-          <p className="mt-1 text-xs text-slate-500 bg-slate-50 p-2 rounded">
+        {CAMPAIGN.writing_guidelines && (
+          <span className="text-xs text-slate-400 truncate flex-1" title={CAMPAIGN.writing_guidelines}>
             {CAMPAIGN.writing_guidelines}
-          </p>
-        </details>
-      )}
+          </span>
+        )}
+      </div>
     </div>
   );
 }
 
 function DraftEditor({ draft, onChange }) {
   if (!draft) return null;
-  const colors = DRAFT_STATUS_COLORS[draft.status] || DRAFT_STATUS_COLORS.generated;
   return (
-    <div className="mt-2 space-y-2">
+    <div className="space-y-1.5">
       <div className="flex items-center gap-2">
         <Badge status={draft.status} colorMap={DRAFT_STATUS_COLORS} />
       </div>
@@ -205,55 +208,64 @@ function DraftEditor({ draft, onChange }) {
         type="text"
         value={draft.subject}
         onChange={(e) => onChange({ ...draft, subject: e.target.value, status: draft.status === "generated" ? "edited" : draft.status })}
-        className="w-full text-sm border rounded px-3 py-1.5 font-medium"
+        className="w-full text-sm border rounded px-3 py-1.5 font-medium focus:ring-2 focus:ring-blue-300 focus:border-blue-400 outline-none"
         placeholder="Subject line"
       />
       <textarea
         value={draft.body}
         onChange={(e) => onChange({ ...draft, body: e.target.value, status: draft.status === "generated" ? "edited" : draft.status })}
-        className="w-full text-sm border rounded px-3 py-2 font-mono"
-        rows={8}
+        className="w-full text-sm border rounded px-3 py-2 font-mono focus:ring-2 focus:ring-blue-300 focus:border-blue-400 outline-none"
+        rows={6}
         placeholder="Email body"
       />
     </div>
   );
 }
 
-function ProspectCard({ prospect, drafts, approved, onToggle, onDraftChange }) {
-  const [activeStep, setActiveStep] = useState(1);
+function ProspectCard({ prospect, drafts, included, focused, onToggle, onDraftChange, activeStep, onStepChange }) {
   const activeDraft = drafts?.find((d) => d.step_number === activeStep);
-  const enrollColors = ENROLLMENT_COLORS[prospect.enrollment_status] || ENROLLMENT_COLORS.found;
 
   return (
-    <div className={`bg-white rounded-lg shadow-sm border p-4 mb-3 ${approved ? "ring-2 ring-emerald-300" : ""}`}>
-      <div className="flex items-start justify-between mb-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <h4 className="font-semibold text-slate-900">{prospect.full_name}</h4>
-            <Badge status={prospect.enrollment_status} colorMap={ENROLLMENT_COLORS} />
-          </div>
-          <p className="text-sm text-slate-500">{prospect.title}</p>
-          <div className="flex items-center gap-3 mt-1 text-xs text-slate-400">
-            <span>{prospect.email}</span>
-            {prospect.email_verified && <span className="text-emerald-500">verified</span>}
-            {prospect.linkedin_url && (
-              <a href={prospect.linkedin_url} target="_blank" className="hover:text-blue-500">LinkedIn</a>
+    <div className={`bg-white rounded-lg shadow-sm border p-4 mb-2 transition-all ${
+      focused ? "ring-2 ring-blue-400 border-blue-300" : ""
+    } ${!included ? "opacity-50" : ""}`}>
+      {/* Prospect header — single row */}
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <button
+            onClick={onToggle}
+            className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition ${
+              included
+                ? "bg-emerald-500 border-emerald-500 text-white"
+                : "bg-white border-slate-300 text-transparent hover:border-slate-400"
+            }`}
+            title={`${included ? "Exclude" : "Include"} prospect (S)`}
+          >
+            {included && (
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
             )}
+          </button>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="font-semibold text-slate-900 text-sm">{prospect.full_name}</span>
+              <span className="text-xs text-slate-400">{prospect.title}</span>
+            </div>
+            <div className="flex items-center gap-2 text-xs text-slate-400">
+              <span>{prospect.email}</span>
+              {prospect.email_verified && <span className="text-emerald-500">verified</span>}
+              {prospect.linkedin_url && (
+                <a href={prospect.linkedin_url} target="_blank" className="hover:text-blue-500">LI</a>
+              )}
+            </div>
           </div>
         </div>
-        <button
-          onClick={onToggle}
-          className={`px-3 py-1 rounded-full text-sm font-medium transition ${
-            approved
-              ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
-              : "bg-slate-100 text-slate-500 hover:bg-slate-200"
-          }`}
-        >
-          {approved ? "Approved" : "Skip"}
-        </button>
+        <Badge status={prospect.enrollment_status} colorMap={ENROLLMENT_COLORS} />
       </div>
 
-      {drafts && drafts.length > 0 && (
+      {/* Draft tabs + editor — always visible */}
+      {included && drafts && drafts.length > 0 && (
         <div>
           <div className="flex gap-1 mb-2 border-b">
             {[1, 2, 3].map((step) => {
@@ -261,7 +273,7 @@ function ProspectCard({ prospect, drafts, approved, onToggle, onDraftChange }) {
               return (
                 <button
                   key={step}
-                  onClick={() => setActiveStep(step)}
+                  onClick={() => onStepChange(step)}
                   className={`px-3 py-1.5 text-xs font-medium border-b-2 transition ${
                     activeStep === step
                       ? "border-blue-500 text-blue-600"
@@ -286,29 +298,107 @@ function ProspectCard({ prospect, drafts, approved, onToggle, onDraftChange }) {
   );
 }
 
-function ConfirmationPanel({ approvedProspects, campaignName, onCancel }) {
+function ShortcutsOverlay({ onClose }) {
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
+      <div className="bg-white rounded-xl shadow-xl p-6 max-w-sm w-full mx-4" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-bold text-slate-900">Keyboard Shortcuts</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
+        </div>
+        <div className="space-y-2 text-sm">
+          {[
+            ["j / k", "Next / prev prospect"],
+            ["1  2  3", "Switch draft step"],
+            ["s", "Toggle include/exclude"],
+            ["Enter", "Approve & Enroll all"],
+            ["n", "Mark as noise + next"],
+            ["Esc", "Close modal / cancel"],
+            ["?", "Show this help"],
+          ].map(([key, desc]) => (
+            <div key={key} className="flex items-center justify-between py-1 border-b border-slate-100 last:border-0">
+              <span className="text-slate-600">{desc}</span>
+              <div className="flex gap-1">
+                {key.split(/\s+/).filter(Boolean).map((k, i) =>
+                  k === "/" ? <span key={i} className="text-slate-300 mx-0.5">/</span> : <Kbd key={i}>{k}</Kbd>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+        <p className="text-xs text-slate-400 mt-4">Shortcuts are disabled when editing a text field.</p>
+      </div>
+    </div>
+  );
+}
+
+function ConfirmationPanel({ approvedProspects, campaignName, onCancel, onConfirm }) {
+  // Auto-focus confirm button so Enter works immediately
+  const confirmRef = useRef(null);
+  useEffect(() => { confirmRef.current?.focus(); }, []);
+
   return (
     <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
       <div className="bg-white rounded-xl shadow-xl p-6 max-w-md w-full mx-4">
         <h3 className="text-lg font-bold text-slate-900 mb-3">Confirm Enrollment</h3>
         <div className="space-y-2 mb-4">
           <p className="text-sm text-slate-600">
-            <strong>{approvedProspects.length}</strong> prospect{approvedProspects.length !== 1 ? "s" : ""} will be enrolled into <strong>{campaignName}</strong>:
+            <strong>{approvedProspects.length}</strong> prospect{approvedProspects.length !== 1 ? "s" : ""} into <strong>{campaignName}</strong>:
           </p>
           <ul className="text-sm text-slate-700 list-disc ml-5">
             {approvedProspects.map((p) => (
-              <li key={p.id}>{p.full_name} ({p.email})</li>
+              <li key={p.id}>{p.full_name} — {p.email}</li>
             ))}
           </ul>
         </div>
-        <div className="bg-amber-50 border border-amber-200 rounded p-3 mb-4">
-          <p className="text-sm text-amber-800">
-            Type <strong>"yes, enroll them"</strong> in chat to proceed.
-          </p>
+        <div className="flex items-center gap-3">
+          <button
+            ref={confirmRef}
+            onClick={onConfirm}
+            className="flex-1 px-4 py-2.5 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 transition focus:ring-2 focus:ring-emerald-400 focus:outline-none"
+          >
+            Enroll {approvedProspects.length} <Kbd>Enter</Kbd>
+          </button>
+          <button
+            onClick={onCancel}
+            className="px-4 py-2.5 text-slate-500 hover:text-slate-700 text-sm"
+          >
+            Cancel <span className="text-slate-300 text-xs">Esc</span>
+          </button>
         </div>
-        <button onClick={onCancel} className="text-sm text-slate-500 hover:text-slate-700">
-          Cancel
-        </button>
+      </div>
+    </div>
+  );
+}
+
+function NoiseConfirmPanel({ companyName, onCancel, onConfirm }) {
+  const confirmRef = useRef(null);
+  useEffect(() => { confirmRef.current?.focus(); }, []);
+
+  return (
+    <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
+      <div className="bg-white rounded-xl shadow-xl p-6 max-w-sm w-full mx-4">
+        <h3 className="text-lg font-bold text-slate-900 mb-2">Mark as Noise?</h3>
+        <p className="text-sm text-slate-600 mb-4">
+          This archives <strong>{companyName}</strong> and all its signals.
+        </p>
+        <div className="flex items-center gap-3">
+          <button
+            ref={confirmRef}
+            onClick={onConfirm}
+            className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition focus:ring-2 focus:ring-red-400 focus:outline-none"
+          >
+            Confirm Noise <Kbd>Enter</Kbd>
+          </button>
+          <button
+            onClick={onCancel}
+            className="px-4 py-2.5 text-slate-500 hover:text-slate-700 text-sm"
+          >
+            Cancel <span className="text-slate-300 text-xs">Esc</span>
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -319,22 +409,116 @@ function ConfirmationPanel({ approvedProspects, campaignName, onCancel }) {
 // ═══════════════════════════════════════════════════════════════════
 
 export default function BDRReview() {
-  const [approvals, setApprovals] = useState(() => {
+  const [inclusions, setInclusions] = useState(() => {
     const init = {};
     PROSPECTS.forEach((p) => { init[p.id] = true; });
     return init;
   });
   const [drafts, setDrafts] = useState(DRAFTS);
   const [selectedCampaign, setSelectedCampaign] = useState(CAMPAIGN.id);
+  const [focusedIdx, setFocusedIdx] = useState(0);
+  const [activeSteps, setActiveSteps] = useState(() => {
+    const init = {};
+    PROSPECTS.forEach((p) => { init[p.id] = 1; });
+    return init;
+  });
   const [showConfirm, setShowConfirm] = useState(false);
+  const [showNoise, setShowNoise] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
+  const [enrollResult, setEnrollResult] = useState(null); // "enrolled" | "noise" | null
 
-  const approvedProspects = useMemo(
-    () => PROSPECTS.filter((p) => approvals[p.id]),
-    [approvals]
+  const includedProspects = useMemo(
+    () => PROSPECTS.filter((p) => inclusions[p.id]),
+    [inclusions]
   );
 
+  const focusedProspect = PROSPECTS[focusedIdx];
+
+  // ─── Keyboard handler ───
+  useEffect(() => {
+    function handler(e) {
+      // Don't capture when typing in inputs
+      const tag = e.target.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") {
+        // Only capture Escape from inputs
+        if (e.key === "Escape") {
+          e.target.blur();
+          e.preventDefault();
+        }
+        return;
+      }
+
+      // Modal-specific shortcuts
+      if (showConfirm || showNoise) {
+        if (e.key === "Escape") {
+          setShowConfirm(false);
+          setShowNoise(false);
+          e.preventDefault();
+        }
+        // Enter is handled by the focused button in the modal
+        return;
+      }
+
+      if (showHelp) {
+        if (e.key === "Escape" || e.key === "?") {
+          setShowHelp(false);
+          e.preventDefault();
+        }
+        return;
+      }
+
+      // Prevent if already resolved
+      if (enrollResult) return;
+
+      switch (e.key) {
+        case "j":
+          setFocusedIdx((i) => Math.min(i + 1, PROSPECTS.length - 1));
+          e.preventDefault();
+          break;
+        case "k":
+          setFocusedIdx((i) => Math.max(i - 1, 0));
+          e.preventDefault();
+          break;
+        case "1":
+        case "2":
+        case "3":
+          if (focusedProspect) {
+            setActiveSteps((prev) => ({ ...prev, [focusedProspect.id]: Number(e.key) }));
+          }
+          e.preventDefault();
+          break;
+        case "s":
+          if (focusedProspect) {
+            setInclusions((prev) => ({ ...prev, [focusedProspect.id]: !prev[focusedProspect.id] }));
+          }
+          e.preventDefault();
+          break;
+        case "Enter":
+          if (includedProspects.length > 0) {
+            setShowConfirm(true);
+          }
+          e.preventDefault();
+          break;
+        case "n":
+          setShowNoise(true);
+          e.preventDefault();
+          break;
+        case "?":
+          setShowHelp(true);
+          e.preventDefault();
+          break;
+        default:
+          break;
+      }
+    }
+
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [showConfirm, showNoise, showHelp, focusedProspect, includedProspects, enrollResult]);
+
+  // ─── Handlers ───
   const handleToggle = (prospectId) => {
-    setApprovals((prev) => ({ ...prev, [prospectId]: !prev[prospectId] }));
+    setInclusions((prev) => ({ ...prev, [prospectId]: !prev[prospectId] }));
   };
 
   const handleDraftChange = (prospectId, updatedDraft) => {
@@ -346,48 +530,134 @@ export default function BDRReview() {
     }));
   };
 
+  const handleStepChange = (prospectId, step) => {
+    setActiveSteps((prev) => ({ ...prev, [prospectId]: step }));
+  };
+
+  const handleEnrollConfirm = () => {
+    setShowConfirm(false);
+    setEnrollResult("enrolled");
+  };
+
+  const handleNoiseConfirm = () => {
+    setShowNoise(false);
+    setEnrollResult("noise");
+  };
+
+  // ─── Post-action state ───
+  if (enrollResult === "enrolled") {
+    return (
+      <div className="max-w-3xl mx-auto p-4">
+        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-8 text-center">
+          <div className="text-4xl mb-3">&#10003;</div>
+          <h2 className="text-xl font-bold text-emerald-800 mb-2">
+            {includedProspects.length} prospect{includedProspects.length !== 1 ? "s" : ""} enrolled
+          </h2>
+          <p className="text-sm text-emerald-600 mb-1">{ACCOUNT.company_name} — {ALL_CAMPAIGNS.find(c => c.id === selectedCampaign)?.name}</p>
+          <div className="text-sm text-slate-500 mt-4 space-y-1">
+            {includedProspects.map(p => (
+              <div key={p.id}>{p.full_name} ({p.email})</div>
+            ))}
+          </div>
+          <p className="text-xs text-slate-400 mt-6">
+            Confirm in chat to proceed. Say <strong>"enroll"</strong> or move to the next signal.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (enrollResult === "noise") {
+    return (
+      <div className="max-w-3xl mx-auto p-4">
+        <div className="bg-slate-50 border border-slate-200 rounded-xl p-8 text-center">
+          <div className="text-4xl mb-3 text-slate-400">&#10005;</div>
+          <h2 className="text-xl font-bold text-slate-700 mb-2">
+            {ACCOUNT.company_name} marked as noise
+          </h2>
+          <p className="text-sm text-slate-500">All signals for this account have been archived.</p>
+          <p className="text-xs text-slate-400 mt-6">
+            Confirm in chat. Say <strong>"noise"</strong> or move to the next signal.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="max-w-3xl mx-auto p-4 pb-24">
+    <div className="max-w-3xl mx-auto p-4 pb-20">
       <SignalHeader />
       <CampaignBanner selectedId={selectedCampaign} onSelect={setSelectedCampaign} />
 
-      <h3 className="font-medium text-slate-700 mb-3">
-        Prospects ({PROSPECTS.length})
-      </h3>
+      {/* Prospect section header */}
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="text-xs font-medium text-slate-500 uppercase tracking-wide">
+          Prospects ({PROSPECTS.length}) — {includedProspects.length} selected
+        </h3>
+        <div className="flex items-center gap-2 text-xs text-slate-400">
+          <Kbd>j</Kbd><Kbd>k</Kbd> navigate
+          <Kbd>s</Kbd> toggle
+          <Kbd>?</Kbd> help
+        </div>
+      </div>
 
-      {PROSPECTS.map((p) => (
+      {/* All prospects visible — no carousel */}
+      {PROSPECTS.map((p, idx) => (
         <ProspectCard
           key={p.id}
           prospect={p}
           drafts={drafts[p.id] || []}
-          approved={approvals[p.id]}
+          included={inclusions[p.id]}
+          focused={idx === focusedIdx}
           onToggle={() => handleToggle(p.id)}
           onDraftChange={handleDraftChange}
+          activeStep={activeSteps[p.id] || 1}
+          onStepChange={(step) => handleStepChange(p.id, step)}
         />
       ))}
 
       {/* Sticky Action Bar */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg p-4">
+      <div className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur border-t shadow-lg p-3 z-40">
         <div className="max-w-3xl mx-auto flex items-center justify-between">
           <button
-            onClick={() => setShowConfirm(true)}
-            disabled={approvedProspects.length === 0}
-            className="px-6 py-2 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
+            onClick={() => includedProspects.length > 0 && setShowConfirm(true)}
+            disabled={includedProspects.length === 0}
+            className="px-5 py-2 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed transition flex items-center gap-2"
           >
-            Enroll Selected ({approvedProspects.length})
+            Enroll {includedProspects.length} <Kbd>Enter</Kbd>
           </button>
-          <button className="px-4 py-2 bg-red-50 text-red-600 rounded-lg text-sm font-medium hover:bg-red-100 transition">
-            Mark as Noise
+          <div className="flex items-center gap-4 text-xs text-slate-400">
+            <span className="font-mono">{QUEUE_POSITION} of {QUEUE_TOTAL}</span>
+          </div>
+          <button
+            onClick={() => setShowNoise(true)}
+            className="px-4 py-2 bg-red-50 text-red-600 rounded-lg text-sm font-medium hover:bg-red-100 transition flex items-center gap-2"
+          >
+            Noise <Kbd>n</Kbd>
           </button>
         </div>
       </div>
 
+      {/* Modals */}
       {showConfirm && (
         <ConfirmationPanel
-          approvedProspects={approvedProspects}
+          approvedProspects={includedProspects}
           campaignName={ALL_CAMPAIGNS.find((c) => c.id === selectedCampaign)?.name || "Unknown"}
           onCancel={() => setShowConfirm(false)}
+          onConfirm={handleEnrollConfirm}
         />
+      )}
+
+      {showNoise && (
+        <NoiseConfirmPanel
+          companyName={ACCOUNT.company_name}
+          onCancel={() => setShowNoise(false)}
+          onConfirm={handleNoiseConfirm}
+        />
+      )}
+
+      {showHelp && (
+        <ShortcutsOverlay onClose={() => setShowHelp(false)} />
       )}
     </div>
   );

@@ -20,6 +20,8 @@ For the first matching signal, call `get_signal_workspace` with the signal_id. T
 - Existing prospects and their drafts
 - Writing preferences
 
+Also note the total queue size and the signal's position in the queue — these get injected as `QUEUE_POSITION` and `QUEUE_TOTAL`.
+
 ## Step 3: Search for Prospects (if none exist)
 
 If the workspace has no prospects yet:
@@ -35,49 +37,53 @@ For each prospect without drafts:
 
 ## Step 5: Build the Review Artifact
 
-Create a React artifact that displays:
+Create a React artifact using the **keyboard-first** template from `skills/bdr-workflow/templates/bdr-review-ui.jsx`.
 
-1. **Signal header** — company name, signal type badge, evidence summary, account status
-2. **Campaign banner** — recommended campaign name and reasoning, with option to change
-3. **Prospect cards** — one per prospect with:
-   - Name, title, email, LinkedIn link
-   - Enrollment status badge
-   - 3 draft tabs (Step 1 / Step 2 / Step 3) with editable subject and body
-   - Draft status badges (generated/edited/approved)
-   - Approve All / Skip toggle per prospect
-4. **Action bar** (sticky bottom):
-   - "Enroll Selected (N)" primary button
-   - "Mark as Noise" destructive button
-   - Signal count badge
+The artifact MUST include:
 
-Use the data shape from `skills/bdr-workflow/references/artifact-spec.md` and the JSX template from `skills/bdr-workflow/templates/bdr-review-ui.jsx` as a reference.
+1. **Signal header** (compact) — company name, badges, evidence, queue position counter
+2. **Campaign banner** (single row) — dropdown + inline writing guidelines
+3. **All prospect cards visible** — NO carousel, vertical stack, each with:
+   - Checkbox include/exclude toggle
+   - Name, title, email, verified badge, LinkedIn — one line
+   - 3 draft step tabs with editable subject + body
+   - Focus ring on keyboard-active prospect
+4. **Shortcut hints** — `j/k` navigate, `s` toggle, `?` help — shown above prospects
+5. **Sticky action bar** — "Enroll N [Enter]" left, queue position center, "Noise [n]" right
+6. **Keyboard shortcut system** — `j/k` navigate, `1/2/3` steps, `s` toggle, `Enter` enroll, `n` noise, `?` help, `Esc` cancel
+7. **Inline confirmation modals** — auto-focused confirm button, `Enter` to proceed, `Esc` to cancel
+8. **Post-action screens** — success/noise card with short chat instruction
 
 Bake actual data from the workspace into the artifact as JavaScript constants. The artifact is self-contained — no API calls from the artifact itself.
 
-Style with Tailwind utility classes. Palette: slate/gray base, emerald for approvals, amber/orange for signals, red for noise.
+Style with Tailwind utility classes. Palette: slate base, emerald for enroll, amber for signals, red for noise. Compact spacing.
 
 ## Step 6: Present to BDR
 
-Show the artifact and explain:
-- Which campaign was auto-selected and why
-- How many prospects are ready for review
-- That they can edit emails inline, toggle approvals, and change the campaign
+Show the artifact. Keep the intro brief — one line max:
+> "2 prospects for Gong — Global Expansion campaign. Review and hit Enter to enroll."
+
+Do NOT over-explain the UI. The shortcuts are visible in the artifact.
 
 ## Step 7: Handle BDR Actions
 
-**When the BDR confirms enrollment:**
-1. For each approved prospect, call `approve_all_drafts` then `enroll_prospect`
-2. Report results per prospect (success/failure)
+**When the BDR says "enroll" (after confirming in artifact):**
+1. For each included prospect, call `approve_all_drafts` then `enroll_prospect`
+2. Report results per prospect in one line (success/failure)
 3. Call `mark_account_sequenced` for the account
+4. Immediately offer: "Next signal? (j to continue)"
+
+**When the BDR says "noise" (after confirming in artifact):**
+1. Call `mark_account_noise` with the account_id
+2. Confirm in one line: "Gong marked as noise. All signals archived."
+3. Immediately offer: "Next signal?"
 
 **When the BDR edits a draft in chat:**
 1. Call `save_edited_draft` with the updated subject/body
-2. Confirm the edit was saved
+2. Confirm: "Draft updated."
 
 **When the BDR rejects a draft:**
 1. Call `regenerate_draft_step` with their critique
-2. Show the regenerated version
+2. Show the regenerated version inline
 
-**When the BDR marks as noise:**
-1. Call `mark_account_noise` with the account_id
-2. Confirm all signals for that account were archived
+**Speed principle:** After every action, immediately offer the next signal. Minimize back-and-forth. The BDR should be able to type "enroll" → see result → type "next" → see next artifact in a continuous flow.
