@@ -104,7 +104,7 @@ def enroll_prospect(prospect_id: int, sequence_id: Optional[str] = None) -> dict
 
     # 4. Apollo enrollment — follows proven v1 pattern
     try:
-        from apollo_pipeline import apollo_api_call
+        from apollo_client import apollo_api_call
 
         # --- Step A: Resolve custom field IDs (name → Apollo field ID) ---
         field_id_map = _resolve_custom_field_ids_cached()
@@ -427,8 +427,8 @@ def _resolve_custom_field_ids_cached() -> dict:
         return _CACHED_FIELD_IDS
 
     try:
-        from apollo_pipeline import _resolve_custom_field_ids
-        _CACHED_FIELD_IDS = _resolve_custom_field_ids()
+        from apollo_client import resolve_custom_field_ids
+        _CACHED_FIELD_IDS = resolve_custom_field_ids()
     except (ImportError, Exception) as e:
         logger.warning("[ENROLL] Could not resolve custom field IDs: %s", e)
         _CACHED_FIELD_IDS = {}
@@ -486,7 +486,7 @@ def _find_apollo_contact(email: str) -> Optional[str]:
     Returns the Apollo contact ID if found, else None.
     """
     try:
-        from apollo_pipeline import apollo_api_call
+        from apollo_client import apollo_api_call
         search_resp = apollo_api_call(
             'post', 'https://api.apollo.io/api/v1/contacts/search',
             json={'q_keywords': email, 'per_page': 1},
@@ -526,8 +526,8 @@ def _resolve_sender_email_account(sequence_id: str) -> Optional[str]:
 
     # 2. Global default
     try:
-        from apollo_pipeline import _resolve_email_account
-        return _resolve_email_account()
+        from apollo_client import resolve_email_account
+        return resolve_email_account()
     except (ImportError, Exception) as e:
         logger.warning("[ENROLL] Could not resolve email account: %s", e)
     return None

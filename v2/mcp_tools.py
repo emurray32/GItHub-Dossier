@@ -188,20 +188,25 @@ def register_v2_tools(mcp):
     # ------------------------------------------------------------------
 
     @mcp.tool()
-    def find_prospects(signal_id: int, titles: str = "VP Engineering,Head of Product", seniorities: str = "vp,director") -> str:
+    def find_prospects(signal_id: int, campaign_id: int = 0, titles: str = "", seniorities: str = "") -> str:
         """Search Apollo for prospects matching the signal's account.
 
-        Finds people at the account's domain with the given titles/seniorities.
-        Returns contact details including email and LinkedIn URL.
+        Uses the campaign's persona hierarchy to find the right contacts.
+        If the campaign has personas defined, searches Apollo tier by tier
+        (priority 0 first, then 1, then 2) and tags each result with their
+        matched persona. Falls back to manual titles/seniorities if provided,
+        or generic defaults if no personas exist.
 
         Args:
             signal_id: The signal whose account to search.
-            titles: Comma-separated job titles to search for.
-            seniorities: Comma-separated seniority levels (e.g. 'vp,director,c_suite').
+            campaign_id: Campaign ID to look up persona tiers (recommended).
+            titles: Manual override — comma-separated job titles. Ignored if campaign has personas.
+            seniorities: Manual override — comma-separated seniority levels. Ignored if campaign has personas.
         """
         try:
             from v2.services.signal_service import get_signal
             from v2.services.account_service import get_account_domain
+            from v2.services.campaign_service import get_personas_for_campaign
 
             signal = get_signal(signal_id)
             if not signal:
@@ -212,58 +217,125 @@ def register_v2_tools(mcp):
             if not domain:
                 return _safe_json({"error": "Account has no website/domain configured"})
 
-            title_list = [t.strip() for t in titles.split(',') if t.strip()]
-            seniority_list = [s.strip() for s in seniorities.split(',') if s.strip()]
+            from apollo_client import apollo_api_call
 
-            from apollo_pipeline import apollo_api_call
+            # Build search tiers from campaign personas or fallback
+            search_tiers = []
 
-            search_body = {
-                'q_organization_domains': domain,
-                'person_titles': title_list,
-                'page': 1,
-                'per_page': 25,
-            }
-            if seniority_list:
-                search_body['person_seniorities'] = seniority_list
+            if campaign_id:
+                personas = get_personas_for_campaign(campaign_id)
+                for p in sorted(personas, key=lambda x: x.get('priority', 0)):
+                    tier_titles = p.get('titles', [])
+                    tier_seniorities = p.get('seniorities', [])
+                    if tier_titles or tier_seniorities:
+                        search_tiers.append({
+                            'persona_name': p.get('persona_name', 'Unknown'),
+                            'titles': tier_titles,
+                            'seniorities': tier_seniorities,
+                            'sequence_id': p.get('sequence_id', ''),
+                            'priority': p.get('priority', 0),
+                        })
 
-            resp = apollo_api_call(
-                'post',
-                'https://api.apollo.io/v1/mixed_people/search',
-                json=search_body,
-            )
-
-            if resp.status_code != 200:
-                return _safe_json({
-                    "error": f"Apollo search failed with status {resp.status_code}",
-                    "detail": resp.text[:300],
+            if not search_tiers:
+                # Fallback: use manual overrides or generic defaults
+                fallback_titles = (
+                    [t.strip() for t in titles.split(',') if t.strip()]
+                    if titles else
+                    ['VP Engineering', 'Head of Engineering', 'Head of Product', 'Director of Localization']
+                )
+                fallback_seniorities = (
+                    [s.strip() for s in seniorities.split(',') if s.strip()]
+                    if seniorities else
+                    ['vp', 'director', 'c_suite']
+                )
+                search_tiers.append({
+                    'persona_name': 'Default',
+                    'titles': fallback_titles,
+                    'seniorities': fallback_seniorities,
+                    'sequence_id': '',
+                    'priority': 0,
                 })
 
-            people = resp.json().get('people', [])
-            results = []
-            seen = set()
-            for person in people:
-                email = (person.get('email') or '').lower()
-                if email and email in seen:
-                    continue
-                if email:
-                    seen.add(email)
-                results.append({
-                    'full_name': person.get('name', ''),
-                    'first_name': person.get('first_name', ''),
-                    'last_name': person.get('last_name', ''),
-                    'title': person.get('title', ''),
-                    'email': person.get('email', ''),
-                    'email_verified': person.get('email_status') == 'verified',
-                    'linkedin_url': person.get('linkedin_url', ''),
-                    'apollo_person_id': person.get('id', ''),
-                })
+            # Search Apollo tier by tier, dedup across tiers
+            all_results = []
+            seen_emails = set()
+            tier_summaries = []
+
+            for tier in search_tiers:
+                search_body = {
+                    'q_organization_domains': domain,
+                    'person_titles': tier['titles'],
+                    'page': 1,
+                    'per_page': 10,  # smaller per tier to stay within rate limits
+                }
+                if tier['seniorities']:
+                    search_body['person_seniorities'] = tier['seniorities']
+
+                try:
+                    resp = apollo_api_call(
+                        'post',
+                        'https://api.apollo.io/v1/mixed_people/search',
+                        json=search_body,
+                    )
+
+                    if resp.status_code != 200:
+                        tier_summaries.append({
+                            'persona': tier['persona_name'],
+                            'priority': tier['priority'],
+                            'found': 0,
+                            'error': f"Apollo returned {resp.status_code}",
+                        })
+                        continue
+
+                    people = resp.json().get('people', [])
+                    tier_count = 0
+
+                    for person in people:
+                        email = (person.get('email') or '').lower()
+                        if email and email in seen_emails:
+                            continue
+                        if email:
+                            seen_emails.add(email)
+
+                        tier_count += 1
+                        all_results.append({
+                            'full_name': person.get('name', ''),
+                            'first_name': person.get('first_name', ''),
+                            'last_name': person.get('last_name', ''),
+                            'title': person.get('title', ''),
+                            'email': person.get('email', ''),
+                            'email_verified': person.get('email_status') == 'verified',
+                            'linkedin_url': person.get('linkedin_url', ''),
+                            'apollo_person_id': person.get('id', ''),
+                            'matched_persona': tier['persona_name'],
+                            'persona_priority': tier['priority'],
+                            'sequence_id': tier['sequence_id'],
+                        })
+
+                    tier_summaries.append({
+                        'persona': tier['persona_name'],
+                        'priority': tier['priority'],
+                        'found': tier_count,
+                        'titles_searched': tier['titles'],
+                    })
+
+                except Exception as tier_err:
+                    logger.warning("[MCP] find_prospects tier %s error: %s", tier['persona_name'], tier_err)
+                    tier_summaries.append({
+                        'persona': tier['persona_name'],
+                        'priority': tier['priority'],
+                        'found': 0,
+                        'error': str(tier_err),
+                    })
 
             return _safe_json({
-                "people": results,
-                "total": len(results),
+                "people": all_results,
+                "total": len(all_results),
                 "domain": domain,
                 "signal_id": signal_id,
                 "account_id": account_id,
+                "campaign_id": campaign_id or None,
+                "search_tiers": tier_summaries,
             })
         except Exception as e:
             logger.exception("[MCP] find_prospects error")

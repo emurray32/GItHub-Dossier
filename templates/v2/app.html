@@ -199,6 +199,14 @@ function Icon({ name, size = 16, className = '' }) {
     return <span className={`inline-flex items-center ${className}`}>{svgMap[name] || null}</span>;
 }
 
+function Kbd({ children }) {
+    return (
+        <kbd className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 text-[10px] font-mono font-semibold bg-slate-100 text-slate-500 border border-slate-300 rounded shadow-sm">
+            {children}
+        </kbd>
+    );
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // TOAST SYSTEM
 // ═══════════════════════════════════════════════════════════════════════════
@@ -315,17 +323,19 @@ function KeyboardHelp({ onClose }) {
     }, [onClose]);
 
     const sections = [
-        { title: 'Queue Navigation', keys: [
-            { key: '\u2191 / \u2193', desc: 'Navigate signals' },
-            { key: 'Enter', desc: 'Select signal' },
-            { key: 'Esc', desc: 'Deselect / close' },
+        { title: 'Navigation', keys: [
+            { key: '\u2191 / \u2193', desc: 'Navigate signals in queue' },
+            { key: 'j / k', desc: 'Navigate prospects in workspace' },
+            { key: 'Enter', desc: 'Select signal / confirm action' },
+            { key: 'Esc', desc: 'Close modal / blur input / deselect' },
         ]},
         { title: 'Signal Actions', keys: [
             { key: 'N', desc: 'Mark as noise' },
             { key: 'S', desc: 'Skip to next signal' },
             { key: 'I', desc: 'Open intake panel' },
         ]},
-        { title: 'Workflow', keys: [
+        { title: 'Drafts & Enrollment', keys: [
+            { key: '1  2  3', desc: 'Switch draft step tab' },
             { key: 'F', desc: 'Search Apollo for contacts' },
             { key: 'G', desc: 'Generate drafts' },
             { key: 'A', desc: 'Approve all drafts' },
@@ -401,12 +411,9 @@ function StatusBadge({ status, size = 'sm' }) {
 // LEFT PANEL — SIGNAL QUEUE
 // ═══════════════════════════════════════════════════════════════════════════
 
-function SignalQueue({ signals, total, loading, activeId, onSelect, statusFilter, onStatusFilter, ownerFilter, onOwnerFilter, owners, counts, onAddSignals }) {
-    const listRef = useRef(null);
-    const [searchTerm, setSearchTerm] = useState('');
-
+function SignalTable({ signals, loading, activeIndex, onSelect, searchTerm }) {
     const filteredSignals = useMemo(() => {
-        if (!searchTerm.trim()) return signals;
+        if (!searchTerm) return signals;
         const q = searchTerm.toLowerCase();
         return signals.filter(s =>
             (s.company_name || '').toLowerCase().includes(q) ||
@@ -416,55 +423,112 @@ function SignalQueue({ signals, total, loading, activeId, onSelect, statusFilter
         );
     }, [signals, searchTerm]);
 
+    if (loading && signals.length === 0) {
+        return (
+            <div className="flex-1 flex items-center justify-center">
+                <Icon name="loader" size={24} className="text-slate-300 animate-spin" />
+            </div>
+        );
+    }
+
+    if (filteredSignals.length === 0) {
+        return (
+            <div className="flex-1 flex items-center justify-center">
+                <div className="text-center">
+                    <Icon name="zap" size={32} className="text-slate-300 mx-auto mb-2" />
+                    <p className="text-sm text-slate-400">{searchTerm ? 'No signals match your search' : 'No signals in this view'}</p>
+                </div>
+            </div>
+        );
+    }
+
     return (
-        <div className="v2-sidebar flex flex-col h-full bg-brand-950 text-slate-300 select-none" style={{ width: 350 }}>
-            {/* Header */}
-            <div className="px-4 pt-5 pb-3 border-b border-white/10">
-                <div className="flex items-center gap-2 mb-3">
-                    <Icon name="zap" size={18} className="text-brand-400" />
-                    <h1 className="text-white text-base font-semibold tracking-tight">Signal Queue</h1>
-                    <span className="ml-auto bg-brand-800 text-brand-200 text-[0.6875rem] font-semibold px-2 py-0.5 rounded-full">
-                        {total}
-                    </span>
-                    {onAddSignals && (
-                        <button onClick={onAddSignals}
-                            title="Add signals (I)"
-                            className="w-6 h-6 flex items-center justify-center rounded-md text-slate-400 hover:text-white hover:bg-white/10 transition-all">
-                            <Icon name="plus" size={14} />
-                        </button>
-                    )}
-                </div>
-
-                {/* Status tabs */}
-                <div className="flex gap-1 mb-3">
-                    {[
-                        { key: 'new', label: 'New', count: counts.new || 0 },
-                        { key: 'sequenced', label: 'Sequenced', count: counts.sequenced || 0 },
-                        { key: 'revisit', label: 'Revisit', count: counts.revisit || 0 },
-                        { key: 'noise', label: 'Noise', count: counts.noise || 0 },
-                        { key: null, label: 'All', count: Object.values(counts).reduce((a, b) => a + b, 0) },
-                    ].map(tab => (
-                        <button key={tab.label}
-                            onClick={() => onStatusFilter(tab.key)}
-                            className={`flex-1 text-xs font-medium py-1.5 rounded-md transition-all duration-150
-                                ${statusFilter === tab.key ? 'bg-brand-600 text-white' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>
-                            {tab.label}
-                            {tab.count > 0 && <span className="ml-1 opacity-70">({tab.count})</span>}
-                        </button>
+        <div className="flex-1 overflow-auto v2-scrollbar">
+            <table className="w-full text-sm">
+                <thead className="sticky top-0 z-10">
+                    <tr className="bg-slate-50 border-b border-slate-200 text-[0.6875rem] text-slate-500 uppercase tracking-wider">
+                        <th className="text-left px-3 py-2 font-medium w-8">#</th>
+                        <th className="text-left px-3 py-2 font-medium" style={{minWidth: 160}}>Company</th>
+                        <th className="text-left px-3 py-2 font-medium" style={{minWidth: 130}}>Signal</th>
+                        <th className="text-left px-3 py-2 font-medium">Description</th>
+                        <th className="text-left px-3 py-2 font-medium w-20">Owner</th>
+                        <th className="text-left px-3 py-2 font-medium w-14">Age</th>
+                        <th className="text-left px-3 py-2 font-medium w-20">Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {filteredSignals.map((sig, idx) => (
+                        <tr key={sig.id}
+                            onClick={() => onSelect(sig.id)}
+                            className={`border-b border-slate-100 cursor-pointer transition-colors
+                                ${activeIndex === idx ? 'bg-brand-50' : 'hover:bg-slate-50'}`}
+                            style={{height: 36}}>
+                            <td className="px-3 py-1 text-xs text-brand-600 font-medium tabular-nums cursor-pointer hover:underline">{idx + 1}</td>
+                            <td className="px-3 py-1">
+                                <div className="flex items-center gap-1.5">
+                                    {(sig.account_status === 'new' || sig.status === 'new') && <span className="v2-new-pulse w-1.5 h-1.5 rounded-full bg-blue-400 flex-shrink-0" />}
+                                    <span className="font-medium text-slate-800 truncate">{sig.company_name || 'Unknown'}</span>
+                                </div>
+                            </td>
+                            <td className="px-3 py-1"><SignalTypeBadge type={sig.signal_type} size="sm" /></td>
+                            <td className="px-3 py-1 text-slate-500 truncate max-w-sm">{sig.signal_description || '--'}</td>
+                            <td className="px-3 py-1 text-xs text-slate-400 truncate">{sig.account_owner || '--'}</td>
+                            <td className="px-3 py-1 text-xs text-slate-400 tabular-nums">{timeAgo(sig.created_at)}</td>
+                            <td className="px-3 py-1">
+                                <StatusBadge status={sig.account_status || sig.status} size="sm" />
+                            </td>
+                        </tr>
                     ))}
-                </div>
+                </tbody>
+            </table>
+        </div>
+    );
+}
 
-                {/* Search + Owner filter */}
-                <div className="flex gap-2">
-                    <div className="relative flex-1">
-                        <Icon name="search" size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+function TopBar({ statusFilter, onStatusFilter, counts, searchTerm, onSearchChange, ownerFilter, onOwnerFilter, owners, total, onAddSignals, onShowHelp, onBack, showBack }) {
+    return (
+        <div className="bg-white border-b border-slate-200 px-4 py-2 flex items-center gap-3 flex-shrink-0">
+            {showBack ? (
+                <button onClick={onBack} className="flex items-center gap-1.5 text-sm text-brand-600 hover:text-brand-700 font-medium mr-2">
+                    <Icon name="arrow-right" size={16} className="rotate-180" /> Signals
+                </button>
+            ) : (
+                <div className="flex items-center gap-2 mr-2">
+                    <Icon name="zap" size={16} className="text-brand-600" />
+                    <span className="text-sm font-semibold text-slate-900">Signals</span>
+                    <span className="text-xs bg-brand-100 text-brand-700 font-semibold px-1.5 py-0.5 rounded-full">{total}</span>
+                </div>
+            )}
+
+            <div className="flex gap-0.5 bg-slate-100 rounded-md p-0.5">
+                {[
+                    { key: 'new', label: 'New', count: counts.new || 0 },
+                    { key: 'sequenced', label: 'Seq', count: counts.sequenced || 0 },
+                    { key: 'revisit', label: 'Revisit', count: counts.revisit || 0 },
+                    { key: 'noise', label: 'Noise', count: counts.noise || 0 },
+                    { key: null, label: 'All', count: Object.values(counts).reduce((a, b) => a + b, 0) },
+                ].map(tab => (
+                    <button key={tab.label}
+                        onClick={() => onStatusFilter(tab.key)}
+                        className={`text-xs font-medium px-2.5 py-1 rounded transition-all
+                            ${statusFilter === tab.key ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+                        {tab.label}
+                        {tab.count > 0 && <span className="ml-1 opacity-60">{tab.count}</span>}
+                    </button>
+                ))}
+            </div>
+
+            {!showBack && (
+                <>
+                    <div className="relative flex-1 max-w-xs ml-2">
+                        <Icon name="search" size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                         <input value={searchTerm}
-                            onChange={e => setSearchTerm(e.target.value)}
-                            placeholder="Search signals..."
-                            className="w-full text-xs bg-white/5 border border-white/10 text-slate-300 rounded-md pl-7 pr-2.5 py-1.5 focus:outline-none focus:border-brand-500 placeholder-slate-500" />
+                            onChange={e => onSearchChange(e.target.value)}
+                            placeholder="Search..."
+                            className="w-full text-xs border border-slate-200 text-slate-700 rounded-md pl-7 pr-2.5 py-1.5 focus:outline-none focus:border-brand-500 placeholder-slate-400" />
                         {searchTerm && (
-                            <button onClick={() => setSearchTerm('')}
-                                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white">
+                            <button onClick={() => onSearchChange('')}
+                                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
                                 <Icon name="x" size={10} />
                             </button>
                         )}
@@ -472,66 +536,26 @@ function SignalQueue({ signals, total, loading, activeId, onSelect, statusFilter
                     {owners.length > 0 && (
                         <select value={ownerFilter || ''}
                             onChange={e => onOwnerFilter(e.target.value || null)}
-                            className="text-xs bg-white/5 border border-white/10 text-slate-300 rounded-md px-2.5 py-1.5 focus:outline-none focus:border-brand-500 w-28">
+                            className="text-xs border border-slate-200 text-slate-600 rounded-md px-2 py-1.5 focus:outline-none focus:border-brand-500 bg-white">
                             <option value="">All owners</option>
                             {owners.map(o => <option key={o} value={o}>{o}</option>)}
                         </select>
                     )}
-                </div>
-            </div>
+                </>
+            )}
 
-            {/* Signal list */}
-            <div ref={listRef} className="flex-1 overflow-y-auto v2-scrollbar-dark">
-                {loading && signals.length === 0 ? (
-                    <div className="space-y-0">
-                        {[1,2,3,4,5].map(i => (
-                            <div key={i} className="px-4 py-3 border-b border-white/5">
-                                <div className="v2-skeleton-dark h-4 w-3/4 mb-2 rounded" />
-                                <div className="v2-skeleton-dark h-3 w-1/2 mb-1.5 rounded" />
-                                <div className="v2-skeleton-dark h-3 w-full rounded" />
-                            </div>
-                        ))}
-                    </div>
-                ) : filteredSignals.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center h-full text-center px-6">
-                        <Icon name="zap" size={32} className="text-slate-600 mb-3" />
-                        {searchTerm ? (
-                            <>
-                                <p className="text-sm text-slate-400">No signals match "{searchTerm}"</p>
-                                <button onClick={() => setSearchTerm('')} className="text-xs text-brand-400 hover:text-brand-300 mt-2">Clear search</button>
-                            </>
-                        ) : (
-                            <>
-                                <p className="text-sm text-slate-400">No signals yet.</p>
-                                <p className="text-xs text-slate-500 mt-1">Import accounts or create signals to get started.</p>
-                            </>
-                        )}
-                    </div>
-                ) : filteredSignals.map(sig => (
-                    <button key={sig.id}
-                        onClick={() => onSelect(sig.id)}
-                        className={`v2-signal-item w-full text-left px-4 py-3 border-b border-white/5 v2-focus-ring
-                                   ${activeId === sig.id ? 'active' : ''}`}>
-                        <div className="flex items-center gap-2 mb-1">
-                            <span className="text-sm font-medium text-white truncate flex-1">{sig.company_name || 'Unknown'}</span>
-                            {sig.status === 'new' && (
-                                <span className="v2-new-pulse w-2 h-2 rounded-full bg-blue-400 flex-shrink-0" />
-                            )}
-                        </div>
-                        <div className="flex items-center gap-1.5 mb-1">
-                            <SignalTypeBadge type={sig.signal_type} size="sm" />
-                            {sig.account_owner && (
-                                <span className="text-[0.625rem] text-slate-500 truncate">{sig.account_owner}</span>
-                            )}
-                            {sig.created_at && (
-                                <span className="text-[0.625rem] text-slate-600 ml-auto flex-shrink-0">{timeAgo(sig.created_at)}</span>
-                            )}
-                        </div>
-                        <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed">
-                            {sig.signal_description || 'No description'}
-                        </p>
+            <div className="ml-auto flex items-center gap-1.5">
+                {!showBack && (
+                    <button onClick={onAddSignals} title="Import signals (I)"
+                        className="px-2.5 py-1.5 text-xs font-medium text-brand-600 border border-brand-200 rounded-md hover:bg-brand-50 transition-all flex items-center gap-1">
+                        <Icon name="upload" size={12} /> Import
                     </button>
-                ))}
+                )}
+                <a href="/campaigns" className="px-2.5 py-1.5 text-xs text-slate-500 border border-slate-200 rounded-md hover:bg-slate-50 transition-all">Campaigns</a>
+                <a href="/mapping-sequences" className="px-2.5 py-1.5 text-xs text-slate-500 border border-slate-200 rounded-md hover:bg-slate-50 transition-all">Sequences</a>
+                <button onClick={onShowHelp} className="w-7 h-7 flex items-center justify-center text-slate-400 hover:text-slate-600 rounded-md hover:bg-slate-50 transition-all" title="Keyboard shortcuts (?)">
+                    <Kbd>?</Kbd>
+                </button>
             </div>
         </div>
     );
@@ -727,10 +751,18 @@ function CampaignSection({ workspace, onCampaignUpdate, toast }) {
 function PersonaSearch({ workspace, onProspectsSaved, toast, actionsRef }) {
     const defaultPersonas = useMemo(() => {
         if (workspace.personas && workspace.personas.length > 0) {
-            return workspace.personas.map(p => ({
-                title: p.title || p.titles_json || '',
-                seniority: p.seniority || p.seniorities_json || '',
-            }));
+            const parsed = [];
+            for (const p of workspace.personas) {
+                let titles = [];
+                let seniorities = [];
+                try { titles = typeof p.titles_json === 'string' ? JSON.parse(p.titles_json) : (p.titles_json || []); } catch { titles = []; }
+                try { seniorities = typeof p.seniorities_json === 'string' ? JSON.parse(p.seniorities_json) : (p.seniorities_json || []); } catch { seniorities = []; }
+                const sen = seniorities[0] || '';
+                for (const t of titles) {
+                    if (t) parsed.push({ title: t, seniority: sen });
+                }
+            }
+            if (parsed.length > 0) return parsed;
         }
         return [{ title: 'VP Engineering', seniority: 'vp' }];
     }, [workspace.signal.id]);
@@ -942,7 +974,7 @@ function PersonaSearch({ workspace, onProspectsSaved, toast, actionsRef }) {
                                                         <span className="text-green-500" title="Verified"><Icon name="check" size={12} /></span>
                                                     )}
                                                     {alreadyEnrolled && (
-                                                        <span className="text-[0.625rem] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded ml-1">Already saved</span>
+                                                        <span className="text-[0.625rem] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded ml-1">Already enrolled</span>
                                                     )}
                                                 </div>
                                             </td>
@@ -966,7 +998,7 @@ function PersonaSearch({ workspace, onProspectsSaved, toast, actionsRef }) {
                             disabled={savingProspects}
                             className="mt-3 w-full px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-md hover:bg-green-700 disabled:opacity-40 transition-all duration-150 flex items-center justify-center gap-2">
                             {savingProspects ? <Icon name="loader" size={16} /> : <Icon name="check" size={16} />}
-                            {savingProspects ? 'Saving...' : `Save ${selected.size} Prospect${selected.size !== 1 ? 's' : ''}`}
+                            {savingProspects ? 'Enrolling...' : `Enroll ${selected.size} Contact${selected.size !== 1 ? 's' : ''}`}
                         </button>
                     )}
                 </div>
@@ -996,8 +1028,19 @@ function DraftReview({ workspace, toast, actionsRef }) {
     const [critique, setCritique] = useState('');
     const [approving, setApproving] = useState(false);
     const [allApproved, setAllApproved] = useState(false);
+    const [focusedProspectIdx, setFocusedProspectIdx] = useState(0);
+    const [activeSteps, setActiveSteps] = useState({});
+    const [inclusions, setInclusions] = useState(() => {
+        const init = {};
+        prospects.forEach(p => { if (!p.do_not_contact) init[p.id] = true; });
+        return init;
+    });
+    const [showEnrollModal, setShowEnrollModal] = useState(false);
+    const [showNoiseModal, setShowNoiseModal] = useState(false);
+    const [postAction, setPostAction] = useState(null); // 'enrolled' | 'noise' | null
 
     const actionableProspects = prospects.filter(p => !p.do_not_contact);
+    const includedProspects = actionableProspects.filter(p => inclusions[p.id]);
 
     if (actionableProspects.length === 0) return null;
 
@@ -1112,8 +1155,20 @@ function DraftReview({ workspace, toast, actionsRef }) {
             if (firstWithout) handleGenerate(firstWithout.id);
             else toast('All prospects already have drafts', 'info');
         };
-        actionsRef.current = { ...actionsRef.current, generateDrafts: generateFirst, approveAll: handleApproveAll };
-        return () => { const c = { ...actionsRef.current }; delete c.generateDrafts; delete c.approveAll; actionsRef.current = c; };
+        const nextProspect = () => setFocusedProspectIdx(i => Math.min(i + 1, actionableProspects.length - 1));
+        const prevProspect = () => setFocusedProspectIdx(i => Math.max(i - 1, 0));
+        const setDraftStep = (step) => {
+            const p = actionableProspects[focusedProspectIdx];
+            if (p) setActiveSteps(prev => ({ ...prev, [p.id]: step }));
+        };
+        const toggleInclude = () => {
+            const p = actionableProspects[focusedProspectIdx];
+            if (p) setInclusions(prev => ({ ...prev, [p.id]: !prev[p.id] }));
+        };
+        const openEnrollModal = () => { if (includedProspects.length > 0) setShowEnrollModal(true); };
+        const openNoiseModal = () => setShowNoiseModal(true);
+        actionsRef.current = { ...actionsRef.current, generateDrafts: generateFirst, approveAll: handleApproveAll, nextProspect, prevProspect, setDraftStep, toggleInclude, openEnrollModal, openNoiseModal };
+        return () => { const c = { ...actionsRef.current }; delete c.generateDrafts; delete c.approveAll; delete c.nextProspect; delete c.prevProspect; delete c.setDraftStep; delete c.toggleInclude; delete c.openEnrollModal; delete c.openNoiseModal; actionsRef.current = c; };
     });
 
     return (
@@ -1134,16 +1189,39 @@ function DraftReview({ workspace, toast, actionsRef }) {
                 </div>
             )}
 
+            {/* Shortcut hints */}
+            <div className="flex items-center gap-3 text-[0.6875rem] text-slate-400 mb-3">
+                <span className="flex items-center gap-1"><Kbd>j</Kbd><Kbd>k</Kbd> navigate prospects</span>
+                <span className="flex items-center gap-1"><Kbd>1</Kbd><Kbd>2</Kbd><Kbd>3</Kbd> draft steps</span>
+                <span className="flex items-center gap-1"><Kbd>G</Kbd> generate</span>
+                <span className="flex items-center gap-1"><Kbd>A</Kbd> approve all</span>
+            </div>
+
             <div className="space-y-4">
-                {actionableProspects.map(prospect => (
-                    <div key={prospect.id} className="border border-slate-100 rounded-lg p-4">
+                {actionableProspects.map((prospect, pIdx) => (
+                    <div key={prospect.id}
+                         className={`border rounded-lg p-4 transition-all ${
+                             pIdx === focusedProspectIdx ? 'ring-2 ring-blue-400 border-blue-300' : 'border-slate-100'
+                         } ${!inclusions[prospect.id] ? 'opacity-50' : ''}`}>
                         <div className="flex items-center justify-between mb-3">
-                            <div>
-                                <span className="text-sm font-medium text-slate-800">
-                                    {prospect.full_name || `${prospect.first_name || ''} ${prospect.last_name || ''}`.trim()}
-                                </span>
-                                <span className="text-xs text-slate-500 ml-2">{prospect.title}</span>
-                                <span className="text-xs text-slate-400 ml-2">{prospect.email}</span>
+                            <div className="flex items-center gap-3 min-w-0">
+                                <button
+                                    onClick={() => setInclusions(prev => ({ ...prev, [prospect.id]: !prev[prospect.id] }))}
+                                    className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition ${
+                                        inclusions[prospect.id]
+                                            ? 'bg-emerald-500 border-emerald-500 text-white'
+                                            : 'bg-white border-slate-300 text-transparent hover:border-slate-400'
+                                    }`}
+                                    title={`${inclusions[prospect.id] ? 'Exclude' : 'Include'} (S)`}>
+                                    {inclusions[prospect.id] && <Icon name="check" size={12} />}
+                                </button>
+                                <div>
+                                    <span className="text-sm font-medium text-slate-800">
+                                        {prospect.full_name || `${prospect.first_name || ''} ${prospect.last_name || ''}`.trim()}
+                                    </span>
+                                    <span className="text-xs text-slate-500 ml-2">{prospect.title}</span>
+                                    <span className="text-xs text-slate-400 ml-2">{prospect.email}</span>
+                                </div>
                             </div>
                             <button onClick={() => handleGenerate(prospect.id)}
                                 disabled={generating[prospect.id]}
@@ -1153,70 +1231,92 @@ function DraftReview({ workspace, toast, actionsRef }) {
                             </button>
                         </div>
 
-                        {/* Draft steps */}
-                        {(drafts[prospect.id] || workspace.drafts.filter(d => d.prospect_id === prospect.id)).map((draft, stepIdx) => (
-                            <div key={draft.id || stepIdx} className="mt-3 border-t border-slate-50 pt-3">
-                                <div className="flex items-center justify-between mb-1.5">
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-xs font-medium text-slate-500 uppercase">
-                                            Step {draft.sequence_step || stepIdx + 1}
-                                        </span>
-                                        {draft.status && (
-                                            <span className={`text-[0.625rem] px-1.5 py-0.5 rounded-full font-medium ${
-                                                draft.status === 'approved' ? 'bg-green-100 text-green-700' :
-                                                draft.status === 'enrolled' ? 'bg-blue-100 text-blue-700' :
-                                                draft.status === 'edited' ? 'bg-amber-100 text-amber-700' :
-                                                'bg-slate-100 text-slate-500'
-                                            }`}>
-                                                {draft.status}
-                                            </span>
-                                        )}
+                        {/* Draft step tabs (hidden when excluded) */}
+                        {inclusions[prospect.id] && (() => {
+                            const prospectDrafts = drafts[prospect.id] || workspace.drafts.filter(d => d.prospect_id === prospect.id);
+                            if (!prospectDrafts || prospectDrafts.length === 0) return null;
+                            const currentStep = activeSteps[prospect.id] || 1;
+                            const activeDraft = prospectDrafts.find(d => (d.sequence_step || d.step_number) === currentStep) || prospectDrafts[0];
+                            return (
+                                <div className="mt-3 border-t border-slate-50 pt-3">
+                                    {/* Step tabs */}
+                                    <div className="flex gap-1 mb-2 border-b border-slate-100">
+                                        {prospectDrafts.map((d, si) => {
+                                            const step = d.sequence_step || d.step_number || si + 1;
+                                            return (
+                                                <button key={d.id || si}
+                                                    onClick={() => setActiveSteps(prev => ({ ...prev, [prospect.id]: step }))}
+                                                    className={`px-3 py-1.5 text-xs font-medium border-b-2 transition ${
+                                                        currentStep === step
+                                                            ? 'border-brand-500 text-brand-600'
+                                                            : 'border-transparent text-slate-400 hover:text-slate-600'
+                                                    }`}>
+                                                    Step {step}
+                                                    {d.status && d.status !== 'generated' && (
+                                                        <span className="ml-1 w-1.5 h-1.5 rounded-full inline-block bg-brand-500" />
+                                                    )}
+                                                </button>
+                                            );
+                                        })}
                                     </div>
-                                    {draft.id && (
-                                        <button onClick={() => { setRegeneratingDraft(regeneratingDraft === draft.id ? null : draft.id); setCritique(''); }}
-                                            className="text-xs text-brand-600 hover:text-brand-700 flex items-center gap-1">
-                                            <Icon name="refresh-cw" size={12} /> Regenerate
-                                        </button>
+                                    {/* Active draft editor */}
+                                    {activeDraft && (
+                                        <>
+                                            <div className="flex items-center justify-between mb-1.5">
+                                                <span className={`text-[0.625rem] px-1.5 py-0.5 rounded-full font-medium ${
+                                                    activeDraft.status === 'approved' ? 'bg-green-100 text-green-700' :
+                                                    activeDraft.status === 'enrolled' ? 'bg-blue-100 text-blue-700' :
+                                                    activeDraft.status === 'edited' ? 'bg-amber-100 text-amber-700' :
+                                                    'bg-slate-100 text-slate-500'
+                                                }`}>
+                                                    {activeDraft.status || 'draft'}
+                                                </span>
+                                                {activeDraft.id && (
+                                                    <button onClick={() => { setRegeneratingDraft(regeneratingDraft === activeDraft.id ? null : activeDraft.id); setCritique(''); }}
+                                                        className="text-xs text-brand-600 hover:text-brand-700 flex items-center gap-1">
+                                                        <Icon name="refresh-cw" size={12} /> Regenerate
+                                                    </button>
+                                                )}
+                                            </div>
+                                            {activeDraft.subject && (
+                                                <input type="text" key={`subj-${activeDraft.id}-${activeDraft.updated_at || ''}`}
+                                                    defaultValue={activeDraft.subject}
+                                                    onBlur={e => { if (activeDraft.id && e.target.value !== activeDraft.subject) handleDraftEdit(activeDraft.id, 'subject', e.target.value); }}
+                                                    className="w-full text-sm font-medium border border-slate-200 rounded-md px-3 py-1.5 mb-1.5 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500/20" />
+                                            )}
+                                            <AutoTextarea
+                                                value={activeDraft.body || ''}
+                                                onChange={e => {
+                                                    setDrafts(prev => {
+                                                        const updated = { ...prev };
+                                                        for (const pid of Object.keys(updated)) {
+                                                            updated[pid] = updated[pid].map(d =>
+                                                                d.id === activeDraft.id ? { ...d, body: e.target.value } : d
+                                                            );
+                                                        }
+                                                        return updated;
+                                                    });
+                                                }}
+                                                onBlur={e => { if (activeDraft.id && e.target.value !== activeDraft.body) handleDraftEdit(activeDraft.id, 'body', e.target.value); }}
+                                                className="text-slate-600"
+                                                placeholder="Draft body will appear here..." />
+                                            {regeneratingDraft === activeDraft.id && (
+                                                <div className="mt-2 flex gap-2">
+                                                    <input value={critique} onChange={e => setCritique(e.target.value)}
+                                                        onKeyDown={e => e.key === 'Enter' && handleRegenerate(activeDraft.id)}
+                                                        placeholder="What should change?"
+                                                        className="flex-1 text-sm border border-slate-200 rounded-md px-3 py-1.5 focus:outline-none focus:border-brand-500" />
+                                                    <button onClick={() => handleRegenerate(activeDraft.id)}
+                                                        className="px-3 py-1.5 bg-brand-600 text-white text-xs rounded-md hover:bg-brand-700 transition-all">
+                                                        Send
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </>
                                     )}
                                 </div>
-                                {draft.subject && (
-                                    <input type="text" key={`subj-${draft.id}-${draft.updated_at || ''}`}
-                                        defaultValue={draft.subject}
-                                        onBlur={e => { if (draft.id && e.target.value !== draft.subject) handleDraftEdit(draft.id, 'subject', e.target.value); }}
-                                        className="w-full text-sm font-medium border border-slate-200 rounded-md px-3 py-1.5 mb-1.5 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500/20" />
-                                )}
-                                <AutoTextarea
-                                    value={draft.body || ''}
-                                    onChange={e => {
-                                        // Update local state immediately for responsive editing
-                                        setDrafts(prev => {
-                                            const updated = { ...prev };
-                                            for (const pid of Object.keys(updated)) {
-                                                updated[pid] = updated[pid].map(d =>
-                                                    d.id === draft.id ? { ...d, body: e.target.value } : d
-                                                );
-                                            }
-                                            return updated;
-                                        });
-                                    }}
-                                    onBlur={e => { if (draft.id && e.target.value !== draft.body) handleDraftEdit(draft.id, 'body', e.target.value); }}
-                                    className="text-slate-600"
-                                    placeholder="Draft body will appear here..." />
-
-                                {regeneratingDraft === draft.id && (
-                                    <div className="mt-2 flex gap-2">
-                                        <input value={critique} onChange={e => setCritique(e.target.value)}
-                                            onKeyDown={e => e.key === 'Enter' && handleRegenerate(draft.id)}
-                                            placeholder="What should change? (e.g. 'More technical, reference their specific repo')"
-                                            className="flex-1 text-sm border border-slate-200 rounded-md px-3 py-1.5 focus:outline-none focus:border-brand-500" />
-                                        <button onClick={() => handleRegenerate(draft.id)}
-                                            className="px-3 py-1.5 bg-brand-600 text-white text-xs rounded-md hover:bg-brand-700 transition-all">
-                                            Send
-                                        </button>
-                                    </div>
-                                )}
-                            </div>
-                        ))}
+                            );
+                        })()}
                     </div>
                 ))}
             </div>
@@ -1226,9 +1326,136 @@ function DraftReview({ workspace, toast, actionsRef }) {
                     disabled={approving}
                     className="mt-4 w-full px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-md hover:bg-green-700 disabled:opacity-40 transition-all duration-150 flex items-center justify-center gap-2">
                     {approving ? <Icon name="loader" size={16} /> : <Icon name="check" size={16} />}
-                    {approving ? 'Approving...' : 'Approve All Drafts'}
+                    {approving ? 'Approving...' : <><span>Approve All Drafts</span> <Kbd>A</Kbd></>}
                 </button>
             )}
+
+            {/* Post-action: enrolled */}
+            {postAction === 'enrolled' && (
+                <div className="mt-4 bg-emerald-50 border border-emerald-200 rounded-lg p-6 text-center">
+                    <div className="text-3xl mb-2 text-emerald-600">&#10003;</div>
+                    <h3 className="text-lg font-bold text-emerald-800 mb-1">
+                        {includedProspects.length} contact{includedProspects.length !== 1 ? 's' : ''} enrolled
+                    </h3>
+                    <p className="text-sm text-emerald-600 mb-3">{workspace.account.company_name} — {workspace.campaign?.name || 'Campaign'}</p>
+                    <div className="text-xs text-slate-500 space-y-0.5">
+                        {includedProspects.map(p => (
+                            <div key={p.id}>{p.full_name || p.email} ({p.email})</div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* Post-action: noise */}
+            {postAction === 'noise' && (
+                <div className="mt-4 bg-slate-50 border border-slate-200 rounded-lg p-6 text-center">
+                    <div className="text-3xl mb-2 text-slate-400">&#10005;</div>
+                    <h3 className="text-lg font-bold text-slate-700 mb-1">
+                        {workspace.account.company_name} marked as noise
+                    </h3>
+                    <p className="text-sm text-slate-500">All signals for this account have been archived.</p>
+                </div>
+            )}
+
+            {/* Enroll confirmation modal */}
+            {showEnrollModal && (
+                <EnrollConfirmModal
+                    prospects={includedProspects}
+                    campaignName={workspace.campaign?.name || 'Campaign'}
+                    onCancel={() => setShowEnrollModal(false)}
+                    onConfirm={() => {
+                        setShowEnrollModal(false);
+                        setPostAction('enrolled');
+                        // Trigger actual enrollment via the Enrollment component
+                        if (actionsRef?.current?.enrollAll) actionsRef.current.enrollAll();
+                    }}
+                />
+            )}
+
+            {/* Noise confirmation modal */}
+            {showNoiseModal && (
+                <NoiseConfirmModal
+                    companyName={workspace.account.company_name}
+                    onCancel={() => setShowNoiseModal(false)}
+                    onConfirm={() => {
+                        setShowNoiseModal(false);
+                        setPostAction('noise');
+                    }}
+                />
+            )}
+        </div>
+    );
+}
+
+// Inline confirmation modals with auto-focus
+
+function EnrollConfirmModal({ prospects, campaignName, onCancel, onConfirm }) {
+    const confirmRef = useRef(null);
+    useEffect(() => { confirmRef.current?.focus(); }, []);
+    useEffect(() => {
+        const handler = (e) => {
+            if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
+        };
+        window.addEventListener('keydown', handler);
+        return () => window.removeEventListener('keydown', handler);
+    }, [onCancel]);
+
+    return (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
+            <div className="bg-white rounded-xl shadow-xl p-6 max-w-md w-full mx-4">
+                <h3 className="text-lg font-bold text-slate-900 mb-3">Confirm Enrollment</h3>
+                <p className="text-sm text-slate-600 mb-2">
+                    <strong>{prospects.length}</strong> contact{prospects.length !== 1 ? 's' : ''} into <strong>{campaignName}</strong>:
+                </p>
+                <ul className="text-sm text-slate-700 list-disc ml-5 mb-4">
+                    {prospects.map(p => (
+                        <li key={p.id}>{p.full_name || p.email} — {p.email}</li>
+                    ))}
+                </ul>
+                <div className="flex items-center gap-3">
+                    <button ref={confirmRef} onClick={onConfirm}
+                        className="flex-1 px-4 py-2.5 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 transition focus:ring-2 focus:ring-emerald-400 focus:outline-none flex items-center justify-center gap-2">
+                        Enroll {prospects.length} <Kbd>Enter</Kbd>
+                    </button>
+                    <button onClick={onCancel}
+                        className="px-4 py-2.5 text-slate-500 hover:text-slate-700 text-sm flex items-center gap-1">
+                        Cancel <span className="text-slate-300 text-xs">Esc</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function NoiseConfirmModal({ companyName, onCancel, onConfirm }) {
+    const confirmRef = useRef(null);
+    useEffect(() => { confirmRef.current?.focus(); }, []);
+    useEffect(() => {
+        const handler = (e) => {
+            if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
+        };
+        window.addEventListener('keydown', handler);
+        return () => window.removeEventListener('keydown', handler);
+    }, [onCancel]);
+
+    return (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
+            <div className="bg-white rounded-xl shadow-xl p-6 max-w-sm w-full mx-4">
+                <h3 className="text-lg font-bold text-slate-900 mb-2">Mark as Noise?</h3>
+                <p className="text-sm text-slate-600 mb-4">
+                    This archives <strong>{companyName}</strong> and all its signals.
+                </p>
+                <div className="flex items-center gap-3">
+                    <button ref={confirmRef} onClick={onConfirm}
+                        className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition focus:ring-2 focus:ring-red-400 focus:outline-none flex items-center justify-center gap-2">
+                        Confirm Noise <Kbd>Enter</Kbd>
+                    </button>
+                    <button onClick={onCancel}
+                        className="px-4 py-2.5 text-slate-500 hover:text-slate-700 text-sm flex items-center gap-1">
+                        Cancel <span className="text-slate-300 text-xs">Esc</span>
+                    </button>
+                </div>
+            </div>
         </div>
     );
 }
@@ -1403,7 +1630,7 @@ function Enrollment({ workspace, onNextSignal, toast, actionsRef }) {
                     {enrollingAll ? (
                         <><Icon name="loader" size={16} /> Enrolling...</>
                     ) : (
-                        <><Icon name="send" size={16} /> Enroll All ({prospects.length - enrolledCount} remaining)</>
+                        <><Icon name="send" size={16} /> Enroll {prospects.length - enrolledCount} <Kbd>E</Kbd></>
                     )}
                 </button>
             )}
@@ -1886,28 +2113,24 @@ function Workspace({ signalId, signalIndex, totalSignals, onMarkNoise, onSkip, o
                     <span className="text-xs text-slate-500">
                         Signal {signalIndex + 1} of {totalSignals}
                     </span>
-                    <span className="text-[0.625rem] text-slate-300 hidden sm:inline">
-                        <kbd className="px-1 py-0.5 rounded bg-slate-100 text-slate-500 border border-slate-200 font-mono">&#x2191;&#x2193;</kbd> Nav
-                        &nbsp;&bull;&nbsp;
-                        <kbd className="px-1 py-0.5 rounded bg-slate-100 text-slate-500 border border-slate-200 font-mono">N</kbd> Noise
-                        &nbsp;&bull;&nbsp;
-                        <kbd className="px-1 py-0.5 rounded bg-slate-100 text-slate-500 border border-slate-200 font-mono">S</kbd> Skip
-                        &nbsp;&bull;&nbsp;
-                        <kbd className="px-1 py-0.5 rounded bg-slate-100 text-slate-500 border border-slate-200 font-mono">F</kbd> Find
-                        &nbsp;&bull;&nbsp;
-                        <kbd className="px-1 py-0.5 rounded bg-slate-100 text-slate-500 border border-slate-200 font-mono">?</kbd> Help
+                    <span className="text-[0.625rem] text-slate-300 hidden sm:inline flex items-center gap-1.5">
+                        <Kbd>j</Kbd><Kbd>k</Kbd> navigate
+                        <span className="text-slate-200 mx-1">&bull;</span>
+                        <Kbd>s</Kbd> toggle
+                        <span className="text-slate-200 mx-1">&bull;</span>
+                        <Kbd>1</Kbd><Kbd>2</Kbd><Kbd>3</Kbd> steps
+                        <span className="text-slate-200 mx-1">&bull;</span>
+                        <Kbd>?</Kbd> help
                     </span>
                 </div>
                 <div className="flex items-center gap-2">
                     <button onClick={onMarkNoise}
                         className="px-3 py-1.5 text-xs font-medium text-slate-500 border border-slate-200 rounded-md hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-all flex items-center gap-1.5">
-                        <Icon name="ban" size={12} />
-                        Noise
+                        Noise <Kbd>n</Kbd>
                     </button>
                     <button onClick={onSkip}
                         className="px-3 py-1.5 text-xs font-medium text-slate-500 border border-slate-200 rounded-md hover:bg-slate-50 transition-all flex items-center gap-1.5">
-                        <Icon name="skip-forward" size={12} />
-                        Skip
+                        Skip <Kbd>s</Kbd>
                     </button>
                 </div>
             </div>
@@ -1934,6 +2157,7 @@ function App() {
     const [activeIndex, setActiveIndex] = useState(-1);
     const [showIntake, setShowIntake] = useState(false);
     const [showHelp, setShowHelp] = useState(false);
+    const [searchTerm, setSearchTerm] = useState('');
 
     // Ref for workspace child components to register their keyboard-triggered actions
     const workspaceActionsRef = useRef({});
@@ -2061,8 +2285,14 @@ function App() {
                 return;
             }
 
-            // Skip shortcuts when in form fields
-            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+            // When in form fields, only Escape works (blurs the field)
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') {
+                if (e.key === 'Escape') {
+                    e.target.blur();
+                    e.preventDefault();
+                }
+                return;
+            }
 
             // Skip shortcuts when help modal is open
             if (showHelp) return;
@@ -2084,7 +2314,8 @@ function App() {
             } else if (key === 'Escape') {
                 if (showIntake) {
                     setShowIntake(false);
-                } else {
+                } else if (activeSignalId) {
+                    // Back to table
                     setActiveSignalId(null);
                     setActiveIndex(-1);
                 }
@@ -2093,10 +2324,18 @@ function App() {
             // --- Signal actions (only when a signal is selected) ---
             else if (key === 'n' && activeSignalId && !showIntake) {
                 e.preventDefault();
-                markNoise();
+                const action = workspaceActionsRef.current.openNoiseModal;
+                if (action) action();
+                else markNoise();
             } else if (key === 's' && activeSignalId && !showIntake) {
                 e.preventDefault();
-                skipSignal();
+                const action = workspaceActionsRef.current.toggleInclude;
+                if (action) action();
+                else skipSignal();
+            } else if (key === 'Enter' && activeSignalId && !showIntake) {
+                e.preventDefault();
+                const action = workspaceActionsRef.current.openEnrollModal;
+                if (action) action();
             }
 
             // --- Intake ---
@@ -2123,30 +2362,52 @@ function App() {
                 const action = workspaceActionsRef.current.enrollAll;
                 if (action) action();
             }
+
+            // --- Prospect navigation (j/k) and draft step tabs (1/2/3) ---
+            else if (key === 'j' && activeSignalId && !showIntake) {
+                e.preventDefault();
+                const action = workspaceActionsRef.current.nextProspect;
+                if (action) action();
+            } else if (key === 'k' && activeSignalId && !showIntake) {
+                e.preventDefault();
+                const action = workspaceActionsRef.current.prevProspect;
+                if (action) action();
+            } else if ((key === '1' || key === '2' || key === '3') && activeSignalId && !showIntake) {
+                e.preventDefault();
+                const action = workspaceActionsRef.current.setDraftStep;
+                if (action) action(Number(key));
+            }
         };
         window.addEventListener('keydown', handler);
         return () => window.removeEventListener('keydown', handler);
     }, [activeIndex, signals, selectSignal, activeSignalId, showIntake, showHelp, markNoise, skipSignal]);
 
+    const goBackToTable = useCallback(() => {
+        setActiveSignalId(null);
+        setActiveIndex(-1);
+        setShowIntake(false);
+    }, []);
+
     return (
-        <div className="flex h-screen overflow-hidden">
-            <SignalQueue
-                signals={signals}
-                total={total}
-                loading={loading}
-                activeId={activeSignalId}
-                onSelect={(id) => { setShowIntake(false); selectSignal(id); }}
+        <div className="flex flex-col h-screen overflow-hidden">
+            <TopBar
                 statusFilter={statusFilter}
                 onStatusFilter={setStatusFilter}
+                counts={counts}
+                searchTerm={searchTerm}
+                onSearchChange={setSearchTerm}
                 ownerFilter={ownerFilter}
                 onOwnerFilter={setOwnerFilter}
                 owners={owners}
-                counts={counts}
+                total={total}
                 onAddSignals={() => { setActiveSignalId(null); setActiveIndex(-1); setShowIntake(true); }}
+                onShowHelp={() => setShowHelp(true)}
+                onBack={goBackToTable}
+                showBack={!!activeSignalId}
             />
             {showIntake ? (
                 <IntakePanel onSignalsAdded={async () => { setShowIntake(false); const fresh = await loadSignals(); if (fresh && fresh.length > 0) { setActiveSignalId(fresh[0].id); setActiveIndex(0); } }} />
-            ) : (
+            ) : activeSignalId ? (
                 <Workspace
                     signalId={activeSignalId}
                     signalIndex={activeIndex >= 0 ? activeIndex : 0}
@@ -2157,6 +2418,14 @@ function App() {
                     onReloadAndAdvance={reloadAndAdvance}
                     onSignalsAdded={async () => { const fresh = await loadSignals(); if (fresh && fresh.length > 0 && !activeSignalId) { setActiveSignalId(fresh[0].id); setActiveIndex(0); } }}
                     actionsRef={workspaceActionsRef}
+                />
+            ) : (
+                <SignalTable
+                    signals={signals}
+                    loading={loading}
+                    activeIndex={activeIndex}
+                    onSelect={(id) => { setShowIntake(false); selectSignal(id); }}
+                    searchTerm={searchTerm}
                 />
             )}
             {showHelp && <KeyboardHelp onClose={() => setShowHelp(false)} />}
