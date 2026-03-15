@@ -9,7 +9,7 @@ url = "http://localhost:5001/sse"
 
 [nix]
 channel = "stable-25_05"
-packages = ["libxcrypt", "sqlite", "xcodebuild", "zlib"]
+packages = ["freetype", "gumbo", "harfbuzz", "jbig2dec", "libjpeg_turbo", "libxcrypt", "mupdf", "openjpeg", "sqlite", "swig", "xcbuild", "xcodebuild", "zlib"]
 
 [workflows]
 runButton = "Project"
