@@ -76,7 +76,7 @@ _STEP_TEMPLATES = {
             '{hook}\n\n'
             '{pain}\n\n'
             'Worth a quick look?\n\n'
-            '-- Eric'
+            '{{sender_first_name}}'
         ),
     },
     2: {
@@ -88,7 +88,7 @@ _STEP_TEMPLATES = {
             'Phrase eliminates that with GitHub Sync -- locale files stay in '
             'lockstep with your branches.\n\n'
             'Open to a quick look?\n\n'
-            '-- Eric'
+            '{{sender_first_name}}'
         ),
     },
     3: {
@@ -98,18 +98,20 @@ _STEP_TEMPLATES = {
             'Just want to make sure I am not cluttering your inbox. If localization '
             'tooling is not on the radar right now, no worries at all.\n\n'
             'Either way, happy to help whenever timing is right.\n\n'
-            '-- Eric'
+            '{{sender_first_name}}'
         ),
     },
 }
 
 
 def _generate_template_draft(step: int, prospect: dict, signal: dict) -> dict:
-    """Generate a template-based draft for one sequence step."""
+    """Generate a template-based draft for one sequence step.
+
+    Apollo dynamic variables ({{first_name}}, {{company}}, {{sender_first_name}})
+    are LEFT as-is — Apollo resolves them at send time.
+    """
     tmpl = _STEP_TEMPLATES.get(step, _STEP_TEMPLATES[3])
-    company = prospect.get('company_name') or 'your company'
-    first_name = prospect.get('first_name') or 'there'
-    hook = f"I noticed localization-related activity at {company}."
+    hook = "I noticed localization-related activity at {{company}}."
     if signal:
         desc = signal.get('signal_description', '')
         if desc:
@@ -118,8 +120,8 @@ def _generate_template_draft(step: int, prospect: dict, signal: dict) -> dict:
         "Phrase automates localization via GitHub Sync -- "
         "your devs never touch translation files."
     )
-    subject = tmpl['subject'].replace('{{company}}', company).replace('{{first_name}}', first_name)
-    body = tmpl['body'].format(hook=hook, pain=pain).replace('{{company}}', company).replace('{{first_name}}', first_name)
+    subject = tmpl['subject']
+    body = tmpl['body'].replace('{hook}', hook).replace('{pain}', pain)
     return {'subject': subject, 'body': body}
 
 
