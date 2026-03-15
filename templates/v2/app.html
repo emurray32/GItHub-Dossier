@@ -411,12 +411,9 @@ function StatusBadge({ status, size = 'sm' }) {
 // LEFT PANEL — SIGNAL QUEUE
 // ═══════════════════════════════════════════════════════════════════════════
 
-function SignalQueue({ signals, total, loading, activeId, onSelect, statusFilter, onStatusFilter, ownerFilter, onOwnerFilter, owners, counts, onAddSignals }) {
-    const listRef = useRef(null);
-    const [searchTerm, setSearchTerm] = useState('');
-
+function SignalTable({ signals, loading, activeIndex, onSelect, searchTerm }) {
     const filteredSignals = useMemo(() => {
-        if (!searchTerm.trim()) return signals;
+        if (!searchTerm) return signals;
         const q = searchTerm.toLowerCase();
         return signals.filter(s =>
             (s.company_name || '').toLowerCase().includes(q) ||
@@ -426,55 +423,112 @@ function SignalQueue({ signals, total, loading, activeId, onSelect, statusFilter
         );
     }, [signals, searchTerm]);
 
+    if (loading && signals.length === 0) {
+        return (
+            <div className="flex-1 flex items-center justify-center">
+                <Icon name="loader" size={24} className="text-slate-300 animate-spin" />
+            </div>
+        );
+    }
+
+    if (filteredSignals.length === 0) {
+        return (
+            <div className="flex-1 flex items-center justify-center">
+                <div className="text-center">
+                    <Icon name="zap" size={32} className="text-slate-300 mx-auto mb-2" />
+                    <p className="text-sm text-slate-400">{searchTerm ? 'No signals match your search' : 'No signals in this view'}</p>
+                </div>
+            </div>
+        );
+    }
+
     return (
-        <div className="v2-sidebar flex flex-col h-full bg-brand-950 text-slate-300 select-none" style={{ width: 350 }}>
-            {/* Header */}
-            <div className="px-4 pt-5 pb-3 border-b border-white/10">
-                <div className="flex items-center gap-2 mb-3">
-                    <Icon name="zap" size={18} className="text-brand-400" />
-                    <h1 className="text-white text-base font-semibold tracking-tight">Signal Queue</h1>
-                    <span className="ml-auto bg-brand-800 text-brand-200 text-[0.6875rem] font-semibold px-2 py-0.5 rounded-full">
-                        {total}
-                    </span>
-                    {onAddSignals && (
-                        <button onClick={onAddSignals}
-                            title="Add signals (I)"
-                            className="w-6 h-6 flex items-center justify-center rounded-md text-slate-400 hover:text-white hover:bg-white/10 transition-all">
-                            <Icon name="plus" size={14} />
-                        </button>
-                    )}
-                </div>
-
-                {/* Status tabs */}
-                <div className="flex gap-1 mb-3">
-                    {[
-                        { key: 'new', label: 'New', count: counts.new || 0 },
-                        { key: 'sequenced', label: 'Sequenced', count: counts.sequenced || 0 },
-                        { key: 'revisit', label: 'Revisit', count: counts.revisit || 0 },
-                        { key: 'noise', label: 'Noise', count: counts.noise || 0 },
-                        { key: null, label: 'All', count: Object.values(counts).reduce((a, b) => a + b, 0) },
-                    ].map(tab => (
-                        <button key={tab.label}
-                            onClick={() => onStatusFilter(tab.key)}
-                            className={`flex-1 text-xs font-medium py-1.5 rounded-md transition-all duration-150
-                                ${statusFilter === tab.key ? 'bg-brand-600 text-white' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>
-                            {tab.label}
-                            {tab.count > 0 && <span className="ml-1 opacity-70">({tab.count})</span>}
-                        </button>
+        <div className="flex-1 overflow-auto v2-scrollbar">
+            <table className="w-full text-sm">
+                <thead className="sticky top-0 z-10">
+                    <tr className="bg-slate-50 border-b border-slate-200 text-[0.6875rem] text-slate-500 uppercase tracking-wider">
+                        <th className="text-left px-3 py-2 font-medium w-8">#</th>
+                        <th className="text-left px-3 py-2 font-medium" style={{minWidth: 160}}>Company</th>
+                        <th className="text-left px-3 py-2 font-medium" style={{minWidth: 130}}>Signal</th>
+                        <th className="text-left px-3 py-2 font-medium">Description</th>
+                        <th className="text-left px-3 py-2 font-medium w-20">Owner</th>
+                        <th className="text-left px-3 py-2 font-medium w-14">Age</th>
+                        <th className="text-left px-3 py-2 font-medium w-20">Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {filteredSignals.map((sig, idx) => (
+                        <tr key={sig.id}
+                            onClick={() => onSelect(sig.id)}
+                            className={`border-b border-slate-100 cursor-pointer transition-colors
+                                ${activeIndex === idx ? 'bg-brand-50' : 'hover:bg-slate-50'}`}
+                            style={{height: 36}}>
+                            <td className="px-3 py-1 text-xs text-brand-600 font-medium tabular-nums cursor-pointer hover:underline">{idx + 1}</td>
+                            <td className="px-3 py-1">
+                                <div className="flex items-center gap-1.5">
+                                    {(sig.account_status === 'new' || sig.status === 'new') && <span className="v2-new-pulse w-1.5 h-1.5 rounded-full bg-blue-400 flex-shrink-0" />}
+                                    <span className="font-medium text-slate-800 truncate">{sig.company_name || 'Unknown'}</span>
+                                </div>
+                            </td>
+                            <td className="px-3 py-1"><SignalTypeBadge type={sig.signal_type} size="sm" /></td>
+                            <td className="px-3 py-1 text-slate-500 truncate max-w-sm">{sig.signal_description || '--'}</td>
+                            <td className="px-3 py-1 text-xs text-slate-400 truncate">{sig.account_owner || '--'}</td>
+                            <td className="px-3 py-1 text-xs text-slate-400 tabular-nums">{timeAgo(sig.created_at)}</td>
+                            <td className="px-3 py-1">
+                                <StatusBadge status={sig.account_status || sig.status} size="sm" />
+                            </td>
+                        </tr>
                     ))}
-                </div>
+                </tbody>
+            </table>
+        </div>
+    );
+}
 
-                {/* Search + Owner filter */}
-                <div className="flex gap-2">
-                    <div className="relative flex-1">
-                        <Icon name="search" size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+function TopBar({ statusFilter, onStatusFilter, counts, searchTerm, onSearchChange, ownerFilter, onOwnerFilter, owners, total, onAddSignals, onShowHelp, onBack, showBack }) {
+    return (
+        <div className="bg-white border-b border-slate-200 px-4 py-2 flex items-center gap-3 flex-shrink-0">
+            {showBack ? (
+                <button onClick={onBack} className="flex items-center gap-1.5 text-sm text-brand-600 hover:text-brand-700 font-medium mr-2">
+                    <Icon name="arrow-right" size={16} className="rotate-180" /> Signals
+                </button>
+            ) : (
+                <div className="flex items-center gap-2 mr-2">
+                    <Icon name="zap" size={16} className="text-brand-600" />
+                    <span className="text-sm font-semibold text-slate-900">Signals</span>
+                    <span className="text-xs bg-brand-100 text-brand-700 font-semibold px-1.5 py-0.5 rounded-full">{total}</span>
+                </div>
+            )}
+
+            <div className="flex gap-0.5 bg-slate-100 rounded-md p-0.5">
+                {[
+                    { key: 'new', label: 'New', count: counts.new || 0 },
+                    { key: 'sequenced', label: 'Seq', count: counts.sequenced || 0 },
+                    { key: 'revisit', label: 'Revisit', count: counts.revisit || 0 },
+                    { key: 'noise', label: 'Noise', count: counts.noise || 0 },
+                    { key: null, label: 'All', count: Object.values(counts).reduce((a, b) => a + b, 0) },
+                ].map(tab => (
+                    <button key={tab.label}
+                        onClick={() => onStatusFilter(tab.key)}
+                        className={`text-xs font-medium px-2.5 py-1 rounded transition-all
+                            ${statusFilter === tab.key ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+                        {tab.label}
+                        {tab.count > 0 && <span className="ml-1 opacity-60">{tab.count}</span>}
+                    </button>
+                ))}
+            </div>
+
+            {!showBack && (
+                <>
+                    <div className="relative flex-1 max-w-xs ml-2">
+                        <Icon name="search" size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                         <input value={searchTerm}
-                            onChange={e => setSearchTerm(e.target.value)}
-                            placeholder="Search signals..."
-                            className="w-full text-xs bg-white/5 border border-white/10 text-slate-300 rounded-md pl-7 pr-2.5 py-1.5 focus:outline-none focus:border-brand-500 placeholder-slate-500" />
+                            onChange={e => onSearchChange(e.target.value)}
+                            placeholder="Search..."
+                            className="w-full text-xs border border-slate-200 text-slate-700 rounded-md pl-7 pr-2.5 py-1.5 focus:outline-none focus:border-brand-500 placeholder-slate-400" />
                         {searchTerm && (
-                            <button onClick={() => setSearchTerm('')}
-                                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white">
+                            <button onClick={() => onSearchChange('')}
+                                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
                                 <Icon name="x" size={10} />
                             </button>
                         )}
@@ -482,82 +536,26 @@ function SignalQueue({ signals, total, loading, activeId, onSelect, statusFilter
                     {owners.length > 0 && (
                         <select value={ownerFilter || ''}
                             onChange={e => onOwnerFilter(e.target.value || null)}
-                            className="text-xs bg-white/5 border border-white/10 text-slate-300 rounded-md px-2.5 py-1.5 focus:outline-none focus:border-brand-500 w-28">
+                            className="text-xs border border-slate-200 text-slate-600 rounded-md px-2 py-1.5 focus:outline-none focus:border-brand-500 bg-white">
                             <option value="">All owners</option>
                             {owners.map(o => <option key={o} value={o}>{o}</option>)}
                         </select>
                     )}
-                </div>
-            </div>
+                </>
+            )}
 
-            {/* Signal list */}
-            <div ref={listRef} className="flex-1 overflow-y-auto v2-scrollbar-dark">
-                {loading && signals.length === 0 ? (
-                    <div className="space-y-0">
-                        {[1,2,3,4,5].map(i => (
-                            <div key={i} className="px-4 py-3 border-b border-white/5">
-                                <div className="v2-skeleton-dark h-4 w-3/4 mb-2 rounded" />
-                                <div className="v2-skeleton-dark h-3 w-1/2 mb-1.5 rounded" />
-                                <div className="v2-skeleton-dark h-3 w-full rounded" />
-                            </div>
-                        ))}
-                    </div>
-                ) : filteredSignals.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center h-full text-center px-6">
-                        <Icon name="zap" size={32} className="text-slate-600 mb-3" />
-                        {searchTerm ? (
-                            <>
-                                <p className="text-sm text-slate-400">No signals match "{searchTerm}"</p>
-                                <button onClick={() => setSearchTerm('')} className="text-xs text-brand-400 hover:text-brand-300 mt-2">Clear search</button>
-                            </>
-                        ) : (
-                            <>
-                                <p className="text-sm text-slate-400">No signals yet.</p>
-                                <p className="text-xs text-slate-500 mt-1">Import accounts or create signals to get started.</p>
-                            </>
-                        )}
-                    </div>
-                ) : filteredSignals.map(sig => (
-                    <button key={sig.id}
-                        onClick={() => onSelect(sig.id)}
-                        className={`v2-signal-item w-full text-left px-4 py-3 border-b border-white/5 v2-focus-ring
-                                   ${activeId === sig.id ? 'active' : ''}`}>
-                        <div className="flex items-center gap-2 mb-1">
-                            <span className="text-sm font-medium text-white truncate flex-1">{sig.company_name || 'Unknown'}</span>
-                            {sig.status === 'new' && (
-                                <span className="v2-new-pulse w-2 h-2 rounded-full bg-blue-400 flex-shrink-0" />
-                            )}
-                        </div>
-                        <div className="flex items-center gap-1.5 mb-1">
-                            <SignalTypeBadge type={sig.signal_type} size="sm" />
-                            {sig.account_owner && (
-                                <span className="text-[0.625rem] text-slate-500 truncate">{sig.account_owner}</span>
-                            )}
-                            {sig.created_at && (
-                                <span className="text-[0.625rem] text-slate-600 ml-auto flex-shrink-0">{timeAgo(sig.created_at)}</span>
-                            )}
-                        </div>
-                        <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed">
-                            {sig.signal_description || 'No description'}
-                        </p>
+            <div className="ml-auto flex items-center gap-1.5">
+                {!showBack && (
+                    <button onClick={onAddSignals} title="Import signals (I)"
+                        className="px-2.5 py-1.5 text-xs font-medium text-brand-600 border border-brand-200 rounded-md hover:bg-brand-50 transition-all flex items-center gap-1">
+                        <Icon name="upload" size={12} /> Import
                     </button>
-                ))}
-            </div>
-
-            {/* Navigation footer */}
-            <div className="mt-auto border-t border-white/10 px-4 py-3 flex gap-2">
-                <a href="/campaigns"
-                   className="flex-1 flex items-center justify-center gap-1.5 text-xs font-medium text-slate-400 hover:text-white hover:bg-white/5 rounded-md py-2 transition-all">
-                    <Icon name="send" size={13} /> Campaigns
-                </a>
-                <a href="/mapping-sequences"
-                   className="flex-1 flex items-center justify-center gap-1.5 text-xs font-medium text-slate-400 hover:text-white hover:bg-white/5 rounded-md py-2 transition-all">
-                    <Icon name="mail" size={13} /> Sequences
-                </a>
-                <a href="/accounts"
-                   className="flex-1 flex items-center justify-center gap-1.5 text-xs font-medium text-slate-400 hover:text-white hover:bg-white/5 rounded-md py-2 transition-all">
-                    <Icon name="building" size={13} /> Accounts
-                </a>
+                )}
+                <a href="/campaigns" className="px-2.5 py-1.5 text-xs text-slate-500 border border-slate-200 rounded-md hover:bg-slate-50 transition-all">Campaigns</a>
+                <a href="/mapping-sequences" className="px-2.5 py-1.5 text-xs text-slate-500 border border-slate-200 rounded-md hover:bg-slate-50 transition-all">Sequences</a>
+                <button onClick={onShowHelp} className="w-7 h-7 flex items-center justify-center text-slate-400 hover:text-slate-600 rounded-md hover:bg-slate-50 transition-all" title="Keyboard shortcuts (?)">
+                    <Kbd>?</Kbd>
+                </button>
             </div>
         </div>
     );
@@ -2005,6 +2003,7 @@ function App() {
     const [activeIndex, setActiveIndex] = useState(-1);
     const [showIntake, setShowIntake] = useState(false);
     const [showHelp, setShowHelp] = useState(false);
+    const [searchTerm, setSearchTerm] = useState('');
 
     // Ref for workspace child components to register their keyboard-triggered actions
     const workspaceActionsRef = useRef({});
@@ -2161,7 +2160,8 @@ function App() {
             } else if (key === 'Escape') {
                 if (showIntake) {
                     setShowIntake(false);
-                } else {
+                } else if (activeSignalId) {
+                    // Back to table
                     setActiveSignalId(null);
                     setActiveIndex(-1);
                 }
@@ -2220,25 +2220,32 @@ function App() {
         return () => window.removeEventListener('keydown', handler);
     }, [activeIndex, signals, selectSignal, activeSignalId, showIntake, showHelp, markNoise, skipSignal]);
 
+    const goBackToTable = useCallback(() => {
+        setActiveSignalId(null);
+        setActiveIndex(-1);
+        setShowIntake(false);
+    }, []);
+
     return (
-        <div className="flex h-screen overflow-hidden">
-            <SignalQueue
-                signals={signals}
-                total={total}
-                loading={loading}
-                activeId={activeSignalId}
-                onSelect={(id) => { setShowIntake(false); selectSignal(id); }}
+        <div className="flex flex-col h-screen overflow-hidden">
+            <TopBar
                 statusFilter={statusFilter}
                 onStatusFilter={setStatusFilter}
+                counts={counts}
+                searchTerm={searchTerm}
+                onSearchChange={setSearchTerm}
                 ownerFilter={ownerFilter}
                 onOwnerFilter={setOwnerFilter}
                 owners={owners}
-                counts={counts}
+                total={total}
                 onAddSignals={() => { setActiveSignalId(null); setActiveIndex(-1); setShowIntake(true); }}
+                onShowHelp={() => setShowHelp(true)}
+                onBack={goBackToTable}
+                showBack={!!activeSignalId}
             />
             {showIntake ? (
                 <IntakePanel onSignalsAdded={async () => { setShowIntake(false); const fresh = await loadSignals(); if (fresh && fresh.length > 0) { setActiveSignalId(fresh[0].id); setActiveIndex(0); } }} />
-            ) : (
+            ) : activeSignalId ? (
                 <Workspace
                     signalId={activeSignalId}
                     signalIndex={activeIndex >= 0 ? activeIndex : 0}
@@ -2249,6 +2256,14 @@ function App() {
                     onReloadAndAdvance={reloadAndAdvance}
                     onSignalsAdded={async () => { const fresh = await loadSignals(); if (fresh && fresh.length > 0 && !activeSignalId) { setActiveSignalId(fresh[0].id); setActiveIndex(0); } }}
                     actionsRef={workspaceActionsRef}
+                />
+            ) : (
+                <SignalTable
+                    signals={signals}
+                    loading={loading}
+                    activeIndex={activeIndex}
+                    onSelect={(id) => { setShowIntake(false); selectSignal(id); }}
+                    searchTerm={searchTerm}
                 />
             )}
             {showHelp && <KeyboardHelp onClose={() => setShowHelp(false)} />}
