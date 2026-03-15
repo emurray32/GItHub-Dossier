@@ -967,6 +967,7 @@ function SignalContext({ workspace }) {
                         {account.website && (
                             <a href={account.website.startsWith('http') ? account.website : `https://${account.website}`}
                                target="_blank" rel="noopener noreferrer"
+                               title={account.website}
                                className="text-brand-600 hover:text-brand-700 flex-shrink-0 transition-colors">
                                 <Icon name="external-link" size={14} />
                             </a>
@@ -2061,7 +2062,7 @@ function Enrollment({ workspace, onNextSignal, toast, actionsRef }) {
 // INTAKE PANEL — Add signals when queue is empty
 // ═══════════════════════════════════════════════════════════════════════════
 
-function IntakePanel({ onSignalsAdded }) {
+function IntakePanel({ onSignalsAdded, signalCount = 0 }) {
     const toast = useToast();
     const [activeTab, setActiveTab] = useState('csv');
 
@@ -2177,9 +2178,11 @@ function IntakePanel({ onSignalsAdded }) {
                     <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-brand-100 mb-4">
                         <Icon name="zap" size={32} className="text-brand-600" />
                     </div>
-                    <h2 className="text-2xl font-semibold text-slate-900 mb-2">Get Started</h2>
+                    <h2 className="text-2xl font-semibold text-slate-900 mb-2">{signalCount > 0 ? 'Import Signals' : 'Get Started'}</h2>
                     <p className="text-sm text-slate-500 max-w-md mx-auto">
-                        Your signal queue is empty. Upload a spreadsheet or document to get started, or add a signal manually.
+                        {signalCount > 0
+                            ? 'Upload a spreadsheet, document, or add a signal manually.'
+                            : 'Your signal queue is empty. Upload a spreadsheet or document to get started, or add a signal manually.'}
                     </p>
                 </div>
 
@@ -2470,7 +2473,7 @@ function Workspace({ signalId, signalIndex, totalSignals, onMarkNoise, onSkip, o
                     <span className="text-[0.625rem] text-slate-300 hidden sm:inline flex items-center gap-1.5">
                         <Kbd>j</Kbd><Kbd>k</Kbd> navigate
                         <span className="text-slate-200 mx-1">&bull;</span>
-                        <Kbd>s</Kbd> toggle
+                        <Kbd>s</Kbd> skip
                         <span className="text-slate-200 mx-1">&bull;</span>
                         <Kbd>1</Kbd><Kbd>2</Kbd><Kbd>3</Kbd> steps
                         <span className="text-slate-200 mx-1">&bull;</span>
@@ -2555,7 +2558,10 @@ function App() {
             .catch(() => {});
     }, []);
 
+    // Reset position and reload when filter changes
     useEffect(() => {
+        setActiveSignalId(null);
+        setActiveIndex(-1);
         loadSignals();
     }, [loadSignals]);
 
@@ -2775,7 +2781,7 @@ function App() {
                 showBack={!!activeSignalId}
             />
             {showIntake ? (
-                <IntakePanel onSignalsAdded={async () => { setShowIntake(false); const fresh = await loadSignals(); if (fresh && fresh.length > 0) { setActiveSignalId(fresh[0].id); setActiveIndex(0); } }} />
+                <IntakePanel signalCount={signals.length} onSignalsAdded={async () => { setShowIntake(false); const fresh = await loadSignals(); if (fresh && fresh.length > 0) { setActiveSignalId(fresh[0].id); setActiveIndex(0); } }} />
             ) : activeSignalId ? (
                 <Workspace
                     signalId={activeSignalId}

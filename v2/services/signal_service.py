@@ -92,7 +92,10 @@ def list_signals(
             where_clauses.append("s.signal_type = ?")
             params.append(signal_type)
 
-        where_clauses.append("s.status != 'archived'")
+        # Don't hide archived signals when explicitly filtering for noise,
+        # since mark_account_noise cascades signal status to 'archived'.
+        if status != 'noise':
+            where_clauses.append("s.status != 'archived'")
         where_sql = " AND ".join(where_clauses)
 
         # Count
@@ -306,14 +309,17 @@ def update_signal_bdr_evaluation(
 
 
 def get_signal_counts_by_status() -> dict:
-    """Get signal counts grouped by workflow status (account_status)."""
+    """Get signal counts grouped by workflow status (account_status).
+
+    Includes noise signals (which have s.status='archived' due to cascade)
+    so the noise tab count is accurate.
+    """
     with db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute('''
             SELECT a.account_status AS workflow_status, COUNT(*) as cnt
             FROM intent_signals s
             JOIN monitored_accounts a ON s.account_id = a.id
-            WHERE s.status != 'archived'
             GROUP BY a.account_status
         ''')
         return {r['workflow_status']: r['cnt'] for r in rows_to_dicts(cursor.fetchall())}

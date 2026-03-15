@@ -39,17 +39,13 @@
                     <i data-lucide="zap" class="sidebar-icon"></i>
                     <span class="sidebar-label">Signal Queue</span>
                 </a>
-                <a href="{{ url_for('contributors') }}" class="sidebar-item {% if request.endpoint == 'contributors' %}active{% endif %}">
-                    <i data-lucide="users" class="sidebar-icon"></i>
-                    <span class="sidebar-label">Contacts</span>
-                </a>
-                <a href="{{ url_for('campaigns') }}" class="sidebar-item {% if request.endpoint in ('campaigns', 'campaign_new', 'campaign_edit') %}active{% endif %}">
+                <a href="/campaigns" class="sidebar-item {% if request.endpoint in ('campaigns', 'campaign_new', 'campaign_edit') %}active{% endif %}">
                     <i data-lucide="zap" class="sidebar-icon"></i>
                     <span class="sidebar-label">Campaigns</span>
                 </a>
-                <a href="{{ url_for('settings') }}" class="sidebar-item {% if request.endpoint == 'settings' %}active{% endif %}">
-                    <i data-lucide="settings" class="sidebar-icon"></i>
-                    <span class="sidebar-label">Settings</span>
+                <a href="/mapping-sequences" class="sidebar-item {% if request.endpoint == 'mapping_sequences' %}active{% endif %}">
+                    <i data-lucide="list" class="sidebar-icon"></i>
+                    <span class="sidebar-label">Sequences</span>
                 </a>
             </nav>
         </aside>
