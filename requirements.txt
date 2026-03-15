@@ -21,5 +21,5 @@ pydantic
 werkzeug
 mcp[cli]
 openpyxl>=3.1.0
-PyMuPDF
-python-docx
+python-docx>=1.1.0
+PyMuPDF>=1.24.0

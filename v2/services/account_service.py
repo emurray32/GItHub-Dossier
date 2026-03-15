@@ -295,6 +295,42 @@ def _cascade_signal_status(
         return updated
 
 
+def update_account_enrichment(account_id: int, **fields) -> bool:
+    """Update account with enrichment data. Only fills in fields that are currently empty.
+
+    Accepts: website, industry, company_size, annual_revenue, linkedin_url,
+             hq_location, employee_count, funding_stage.
+    """
+    acct = get_account(account_id)
+    if not acct:
+        return False
+
+    updates = []
+    params = []
+    for field_name, value in fields.items():
+        if not value:
+            continue
+        current = acct.get(field_name)
+        if current and str(current).strip():
+            continue  # Don't overwrite existing data
+        updates.append(f"{field_name} = ?")
+        params.append(str(value).strip())
+
+    if not updates:
+        return False
+
+    params.append(account_id)
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            f"UPDATE monitored_accounts SET {', '.join(updates)} WHERE id = ?",
+            tuple(params),
+        )
+        conn.commit()
+        logger.info("[ACCOUNT] Enriched account %d with %d fields", account_id, len(updates))
+    return True
+
+
 def get_account_domain(account_id: int) -> Optional[str]:
     """Extract domain from account website for Apollo search."""
     with db_connection() as conn:

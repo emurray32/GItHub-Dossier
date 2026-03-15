@@ -83,9 +83,29 @@ BDR reviews each draft. Options:
 
 BDR can always override via `update_signal_campaign`.
 
+## Writing Preferences (Two-Layer System)
+
+Drafts are generated using a layered writing preference system:
+
+1. **Org-wide rules** — tone, banned phrases, structure, CTA guidance (managed in web app)
+2. **Personal BDR overrides** — per-BDR customizations (sign-off, extra banned words, tone tweaks)
+3. **Campaign guidelines** — campaign-specific writing angle
+
+### First Session Onboarding
+On a BDR's first session, run the onboarding flow from `references/onboarding-prompt.md`.
+Check for existing preferences with `get_bdr_writing_preferences(user_email)`.
+If none exist, ask 3 quick questions (sign-off, banned words, tone) and save with `update_bdr_writing_preference`.
+
+### Mid-Session Changes
+If a BDR says "stop using [word]", "change my sign-off", or "update my preferences", use `update_bdr_writing_preference` and regenerate any active draft.
+
+### Draft Generation
+Always pass `user_email` to `generate_draft_sequence` so personal preferences are applied.
+
 ## Email Drafting Rules
 
 See `references/cold-outreach-rules.md` for:
+- Anti-slop rules (banned AI words, structural constraints)
 - Apollo dynamic variable conventions
 - Signal-specific hook templates
 - Sequence arc (3-email structure)

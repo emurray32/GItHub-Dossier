@@ -242,12 +242,13 @@ def generate_drafts(
     signal_id: int,
     campaign_id: int,
     writing_preferences: Optional[dict] = None,
+    user_email: Optional[str] = None,
 ) -> List[dict]:
     """Generate a multi-step email sequence for a prospect.
 
     Steps:
         1. Load prospect, signal, campaign info
-        2. Build writing context from preferences + campaign guidelines
+        2. Build writing context from preferences + campaign guidelines + BDR overrides
         3. Generate subject + body for each step via LLM (or template fallback)
         4. Save each draft to the drafts table
         5. Return list of created drafts
@@ -257,6 +258,7 @@ def generate_drafts(
         signal_id: the intent signal that triggered this outreach
         campaign_id: the campaign to use for writing guidelines
         writing_preferences: optional override for writing prefs (skips DB load)
+        user_email: BDR's email for personal preference lookup (optional)
 
     Returns:
         List of draft dicts (one per sequence step)
@@ -291,8 +293,8 @@ def generate_drafts(
                 )
                 personas = rows_to_dicts(cursor.fetchall())
 
-    # Build writing context
-    writing_context = build_writing_context(campaign_guidelines)
+    # Build writing context (org-wide → BDR overrides → campaign guidelines)
+    writing_context = build_writing_context(campaign_guidelines, user_email=user_email)
 
     # Determine number of sequence steps (default 3)
     num_steps = 3

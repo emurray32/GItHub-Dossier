@@ -288,6 +288,23 @@ def check_duplicate_signal(
         return cursor.fetchone() is not None
 
 
+def update_signal_bdr_evaluation(
+    signal_id: int,
+    quality_score: int,
+    positioning: str,
+) -> bool:
+    """Update BDR evaluation for a signal (quality score + positioning angle)."""
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            UPDATE intent_signals
+            SET bdr_quality_score = ?, bdr_positioning = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        ''', (quality_score, positioning, signal_id))
+        conn.commit()
+        return True
+
+
 def get_signal_counts_by_status() -> dict:
     """Get signal counts grouped by workflow status (account_status)."""
     with db_connection() as conn:

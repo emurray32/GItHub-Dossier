@@ -1,18 +1,25 @@
 """
-Ingestion Service — turns raw data (CSV files, manual entries, scan signals)
-into intent signals in the v2 pipeline.
+Ingestion Service — Smart ingestion layer that turns raw data into
+actionable BDR intelligence.
+
+Accepts any format (CSV, Excel, DOCX), enriches via Apollo, evaluates
+each signal from a BDR perspective, and deduplicates across uploads.
 
 Every ingestion path follows the same pattern:
-  1. Find or create the account
-  2. Auto-recommend a campaign
-  3. Create the intent signal
-  4. Log the activity
+  1. Parse the file (structured or unstructured)
+  2. Find or create accounts (with dedup + enrichment)
+  3. Create intent signals
+  4. Post-process: Apollo enrichment + LLM BDR evaluation
+  5. Log activity
 
 Errors are captured per-row so one bad record never crashes the batch.
 """
 import csv
 import io
+import json
 import logging
+import os
+import re
 import uuid
 from typing import Optional
 
@@ -23,6 +30,50 @@ from v2.services import signal_service
 from v2.services import account_service
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# LLM Client (Replit AI proxy — OpenAI-compatible, same as draft_service.py)
+# ---------------------------------------------------------------------------
+
+try:
+    from openai import OpenAI
+    _OPENAI_AVAILABLE = True
+except ImportError:
+    OpenAI = None
+    _OPENAI_AVAILABLE = False
+
+
+def _get_llm_client():
+    """Return an OpenAI client configured for the Replit AI proxy, or None."""
+    base_url = os.environ.get('AI_INTEGRATIONS_OPENAI_BASE_URL')
+    api_key = os.environ.get('AI_INTEGRATIONS_OPENAI_API_KEY')
+    if not base_url or not api_key or not _OPENAI_AVAILABLE:
+        return None
+    return OpenAI(base_url=base_url, api_key=api_key)
+
+
+def _llm_generate(system_prompt: str, user_prompt: str) -> Optional[str]:
+    """Call the LLM and return the raw text response, or None on failure.
+
+    CRITICAL: Do NOT pass temperature — Replit AI proxy does not support it.
+    """
+    client = _get_llm_client()
+    if not client:
+        return None
+    try:
+        response = client.chat.completions.create(
+            model="gpt-5-mini",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ]
+            # No temperature parameter — Replit AI proxy will error
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        logger.error("[INGEST] LLM call failed: %s", e)
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -103,6 +154,9 @@ def ingest_csv(
                              ('account_owner', 'owner'))
 
     # --- Process rows ---
+    new_account_ids = []
+    created_signal_data = []
+
     for row_num, row in enumerate(reader, start=2):
         try:
             company_name = (row.get(company_col) or '').strip()
@@ -129,6 +183,12 @@ def ingest_csv(
             if existing:
                 account_id = existing['id']
                 result['accounts_matched'] += 1
+                # Enrich existing account with any new data from this upload
+                account_service.update_account_enrichment(
+                    account_id,
+                    website=website, industry=industry,
+                    company_size=company_size, annual_revenue=annual_revenue,
+                )
             else:
                 account_id = account_service.find_or_create_account(
                     company_name=company_name,
@@ -139,6 +199,11 @@ def ingest_csv(
                     account_owner=account_owner or None,
                 )
                 result['accounts_created'] += 1
+                new_account_ids.append({
+                    'account_id': account_id,
+                    'company_name': company_name,
+                    'website': website,
+                })
 
             # 2. Auto-recommend campaign
             rec = campaign_service.recommend_campaign(
@@ -161,6 +226,12 @@ def ingest_csv(
             )
 
             result['signals_created'] += 1
+            created_signal_data.append({
+                'signal_id': signal_id,
+                'company_name': company_name,
+                'signal_description': signal_desc,
+                'signal_type': signal_type,
+            })
 
             # 4. Log activity
             activity_service.log_activity(
@@ -201,6 +272,10 @@ def ingest_csv(
         batch_id, result['signals_created'], result['accounts_created'],
         result['accounts_matched'], len(result['errors']),
     )
+
+    # --- Post-processing: Apollo enrichment + BDR evaluation ---
+    enrichment = _post_process_batch(new_account_ids, created_signal_data)
+    result['enrichment'] = enrichment
 
     return result
 
@@ -252,153 +327,10 @@ def ingest_manual(
 
 
 # ---------------------------------------------------------------------------
-# Scan-Signal Conversion
-# ---------------------------------------------------------------------------
-
-def create_signal_from_scan(account_id: int, scan_signal_id: int) -> Optional[int]:
-    """Convert a single scan_signal row into an intent signal.
-
-    Reads the scan_signal from the legacy scan_signals table, checks for
-    duplicates, auto-recommends a campaign, and creates the intent signal.
-
-    Returns:
-        The new signal id, or None if it was a duplicate.
-    """
-    # Read the scan_signal
-    with db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT id, report_id, company_name, signal_type, description,
-                   file_path, timestamp
-            FROM scan_signals
-            WHERE id = ?
-        ''', (scan_signal_id,))
-        scan_row = row_to_dict(cursor.fetchone())
-
-    if not scan_row:
-        logger.warning("[INGEST] scan_signal %d not found", scan_signal_id)
-        return None
-
-    signal_type = scan_row.get('signal_type')
-    signal_source = 'github_scan'
-
-    # Check for duplicate (include evidence to avoid dropping valid repeats)
-    evidence_val = scan_row.get('file_path')
-    if signal_service.check_duplicate_signal(account_id, signal_type, signal_source, evidence_value=evidence_val):
-        logger.info("[INGEST] Duplicate signal skipped: account=%d type=%s source=%s evidence=%s",
-                    account_id, signal_type, signal_source, evidence_val)
-        return None
-
-    # Auto-recommend campaign
-    rec = campaign_service.recommend_campaign(signal_type=signal_type)
-
-    signal_id = signal_service.create_signal(
-        account_id=account_id,
-        signal_description=scan_row.get('description') or f"{signal_type} signal detected",
-        signal_type=signal_type,
-        evidence_type='scan_signal',
-        evidence_value=scan_row.get('file_path'),
-        signal_source=signal_source,
-        recommended_campaign_id=rec.get('campaign_id'),
-        recommended_campaign_reasoning=rec.get('reasoning'),
-        scan_signal_id=scan_signal_id,
-    )
-
-    activity_service.log_activity(
-        event_type='signal_created',
-        entity_type='signal',
-        entity_id=signal_id,
-        details={
-            'source': 'scan_signal',
-            'scan_signal_id': scan_signal_id,
-            'signal_type': signal_type,
-            'account_id': account_id,
-        },
-    )
-
-    return signal_id
-
-
-def batch_import_from_scans(tier_filter: Optional[list] = None) -> dict:
-    """Bulk-convert scan_signals into intent signals for all accounts.
-
-    Args:
-        tier_filter: optional list of tier ints to limit which accounts
-            are processed (e.g. [1, 2] for top-tier only).
-
-    Returns:
-        dict with keys: signals_created, accounts_processed.
-    """
-    result = {
-        'signals_created': 0,
-        'accounts_processed': 0,
-    }
-
-    # Get accounts
-    with db_connection() as conn:
-        cursor = conn.cursor()
-
-        if tier_filter:
-            placeholders = ', '.join(['?'] * len(tier_filter))
-            cursor.execute(f'''
-                SELECT id, company_name FROM monitored_accounts
-                WHERE archived_at IS NULL
-                  AND current_tier IN ({placeholders})
-                ORDER BY current_tier ASC
-            ''', tuple(tier_filter))
-        else:
-            cursor.execute('''
-                SELECT id, company_name FROM monitored_accounts
-                WHERE archived_at IS NULL
-                ORDER BY current_tier ASC
-            ''')
-
-        accounts = rows_to_dicts(cursor.fetchall())
-
-    for acct in accounts:
-        account_id = acct['id']
-        company_name = acct['company_name']
-
-        # Get scan_signals for this account
-        with db_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                SELECT id, signal_type, description, file_path, timestamp
-                FROM scan_signals
-                WHERE company_name = ?
-                ORDER BY timestamp DESC
-            ''', (company_name,))
-            scan_signals = rows_to_dicts(cursor.fetchall())
-
-        if not scan_signals:
-            continue
-
-        result['accounts_processed'] += 1
-
-        for ss in scan_signals:
-            try:
-                signal_id = create_signal_from_scan(account_id, ss['id'])
-                if signal_id:
-                    result['signals_created'] += 1
-            except Exception:
-                logger.exception(
-                    "[INGEST] Error converting scan_signal %d for account %d",
-                    ss['id'], account_id,
-                )
-
-    logger.info(
-        "[INGEST] Batch scan import complete: %d signals created across %d accounts",
-        result['signals_created'], result['accounts_processed'],
-    )
-
-    return result
-
-
-# ---------------------------------------------------------------------------
 # Excel / Smart File Ingestion
 # ---------------------------------------------------------------------------
 
-# Canonical field → list of header substrings that match (checked via 'in', case-insensitive).
+# Canonical field -> list of header substrings that match (checked via 'in', case-insensitive).
 # Order matters: first match wins.  Entries are (canonical_key, match_phrases).
 _COLUMN_MATCHERS = [
     ('company_name',        ['company_name', 'company', 'account_name', 'account', 'name']),
@@ -416,6 +348,7 @@ _COLUMN_MATCHERS = [
     ('date_found',          ['date found', 'date_found', 'date', 'created']),
     ('buyer_persona',       ['buyer persona', 'buyer_persona', 'persona']),
     ('video_url',           ['video content url', 'video_url', 'video url', 'video']),
+    ('annual_revenue',      ['annual_revenue', 'revenue']),
 ]
 
 # Headers to skip when matching (too generic or ambiguous when alone)
@@ -451,14 +384,13 @@ def _smart_match_columns(headers):
 def _normalize_signal_type(raw_type):
     """Convert human-readable signal type to snake_case identifier.
 
-    'Hiring - Localization' → 'hiring_localization'
-    'YouTube Channel + Academy' → 'youtube_channel_academy'
-    'Hiring - Hidden Role (i18n)' → 'hiring_hidden_role_i18n'
+    'Hiring - Localization' -> 'hiring_localization'
+    'YouTube Channel + Academy' -> 'youtube_channel_academy'
+    'Hiring - Hidden Role (i18n)' -> 'hiring_hidden_role_i18n'
     """
     if not raw_type:
         return None
-    import re
-    # Remove parens but keep their content: "(i18n)" → " i18n"
+    # Remove parens but keep their content: "(i18n)" -> " i18n"
     cleaned = re.sub(r'[()]', ' ', str(raw_type)).strip().lower()
     cleaned = re.sub(r'[\s\-/+]+', '_', cleaned)
     cleaned = re.sub(r'[^a-z0-9_]', '', cleaned)
@@ -478,7 +410,7 @@ def _coerce_str(val):
 def _process_rows(rows, source_label, created_by, sheet_name=None):
     """Process a list of dicts (one per row) into intent signals.
 
-    This is the shared core logic used by both CSV and Excel ingestion.
+    This is the shared core logic used by CSV, Excel, and DOCX ingestion.
     Each dict should have canonical keys from _smart_match_columns.
 
     Returns a result dict with signals_created, accounts_created, etc.
@@ -494,6 +426,9 @@ def _process_rows(rows, source_label, created_by, sheet_name=None):
         'batch_id': batch_id,
         'sheet_name': sheet_name,
     }
+
+    new_account_ids = []
+    created_signal_data = []
 
     for row_num, row in enumerate(rows, start=2):
         try:
@@ -517,6 +452,7 @@ def _process_rows(rows, source_label, created_by, sheet_name=None):
             evidence = _coerce_str(row.get('evidence_value')) or None
             industry = _coerce_str(row.get('industry')) or None
             company_size = _coerce_str(row.get('company_size')) or None
+            annual_revenue = _coerce_str(row.get('annual_revenue')) or None
             account_owner = _coerce_str(row.get('account_owner')) or None
 
             # 1. Find or create account
@@ -524,15 +460,27 @@ def _process_rows(rows, source_label, created_by, sheet_name=None):
             if existing:
                 account_id = existing['id']
                 result['accounts_matched'] += 1
+                # Enrich existing account with any new data from this upload
+                account_service.update_account_enrichment(
+                    account_id,
+                    website=website, industry=industry,
+                    company_size=company_size, annual_revenue=annual_revenue,
+                )
             else:
                 account_id = account_service.find_or_create_account(
                     company_name=company_name,
                     website=website,
                     industry=industry,
                     company_size=company_size,
+                    annual_revenue=annual_revenue,
                     account_owner=account_owner,
                 )
                 result['accounts_created'] += 1
+                new_account_ids.append({
+                    'account_id': account_id,
+                    'company_name': company_name,
+                    'website': website,
+                })
 
             # 2. Check for duplicate signal
             if signal_service.check_duplicate_signal(account_id, signal_type, source_label, evidence_value=evidence):
@@ -561,6 +509,12 @@ def _process_rows(rows, source_label, created_by, sheet_name=None):
             )
 
             result['signals_created'] += 1
+            created_signal_data.append({
+                'signal_id': signal_id,
+                'company_name': company_name,
+                'signal_description': signal_desc,
+                'signal_type': signal_type,
+            })
 
             # 6. Log activity
             activity_service.log_activity(
@@ -598,6 +552,10 @@ def _process_rows(rows, source_label, created_by, sheet_name=None):
         },
         created_by=created_by,
     )
+
+    # --- Post-processing: Apollo enrichment + BDR evaluation ---
+    enrichment = _post_process_batch(new_account_ids, created_signal_data)
+    result['enrichment'] = enrichment
 
     return result
 
@@ -689,6 +647,418 @@ def ingest_excel(file_content, source_label='excel_upload', created_by=None):
         'sheets_processed': len(all_results),
         'sheets_total': len(wb.sheetnames),
     }
+
+
+# ---------------------------------------------------------------------------
+# DOCX Ingestion — Structured tables or free-text via LLM
+# ---------------------------------------------------------------------------
+
+def ingest_docx(file_content, source_label='docx_upload', created_by=None):
+    """Parse a Word document for intent signals.
+
+    Handles two formats:
+    1. Tables — treated like spreadsheet rows, uses _smart_match_columns
+    2. Free text — sent to LLM for structured extraction
+
+    Returns same shape as _process_rows result, or an error dict.
+    """
+    try:
+        import docx
+    except ImportError:
+        return {'signals_created': 0, 'errors': ['python-docx not installed']}
+
+    try:
+        doc = docx.Document(io.BytesIO(file_content))
+    except Exception as e:
+        return {'signals_created': 0, 'errors': [f'Could not read DOCX file: {str(e)[:200]}']}
+
+    # 1. Try to extract from tables first (structured data)
+    table_rows = _extract_docx_tables(doc)
+    if table_rows:
+        logger.info("[INGEST] DOCX: found %d rows in tables", len(table_rows))
+        return _process_rows(table_rows, source_label, created_by, sheet_name='table')
+
+    # 2. No structured tables — extract all text and use LLM to parse
+    full_text = '\n'.join(p.text for p in doc.paragraphs if p.text.strip())
+    if not full_text.strip():
+        return {'signals_created': 0, 'errors': ['Document is empty']}
+
+    logger.info("[INGEST] DOCX: no tables found, using LLM to parse %d chars of text",
+                len(full_text))
+
+    parsed_rows = _llm_extract_signals(full_text)
+    if not parsed_rows:
+        return {
+            'signals_created': 0,
+            'errors': ['Could not extract signals from document. '
+                       'Try a structured format (table, CSV, or Excel).'],
+        }
+
+    logger.info("[INGEST] DOCX: LLM extracted %d signals from free text", len(parsed_rows))
+    return _process_rows(parsed_rows, source_label, created_by, sheet_name='document')
+
+
+# ---------------------------------------------------------------------------
+# Plain Text Ingestion — Free-text via LLM
+# ---------------------------------------------------------------------------
+
+def ingest_text(file_content, source_label='text_upload', created_by=None):
+    """Parse a plain text file for intent signals using LLM extraction.
+
+    Returns same shape as _process_rows result, or an error dict.
+    """
+    try:
+        text = file_content.decode('utf-8-sig')
+    except UnicodeDecodeError:
+        try:
+            text = file_content.decode('latin-1')
+        except UnicodeDecodeError:
+            return {'signals_created': 0, 'errors': ['File encoding not supported (use UTF-8)']}
+
+    text = text.strip()
+    if not text:
+        return {'signals_created': 0, 'errors': ['File is empty']}
+
+    logger.info("[INGEST] TXT: using LLM to parse %d chars of text", len(text))
+
+    parsed_rows = _llm_extract_signals(text)
+    if not parsed_rows:
+        return {
+            'signals_created': 0,
+            'errors': ['Could not extract signals from text file. '
+                       'Make sure it contains company names and signal descriptions.'],
+        }
+
+    logger.info("[INGEST] TXT: LLM extracted %d signals", len(parsed_rows))
+    return _process_rows(parsed_rows, source_label, created_by, sheet_name='text')
+
+
+# ---------------------------------------------------------------------------
+# PDF Ingestion — Extract text and parse via LLM
+# ---------------------------------------------------------------------------
+
+def ingest_pdf(file_content, source_label='pdf_upload', created_by=None):
+    """Parse a PDF file for intent signals.
+
+    Extracts text from all pages, then uses LLM to identify signals.
+    Returns same shape as _process_rows result, or an error dict.
+    """
+    try:
+        import fitz  # PyMuPDF
+    except ImportError:
+        return {'signals_created': 0, 'errors': ['PyMuPDF not installed — PDF parsing unavailable']}
+
+    try:
+        doc = fitz.open(stream=file_content, filetype='pdf')
+    except Exception as e:
+        return {'signals_created': 0, 'errors': [f'Could not read PDF: {str(e)[:200]}']}
+
+    # Extract text from all pages
+    pages_text = []
+    for page in doc:
+        text = page.get_text()
+        if text.strip():
+            pages_text.append(text.strip())
+    doc.close()
+
+    full_text = '\n\n'.join(pages_text)
+    if not full_text.strip():
+        return {'signals_created': 0, 'errors': ['PDF contains no extractable text']}
+
+    logger.info("[INGEST] PDF: extracted %d chars from %d pages", len(full_text), len(pages_text))
+
+    parsed_rows = _llm_extract_signals(full_text)
+    if not parsed_rows:
+        return {
+            'signals_created': 0,
+            'errors': ['Could not extract signals from PDF. '
+                       'Make sure it contains company names and signal descriptions.'],
+        }
+
+    logger.info("[INGEST] PDF: LLM extracted %d signals", len(parsed_rows))
+    return _process_rows(parsed_rows, source_label, created_by, sheet_name='pdf')
+
+
+def _extract_docx_tables(doc):
+    """Extract structured data from DOCX tables using _smart_match_columns."""
+    all_rows = []
+    for table in doc.tables:
+        if len(table.rows) < 2:
+            continue
+
+        headers = [cell.text.strip() for cell in table.rows[0].cells]
+        col_map = _smart_match_columns(headers)
+        if 'company_name' not in col_map:
+            continue
+
+        for row in table.rows[1:]:
+            cells = [cell.text.strip() for cell in row.cells]
+            row_dict = {}
+            for canonical_key, original_header in col_map.items():
+                col_idx = headers.index(original_header)
+                row_dict[canonical_key] = cells[col_idx] if col_idx < len(cells) else None
+
+            # Capture unmapped columns in raw_payload
+            for idx, hdr in enumerate(headers):
+                if hdr and idx < len(cells):
+                    safe_key = hdr.strip().lower().replace(' ', '_')
+                    if safe_key not in row_dict:
+                        row_dict[safe_key] = cells[idx]
+
+            all_rows.append(row_dict)
+
+    # Filter out empty rows
+    return [r for r in all_rows if _coerce_str(r.get('company_name'))]
+
+
+def _llm_extract_signals(text):
+    """Use LLM to extract intent signals from unstructured document text.
+
+    Returns a list of dicts with canonical keys, or None on failure.
+    """
+    system_prompt = (
+        "You are an assistant that extracts sales intent signals from unstructured text. "
+        "The user works at Phrase, a localization and translation management platform. "
+        "Extract every company/signal pair mentioned. For each, output a JSON array "
+        "where each element has these keys:\n"
+        "- company_name (required)\n"
+        "- signal_description (required — what the signal is, in 1-2 sentences)\n"
+        "- signal_type (optional — e.g. 'hiring_localization', 'new_market_expansion', "
+        "'i18n_library_adoption', 'website_translation', 'tms_evaluation')\n"
+        "- website (optional — company domain if mentioned)\n"
+        "- industry (optional)\n"
+        "- account_owner (optional — if an owner/rep is mentioned)\n\n"
+        "Output ONLY valid JSON. No explanation. If no signals found, output []."
+    )
+
+    # Truncate very long documents
+    truncated = text[:8000]
+    user_prompt = f"Extract intent signals from this document:\n\n{truncated}"
+
+    response = _llm_generate(system_prompt, user_prompt)
+    if not response:
+        return None
+
+    try:
+        cleaned = response.strip()
+        # Strip markdown code fences if present
+        if cleaned.startswith('```'):
+            cleaned = cleaned.split('\n', 1)[1].rsplit('```', 1)[0]
+        parsed = json.loads(cleaned)
+        if isinstance(parsed, list) and len(parsed) > 0:
+            return parsed
+    except (json.JSONDecodeError, IndexError, ValueError):
+        logger.warning("[INGEST] Could not parse LLM signal extraction response")
+
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Post-Processing: Apollo Enrichment + BDR Evaluation
+# ---------------------------------------------------------------------------
+
+def _post_process_batch(new_accounts, created_signals):
+    """Run Apollo enrichment on new accounts and BDR evaluation on signals.
+
+    Both are best-effort — failures don't affect the import result.
+    Returns a summary dict of what was enriched/evaluated.
+    """
+    result = {
+        'accounts_enriched': 0,
+        'signals_evaluated': 0,
+    }
+
+    if not new_accounts and not created_signals:
+        return result
+
+    # 1. Apollo enrichment for new accounts
+    result['accounts_enriched'] = _enrich_accounts_apollo(new_accounts)
+
+    # 2. BDR evaluation for all created signals
+    result['signals_evaluated'] = _evaluate_signals_bdr(created_signals)
+
+    return result
+
+
+def _enrich_accounts_apollo(accounts):
+    """Look up new accounts on Apollo to fill missing fields (industry, size, etc.).
+
+    Returns the number of accounts successfully enriched.
+    """
+    if not accounts:
+        return 0
+
+    apollo_key = os.environ.get('APOLLO_API_KEY', '')
+    if not apollo_key:
+        logger.info("[ENRICH] Apollo API key not set — skipping enrichment")
+        return 0
+
+    try:
+        from apollo_client import apollo_api_call
+    except ImportError:
+        logger.info("[ENRICH] apollo_client not available — skipping enrichment")
+        return 0
+
+    enriched_count = 0
+
+    for acct in accounts:
+        try:
+            org = None
+            website = acct.get('website') or ''
+
+            if website:
+                # Strip protocol to get domain
+                domain = website.replace('https://', '').replace('http://', '').split('/')[0]
+                if domain:
+                    resp = apollo_api_call(
+                        'get',
+                        f'https://api.apollo.io/api/v1/organizations/enrich?domain={domain}',
+                    )
+                    if resp.status_code == 200:
+                        org = resp.json().get('organization')
+
+            if not org:
+                # Fall back to name search
+                resp = apollo_api_call(
+                    'post',
+                    'https://api.apollo.io/v1/mixed_companies/search',
+                    json={
+                        'q_organization_name': acct['company_name'],
+                        'per_page': 1,
+                    },
+                )
+                if resp.status_code == 200:
+                    orgs = resp.json().get('organizations', [])
+                    org = orgs[0] if orgs else None
+
+            if not org:
+                continue
+
+            # Map Apollo fields to our account fields
+            updates = {}
+            if org.get('website_url'):
+                updates['website'] = org['website_url']
+            if org.get('industry'):
+                updates['industry'] = org['industry']
+            if org.get('estimated_num_employees'):
+                updates['employee_count'] = str(org['estimated_num_employees'])
+                # Also set company_size from employee count ranges
+                emp = org['estimated_num_employees']
+                if emp < 50:
+                    updates['company_size'] = '1-50'
+                elif emp < 200:
+                    updates['company_size'] = '51-200'
+                elif emp < 1000:
+                    updates['company_size'] = '201-1000'
+                elif emp < 5000:
+                    updates['company_size'] = '1001-5000'
+                else:
+                    updates['company_size'] = '5000+'
+            if org.get('annual_revenue_printed'):
+                updates['annual_revenue'] = org['annual_revenue_printed']
+            if org.get('linkedin_url'):
+                updates['linkedin_url'] = org['linkedin_url']
+
+            # Build HQ location from Apollo data
+            hq_parts = []
+            if org.get('city'):
+                hq_parts.append(org['city'])
+            if org.get('state'):
+                hq_parts.append(org['state'])
+            if org.get('country'):
+                hq_parts.append(org['country'])
+            if hq_parts:
+                updates['hq_location'] = ', '.join(hq_parts)
+
+            if org.get('funding_stage'):
+                updates['funding_stage'] = org['funding_stage']
+
+            if updates:
+                account_service.update_account_enrichment(acct['account_id'], **updates)
+                enriched_count += 1
+                logger.info("[ENRICH] Enriched %s with %d fields from Apollo",
+                            acct['company_name'], len(updates))
+
+        except Exception as e:
+            logger.warning("[ENRICH] Apollo enrichment failed for %s: %s",
+                           acct['company_name'], e)
+
+    return enriched_count
+
+
+def _evaluate_signals_bdr(signals_data):
+    """LLM evaluates signal quality and positioning for a batch of signals.
+
+    Sends all signals in one LLM call, parses the response, and updates
+    each signal's bdr_quality_score and bdr_positioning.
+
+    Returns the number of signals successfully evaluated.
+    """
+    if not signals_data:
+        return 0
+
+    if not _get_llm_client():
+        logger.info("[EVAL] LLM not available — skipping BDR evaluation")
+        return 0
+
+    system_prompt = (
+        "You are a senior BDR at Phrase, a localization and translation management platform "
+        "(phrase.com). Evaluate each intent signal for cold outreach potential.\n\n"
+        "For each signal, provide:\n"
+        "1. quality_score (1-5):\n"
+        "   5 = Strong buying signal, clear pain point, urgent need for localization\n"
+        "   4 = Good signal, clear positioning opportunity for Phrase\n"
+        "   3 = Moderate signal, needs more context but worth pursuing\n"
+        "   2 = Weak signal, generic or unclear relevance to localization\n"
+        "   1 = Not useful for outreach\n"
+        "2. positioning: A concise 1-2 sentence angle for how to use this signal "
+        "in cold outreach email. Be specific about what Phrase offers that helps.\n\n"
+        "Output ONLY a JSON array with objects containing: "
+        "signal_id (int), quality_score (int 1-5), positioning (string).\n"
+        "No explanation, just JSON."
+    )
+
+    # Build the signals summary for the LLM
+    signals_for_llm = [
+        {
+            'signal_id': s['signal_id'],
+            'company': s['company_name'],
+            'description': s['signal_description'],
+            'type': s.get('signal_type') or 'unknown',
+        }
+        for s in signals_data
+    ]
+
+    user_prompt = f"Evaluate these {len(signals_for_llm)} intent signals:\n\n{json.dumps(signals_for_llm, indent=2)}"
+
+    response = _llm_generate(system_prompt, user_prompt)
+    if not response:
+        return 0
+
+    try:
+        cleaned = response.strip()
+        if cleaned.startswith('```'):
+            cleaned = cleaned.split('\n', 1)[1].rsplit('```', 1)[0]
+        evaluations = json.loads(cleaned)
+    except (json.JSONDecodeError, IndexError, ValueError):
+        logger.warning("[EVAL] Could not parse LLM BDR evaluation response")
+        return 0
+
+    evaluated_count = 0
+    for ev in evaluations:
+        try:
+            sid = ev.get('signal_id')
+            score = int(ev.get('quality_score', 0))
+            positioning = ev.get('positioning', '')
+            if sid and 1 <= score <= 5:
+                signal_service.update_signal_bdr_evaluation(sid, score, positioning)
+                evaluated_count += 1
+        except Exception:
+            pass
+
+    logger.info("[EVAL] BDR evaluation complete: %d/%d signals evaluated",
+                evaluated_count, len(signals_data))
+    return evaluated_count
 
 
 # ---------------------------------------------------------------------------
