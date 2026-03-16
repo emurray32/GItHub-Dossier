@@ -1290,6 +1290,7 @@ function PersonaSearch({ workspace, onProspectsSaved, toast, actionsRef }) {
                     className="ml-auto px-3 py-1 bg-brand-600 text-white text-xs font-medium rounded hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center gap-1.5">
                     {searching ? <Icon name="loader" size={12} /> : <Icon name="search" size={12} />}
                     {searching ? 'Searching...' : 'Search Apollo'}
+                    {!searching && <Kbd>F</Kbd>}
                 </button>
             </div>
             {/* Add custom persona — below pills */}
@@ -1525,7 +1526,7 @@ function DraftReview({ workspace, toast, actionsRef }) {
         }
     };
 
-    // Register draft actions on actionsRef for keyboard shortcuts (G, A)
+    // Register draft actions on actionsRef for keyboard shortcuts
     useEffect(() => {
         if (!actionsRef) return;
         const generateFirst = () => {
@@ -1535,9 +1536,25 @@ function DraftReview({ workspace, toast, actionsRef }) {
         };
         const nextProspect = () => setFocusedProspectIdx(i => Math.min(i + 1, actionableProspects.length - 1));
         const prevProspect = () => setFocusedProspectIdx(i => Math.max(i - 1, 0));
-        const setDraftStep = (step) => {
+        // 1/2/3 → jump directly to that prospect
+        const selectProspect = (idx) => {
+            if (idx >= 0 && idx < actionableProspects.length) setFocusedProspectIdx(idx);
+        };
+        // Enter → advance to next draft step for focused prospect (or move to next prospect on last step)
+        const nextDraftStep = () => {
             const p = actionableProspects[focusedProspectIdx];
-            if (p) setActiveSteps(prev => ({ ...prev, [p.id]: step }));
+            if (!p) return;
+            const prospectDrafts = drafts[p.id] || workspace.drafts.filter(d => d.prospect_id === p.id);
+            if (!prospectDrafts || prospectDrafts.length === 0) { handleGenerate(p.id); return; }
+            const steps = prospectDrafts.map(d => d.sequence_step || d.step_number || 1).sort((a, b) => a - b);
+            const currentStep = activeSteps[p.id] || steps[0];
+            const currentIdx = steps.indexOf(currentStep);
+            if (currentIdx < steps.length - 1) {
+                setActiveSteps(prev => ({ ...prev, [p.id]: steps[currentIdx + 1] }));
+            } else {
+                // Last step — move to next prospect
+                setFocusedProspectIdx(i => Math.min(i + 1, actionableProspects.length - 1));
+            }
         };
         const toggleInclude = () => {
             const p = actionableProspects[focusedProspectIdx];
@@ -1545,8 +1562,8 @@ function DraftReview({ workspace, toast, actionsRef }) {
         };
         const openEnrollModal = () => { if (includedProspects.length > 0) setShowEnrollModal(true); };
         const openNoiseModal = () => setShowNoiseModal(true);
-        actionsRef.current = { ...actionsRef.current, generateDrafts: generateFirst, approveAll: handleApproveAll, nextProspect, prevProspect, setDraftStep, toggleInclude, openEnrollModal, openNoiseModal };
-        return () => { const c = { ...actionsRef.current }; delete c.generateDrafts; delete c.approveAll; delete c.nextProspect; delete c.prevProspect; delete c.setDraftStep; delete c.toggleInclude; delete c.openEnrollModal; delete c.openNoiseModal; actionsRef.current = c; };
+        actionsRef.current = { ...actionsRef.current, generateDrafts: generateFirst, approveAll: handleApproveAll, nextProspect, prevProspect, selectProspect, nextDraftStep, toggleInclude, openEnrollModal, openNoiseModal };
+        return () => { const c = { ...actionsRef.current }; delete c.generateDrafts; delete c.approveAll; delete c.nextProspect; delete c.prevProspect; delete c.selectProspect; delete c.nextDraftStep; delete c.toggleInclude; delete c.openEnrollModal; delete c.openNoiseModal; actionsRef.current = c; };
     });
 
     return (
@@ -1558,7 +1575,7 @@ function DraftReview({ workspace, toast, actionsRef }) {
                     {allApproved && <span className="text-[0.625rem] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full">Approved</span>}
                 </h3>
                 <div className="flex items-center gap-2 text-[0.625rem] text-slate-400">
-                    <Kbd>j</Kbd><Kbd>k</Kbd> <Kbd>1</Kbd><Kbd>2</Kbd><Kbd>3</Kbd> <Kbd>G</Kbd> <Kbd>A</Kbd>
+                    <Kbd>j</Kbd><Kbd>k</Kbd> prospect &nbsp; <Kbd>1</Kbd><Kbd>2</Kbd><Kbd>3</Kbd> jump &nbsp; <Kbd>↵</Kbd> next step &nbsp; <Kbd>G</Kbd> gen
                 </div>
             </div>
 
@@ -1570,15 +1587,16 @@ function DraftReview({ workspace, toast, actionsRef }) {
                          } ${!inclusions[prospect.id] ? 'opacity-50' : ''}`}>
                         <div className="flex items-center justify-between mb-2">
                             <div className="flex items-center gap-3 min-w-0">
+                                {/* Number badge — click to focus, shows position */}
                                 <button
-                                    onClick={() => setInclusions(prev => ({ ...prev, [prospect.id]: !prev[prospect.id] }))}
-                                    className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition ${
-                                        inclusions[prospect.id]
-                                            ? 'bg-emerald-500 border-emerald-500 text-white'
-                                            : 'bg-white border-slate-300 text-transparent hover:border-slate-400'
+                                    onClick={() => setFocusedProspectIdx(pIdx)}
+                                    className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 text-[0.625rem] font-bold transition ${
+                                        pIdx === focusedProspectIdx
+                                            ? 'bg-brand-600 text-white'
+                                            : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
                                     }`}
-                                    title={`${inclusions[prospect.id] ? 'Exclude' : 'Include'} (S)`}>
-                                    {inclusions[prospect.id] && <Icon name="check" size={12} />}
+                                    title={`Focus prospect ${pIdx + 1} (press ${pIdx + 1})`}>
+                                    {pIdx + 1}
                                 </button>
                                 <div>
                                     <span className="text-sm font-medium text-slate-800">
@@ -2440,29 +2458,52 @@ function Workspace({ signalId, signalIndex, totalSignals, onMarkNoise, onSkip, o
                 )}
             </div>
 
-            {/* Bottom bar */}
-            <div className="v2-bottom-bar border-t border-slate-200 bg-white px-6 py-2.5 flex items-center justify-between flex-shrink-0">
-                <div className="flex items-center gap-4">
-                    <span className="text-xs text-slate-500">
-                        Signal {signalIndex + 1} of {totalSignals}
+            {/* Bottom bar — contextual hints (Superhuman-style) */}
+            <div className="v2-bottom-bar border-t border-slate-200 bg-white px-4 py-2 flex items-center justify-between flex-shrink-0">
+                <div className="flex items-center gap-3">
+                    <span className="text-xs text-slate-400 tabular-nums">
+                        {signalIndex + 1} / {totalSignals}
                     </span>
-                    <span className="text-[0.625rem] text-slate-300 hidden sm:inline flex items-center gap-1.5">
-                        <Kbd>j</Kbd><Kbd>k</Kbd> navigate
-                        <span className="text-slate-200 mx-1">&bull;</span>
-                        <Kbd>s</Kbd> skip
-                        <span className="text-slate-200 mx-1">&bull;</span>
-                        <Kbd>1</Kbd><Kbd>2</Kbd><Kbd>3</Kbd> steps
-                        <span className="text-slate-200 mx-1">&bull;</span>
-                        <Kbd>?</Kbd> help
+                    {/* Contextual hint strip */}
+                    <span className="text-[0.625rem] text-slate-300 hidden sm:flex items-center gap-1.5 flex-wrap">
+                        {workspace && workspace.prospects && workspace.prospects.length > 0 ? (
+                            <>
+                                <Kbd>1</Kbd><Kbd>2</Kbd><Kbd>3</Kbd>
+                                <span className="text-slate-300">jump prospect</span>
+                                <span className="text-slate-200 mx-0.5">&bull;</span>
+                                <Kbd>j</Kbd><Kbd>k</Kbd>
+                                <span className="text-slate-300">prev/next</span>
+                                <span className="text-slate-200 mx-0.5">&bull;</span>
+                                <Kbd>↵</Kbd>
+                                <span className="text-slate-300">next step</span>
+                                <span className="text-slate-200 mx-0.5">&bull;</span>
+                                <Kbd>⌘↵</Kbd>
+                                <span className="text-slate-300">enroll</span>
+                                <span className="text-slate-200 mx-0.5">&bull;</span>
+                                <Kbd>G</Kbd>
+                                <span className="text-slate-300">gen drafts</span>
+                            </>
+                        ) : (
+                            <>
+                                <Kbd>F</Kbd>
+                                <span className="text-slate-300">search Apollo</span>
+                                <span className="text-slate-200 mx-0.5">&bull;</span>
+                                <Kbd>j</Kbd><Kbd>k</Kbd>
+                                <span className="text-slate-300">navigate</span>
+                                <span className="text-slate-200 mx-0.5">&bull;</span>
+                                <Kbd>?</Kbd>
+                                <span className="text-slate-300">help</span>
+                            </>
+                        )}
                     </span>
                 </div>
                 <div className="flex items-center gap-2">
                     <button onClick={onMarkNoise}
-                        className="px-3 py-1.5 text-xs font-medium text-slate-500 border border-slate-200 rounded-md hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-all flex items-center gap-1.5">
+                        className="px-2.5 py-1 text-xs font-medium text-slate-400 border border-slate-200 rounded-md hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-all flex items-center gap-1.5">
                         Noise <Kbd>n</Kbd>
                     </button>
                     <button onClick={onSkip}
-                        className="px-3 py-1.5 text-xs font-medium text-slate-500 border border-slate-200 rounded-md hover:bg-slate-50 transition-all flex items-center gap-1.5">
+                        className="px-2.5 py-1 text-xs font-medium text-slate-400 border border-slate-200 rounded-md hover:bg-slate-50 transition-all flex items-center gap-1.5">
                         Skip <Kbd>s</Kbd>
                     </button>
                 </div>
@@ -2667,9 +2708,15 @@ function App() {
                 const action = workspaceActionsRef.current.toggleInclude;
                 if (action) action();
                 else skipSignal();
-            } else if (key === 'Enter' && activeSignalId && !showIntake) {
+            } else if (key === 'Enter' && e.metaKey && activeSignalId && !showIntake) {
+                // Cmd+Enter → enroll all
                 e.preventDefault();
                 const action = workspaceActionsRef.current.openEnrollModal;
+                if (action) action();
+            } else if (key === 'Enter' && activeSignalId && !showIntake) {
+                // Enter → advance to next draft step for focused prospect
+                e.preventDefault();
+                const action = workspaceActionsRef.current.nextDraftStep;
                 if (action) action();
             }
 
@@ -2708,10 +2755,10 @@ function App() {
                 const action = workspaceActionsRef.current.prevProspect;
                 if (action) action();
             } else if ((key === '1' || key === '2' || key === '3') && activeSignalId && !showIntake) {
-                // Draft step tabs — only in workspace view
+                // Jump to prospect 1, 2, or 3
                 e.preventDefault();
-                const action = workspaceActionsRef.current.setDraftStep;
-                if (action) action(Number(key));
+                const action = workspaceActionsRef.current.selectProspect;
+                if (action) action(Number(key) - 1);
             } else if (key === '/') {
                 // Focus search box
                 e.preventDefault();
