@@ -1110,11 +1110,21 @@ function SignalHeader({ workspace, onCampaignUpdate, toast }) {
                 )}
             </div>
 
-            {evidenceOpen && signal.evidence_value && (
-                <pre className="mt-1.5 bg-slate-50 rounded p-2 text-[0.625rem] text-slate-600 whitespace-pre-wrap break-words font-mono border border-slate-100 max-h-24 overflow-y-auto">
-                    {typeof signal.evidence_value === 'string' ? signal.evidence_value : JSON.stringify(signal.evidence_value, null, 2)}
-                </pre>
-            )}
+            {evidenceOpen && signal.evidence_value && (() => {
+                const val = typeof signal.evidence_value === 'string' ? signal.evidence_value : JSON.stringify(signal.evidence_value, null, 2);
+                const isUrl = /^https?:\/\/\S+$/i.test(val.trim());
+                return isUrl ? (
+                    <a href={val.trim()} target="_blank" rel="noopener noreferrer"
+                       className="mt-1.5 flex items-center gap-1.5 bg-slate-50 rounded px-2.5 py-2 text-[0.6875rem] text-brand-600 hover:text-brand-700 hover:bg-brand-50 border border-slate-100 transition-colors break-all">
+                        <Icon name="external-link" size={11} className="flex-shrink-0" />
+                        {val.trim()}
+                    </a>
+                ) : (
+                    <pre className="mt-1.5 bg-slate-50 rounded p-2 text-[0.625rem] text-slate-600 whitespace-pre-wrap break-words font-mono border border-slate-100 max-h-24 overflow-y-auto">
+                        {val}
+                    </pre>
+                );
+            })()}
         </div>
     );
 }
