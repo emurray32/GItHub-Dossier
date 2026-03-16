@@ -881,9 +881,6 @@ function SignalTable({ signals, loading, activeIndex, onSelect, searchTerm }) {
                         <th className="text-left px-3 py-2 font-medium" style={{minWidth: 160}}>Company</th>
                         <th className="text-left px-3 py-2 font-medium">Why It Matters</th>
                         <th className="text-left px-3 py-2 font-medium w-20">Owner</th>
-                        <th className="text-left px-3 py-2 font-medium w-14">Age</th>
-                        <th className="text-left px-3 py-2 font-medium w-10">Score</th>
-                        <th className="text-left px-3 py-2 font-medium w-20">Status</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -892,7 +889,7 @@ function SignalTable({ signals, loading, activeIndex, onSelect, searchTerm }) {
                             onClick={() => onSelect(sig.id)}
                             className={`border-b border-slate-100 cursor-pointer transition-colors
                                 ${activeIndex === idx ? 'bg-brand-50' : 'hover:bg-slate-50'}`}
-                            style={{height: 36}}>
+                            >
                             <td className="px-3 py-1 text-xs text-brand-600 font-medium tabular-nums cursor-pointer hover:underline">{idx + 1}</td>
                             <td className="px-3 py-1">
                                 <div className="flex items-center gap-1.5">
@@ -900,7 +897,7 @@ function SignalTable({ signals, loading, activeIndex, onSelect, searchTerm }) {
                                     <span className="font-medium text-slate-800 truncate">{sig.company_name || 'Unknown'}</span>
                                 </div>
                             </td>
-                            <td className="px-3 py-1 text-slate-500 truncate" style={{maxWidth: 500}}>
+                            <td className="px-3 py-2 text-slate-500" style={{whiteSpace: 'normal', wordBreak: 'break-word'}}>
                                 {(() => {
                                     const type = sig.signal_type || '';
                                     const desc = sig.signal_description || '';
@@ -912,12 +909,7 @@ function SignalTable({ signals, loading, activeIndex, onSelect, searchTerm }) {
                                     return parts.length ? parts : '--';
                                 })()}
                             </td>
-                            <td className="px-3 py-1 text-xs text-slate-400 truncate">{sig.account_owner || '--'}</td>
-                            <td className="px-3 py-1 text-xs text-slate-400 tabular-nums">{timeAgo(sig.created_at)}</td>
-                            <td className="px-3 py-1"><QualityDots score={sig.bdr_quality_score} /></td>
-                            <td className="px-3 py-1">
-                                <StatusBadge status={sig.account_status || sig.status} size="sm" />
-                            </td>
+                            <td className="px-3 py-2 text-xs text-slate-400 truncate">{sig.account_owner || '--'}</td>
                         </tr>
                     ))}
                 </tbody>
