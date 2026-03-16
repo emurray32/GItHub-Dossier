@@ -216,8 +216,9 @@ def api_apollo_search(signal_id):
 
         account_id = signal['account_id']
         domain = get_account_domain(account_id)
-        if not domain:
-            return _error('Account has no website/domain configured')
+        company_name = signal.get('company_name', '')
+        if not domain and not company_name:
+            return _error('Account has no website/domain or company name configured')
 
         data = request.get_json() or {}
         personas = data.get('personas', [])
@@ -233,48 +234,67 @@ def api_apollo_search(signal_id):
         # Build Apollo people search request
         from apollo_client import apollo_api_call
 
-        # Step 1: Search for people candidates
+        def _search_apollo(personas_list, org_filter):
+            """Run Apollo search for a list of personas with given org filter."""
+            candidates = []
+            for persona in personas_list:
+                all_titles = persona.get('allTitles') or [persona.get('title', '')]
+                all_titles = [t for t in all_titles if t]
+                if not all_titles:
+                    continue
+                seniority = persona.get('seniority', '')
+
+                search_body = {
+                    **org_filter,
+                    'person_titles': all_titles,
+                    'page': 1,
+                    'per_page': 10,
+                }
+                if seniority:
+                    search_body['person_seniorities'] = [seniority]
+
+                try:
+                    resp = apollo_api_call('post', 'https://api.apollo.io/v1/mixed_people/search', json=search_body)
+                    if resp.status_code == 200:
+                        result = resp.json()
+                        people = result.get('people', [])
+                        logger.info("[V2 API] Apollo search for %s: %d results",
+                                    all_titles[0], len(people))
+                        for person in people:
+                            candidates.append({
+                                'full_name': person.get('name', ''),
+                                'first_name': person.get('first_name', ''),
+                                'last_name': person.get('last_name', ''),
+                                'title': person.get('title', ''),
+                                'email': person.get('email', ''),
+                                'email_verified': bool(person.get('email_status') == 'verified'),
+                                'linkedin_url': person.get('linkedin_url', ''),
+                                'apollo_person_id': person.get('id', ''),
+                            })
+                except RuntimeError as re_err:
+                    raise re_err
+                except Exception as e:
+                    logger.warning("[V2 API] Apollo search error: %s", e)
+            return candidates
+
+        # Step 1: Search by domain first, then fall back to company name
         all_candidates = []
-        for persona in personas:
-            all_titles = persona.get('allTitles') or [persona.get('title', '')]
-            all_titles = [t for t in all_titles if t]
-            if not all_titles:
-                continue
-            seniority = persona.get('seniority', '')
+        try:
+            if domain:
+                all_candidates = _search_apollo(personas, {'q_organization_domains_list': [domain]})
 
-            search_body = {
-                'q_organization_domains_list': [domain],
-                'person_titles': all_titles,
-                'page': 1,
-                'per_page': 10,
-            }
-            if seniority:
-                search_body['person_seniorities'] = [seniority]
+            # Fallback: if domain search returned nothing, try company name
+            if not all_candidates and company_name:
+                logger.info("[V2 API] Domain search empty, retrying with company name: %s", company_name)
+                all_candidates = _search_apollo(personas, {'q_organization_name': company_name})
 
-            try:
-                resp = apollo_api_call('post', 'https://api.apollo.io/v1/mixed_people/search', json=search_body)
-                if resp.status_code == 200:
-                    result = resp.json()
-                    people = result.get('people', [])
-                    logger.info("[V2 API] Apollo search for %s at %s: %d results",
-                                all_titles[0], domain, len(people))
-                    for person in people:
-                        all_candidates.append({
-                            'full_name': person.get('name', ''),
-                            'first_name': person.get('first_name', ''),
-                            'last_name': person.get('last_name', ''),
-                            'title': person.get('title', ''),
-                            'email': person.get('email', ''),
-                            'email_verified': bool(person.get('email_status') == 'verified'),
-                            'linkedin_url': person.get('linkedin_url', ''),
-                            'apollo_person_id': person.get('id', ''),
-                        })
-                else:
-                    logger.warning("[V2 API] Apollo search returned %d for persona %s",
-                                   resp.status_code, all_titles[0])
-            except RuntimeError as re_err:
-                return _error(str(re_err), 503)
-
+            # Last resort: broaden search (drop seniority filter)
+            if not all_candidates:
+                broad_personas = [{'title': p.get('title', ''), 'allTitles': p.get('allTitles', [p.get('title', '')])} for p in personas]
+                org_filter = {'q_organization_domains_list': [domain]} if domain else {'q_organization_name': company_name}
+                all_candidates = _search_apollo(broad_personas, org_filter)
+        except RuntimeError as re_err:
+            return _error(str(re_err), 503)
         # Dedup by apollo_person_id
         seen_ids = set()
         deduped_candidates = []
