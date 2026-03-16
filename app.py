@@ -2406,21 +2406,38 @@ if __name__ == '__main__':
 
     port = int(os.environ.get('PORT', 5000))
 
-    # Kill any stale process already holding this port so restarts always succeed
+    # Kill any stale process already holding this port so restarts always succeed.
+    # Uses pure Python via /proc (no lsof/fuser needed — neither is present in NixOS).
     try:
-        import subprocess, time as _time
-        result = subprocess.run(
-            ['lsof', '-ti', f':{port}'],
-            capture_output=True, text=True
-        )
-        pids = result.stdout.strip().split()
-        own_pid = str(os.getpid())
-        for pid in pids:
-            if pid and pid != own_pid:
-                subprocess.run(['kill', '-15', pid], capture_output=True)
-                logging.info("[APP] Sent SIGTERM to stale process %s on port %s", pid, port)
-        if any(p and p != own_pid for p in pids):
-            _time.sleep(0.5)
+        import signal as _signal, time as _time
+        def _kill_port(tcp_file, _port):
+            try:
+                with open(tcp_file) as _f:
+                    next(_f)
+                    for _line in _f:
+                        _parts = _line.split()
+                        if len(_parts) < 10:
+                            continue
+                        if int(_parts[1].split(':')[1], 16) == _port and _parts[3] == '0A':
+                            _inode = _parts[9]
+                            for _pid in os.listdir('/proc'):
+                                if not _pid.isdigit():
+                                    continue
+                                try:
+                                    for _fd in os.listdir(f'/proc/{_pid}/fd'):
+                                        try:
+                                            if f'socket:[{_inode}]' in os.readlink(f'/proc/{_pid}/fd/{_fd}'):
+                                                os.kill(int(_pid), _signal.SIGKILL)
+                                                logging.info("[APP] Killed stale PID %s on port %s", _pid, _port)
+                                        except OSError:
+                                            pass
+                                except OSError:
+                                    pass
+            except FileNotFoundError:
+                pass
+        _kill_port('/proc/net/tcp', port)
+        _kill_port('/proc/net/tcp6', port)
+        _time.sleep(0.5)
     except Exception as e:
         logging.warning("[APP] Could not clear stale process on port %s: %s", port, e)
 
