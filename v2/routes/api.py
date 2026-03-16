@@ -297,13 +297,11 @@ def api_apollo_search(signal_id):
                     logger.info("[V2 API] Company-name search added %d candidates for: %s", len(name_candidates), company_name)
                     all_candidates.extend(name_candidates)
 
-            # Last resort: broaden search (drop seniority, add founder titles)
+            # Last resort: broaden search (drop seniority filters only — no CEO/founder padding)
             if not all_candidates:
-                founder_titles = ['Founder', 'Co-Founder', 'CEO', 'CTO', 'Chief Technology Officer', 'Chief Executive Officer']
                 broad_personas = []
                 for p in personas:
                     broad_personas.append({'title': p.get('title', ''), 'allTitles': p.get('allTitles', [p.get('title', '')])})
-                broad_personas.append({'title': 'Founder', 'allTitles': founder_titles})
                 org_filter = {'q_organization_domains_list': [domain]} if domain else {'q_organization_name': company_name}
                 all_candidates = _search_apollo(broad_personas, org_filter)
         except RuntimeError as re_err:
