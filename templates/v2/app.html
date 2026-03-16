@@ -1245,6 +1245,25 @@ function PersonaSearch({ workspace, onProspectsSaved, toast, actionsRef }) {
             }
             toast(msg, skipped > 0 ? 'info' : 'success');
             setSelected(new Set());
+            // Auto-generate drafts for each saved prospect
+            if (result.prospect_ids && result.prospect_ids.length > 0) {
+                toast('Generating drafts...', 'info');
+                for (const pid of result.prospect_ids) {
+                    try {
+                        await apiFetch('/v2/api/drafts/generate', {
+                            method: 'POST',
+                            body: JSON.stringify({
+                                prospect_id: pid,
+                                signal_id: workspace.signal.id,
+                                campaign_id: workspace.signal.recommended_campaign_id || 0,
+                            }),
+                        });
+                    } catch (e) {
+                        // Draft generation is best-effort — don't block the flow
+                    }
+                }
+                toast('Drafts generated');
+            }
             if (onProspectsSaved) onProspectsSaved();
         } catch (err) {
             toast(err.message, 'error');
