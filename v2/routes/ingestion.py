@@ -68,20 +68,28 @@ def ingest_file():
 
     source_label = (request.form.get('source_label') or 'file_upload').strip()
     created_by = (request.form.get('created_by') or '').strip() or None
+    clear_existing = (request.form.get('clear_existing') or '').lower() in ('true', '1', 'yes')
 
     try:
-        handlers = {
-            '.csv': ingestion_service.ingest_csv,
-            '.docx': ingestion_service.ingest_docx,
-            '.txt': ingestion_service.ingest_text,
-            '.pdf': ingestion_service.ingest_pdf,
-        }
-        handler = handlers.get(ext, ingestion_service.ingest_excel)
-        result = handler(
-            file_content=file_content,
-            source_label=source_label,
-            created_by=created_by,
-        )
+        if ext == '.xlsx' or ext not in {'.csv', '.docx', '.txt', '.pdf'}:
+            result = ingestion_service.ingest_excel(
+                file_content=file_content,
+                source_label=source_label,
+                created_by=created_by,
+                clear_existing=clear_existing,
+            )
+        else:
+            handlers = {
+                '.csv': ingestion_service.ingest_csv,
+                '.docx': ingestion_service.ingest_docx,
+                '.txt': ingestion_service.ingest_text,
+                '.pdf': ingestion_service.ingest_pdf,
+            }
+            result = handlers[ext](
+                file_content=file_content,
+                source_label=source_label,
+                created_by=created_by,
+            )
         return jsonify({'status': 'success', 'result': result}), 200
     except Exception as exc:
         logger.exception("[INGEST ROUTE] File ingestion failed")

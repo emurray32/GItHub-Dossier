@@ -90,7 +90,10 @@ def _generate_template_draft(step: int, prospect: dict, signal: dict) -> dict:
     if signal:
         desc = signal.get('signal_description', '')
         sig_type = (signal.get('signal_type') or '').replace('_', ' ')
-        if desc and sig_type:
+        angle = signal.get('outreach_angle', '')
+        if angle:
+            hook = f"{desc[:80]}. {angle[:80]}" if desc else angle[:160]
+        elif desc and sig_type:
             hook = f"I came across some {sig_type} activity at {{{{company}}}} -- {desc[:100]}"
         elif desc:
             hook = f"I came across some interesting activity at {{{{company}}}} -- {desc[:120]}"
@@ -166,9 +169,18 @@ def _build_generation_prompt(
     signal_type = signal.get('signal_type', 'unknown') if signal else 'unknown'
     signal_desc = signal.get('signal_description', '') if signal else ''
     evidence = signal.get('evidence_value', '') if signal else ''
+    outreach_angle = signal.get('outreach_angle', '') if signal else ''
 
     campaign_name = campaign.get('campaign_name', '') or campaign.get('name', '') if campaign else ''
     campaign_prompt = campaign.get('prompt', '') if campaign else ''
+
+    signal_section = f"""SIGNAL:
+- Type: {signal_type}
+- Description: {signal_desc}
+- Evidence: {evidence[:300] if evidence else 'None'}"""
+
+    if outreach_angle:
+        signal_section += f"\n- OUTREACH ANGLE: {outreach_angle}"
 
     parts = [f"""Generate email step {step} of a 4-email sequence.
 
@@ -179,10 +191,7 @@ PROSPECT:
 - Title: {title}
 - Company: {company}
 
-SIGNAL:
-- Type: {signal_type}
-- Description: {signal_desc}
-- Evidence: {evidence[:300] if evidence else 'None'}"""]
+{signal_section}"""]
 
     if campaign_prompt:
         parts.append(f"CAMPAIGN INSTRUCTIONS:\n{campaign_prompt}")

@@ -270,6 +270,7 @@ def init_v2_schema(cursor, adapt_ddl, safe_add_column):
     # -----------------------------------------------------------------------
     safe_add_column(cursor, 'intent_signals', "bdr_quality_score INTEGER")
     safe_add_column(cursor, 'intent_signals', "bdr_positioning TEXT")
+    safe_add_column(cursor, 'intent_signals', "outreach_angle TEXT")
 
     logger.info("[V2] Schema initialization complete.")
 

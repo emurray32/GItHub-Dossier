@@ -403,20 +403,18 @@ def _process_rows(rows, source_label, created_by, sheet_name=None):
                 result['skipped'] += 1
                 continue
             if not signal_desc:
-                # Try outreach_angle as fallback description
-                signal_desc = _coerce_str(row.get('outreach_angle'))
-            if not signal_desc:
                 result['errors'].append(f'Row {row_num}: missing signal description')
                 continue
 
             website = _coerce_str(row.get('website')) or None
             raw_signal_type = _coerce_str(row.get('signal_type')) or None
-            signal_type = _normalize_signal_type(raw_signal_type)
+            signal_type = raw_signal_type  # Keep human-readable type as-is
             evidence = _coerce_str(row.get('evidence_value')) or None
             industry = _coerce_str(row.get('industry')) or None
             company_size = _coerce_str(row.get('company_size')) or None
             annual_revenue = _coerce_str(row.get('annual_revenue')) or None
             account_owner = _coerce_str(row.get('account_owner')) or None
+            outreach_angle = _coerce_str(row.get('outreach_angle')) or None
 
             # 1. Find or create account
             existing = account_service.find_account_by_name(company_name)
@@ -445,13 +443,14 @@ def _process_rows(rows, source_label, created_by, sheet_name=None):
                     'website': website,
                 })
 
-            # 2. Check for duplicate signal
+            # 2. Check for duplicate signal (match on raw type stored in DB)
             if signal_service.check_duplicate_signal(account_id, signal_type, source_label, evidence_value=evidence):
                 result['skipped_duplicates'] += 1
                 continue
 
-            # 3. Auto-recommend campaign
-            rec = campaign_service.recommend_campaign(signal_type=signal_type)
+            # 3. Auto-recommend campaign (normalize for keyword matching)
+            normalized_type = _normalize_signal_type(signal_type)
+            rec = campaign_service.recommend_campaign(signal_type=normalized_type)
 
             # 4. Build raw_payload with ALL original data (preserves unmapped fields)
             raw_payload = {k: _coerce_str(v) for k, v in row.items() if v is not None and _coerce_str(v)}
@@ -469,6 +468,7 @@ def _process_rows(rows, source_label, created_by, sheet_name=None):
                 created_by=created_by,
                 ingestion_batch_id=batch_id,
                 raw_payload=safe_json_dumps(raw_payload),
+                outreach_angle=outreach_angle,
             )
 
             result['signals_created'] += 1
@@ -523,13 +523,21 @@ def _process_rows(rows, source_label, created_by, sheet_name=None):
     return result
 
 
-def ingest_excel(file_content, source_label='excel_upload', created_by=None):
+def ingest_excel(file_content, source_label='excel_upload', created_by=None, clear_existing=False):
     """Parse an Excel workbook and create intent signals from all valid sheets.
+
+    Args:
+        clear_existing: if True, delete all intent_signals and monitored_accounts
+                        before importing.
 
     Returns:
         dict with keys: sheets (list of per-sheet results), totals.
     """
     import openpyxl
+
+    cleared_count = 0
+    if clear_existing:
+        cleared_count = _clear_all_signals()
 
     wb = openpyxl.load_workbook(
         filename=io.BytesIO(file_content),
@@ -539,7 +547,7 @@ def ingest_excel(file_content, source_label='excel_upload', created_by=None):
 
     all_results = []
     totals = {'signals_created': 0, 'accounts_created': 0, 'accounts_matched': 0,
-              'skipped': 0, 'errors': []}
+              'skipped': 0, 'errors': [], 'cleared': cleared_count}
 
     for sheet_name in wb.sheetnames:
         ws = wb[sheet_name]
@@ -814,6 +822,32 @@ def _llm_extract_signals(text):
         logger.warning("[INGEST] Could not parse LLM signal extraction response")
 
     return None
+
+
+# ---------------------------------------------------------------------------
+# Clear All Signals (for "Replace all" imports)
+# ---------------------------------------------------------------------------
+
+def _clear_all_signals():
+    """Delete all intent_signals and monitored_accounts rows.
+
+    Returns the number of signals deleted.
+    """
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        # Delete signals first (FK dependency)
+        cursor.execute("SELECT COUNT(*) as cnt FROM intent_signals")
+        row = cursor.fetchone()
+        count = row['cnt'] if isinstance(row, dict) else row[0]
+
+        cursor.execute("DELETE FROM drafts")
+        cursor.execute("DELETE FROM prospects")
+        cursor.execute("DELETE FROM intent_signals")
+        cursor.execute("DELETE FROM monitored_accounts")
+        conn.commit()
+
+        logger.info("[INGEST] Cleared all signals and accounts (%d signals deleted)", count)
+        return count
 
 
 # ---------------------------------------------------------------------------

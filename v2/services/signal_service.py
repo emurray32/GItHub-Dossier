@@ -25,6 +25,7 @@ def create_signal(
     ingestion_batch_id: Optional[str] = None,
     raw_payload: Optional[str] = None,
     scan_signal_id: Optional[int] = None,
+    outreach_angle: Optional[str] = None,
 ) -> int:
     """Create a new intent signal. Returns the signal id."""
     with db_connection() as conn:
@@ -34,15 +35,15 @@ def create_signal(
                 account_id, signal_description, evidence_type, evidence_value,
                 signal_type, signal_source, recommended_campaign_id,
                 recommended_campaign_reasoning, created_by, ingestion_batch_id,
-                raw_payload, scan_signal_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                raw_payload, scan_signal_id, outreach_angle
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             account_id, signal_description, evidence_type,
             safe_json_dumps(evidence_value) if isinstance(evidence_value, (dict, list)) else evidence_value,
             signal_type, signal_source, recommended_campaign_id,
             recommended_campaign_reasoning, created_by, ingestion_batch_id,
             safe_json_dumps(raw_payload) if isinstance(raw_payload, (dict, list)) else raw_payload,
-            scan_signal_id,
+            scan_signal_id, outreach_angle,
         ))
         conn.commit()
         logger.info("[SIGNAL] Created signal %d for account %d (type=%s, source=%s)",
