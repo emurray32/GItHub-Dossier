@@ -54,22 +54,17 @@ document.addEventListener('DOMContentLoaded', () => {
     if (typeof lucide !== 'undefined') lucide.createIcons();
     const sidebar = document.getElementById('sidebar');
     const toggle = document.getElementById('sidebarToggle');
-    // Auto-collapse on narrow viewports; honour saved preference on wide ones
+    // On first load at narrow width, collapse unless user has explicitly opened it
     const userPref = localStorage.getItem('sidebar-collapsed');
     const narrow = window.innerWidth < 1200;
-    if (narrow || userPref === 'true') sidebar.classList.add('collapsed');
+    if (userPref === 'true' || (narrow && userPref !== 'false')) {
+        sidebar.classList.add('collapsed');
+    }
     if (toggle) toggle.addEventListener('click', () => {
         sidebar.classList.toggle('collapsed');
+        // Save the user's explicit choice — respected on next load and resize
         localStorage.setItem('sidebar-collapsed', sidebar.classList.contains('collapsed'));
         if (typeof lucide !== 'undefined') lucide.createIcons();
-    });
-    // Re-evaluate on resize
-    window.addEventListener('resize', () => {
-        if (window.innerWidth < 1200) {
-            sidebar.classList.add('collapsed');
-        } else if (localStorage.getItem('sidebar-collapsed') !== 'true') {
-            sidebar.classList.remove('collapsed');
-        }
     });
 });
 </script>
