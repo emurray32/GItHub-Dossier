@@ -33,12 +33,6 @@
         </div>
 
         <div class="cf-group">
-            <label for="campaign-prompt">Prompt</label>
-            <textarea id="campaign-prompt" class="cf-textarea" placeholder="Messaging angle, tone, and signals to reference...">{{ campaign.prompt if campaign else '' }}</textarea>
-            <p class="cf-help">Guides AI-generated emails for contacts enrolled in this campaign.</p>
-        </div>
-
-        <div class="cf-group">
             <label for="campaign-tone">Tone</label>
             <input type="text" id="campaign-tone" class="cf-input" placeholder="e.g. Professional but warm, concise"
                    value="{{ campaign.tone if campaign else '' }}">
@@ -98,6 +92,15 @@
         <div style="display:flex;gap:0.5rem;margin-top:0.35rem;">
             <button type="button" class="cf-btn-secondary" onclick="addPersonaRow()">+ Add Persona</button>
             <button type="button" class="cf-btn-secondary" id="btn-suggest-personas" onclick="suggestPersonas()" style="background:var(--color-bg-tertiary);">AI Suggest</button>
+        </div>
+    </div>
+
+    <!-- Campaign Prompt / Writing Instructions -->
+    <div class="cf-section">
+        <div class="cf-section-title">Campaign Prompt / Writing Instructions</div>
+        <p class="cf-help" style="margin-bottom:0.5rem;">These instructions guide AI draft generation for this campaign. Be specific about the outreach angle, value props, and what to reference.</p>
+        <div class="cf-group">
+            <textarea id="campaign-prompt" class="cf-textarea" style="min-height:400px;font-family:'Geist',system-ui,sans-serif;font-size:0.8125rem;line-height:1.6;" placeholder="Messaging angle, tone, signals to reference, DO/DON'T rules...">{{ campaign.prompt if campaign else '' }}</textarea>
         </div>
     </div>
 

@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Writing Preferences - GitHub Dossier</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='45' fill='%234F46E5'/><path d='M35 30h30v12H47v8h14v12H47v18H35V30z' fill='white'/></svg>">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/geist@1/dist/fonts/geist-sans/style.css">
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Geist', 'system-ui', 'sans-serif'] },
+                    colors: {
+                        brand: { 50:'#eef2ff', 100:'#e0e7ff', 200:'#c7d2fe', 300:'#a5b4fc', 400:'#818cf8', 500:'#6366f1', 600:'#4f46e5', 700:'#4338ca', 800:'#3730a3', 900:'#312e81' }
+                    }
+                }
+            }
+        }
+    </script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+</head>
+<body class="bg-slate-50 font-sans antialiased">
+
+<div class="app-layout">
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <a href="/app" class="sidebar-brand">
+                <svg class="sidebar-brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><line x1="16.65" y1="16.65" x2="21" y2="21"></line></svg>
+                <span class="sidebar-brand-text">GitHub Dossier</span>
+            </a>
+            <button class="sidebar-toggle" id="sidebarToggle" aria-label="Toggle sidebar">
+                <svg class="sidebar-toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line><polyline points="14 9 11 12 14 15"></polyline></svg>
+            </button>
+        </div>
+        <nav class="sidebar-nav">
+            <a href="/app" class="sidebar-item"><i data-lucide="zap" class="sidebar-icon"></i><span class="sidebar-label">Signal Queue</span></a>
+            <a href="/campaigns" class="sidebar-item"><i data-lucide="megaphone" class="sidebar-icon"></i><span class="sidebar-label">Campaigns</span></a>
+            <a href="/mapping-sequences" class="sidebar-item"><i data-lucide="list" class="sidebar-icon"></i><span class="sidebar-label">Sequences</span></a>
+            <a href="/writing-preferences" class="sidebar-item active"><i data-lucide="pen-tool" class="sidebar-icon"></i><span class="sidebar-label">Writing Prefs</span></a>
+        </nav>
+    </aside>
+
+    <div class="main-area">
+        <div id="root"></div>
+    </div>
+</div>
+
+{% raw %}
+<script type="text/babel">
+const { useState, useEffect, useCallback } = React;
+
+const ORG_PREF_LABELS = {
+    tone: { label: 'Tone', help: 'How emails should sound — peer vs. salesy, formal vs. casual' },
+    banned_phrases: { label: 'Banned Phrases', help: 'Comma-separated list of phrases to never use in emails' },
+    preferred_structure: { label: 'Email Structure', help: 'Default structure for cold emails (hook, pain, bridge, CTA)' },
+    cta_guidance: { label: 'CTA Guidance', help: 'Rules for calls-to-action — what to propose, what to avoid' },
+    signoff_guidance: { label: 'Signoff', help: 'How to close emails — name only, no "Best regards"' },
+    custom_rules: { label: 'Custom Rules', help: 'Any additional rules for email generation' },
+};
+const ORG_PREF_ORDER = ['tone', 'banned_phrases', 'preferred_structure', 'cta_guidance', 'signoff_guidance', 'custom_rules'];
+
+const OVERRIDE_MODES = [
+    { value: 'add', label: 'Add', desc: 'Appends to the org value', color: 'bg-green-100 text-green-700' },
+    { value: 'replace', label: 'Replace', desc: 'Fully overrides the org value', color: 'bg-blue-100 text-blue-700' },
+    { value: 'remove', label: 'Remove', desc: 'Subtracts items from org list', color: 'bg-red-100 text-red-700' },
+];
+
+async function apiFetch(url, options = {}) {
+    const resp = await fetch(url, {
+        headers: { 'Content-Type': 'application/json', ...options.headers },
+        ...options,
+    });
+    const data = await resp.json();
+    if (!resp.ok || data.status === 'error') throw new Error(data.message || 'Request failed');
+    return data;
+}
+
+function App() {
+    const [activeSection, setActiveSection] = useState('org');
+    const [toast, setToast] = useState(null);
+    const showToast = (msg, type = 'success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000); };
+
+    // Org state
+    const [orgPrefs, setOrgPrefs] = useState({});
+    const [orgLoading, setOrgLoading] = useState(true);
+    const [orgSaving, setOrgSaving] = useState(false);
+    const [orgDirty, setOrgDirty] = useState(false);
+
+    // BDR state
+    const [bdrEmails, setBdrEmails] = useState([]);
+    const [selectedBdr, setSelectedBdr] = useState('');
+    const [bdrPersonal, setBdrPersonal] = useState([]);
+    const [bdrMerged, setBdrMerged] = useState({});
+    const [bdrLoading, setBdrLoading] = useState(false);
+    const [newOverride, setNewOverride] = useState({ key: 'banned_phrases', value: '', override_mode: 'add' });
+    const [addingSaving, setAddingSaving] = useState(false);
+
+    useEffect(() => {
+        setOrgLoading(true);
+        apiFetch('/v2/api/writing-preferences')
+            .then(data => setOrgPrefs(data.preferences || {}))
+            .catch(e => showToast(e.message, 'error'))
+            .finally(() => setOrgLoading(false));
+        apiFetch('/v2/api/bdr-writing-preferences')
+            .then(data => setBdrEmails(data.bdr_emails || []))
+            .catch(() => {});
+    }, []);
+
+    useEffect(() => {
+        if (!selectedBdr) { setBdrPersonal([]); setBdrMerged({}); return; }
+        setBdrLoading(true);
+        apiFetch(`/v2/api/bdr-writing-preferences/${encodeURIComponent(selectedBdr)}`)
+            .then(data => { setBdrPersonal(data.personal || []); setBdrMerged(data.merged || {}); })
+            .catch(e => showToast(e.message, 'error'))
+            .finally(() => setBdrLoading(false));
+    }, [selectedBdr]);
+
+    const saveOrgPrefs = async () => {
+        setOrgSaving(true);
+        try {
+            await apiFetch('/v2/api/writing-preferences', { method: 'PUT', body: JSON.stringify(orgPrefs) });
+            showToast('Writing preferences saved');
+            setOrgDirty(false);
+        } catch (e) { showToast(e.message, 'error'); }
+        finally { setOrgSaving(false); }
+    };
+
+    const addBdrOverride = async () => {
+        if (!selectedBdr || !newOverride.value.trim()) { showToast('Value is required', 'error'); return; }
+        setAddingSaving(true);
+        try {
+            const data = await apiFetch(`/v2/api/bdr-writing-preferences/${encodeURIComponent(selectedBdr)}`, {
+                method: 'PUT', body: JSON.stringify(newOverride),
+            });
+            setBdrMerged(data.merged || {});
+            setNewOverride(prev => ({ ...prev, value: '' }));
+            showToast('Override saved');
+            const reloaded = await apiFetch(`/v2/api/bdr-writing-preferences/${encodeURIComponent(selectedBdr)}`);
+            setBdrPersonal(reloaded.personal || []);
+            if (!bdrEmails.includes(selectedBdr)) setBdrEmails(prev => [...prev, selectedBdr].sort());
+        } catch (e) { showToast(e.message, 'error'); }
+        finally { setAddingSaving(false); }
+    };
+
+    const deleteBdrOverride = async (key, mode) => {
+        try {
+            await apiFetch(`/v2/api/bdr-writing-preferences/${encodeURIComponent(selectedBdr)}/${encodeURIComponent(key)}?override_mode=${mode}`, { method: 'DELETE' });
+            showToast('Override removed');
+            const reloaded = await apiFetch(`/v2/api/bdr-writing-preferences/${encodeURIComponent(selectedBdr)}`);
+            setBdrPersonal(reloaded.personal || []);
+            setBdrMerged(reloaded.merged || {});
+        } catch (e) { showToast(e.message, 'error'); }
+    };
+
+    return (
+        <div className="min-h-screen">
+            {/* Header */}
+            <div className="bg-white border-b border-slate-200 px-8 py-4">
+                <h1 className="text-lg font-semibold text-slate-900">Writing Preferences</h1>
+                <p className="text-sm text-slate-500 mt-0.5">Org-wide rules and per-BDR overrides for AI-generated email drafts.</p>
+            </div>
+
+            {/* Section tabs */}
+            <div className="bg-white border-b border-slate-200 px-8">
+                <div className="flex gap-1">
+                    {[
+                        { key: 'org', label: 'Org-Wide Preferences' },
+                        { key: 'bdr', label: 'BDR Personal Overrides' },
+                    ].map(s => (
+                        <button key={s.key} onClick={() => setActiveSection(s.key)}
+                            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-all ${
+                                activeSection === s.key ? 'text-brand-700 border-brand-500' : 'text-slate-500 border-transparent hover:text-slate-700'
+                            }`}>
+                            {s.label}
+                        </button>
+                    ))}
+                </div>
+            </div>
+
+            {/* Content */}
+            <div className="max-w-3xl mx-auto px-8 py-6">
+                {activeSection === 'org' && (
+                    <div className="space-y-5">
+                        {orgLoading ? (
+                            <div className="text-center py-12 text-slate-400">Loading...</div>
+                        ) : (
+                            <>
+                                {ORG_PREF_ORDER.map(key => {
+                                    const meta = ORG_PREF_LABELS[key] || { label: key, help: '' };
+                                    return (
+                                        <div key={key} className="bg-white rounded-lg border border-slate-200 p-4">
+                                            <label className="block text-sm font-semibold text-slate-800 mb-0.5">{meta.label}</label>
+                                            {meta.help && <p className="text-xs text-slate-400 mb-2">{meta.help}</p>}
+                                            <textarea value={orgPrefs[key] || ''}
+                                                onChange={e => { setOrgPrefs(prev => ({ ...prev, [key]: e.target.value })); setOrgDirty(true); }}
+                                                rows={key === 'custom_rules' ? 8 : key === 'banned_phrases' ? 4 : 3}
+                                                className="w-full border border-slate-200 rounded-md px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent resize-y font-sans" />
+                                        </div>
+                                    );
+                                })}
+                                <div className="flex items-center gap-3 sticky bottom-4">
+                                    <button onClick={saveOrgPrefs} disabled={orgSaving || !orgDirty}
+                                        className="px-5 py-2.5 bg-brand-600 text-white text-sm font-medium rounded-lg hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm">
+                                        {orgSaving ? 'Saving...' : 'Save Preferences'}
+                                    </button>
+                                    {orgDirty && <span className="text-xs text-amber-600">Unsaved changes</span>}
+                                </div>
+                            </>
+                        )}
+                    </div>
+                )}
+
+                {activeSection === 'bdr' && (
+                    <div className="space-y-5">
+                        {/* BDR selector */}
+                        <div className="bg-white rounded-lg border border-slate-200 p-4">
+                            <label className="block text-sm font-semibold text-slate-800 mb-2">Select BDR</label>
+                            <div className="flex gap-2">
+                                {bdrEmails.length > 0 ? (
+                                    <select value={selectedBdr} onChange={e => setSelectedBdr(e.target.value)}
+                                        className="flex-1 border border-slate-200 rounded-md px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-500">
+                                        <option value="">Choose a BDR...</option>
+                                        {bdrEmails.map(em => <option key={em} value={em}>{em}</option>)}
+                                    </select>
+                                ) : null}
+                                <input type="email" placeholder={bdrEmails.length > 0 ? "Or type new email..." : "Enter BDR email..."}
+                                    onKeyDown={e => { if (e.key === 'Enter' && e.target.value.trim()) { setSelectedBdr(e.target.value.trim()); e.target.value = ''; } }}
+                                    className="flex-1 border border-slate-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
+                            </div>
+                        </div>
+
+                        {selectedBdr && bdrLoading && <div className="text-center py-8 text-slate-400">Loading...</div>}
+
+                        {selectedBdr && !bdrLoading && (
+                            <>
+                                {/* Active overrides */}
+                                {bdrPersonal.length > 0 && (
+                                    <div className="bg-white rounded-lg border border-slate-200 p-4">
+                                        <h3 className="text-sm font-semibold text-slate-800 mb-3">Active Overrides</h3>
+                                        <div className="space-y-2">
+                                            {bdrPersonal.map((p, i) => {
+                                                const modeInfo = OVERRIDE_MODES.find(m => m.value === p.override_mode) || OVERRIDE_MODES[0];
+                                                return (
+                                                    <div key={i} className="flex items-start gap-2 bg-slate-50 rounded-md px-3 py-2 border border-slate-100">
+                                                        <div className="flex-1 min-w-0">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-xs font-semibold text-slate-700">{(ORG_PREF_LABELS[p.preference_key] || {}).label || p.preference_key}</span>
+                                                                <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${modeInfo.color}`}>{p.override_mode}</span>
+                                                            </div>
+                                                            <p className="text-xs text-slate-500 mt-0.5 break-words">{p.preference_value}</p>
+                                                        </div>
+                                                        <button onClick={() => deleteBdrOverride(p.preference_key, p.override_mode)}
+                                                            className="text-slate-400 hover:text-red-500 transition-colors flex-shrink-0 mt-0.5 text-xs">Delete</button>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Add override */}
+                                <div className="bg-white rounded-lg border border-slate-200 p-4">
+                                    <h3 className="text-sm font-semibold text-slate-800 mb-3">Add Override</h3>
+                                    <div className="grid grid-cols-2 gap-3 mb-3">
+                                        <div>
+                                            <label className="block text-xs text-slate-500 mb-1">Preference</label>
+                                            <select value={newOverride.key} onChange={e => setNewOverride(prev => ({ ...prev, key: e.target.value }))}
+                                                className="w-full border border-slate-200 rounded-md px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-500">
+                                                {ORG_PREF_ORDER.map(k => <option key={k} value={k}>{(ORG_PREF_LABELS[k] || {}).label || k}</option>)}
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs text-slate-500 mb-1">Mode</label>
+                                            <select value={newOverride.override_mode} onChange={e => setNewOverride(prev => ({ ...prev, override_mode: e.target.value }))}
+                                                className="w-full border border-slate-200 rounded-md px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-500">
+                                                {OVERRIDE_MODES.map(m => <option key={m.value} value={m.value}>{m.label} — {m.desc}</option>)}
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <textarea value={newOverride.value} onChange={e => setNewOverride(prev => ({ ...prev, value: e.target.value }))}
+                                        rows={2} placeholder="Override value..."
+                                        className="w-full border border-slate-200 rounded-md px-3 py-2 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none" />
+                                    <button onClick={addBdrOverride} disabled={addingSaving || !newOverride.value.trim()}
+                                        className="px-4 py-2 bg-brand-600 text-white text-sm font-medium rounded-lg hover:bg-brand-700 disabled:opacity-50 transition-all">
+                                        {addingSaving ? 'Saving...' : 'Save Override'}
+                                    </button>
+                                </div>
+
+                                {/* Merged view */}
+                                {Object.keys(bdrMerged).length > 0 && (
+                                    <div className="bg-white rounded-lg border border-slate-200 p-4">
+                                        <h3 className="text-sm font-semibold text-slate-800 mb-1">Merged View</h3>
+                                        <p className="text-xs text-slate-400 mb-3">What this BDR will see when drafts are generated.</p>
+                                        <div className="space-y-2">
+                                            {ORG_PREF_ORDER.map(key => {
+                                                if (!bdrMerged[key]) return null;
+                                                const meta = ORG_PREF_LABELS[key] || { label: key };
+                                                const isOverridden = bdrPersonal.some(p => p.preference_key === key);
+                                                return (
+                                                    <div key={key} className={`rounded-md px-3 py-2 border ${isOverridden ? 'bg-brand-50 border-brand-100' : 'bg-slate-50 border-slate-100'}`}>
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-xs font-semibold text-slate-700">{meta.label}</span>
+                                                            {isOverridden && <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-brand-100 text-brand-700">customized</span>}
+                                                        </div>
+                                                        <p className="text-xs text-slate-500 mt-1 whitespace-pre-wrap break-words">{bdrMerged[key]}</p>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
+                            </>
+                        )}
+                    </div>
+                )}
+            </div>
+
+            {/* Toast */}
+            {toast && (
+                <div className={`fixed bottom-4 right-4 px-4 py-2 rounded-lg shadow-lg text-sm font-medium z-50 ${
+                    toast.type === 'error' ? 'bg-red-600 text-white' : 'bg-slate-800 text-white'
+                }`}>{toast.msg}</div>
+            )}
+        </div>
+    );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+{% endraw %}
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+    const sidebar = document.getElementById('sidebar');
+    const toggle = document.getElementById('sidebarToggle');
+    const collapsed = localStorage.getItem('sidebar-collapsed') === 'true';
+    if (collapsed) sidebar.classList.add('collapsed');
+    if (toggle) toggle.addEventListener('click', () => {
+        sidebar.classList.toggle('collapsed');
+        localStorage.setItem('sidebar-collapsed', sidebar.classList.contains('collapsed'));
+    });
+});
+</script>
+</body>
+</html>

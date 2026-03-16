@@ -6,6 +6,7 @@
     <title>Phrase Signal Queue</title>
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='45' fill='%234F46E5'/><path d='M35 30h30v12H47v8h14v12H47v18H35V30z' fill='white'/></svg>">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/geist@1/dist/fonts/geist-sans/style.css">
+    <link rel="stylesheet" href="/static/css/style.css">
     <link rel="stylesheet" href="/static/v2/app.css">
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -26,7 +27,42 @@
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
 </head>
 <body class="bg-slate-50 font-sans antialiased">
-<div id="root"></div>
+<div class="app-layout">
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <a href="/app" class="sidebar-brand">
+                <svg class="sidebar-brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><line x1="16.65" y1="16.65" x2="21" y2="21"></line></svg>
+                <span class="sidebar-brand-text">GitHub Dossier</span>
+            </a>
+            <button class="sidebar-toggle" id="sidebarToggle" aria-label="Toggle sidebar">
+                <svg class="sidebar-toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line><polyline points="14 9 11 12 14 15"></polyline></svg>
+            </button>
+        </div>
+        <nav class="sidebar-nav">
+            <a href="/app" class="sidebar-item active"><i data-lucide="zap" class="sidebar-icon"></i><span class="sidebar-label">Signal Queue</span></a>
+            <a href="/campaigns" class="sidebar-item"><i data-lucide="megaphone" class="sidebar-icon"></i><span class="sidebar-label">Campaigns</span></a>
+            <a href="/mapping-sequences" class="sidebar-item"><i data-lucide="list" class="sidebar-icon"></i><span class="sidebar-label">Sequences</span></a>
+            <a href="/writing-preferences" class="sidebar-item"><i data-lucide="pen-tool" class="sidebar-icon"></i><span class="sidebar-label">Writing Prefs</span></a>
+        </nav>
+    </aside>
+    <div class="main-area" style="display:flex;flex-direction:column;overflow:hidden;">
+        <div id="root" style="flex:1;display:flex;flex-direction:column;overflow:hidden;"></div>
+    </div>
+</div>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+    const sidebar = document.getElementById('sidebar');
+    const toggle = document.getElementById('sidebarToggle');
+    const collapsed = localStorage.getItem('sidebar-collapsed') === 'true';
+    if (collapsed) sidebar.classList.add('collapsed');
+    if (toggle) toggle.addEventListener('click', () => {
+        sidebar.classList.toggle('collapsed');
+        localStorage.setItem('sidebar-collapsed', sidebar.classList.contains('collapsed'));
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+    });
+});
+</script>
 
 {% raw %}
 <script type="text/babel">
@@ -324,17 +360,16 @@ function KeyboardHelp({ onClose }) {
 
     const sections = [
         { title: 'Navigation', keys: [
-            { key: '1-9', desc: 'Jump to signal #N from table' },
             { key: '\u2191 / \u2193', desc: 'Navigate signals in queue' },
-            { key: 'j / k', desc: 'Navigate prospects in workspace' },
             { key: 'Enter', desc: 'Select signal / confirm action' },
-            { key: 'Esc', desc: 'Close modal / blur input / deselect' },
+            { key: '/', desc: 'Focus search box' },
+            { key: 'j / k', desc: 'Navigate prospects in workspace' },
+            { key: 'Esc', desc: 'Close modal / blur input / go back' },
         ]},
         { title: 'Signal Actions', keys: [
             { key: 'N', desc: 'Mark as noise' },
             { key: 'S', desc: 'Skip to next signal' },
             { key: 'I', desc: 'Open intake panel' },
-            { key: 'W', desc: 'Writing preferences' },
         ]},
         { title: 'Drafts & Enrollment', keys: [
             { key: '1  2  3', desc: 'Switch draft step tab' },
@@ -871,7 +906,7 @@ function SignalTable({ signals, loading, activeIndex, onSelect, searchTerm }) {
     );
 }
 
-function TopBar({ statusFilter, onStatusFilter, counts, searchTerm, onSearchChange, ownerFilter, onOwnerFilter, owners, total, onAddSignals, onShowHelp, onShowWritingPrefs, onBack, showBack }) {
+function TopBar({ statusFilter, onStatusFilter, counts, searchTerm, onSearchChange, ownerFilter, onOwnerFilter, owners, total, onAddSignals, onShowHelp, onBack, showBack }) {
     return (
         <div className="bg-white border-b border-slate-200 px-4 py-2 flex items-center gap-3 flex-shrink-0">
             {showBack ? (
@@ -937,11 +972,6 @@ function TopBar({ statusFilter, onStatusFilter, counts, searchTerm, onSearchChan
                         <Icon name="upload" size={12} /> Import
                     </button>
                 )}
-                <a href="/campaigns" className="px-2.5 py-1.5 text-xs text-slate-500 border border-slate-200 rounded-md hover:bg-slate-50 transition-all">Campaigns</a>
-                <a href="/mapping-sequences" className="px-2.5 py-1.5 text-xs text-slate-500 border border-slate-200 rounded-md hover:bg-slate-50 transition-all">Sequences</a>
-                <button onClick={onShowWritingPrefs} className="w-7 h-7 flex items-center justify-center text-slate-400 hover:text-slate-600 rounded-md hover:bg-slate-50 transition-all" title="Writing Preferences (W)">
-                    <Icon name="settings" size={14} />
-                </button>
                 <button onClick={onShowHelp} className="w-7 h-7 flex items-center justify-center text-slate-400 hover:text-slate-600 rounded-md hover:bg-slate-50 transition-all" title="Keyboard shortcuts (?)">
                     <Kbd>?</Kbd>
                 </button>
@@ -2415,7 +2445,6 @@ function App() {
     const [activeIndex, setActiveIndex] = useState(-1);
     const [showIntake, setShowIntake] = useState(false);
     const [showHelp, setShowHelp] = useState(false);
-    const [showWritingPrefs, setShowWritingPrefs] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
 
     // Ref for workspace child components to register their keyboard-triggered actions
@@ -2556,8 +2585,8 @@ function App() {
                 return;
             }
 
-            // Skip shortcuts when help or writing prefs modal is open
-            if (showHelp || showWritingPrefs) return;
+            // Skip shortcuts when help modal is open
+            if (showHelp) return;
 
             const key = e.key;
 
@@ -2604,9 +2633,6 @@ function App() {
             else if (key === 'i') {
                 e.preventDefault();
                 setShowIntake(prev => !prev);
-            } else if (key === 'w') {
-                e.preventDefault();
-                setShowWritingPrefs(prev => !prev);
             }
 
             // --- Workflow shortcuts (delegated to workspace child components) ---
@@ -2637,25 +2663,21 @@ function App() {
                 e.preventDefault();
                 const action = workspaceActionsRef.current.prevProspect;
                 if (action) action();
-            } else if (key >= '1' && key <= '9' && !showIntake) {
+            } else if ((key === '1' || key === '2' || key === '3') && activeSignalId && !showIntake) {
+                // Draft step tabs — only in workspace view
                 e.preventDefault();
-                const num = Number(key);
-                if (!activeSignalId) {
-                    // On the table: jump to signal #N
-                    const idx = num - 1;
-                    if (signals[idx]) selectSignal(signals[idx].id);
-                } else {
-                    // In workspace: switch draft step tab (1/2/3)
-                    if (num <= 3) {
-                        const action = workspaceActionsRef.current.setDraftStep;
-                        if (action) action(num);
-                    }
-                }
+                const action = workspaceActionsRef.current.setDraftStep;
+                if (action) action(Number(key));
+            } else if (key === '/') {
+                // Focus search box
+                e.preventDefault();
+                const searchInput = document.querySelector('input[placeholder="Search..."]');
+                if (searchInput) searchInput.focus();
             }
         };
         window.addEventListener('keydown', handler);
         return () => window.removeEventListener('keydown', handler);
-    }, [activeIndex, signals, selectSignal, activeSignalId, showIntake, showHelp, showWritingPrefs, markNoise, skipSignal]);
+    }, [activeIndex, signals, selectSignal, activeSignalId, showIntake, showHelp, markNoise, skipSignal]);
 
     const goBackToTable = useCallback(() => {
         setActiveSignalId(null);
@@ -2677,7 +2699,6 @@ function App() {
                 total={total}
                 onAddSignals={() => { setActiveSignalId(null); setActiveIndex(-1); setShowIntake(true); }}
                 onShowHelp={() => setShowHelp(true)}
-                onShowWritingPrefs={() => setShowWritingPrefs(true)}
                 onBack={goBackToTable}
                 showBack={!!activeSignalId}
             />
@@ -2705,7 +2726,6 @@ function App() {
                 />
             )}
             {showHelp && <KeyboardHelp onClose={() => setShowHelp(false)} />}
-            {showWritingPrefs && <WritingPrefsPanel onClose={() => setShowWritingPrefs(false)} />}
         </div>
     );
 }

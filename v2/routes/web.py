@@ -10,3 +10,9 @@ web_bp = Blueprint('v2_web', __name__)
 def v2_app():
     """Serve the v2 SPA shell."""
     return render_template('v2/app.html')
+
+
+@web_bp.route('/writing-preferences')
+def writing_preferences_page():
+    """Serve the writing preferences page."""
+    return render_template('v2/writing_preferences.html')
