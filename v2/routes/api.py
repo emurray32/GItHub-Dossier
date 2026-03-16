@@ -242,32 +242,39 @@ def api_apollo_search(signal_id):
                 all_titles = [t for t in all_titles if t]
                 if not all_titles:
                     continue
-                seniority = persona.get('seniority', '')
+
+                # Use all seniority levels from the persona, not just the first
+                all_seniorities = persona.get('allSeniorities') or []
+                if not all_seniorities:
+                    single = persona.get('seniority', '')
+                    all_seniorities = [single] if single else []
 
                 search_body = {
                     **org_filter,
                     'person_titles': all_titles,
                     'page': 1,
-                    'per_page': 10,
+                    'per_page': 25,
                 }
-                if seniority:
-                    search_body['person_seniorities'] = [seniority]
+                if all_seniorities:
+                    search_body['person_seniorities'] = all_seniorities
 
                 try:
                     resp = apollo_api_call('post', 'https://api.apollo.io/v1/mixed_people/search', json=search_body)
                     if resp.status_code == 200:
                         result = resp.json()
                         people = result.get('people', [])
-                        logger.info("[V2 API] Apollo search for %s: %d results",
-                                    all_titles[0], len(people))
+                        logger.info("[V2 API] Apollo search for %s (seniorities=%s): %d results",
+                                    all_titles[0], all_seniorities, len(people))
                         for person in people:
+                            email_status = person.get('email_status', '')
                             candidates.append({
                                 'full_name': person.get('name', ''),
                                 'first_name': person.get('first_name', ''),
                                 'last_name': person.get('last_name', ''),
                                 'title': person.get('title', ''),
                                 'email': person.get('email', ''),
-                                'email_verified': bool(person.get('email_status') == 'verified'),
+                                'email_status': email_status,
+                                'email_verified': bool(email_status == 'verified'),
                                 'linkedin_url': person.get('linkedin_url', ''),
                                 'apollo_person_id': person.get('id', ''),
                             })
@@ -277,20 +284,26 @@ def api_apollo_search(signal_id):
                     logger.warning("[V2 API] Apollo search error: %s", e)
             return candidates
 
-        # Step 1: Search by domain first, then fall back to company name
+        # Step 1: Search by domain first, then ALSO try company name
         all_candidates = []
         try:
             if domain:
                 all_candidates = _search_apollo(personas, {'q_organization_domains_list': [domain]})
 
-            # Fallback: if domain search returned nothing, try company name
-            if not all_candidates and company_name:
-                logger.info("[V2 API] Domain search empty, retrying with company name: %s", company_name)
-                all_candidates = _search_apollo(personas, {'q_organization_name': company_name})
+            # Also search by company name (catches companies with mismatched domains)
+            if company_name:
+                name_candidates = _search_apollo(personas, {'q_organization_name': company_name})
+                if name_candidates:
+                    logger.info("[V2 API] Company-name search added %d candidates for: %s", len(name_candidates), company_name)
+                    all_candidates.extend(name_candidates)
 
-            # Last resort: broaden search (drop seniority filter)
+            # Last resort: broaden search (drop seniority, add founder titles)
             if not all_candidates:
-                broad_personas = [{'title': p.get('title', ''), 'allTitles': p.get('allTitles', [p.get('title', '')])} for p in personas]
+                founder_titles = ['Founder', 'Co-Founder', 'CEO', 'CTO', 'Chief Technology Officer', 'Chief Executive Officer']
+                broad_personas = []
+                for p in personas:
+                    broad_personas.append({'title': p.get('title', ''), 'allTitles': p.get('allTitles', [p.get('title', '')])})
+                broad_personas.append({'title': 'Founder', 'allTitles': founder_titles})
                 org_filter = {'q_organization_domains_list': [domain]} if domain else {'q_organization_name': company_name}
                 all_candidates = _search_apollo(broad_personas, org_filter)
         except RuntimeError as re_err:
@@ -307,60 +320,75 @@ def api_apollo_search(signal_id):
             deduped_candidates.append(p)
 
         # Step 2: Enrich top candidates to reveal emails via /people/match
+        # First pass: try for verified emails. If 0, retry accepting likely/guessed.
         max_results = data.get('max_results', 3)
-        verified_only = data.get('verified_only', True)
-        enriched = []
 
-        for candidate in deduped_candidates:
-            if max_results and len(enriched) >= max_results:
-                break
+        def _enrich_candidates(candidates, accept_likely=False):
+            """Enrich candidates via Apollo /people/match. Returns enriched list."""
+            results = []
+            for candidate in candidates:
+                if max_results and len(results) >= max_results:
+                    break
 
-            # If search already returned a real verified email, use it directly
-            candidate_email = candidate.get('email', '')
-            if (candidate_email
-                    and candidate_email != 'email_not_unlocked@domain.com'
-                    and candidate.get('email_verified')):
-                enriched.append(candidate)
-                continue
+                # If search already returned a real verified email, use it directly
+                candidate_email = candidate.get('email', '')
+                if (candidate_email
+                        and candidate_email != 'email_not_unlocked@domain.com'
+                        and candidate.get('email_verified')):
+                    results.append(candidate)
+                    continue
 
-            # Try enrichment to reveal email
-            apollo_id = candidate.get('apollo_person_id')
-            if not apollo_id:
-                continue
+                # Try enrichment to reveal email
+                apollo_id = candidate.get('apollo_person_id')
+                if not apollo_id:
+                    continue
 
-            try:
-                enrich_resp = apollo_api_call('post', 'https://api.apollo.io/v1/people/match', json={
-                    'id': apollo_id,
-                    'reveal_personal_emails': False,
-                })
-                if enrich_resp.status_code == 200:
-                    person = enrich_resp.json().get('person', {})
-                    email = person.get('email', '')
-                    email_status = person.get('email_status', '')
-                    is_verified = email_status == 'verified'
+                try:
+                    enrich_resp = apollo_api_call('post', 'https://api.apollo.io/v1/people/match', json={
+                        'id': apollo_id,
+                        'reveal_personal_emails': False,
+                    })
+                    if enrich_resp.status_code == 200:
+                        person = enrich_resp.json().get('person', {})
+                        email = person.get('email', '')
+                        email_status = person.get('email_status', '')
+                        is_verified = email_status == 'verified'
+                        is_usable = email_status in ('verified', 'likely', 'guessed')
 
-                    if email and email != 'email_not_unlocked@domain.com' and (not verified_only or is_verified):
-                        enriched.append({
-                            'full_name': person.get('name', '') or candidate['full_name'],
-                            'first_name': person.get('first_name', '') or candidate['first_name'],
-                            'last_name': person.get('last_name', '') or candidate['last_name'],
-                            'title': person.get('title', '') or candidate['title'],
-                            'email': email,
-                            'email_verified': is_verified,
-                            'linkedin_url': person.get('linkedin_url', '') or candidate['linkedin_url'],
-                            'apollo_person_id': person.get('id', '') or apollo_id,
-                        })
-                        logger.info("[V2 API] Enriched %s -> %s (status=%s)",
-                                    candidate['full_name'], email, email_status)
+                        if email and email != 'email_not_unlocked@domain.com' and (is_verified or accept_likely and is_usable):
+                            results.append({
+                                'full_name': person.get('name', '') or candidate['full_name'],
+                                'first_name': person.get('first_name', '') or candidate['first_name'],
+                                'last_name': person.get('last_name', '') or candidate['last_name'],
+                                'title': person.get('title', '') or candidate['title'],
+                                'email': email,
+                                'email_status': email_status,
+                                'email_verified': is_verified,
+                                'linkedin_url': person.get('linkedin_url', '') or candidate['linkedin_url'],
+                                'apollo_person_id': person.get('id', '') or apollo_id,
+                            })
+                            logger.info("[V2 API] Enriched %s -> %s (status=%s)",
+                                        candidate['full_name'], email, email_status)
+                        else:
+                            logger.info("[V2 API] Enrichment for %s: email=%s status=%s (skipped)",
+                                        candidate['full_name'], email or 'none', email_status)
                     else:
-                        logger.info("[V2 API] Enrichment for %s: email=%s status=%s (skipped)",
-                                    candidate['full_name'], email or 'none', email_status)
-                else:
-                    logger.warning("[V2 API] Apollo enrich returned %d for %s",
-                                   enrich_resp.status_code, candidate['full_name'])
-            except RuntimeError:
-                logger.warning("[V2 API] Apollo enrich failed for %s", candidate['full_name'])
-                continue
+                        logger.warning("[V2 API] Apollo enrich returned %d for %s",
+                                       enrich_resp.status_code, candidate['full_name'])
+                except RuntimeError:
+                    logger.warning("[V2 API] Apollo enrich failed for %s", candidate['full_name'])
+                    continue
+            return results
+
+        # First pass: verified emails only
+        enriched = _enrich_candidates(deduped_candidates, accept_likely=False)
+        unverified_count = 0
+
+        # Fallback: if 0 verified, retry accepting likely/guessed emails
+        if not enriched and deduped_candidates:
+            logger.info("[V2 API] No verified emails found, retrying with likely/guessed for %d candidates", len(deduped_candidates))
+            enriched = _enrich_candidates(deduped_candidates, accept_likely=True)
+            unverified_count = sum(1 for p in enriched if not p.get('email_verified'))
 
         # Final dedup by email
         seen_emails = set()
@@ -395,6 +423,7 @@ def api_apollo_search(signal_id):
             signal_id=signal_id,
             account_id=account_id,
             candidates_found=len(deduped_candidates),
+            unverified_count=unverified_count,
             saved_count=saved_count,
         )
     except Exception as e:

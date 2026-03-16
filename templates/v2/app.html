@@ -1108,6 +1108,7 @@ function PersonaSearch({ workspace, onProspectsSaved, toast, actionsRef }) {
                     title: titles[0],              // Display: first title
                     allTitles: titles,              // Search: all titles in this tier
                     seniority: seniorities[0] || '',
+                    allSeniorities: seniorities,    // Search: all seniority levels
                     tierName: p.persona_name || titles[0],
                 });
             }
@@ -1153,25 +1154,38 @@ function PersonaSearch({ workspace, onProspectsSaved, toast, actionsRef }) {
         setSearching(true);
         setResults([]);
         try {
-            // Send full persona tiers with allTitles for broader search
+            // Send full persona tiers with allTitles and allSeniorities
             const searchPersonas = personas.map(p => ({
                 title: p.title,
                 allTitles: p.allTitles || [p.title],
                 seniority: p.seniority || '',
+                allSeniorities: p.allSeniorities || (p.seniority ? [p.seniority] : []),
             }));
             // Search + auto-save in one API call (backend handles enrichment + saving)
             const data = await apiFetch(`/v2/api/signals/${workspace.signal.id}/search`, {
                 method: 'POST',
-                body: JSON.stringify({ personas: searchPersonas, verified_only: true, max_results: 3 }),
+                body: JSON.stringify({ personas: searchPersonas, max_results: 3 }),
             });
             const people = data.people || [];
             const savedCount = data.saved_count || 0;
             setResults(people);
             setSelected(new Set(people.map((_, i) => i)));
             if (people.length === 0) {
-                toast(`No verified contacts found (${data.candidates_found || 0} candidates checked)`, 'info');
+                const candidates = data.candidates_found || 0;
+                const unverified = data.unverified_count || 0;
+                if (candidates === 0) {
+                    toast('Company not found in Apollo — no candidates at this domain', 'info');
+                } else if (unverified > 0) {
+                    toast(`Found ${candidates} candidates but ${unverified} had unverified emails. Showing likely-status contacts.`, 'info');
+                } else {
+                    toast(`No contacts found (${candidates} candidates checked)`, 'info');
+                }
             } else {
-                toast(`Found & saved ${savedCount} contact${savedCount !== 1 ? 's' : ''} — ready for drafts`);
+                const unverifiedCount = people.filter(p => !p.email_verified).length;
+                const msg = `Found & saved ${savedCount} contact${savedCount !== 1 ? 's' : ''}` +
+                    (unverifiedCount > 0 ? ` (${unverifiedCount} unverified)` : '') +
+                    ' — ready for drafts'
+                toast(msg);
                 // Auto-refresh workspace to show saved prospects in draft section
                 if (onProspectsSaved) onProspectsSaved();
             }
