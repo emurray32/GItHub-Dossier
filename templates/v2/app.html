@@ -900,12 +900,15 @@ function SignalTable({ signals, loading, activeIndex, onSelect, searchTerm }) {
                             <td className="px-3 py-2 text-slate-500" style={{whiteSpace: 'normal', wordBreak: 'break-word'}}>
                                 {(() => {
                                     const type = sig.signal_type || '';
-                                    const desc = sig.signal_description || '';
-                                    const angle = sig.outreach_angle || '';
+                                    const summary = sig.bdr_positioning || sig.outreach_angle || '';
                                     const parts = [];
-                                    if (type) parts.push(<span key="t" className="font-medium text-slate-700">{type}:</span>);
-                                    if (desc) parts.push(<span key="d"> {desc}</span>);
-                                    if (angle) parts.push(<span key="a" className="text-brand-600">. {angle}</span>);
+                                    if (type) parts.push(<span key="t" className="font-medium text-slate-700">{SIGNAL_LABELS[type] || type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}:</span>);
+                                    if (summary) {
+                                        parts.push(<span key="s"> {summary}</span>);
+                                    } else {
+                                        const desc = sig.signal_description || '';
+                                        parts.push(<span key="d"> {desc}</span>);
+                                    }
                                     return parts.length ? parts : '--';
                                 })()}
                             </td>
