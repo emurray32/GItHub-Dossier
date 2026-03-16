@@ -1093,22 +1093,31 @@ function SignalHeader({ workspace, onCampaignUpdate, toast }) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 function PersonaSearch({ workspace, onProspectsSaved, toast, actionsRef }) {
+    // Build persona tiers from campaign personas — one chip per tier,
+    // but each tier carries ALL its titles for the Apollo search
     const defaultPersonas = useMemo(() => {
         if (workspace.personas && workspace.personas.length > 0) {
-            const parsed = [];
+            const tiers = [];
             for (const p of workspace.personas) {
                 let titles = [];
                 let seniorities = [];
                 try { titles = typeof p.titles_json === 'string' ? JSON.parse(p.titles_json) : (p.titles_json || []); } catch { titles = []; }
                 try { seniorities = typeof p.seniorities_json === 'string' ? JSON.parse(p.seniorities_json) : (p.seniorities_json || []); } catch { seniorities = []; }
-                const sen = seniorities[0] || '';
-                for (const t of titles) {
-                    if (t) parsed.push({ title: t, seniority: sen });
-                }
+                if (titles.length === 0) continue;
+                tiers.push({
+                    title: titles[0],              // Display: first title
+                    allTitles: titles,              // Search: all titles in this tier
+                    seniority: seniorities[0] || '',
+                    tierName: p.persona_name || titles[0],
+                });
             }
-            if (parsed.length > 0) return parsed;
+            if (tiers.length > 0) return tiers;
         }
-        return [{ title: 'VP Engineering', seniority: 'vp' }];
+        return [
+            { title: 'VP Engineering', allTitles: ['VP Engineering', 'VP of Engineering', 'Head of Engineering', 'CTO', 'Director of Engineering'], seniority: 'vp', tierName: 'Engineering Leader' },
+            { title: 'Localization Manager', allTitles: ['Localization Manager', 'Head of Localization', 'Director of Localization'], seniority: 'manager', tierName: 'Localization Leader' },
+            { title: 'Head of Product', allTitles: ['Head of Product', 'VP Product', 'Director of Product'], seniority: 'vp', tierName: 'Product Leader' },
+        ];
     }, [workspace.signal.id]);
 
     const [personas, setPersonas] = useState(defaultPersonas);
@@ -1144,9 +1153,15 @@ function PersonaSearch({ workspace, onProspectsSaved, toast, actionsRef }) {
         setSearching(true);
         setResults([]);
         try {
+            // Send full persona tiers with allTitles for broader search
+            const searchPersonas = personas.map(p => ({
+                title: p.title,
+                allTitles: p.allTitles || [p.title],
+                seniority: p.seniority || '',
+            }));
             const data = await apiFetch(`/v2/api/signals/${workspace.signal.id}/search`, {
                 method: 'POST',
-                body: JSON.stringify({ personas, verified_only: true, max_results: 3 }),
+                body: JSON.stringify({ personas: searchPersonas, verified_only: true, max_results: 3 }),
             });
             const people = data.people || [];
             setResults(people);
@@ -1232,8 +1247,8 @@ function PersonaSearch({ workspace, onProspectsSaved, toast, actionsRef }) {
             {/* Persona chips + add + search — all inline */}
             <div className="flex flex-wrap items-center gap-1.5">
                 {personas.map((p, i) => (
-                    <div key={i} className="v2-chip">
-                        {p.title}
+                    <div key={i} className="v2-chip" title={p.allTitles ? p.allTitles.join(', ') : p.title}>
+                        {p.tierName || p.title}
                         {p.seniority && <span className="text-[0.625rem] text-indigo-400 ml-0.5">({p.seniority})</span>}
                         <button onClick={() => removePersona(i)} title="Remove">x</button>
                     </div>

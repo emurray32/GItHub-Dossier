@@ -235,12 +235,16 @@ def api_apollo_search(signal_id):
 
         all_people = []
         for persona in personas:
-            title = persona.get('title', '')
+            # Support both single title and allTitles array
+            all_titles = persona.get('allTitles') or [persona.get('title', '')]
+            all_titles = [t for t in all_titles if t]
+            if not all_titles:
+                continue
             seniority = persona.get('seniority', '')
 
             search_body = {
                 'q_organization_domains': domain,
-                'person_titles': [title],
+                'person_titles': all_titles,
                 'page': 1,
                 'per_page': 10,
             }
