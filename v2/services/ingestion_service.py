@@ -33,47 +33,10 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# LLM Client (Replit AI proxy — OpenAI-compatible, same as draft_service.py)
+# LLM Client — shared module (Gemini Flash primary, OpenAI fallback)
 # ---------------------------------------------------------------------------
 
-try:
-    from openai import OpenAI
-    _OPENAI_AVAILABLE = True
-except ImportError:
-    OpenAI = None
-    _OPENAI_AVAILABLE = False
-
-
-def _get_llm_client():
-    """Return an OpenAI client configured for the Replit AI proxy, or None."""
-    base_url = os.environ.get('AI_INTEGRATIONS_OPENAI_BASE_URL')
-    api_key = os.environ.get('AI_INTEGRATIONS_OPENAI_API_KEY')
-    if not base_url or not api_key or not _OPENAI_AVAILABLE:
-        return None
-    return OpenAI(base_url=base_url, api_key=api_key)
-
-
-def _llm_generate(system_prompt: str, user_prompt: str) -> Optional[str]:
-    """Call the LLM and return the raw text response, or None on failure.
-
-    CRITICAL: Do NOT pass temperature — Replit AI proxy does not support it.
-    """
-    client = _get_llm_client()
-    if not client:
-        return None
-    try:
-        response = client.chat.completions.create(
-            model="gpt-5-mini",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ]
-            # No temperature parameter — Replit AI proxy will error
-        )
-        return response.choices[0].message.content
-    except Exception as e:
-        logger.error("[INGEST] LLM call failed: %s", e)
-        return None
+from v2.services.llm_client import llm_generate as _llm_generate, get_llm_client as _get_llm_client
 
 
 # ---------------------------------------------------------------------------

@@ -2408,7 +2408,7 @@ if __name__ == '__main__':
 
     # Kill any stale process already holding this port so restarts always succeed
     try:
-        import subprocess
+        import subprocess, time as _time
         result = subprocess.run(
             ['lsof', '-ti', f':{port}'],
             capture_output=True, text=True
@@ -2417,10 +2417,12 @@ if __name__ == '__main__':
         own_pid = str(os.getpid())
         for pid in pids:
             if pid and pid != own_pid:
-                subprocess.run(['kill', '-9', pid], capture_output=True)
-                logging.info(f"[APP] Cleared stale process {pid} from port {port}")
-    except Exception:
-        pass
+                subprocess.run(['kill', '-15', pid], capture_output=True)
+                logging.info("[APP] Sent SIGTERM to stale process %s on port %s", pid, port)
+        if any(p and p != own_pid for p in pids):
+            _time.sleep(0.5)
+    except Exception as e:
+        logging.warning("[APP] Could not clear stale process on port %s: %s", port, e)
 
     debug_mode = Config.DEBUG
     if debug_mode and not Config.API_KEY:
