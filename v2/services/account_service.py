@@ -236,6 +236,10 @@ def find_or_create_account(
     account_owner: Optional[str] = None,
 ) -> int:
     """Find existing account by name (normalized) or domain, or create new. Returns account_id."""
+    # Auto-capitalize: "verbling" -> "Verbling", preserve acronyms like "ABB"
+    if company_name and company_name[0].islower():
+        company_name = company_name[0].upper() + company_name[1:]
+
     existing = find_account_by_name(company_name)
     if existing:
         return existing['id']
