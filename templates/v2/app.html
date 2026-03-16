@@ -1613,7 +1613,13 @@ function DraftReview({ workspace, toast, actionsRef, onAllApproved }) {
         const openNoiseModal = () => setShowNoiseModal(true);
         const approveCurrent = () => {
             const p = actionableProspects[focusedProspectIdx];
-            if (p && !approvedProspects.has(p.id)) handleApproveProspect(p.id);
+            if (!p || approvedProspects.has(p.id)) return;
+            const pDrafts = drafts[p.id] || workspace.drafts.filter(d => d.prospect_id === p.id);
+            if (!pDrafts.some(d => d.id && d.body)) {
+                toast('Generate a draft first before approving', 'error');
+                return;
+            }
+            handleApproveProspect(p.id);
         };
         actionsRef.current = { ...actionsRef.current, generateDrafts: generateFirst, approveAll: handleApproveAll, approveCurrent, nextProspect, prevProspect, jumpToProspect, nextDraftStep, toggleInclude, openEnrollModal, openNoiseModal };
         return () => { const c = { ...actionsRef.current }; delete c.generateDrafts; delete c.approveAll; delete c.approveCurrent; delete c.nextProspect; delete c.prevProspect; delete c.jumpToProspect; delete c.nextDraftStep; delete c.toggleInclude; delete c.openEnrollModal; delete c.openNoiseModal; actionsRef.current = c; };
@@ -1623,11 +1629,15 @@ function DraftReview({ workspace, toast, actionsRef, onAllApproved }) {
     const [approvedProspects, setApprovedProspects] = useState(new Set());
 
     const handleApproveProspect = async (prospectId) => {
+        const prospectDrafts = drafts[prospectId] || workspace.drafts.filter(d => d.prospect_id === prospectId);
+        const approveableDrafts = prospectDrafts.filter(d => d.id && d.body);
+        if (approveableDrafts.length === 0) {
+            toast('Generate a draft first — you need to see the email before approving', 'error');
+            return;
+        }
         setApproving(true);
         try {
-            const prospectDrafts = drafts[prospectId] || workspace.drafts.filter(d => d.prospect_id === prospectId);
-            for (const d of prospectDrafts) {
-                if (!d.id) continue;
+            for (const d of approveableDrafts) {
                 await apiFetch(`/v2/api/drafts/${d.id}`, {
                     method: 'PUT',
                     body: JSON.stringify({ subject: d.subject, body: d.body }),
@@ -1693,47 +1703,58 @@ function DraftReview({ workspace, toast, actionsRef, onAllApproved }) {
                 return (
                     <div>
                         {/* Prospect header */}
-                        <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-start justify-between mb-3">
                             <div className="min-w-0">
                                 <div className="text-sm font-semibold text-slate-900">
                                     {prospect.full_name || `${prospect.first_name || ''} ${prospect.last_name || ''}`.trim()}
                                 </div>
-                                <div className="text-xs text-slate-500">{prospect.title}</div>
-                                <div className="text-xs text-brand-600">{prospect.email}</div>
+                                <div className="text-xs text-slate-500 mt-0.5">{prospect.title}</div>
+                                <div className="text-xs text-brand-600 font-mono mt-0.5">{prospect.email}</div>
                             </div>
-                            <div className="flex items-center gap-2">
+                            {generating[prospect.id] && (
+                                <div className="flex items-center gap-1.5 text-xs text-slate-400">
+                                    <Icon name="loader" size={12} /> Generating...
+                                </div>
+                            )}
+                        </div>
+
+                        {/* No draft yet — big generate prompt */}
+                        {prospectDrafts.length === 0 && (
+                            <div className="mt-2 border-2 border-dashed border-slate-200 rounded-lg p-8 text-center">
+                                <div className="text-slate-400 text-sm mb-3">No draft yet for {prospect.first_name || 'this prospect'}</div>
                                 <button onClick={() => handleGenerate(prospect.id)}
                                     disabled={generating[prospect.id]}
-                                    className="px-3 py-1.5 text-xs font-medium text-brand-600 border border-brand-200 rounded-md hover:bg-brand-50 disabled:opacity-40 transition-all flex items-center gap-1.5">
+                                    className="px-5 py-2.5 bg-brand-600 text-white text-sm font-medium rounded-lg hover:bg-brand-700 disabled:opacity-40 transition-all flex items-center gap-2 mx-auto">
                                     {generating[prospect.id]
-                                        ? <><Icon name="loader" size={12} /> Generating...</>
-                                        : prospectDrafts.length > 0
-                                            ? <><Icon name="refresh-cw" size={12} /> Regenerate</>
-                                            : <><Icon name="zap" size={12} /> Generate</>
+                                        ? <><Icon name="loader" size={14} /> Generating...</>
+                                        : <><Icon name="zap" size={14} /> Generate Draft <Kbd>g</Kbd></>
                                     }
                                 </button>
                             </div>
-                        </div>
+                        )}
 
-                        {/* Draft steps */}
+                        {/* Draft content — only shown when drafts exist */}
                         {prospectDrafts.length > 0 && (
                             <>
-                                <div className="flex gap-1 mb-2 border-b border-slate-100">
-                                    {prospectDrafts.map((d, si) => {
-                                        const step = d.sequence_step || d.step_number || si + 1;
-                                        return (
-                                            <button key={d.id || si}
-                                                onClick={() => setActiveSteps(prev => ({ ...prev, [prospect.id]: step }))}
-                                                className={`px-3 py-1.5 text-xs font-medium border-b-2 transition ${
-                                                    currentStep === step
-                                                        ? 'border-brand-500 text-brand-600'
-                                                        : 'border-transparent text-slate-400 hover:text-slate-600'
-                                                }`}>
-                                                Step {step}
-                                            </button>
-                                        );
-                                    })}
-                                </div>
+                                {/* Step tabs (only if multiple steps) */}
+                                {prospectDrafts.length > 1 && (
+                                    <div className="flex gap-1 mb-2 border-b border-slate-100">
+                                        {prospectDrafts.map((d, si) => {
+                                            const step = d.sequence_step || d.step_number || si + 1;
+                                            return (
+                                                <button key={d.id || si}
+                                                    onClick={() => setActiveSteps(prev => ({ ...prev, [prospect.id]: step }))}
+                                                    className={`px-3 py-1.5 text-xs font-medium border-b-2 transition ${
+                                                        currentStep === step
+                                                            ? 'border-brand-500 text-brand-600'
+                                                            : 'border-transparent text-slate-400 hover:text-slate-600'
+                                                    }`}>
+                                                    Step {step}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                )}
 
                                 {activeDraft && (
                                     <>
@@ -1747,10 +1768,17 @@ function DraftReview({ workspace, toast, actionsRef, onAllApproved }) {
                                                 {isApproved ? 'approved' : activeDraft.status || 'draft'}
                                             </span>
                                             {activeDraft.id && !isApproved && (
-                                                <button onClick={() => { setRegeneratingDraft(regeneratingDraft === activeDraft.id ? null : activeDraft.id); setCritique(''); }}
-                                                    className="text-xs text-brand-600 hover:text-brand-700 flex items-center gap-1">
-                                                    <Icon name="refresh-cw" size={12} /> Regenerate
-                                                </button>
+                                                <div className="flex items-center gap-2">
+                                                    <button onClick={() => handleGenerate(prospect.id)}
+                                                        disabled={generating[prospect.id]}
+                                                        className="text-xs text-slate-400 hover:text-slate-600 flex items-center gap-1">
+                                                        <Icon name="refresh-cw" size={11} /> New version
+                                                    </button>
+                                                    <button onClick={() => { setRegeneratingDraft(regeneratingDraft === activeDraft.id ? null : activeDraft.id); setCritique(''); }}
+                                                        className="text-xs text-brand-600 hover:text-brand-700 flex items-center gap-1">
+                                                        <Icon name="message-square" size={11} /> Feedback
+                                                    </button>
+                                                </div>
                                             )}
                                         </div>
                                         {activeDraft.subject && (
@@ -1776,13 +1804,14 @@ function DraftReview({ workspace, toast, actionsRef, onAllApproved }) {
                                                 });
                                             }}
                                             onBlur={e => { if (activeDraft.id && !isApproved && e.target.value !== activeDraft.body) handleDraftEdit(activeDraft.id, 'body', e.target.value); }}
-                                            className={`text-slate-600 ${isApproved ? 'bg-green-50' : ''}`}
+                                            className={`text-slate-600 text-sm leading-relaxed ${isApproved ? 'bg-green-50' : ''}`}
                                             placeholder="Draft body will appear here..." />
                                         {regeneratingDraft === activeDraft.id && (
                                             <div className="mt-2 flex gap-2">
                                                 <input value={critique} onChange={e => setCritique(e.target.value)}
                                                     onKeyDown={e => e.key === 'Enter' && handleRegenerate(activeDraft.id)}
-                                                    placeholder="What should change?"
+                                                    placeholder="What should change? (Enter to send)"
+                                                    autoFocus
                                                     className="flex-1 text-sm border border-slate-200 rounded-md px-3 py-1.5 focus:outline-none focus:border-brand-500" />
                                                 <button onClick={() => handleRegenerate(activeDraft.id)}
                                                     className="px-3 py-1.5 bg-brand-600 text-white text-xs rounded-md hover:bg-brand-700 transition-all">
@@ -1793,18 +1822,17 @@ function DraftReview({ workspace, toast, actionsRef, onAllApproved }) {
                                     </>
                                 )}
 
-                                {/* Per-prospect approve button */}
-                                {prospectDrafts.length > 0 && !isApproved && (
+                                {/* Approve button — only when there's actual body content to approve */}
+                                {activeDraft && activeDraft.body && !isApproved && (
                                     <button onClick={() => handleApproveProspect(prospect.id)}
                                         disabled={approving}
-                                        className="mt-3 w-full px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-md hover:bg-green-700 disabled:opacity-40 transition-all flex items-center justify-center gap-2">
-                                        {approving ? <Icon name="loader" size={14} /> : <Icon name="check" size={14} />}
-                                        {approving ? 'Approving...' : <>Approve & Next <Kbd>a</Kbd></>}
+                                        className="mt-4 w-full px-4 py-2.5 bg-green-600 text-white text-sm font-semibold rounded-lg hover:bg-green-700 disabled:opacity-40 transition-all flex items-center justify-center gap-2">
+                                        {approving ? <><Icon name="loader" size={14} /> Approving...</> : <><Icon name="check" size={14} /> Approve & Next <Kbd>a</Kbd></>}
                                     </button>
                                 )}
                                 {isApproved && (
-                                    <div className="mt-3 text-center text-xs text-green-600 font-medium py-2">
-                                        Approved — use <Kbd>j</Kbd><Kbd>k</Kbd> to review others
+                                    <div className="mt-3 text-center text-xs text-green-600 font-medium py-2 flex items-center justify-center gap-1">
+                                        <Icon name="check-circle" size={12} /> Approved — <Kbd>j</Kbd><Kbd>k</Kbd> to navigate
                                     </div>
                                 )}
                             </>
