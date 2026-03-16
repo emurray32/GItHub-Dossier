@@ -2406,6 +2406,22 @@ if __name__ == '__main__':
 
     port = int(os.environ.get('PORT', 5000))
 
+    # Kill any stale process already holding this port so restarts always succeed
+    try:
+        import subprocess
+        result = subprocess.run(
+            ['lsof', '-ti', f':{port}'],
+            capture_output=True, text=True
+        )
+        pids = result.stdout.strip().split()
+        own_pid = str(os.getpid())
+        for pid in pids:
+            if pid and pid != own_pid:
+                subprocess.run(['kill', '-9', pid], capture_output=True)
+                logging.info(f"[APP] Cleared stale process {pid} from port {port}")
+    except Exception:
+        pass
+
     debug_mode = Config.DEBUG
     if debug_mode and not Config.API_KEY:
         print("[WARNING] Debug mode is ON without DOSSIER_API_KEY set!")
