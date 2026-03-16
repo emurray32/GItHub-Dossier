@@ -1244,7 +1244,7 @@ function PersonaSearch({ workspace, onProspectsSaved, toast, actionsRef }) {
 
     return (
         <div className="bg-white rounded-lg border border-slate-200 p-3">
-            {/* Persona chips + add + search — all inline */}
+            {/* Persona pills row + search button */}
             <div className="flex flex-wrap items-center gap-1.5">
                 {personas.map((p, i) => (
                     <div key={i} className="v2-chip" title={p.allTitles ? p.allTitles.join(', ') : p.title}>
@@ -1253,29 +1253,30 @@ function PersonaSearch({ workspace, onProspectsSaved, toast, actionsRef }) {
                         <button onClick={() => removePersona(i)} title="Remove">x</button>
                     </div>
                 ))}
-                <div className="flex items-center gap-1">
-                    <input value={newTitle} onChange={e => setNewTitle(e.target.value)}
-                        onKeyDown={e => e.key === 'Enter' && addPersona()}
-                        placeholder="+ Add title"
-                        className="text-xs border border-slate-200 rounded px-2 py-1 w-28 focus:outline-none focus:border-brand-500" />
-                    <select value={newSeniority} onChange={e => setNewSeniority(e.target.value)}
-                        className="text-xs border border-slate-200 rounded px-1.5 py-1 focus:outline-none focus:border-brand-500 bg-white w-20">
-                        <option value="">Level</option>
-                        <option value="c_suite">C-Suite</option>
-                        <option value="vp">VP</option>
-                        <option value="director">Dir</option>
-                        <option value="manager">Mgr</option>
-                        <option value="senior">Sr</option>
-                    </select>
-                    <button onClick={addPersona} className="px-1.5 py-1 border border-slate-200 rounded text-slate-500 hover:bg-slate-50">
-                        <Icon name="plus" size={12} />
-                    </button>
-                </div>
                 <button onClick={handleSearch}
                     disabled={searching || personas.length === 0}
                     className="ml-auto px-3 py-1 bg-brand-600 text-white text-xs font-medium rounded hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center gap-1.5">
                     {searching ? <Icon name="loader" size={12} /> : <Icon name="search" size={12} />}
                     {searching ? 'Searching...' : 'Search Apollo'}
+                </button>
+            </div>
+            {/* Add custom persona — below pills */}
+            <div className="flex items-center gap-1 mt-1.5">
+                <input value={newTitle} onChange={e => setNewTitle(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && addPersona()}
+                    placeholder="+ Add title"
+                    className="text-xs border border-slate-200 rounded px-2 py-1 w-28 focus:outline-none focus:border-brand-500" />
+                <select value={newSeniority} onChange={e => setNewSeniority(e.target.value)}
+                    className="text-xs border border-slate-200 rounded px-1.5 py-1 focus:outline-none focus:border-brand-500 bg-white w-20">
+                    <option value="">Level</option>
+                    <option value="c_suite">C-Suite</option>
+                    <option value="vp">VP</option>
+                    <option value="director">Dir</option>
+                    <option value="manager">Mgr</option>
+                    <option value="senior">Sr</option>
+                </select>
+                <button onClick={addPersona} className="px-1.5 py-1 border border-slate-200 rounded text-slate-500 hover:bg-slate-50">
+                    <Icon name="plus" size={12} />
                 </button>
             </div>
 
@@ -1690,9 +1691,9 @@ function DraftReview({ workspace, toast, actionsRef }) {
                 <div className="mt-4 bg-slate-50 border border-slate-200 rounded-lg p-6 text-center">
                     <div className="text-3xl mb-2 text-slate-400">&#10005;</div>
                     <h3 className="text-lg font-bold text-slate-700 mb-1">
-                        {workspace.account.company_name} marked as noise
+                        Signal archived
                     </h3>
-                    <p className="text-sm text-slate-500">All signals for this account have been archived.</p>
+                    <p className="text-sm text-slate-500">This signal for {workspace.account.company_name} has been archived.</p>
                 </div>
             )}
 
@@ -1780,9 +1781,9 @@ function NoiseConfirmModal({ companyName, onCancel, onConfirm }) {
     return (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
             <div className="bg-white rounded-xl shadow-xl p-6 max-w-sm w-full mx-4">
-                <h3 className="text-lg font-bold text-slate-900 mb-2">Mark as Noise?</h3>
+                <h3 className="text-lg font-bold text-slate-900 mb-2">Archive this signal?</h3>
                 <p className="text-sm text-slate-600 mb-4">
-                    This archives <strong>{companyName}</strong> and all its signals.
+                    This archives the current signal for <strong>{companyName}</strong>. Other signals for this account will remain in the queue.
                 </p>
                 <div className="flex items-center gap-3">
                     <button ref={confirmRef} onClick={onConfirm}
@@ -2552,31 +2553,30 @@ function App() {
         }
     }, [activeIndex, loadSignals]);
 
-    // Mark as noise (with confirmation — cascades to ALL signals for this account)
+    // Mark single signal as noise (archives only THIS signal, not the whole account)
     const markNoise = useCallback(async () => {
         if (!activeSignalId) return;
         const sig = signals.find(s => s.id === activeSignalId);
         if (!sig) return;
 
-        const company = sig.company_name || 'this account';
-        if (!window.confirm(`Mark "${company}" as noise?\n\nThis will archive ALL signals for this account.`)) return;
+        const company = sig.company_name || 'this signal';
+        if (!window.confirm(`Archive this signal for "${company}"?`)) return;
 
         try {
-            await apiFetch(`/v2/api/accounts/${sig.account_id}/status`, {
+            await apiFetch(`/v2/api/signals/${activeSignalId}/status`, {
                 method: 'PUT',
-                body: JSON.stringify({ status: 'noise' }),
+                body: JSON.stringify({ status: 'archived' }),
             });
-            toast(`"${company}" marked as noise`);
+            toast(`Signal for "${company}" archived`);
             await reloadAndAdvance();
         } catch (err) {
             toast(err.message, 'error');
         }
     }, [activeSignalId, signals, reloadAndAdvance, toast]);
 
-    // Auto-select first signal on initial load
+    // Highlight first signal in list on initial load (but don't open the workspace)
     useEffect(() => {
-        if (!loading && signals.length > 0 && activeSignalId === null && activeIndex === -1) {
-            setActiveSignalId(signals[0].id);
+        if (!loading && signals.length > 0 && activeIndex === -1) {
             setActiveIndex(0);
         }
     }, [loading, signals]);

@@ -233,9 +233,9 @@ def api_apollo_search(signal_id):
         # Build Apollo people search request
         from apollo_client import apollo_api_call
 
-        all_people = []
+        # Step 1: Search for people (does NOT return emails)
+        all_candidates = []
         for persona in personas:
-            # Support both single title and allTitles array
             all_titles = persona.get('allTitles') or [persona.get('title', '')]
             all_titles = [t for t in all_titles if t]
             if not all_titles:
@@ -243,7 +243,7 @@ def api_apollo_search(signal_id):
             seniority = persona.get('seniority', '')
 
             search_body = {
-                'q_organization_domains': domain,
+                'q_organization_domains_list': [domain],
                 'person_titles': all_titles,
                 'page': 1,
                 'per_page': 10,
@@ -256,8 +256,10 @@ def api_apollo_search(signal_id):
                 if resp.status_code == 200:
                     result = resp.json()
                     people = result.get('people', [])
+                    logger.info("[V2 API] Apollo search for %s at %s: %d results",
+                                all_titles[0], domain, len(people))
                     for person in people:
-                        all_people.append({
+                        all_candidates.append({
                             'full_name': person.get('name', ''),
                             'first_name': person.get('first_name', ''),
                             'last_name': person.get('last_name', ''),
@@ -269,35 +271,91 @@ def api_apollo_search(signal_id):
                         })
                 else:
                     logger.warning("[V2 API] Apollo search returned %d for persona %s",
-                                   resp.status_code, title)
+                                   resp.status_code, all_titles[0])
             except RuntimeError as re_err:
                 return _error(str(re_err), 503)
 
-        # Dedup by email
+        # Dedup by apollo_person_id (email may be empty at this stage)
+        seen_ids = set()
+        deduped_candidates = []
+        for p in all_candidates:
+            pid = p.get('apollo_person_id', '')
+            if pid and pid in seen_ids:
+                continue
+            if pid:
+                seen_ids.add(pid)
+            deduped_candidates.append(p)
+
+        # Step 2: Enrich top candidates to reveal emails via /people/match
+        max_results = data.get('max_results', 3)
+        verified_only = data.get('verified_only', True)
+        enriched = []
+
+        for candidate in deduped_candidates:
+            if max_results and len(enriched) >= max_results:
+                break
+
+            # If search already returned a verified email, use it directly
+            if candidate.get('email') and candidate.get('email_verified'):
+                enriched.append(candidate)
+                continue
+
+            # Try enrichment to reveal email
+            apollo_id = candidate.get('apollo_person_id')
+            if not apollo_id:
+                continue
+
+            try:
+                enrich_resp = apollo_api_call('post', 'https://api.apollo.io/v1/people/match', json={
+                    'id': apollo_id,
+                })
+                if enrich_resp.status_code == 200:
+                    person = enrich_resp.json().get('person', {})
+                    email = person.get('email', '')
+                    email_status = person.get('email_status', '')
+                    is_verified = email_status == 'verified'
+
+                    if email and (not verified_only or is_verified):
+                        enriched.append({
+                            'full_name': person.get('name', '') or candidate['full_name'],
+                            'first_name': person.get('first_name', '') or candidate['first_name'],
+                            'last_name': person.get('last_name', '') or candidate['last_name'],
+                            'title': person.get('title', '') or candidate['title'],
+                            'email': email,
+                            'email_verified': is_verified,
+                            'linkedin_url': person.get('linkedin_url', '') or candidate['linkedin_url'],
+                            'apollo_person_id': person.get('id', '') or apollo_id,
+                        })
+                        logger.info("[V2 API] Enriched %s → %s (status=%s)",
+                                    candidate['full_name'], email, email_status)
+                    else:
+                        logger.info("[V2 API] Enrichment for %s: email=%s status=%s (skipped)",
+                                    candidate['full_name'], email or 'none', email_status)
+                else:
+                    logger.warning("[V2 API] Apollo enrich returned %d for %s",
+                                   enrich_resp.status_code, candidate['full_name'])
+            except RuntimeError:
+                logger.warning("[V2 API] Apollo enrich failed for %s", candidate['full_name'])
+                continue
+
+        # Final dedup by email
         seen_emails = set()
-        deduped = []
-        for p in all_people:
+        final = []
+        for p in enriched:
             email = (p.get('email') or '').lower()
             if email and email in seen_emails:
                 continue
             if email:
                 seen_emails.add(email)
-            deduped.append(p)
-
-        # Filter to verified emails only, cap at max_results
-        verified_only = data.get('verified_only', True)
-        max_results = data.get('max_results', 3)
-        if verified_only:
-            deduped = [p for p in deduped if p.get('email_verified')]
-        if max_results and max_results > 0:
-            deduped = deduped[:max_results]
+            final.append(p)
 
         return _success(
-            people=deduped,
-            total=len(deduped),
+            people=final,
+            total=len(final),
             domain=domain,
             signal_id=signal_id,
             account_id=account_id,
+            candidates_found=len(deduped_candidates),
         )
     except Exception as e:
         logger.exception("[V2 API] Error in Apollo search for signal %d", signal_id)
