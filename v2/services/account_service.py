@@ -346,6 +346,8 @@ def get_account_domain(account_id: int) -> Optional[str]:
         website = row['website'] if isinstance(row, dict) else row[0]
         if not website:
             return None
-        # Strip protocol and path
+        # Strip protocol, path, and www. prefix
         domain = website.lower().replace('https://', '').replace('http://', '').split('/')[0]
+        if domain.startswith('www.'):
+            domain = domain[4:]
         return domain
