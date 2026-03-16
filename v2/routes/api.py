@@ -295,8 +295,11 @@ def api_apollo_search(signal_id):
             if max_results and len(enriched) >= max_results:
                 break
 
-            # If search already returned a verified email, use it directly
-            if candidate.get('email') and candidate.get('email_verified'):
+            # If search already returned a real verified email, use it directly
+            candidate_email = candidate.get('email', '')
+            if (candidate_email
+                    and candidate_email != 'email_not_unlocked@domain.com'
+                    and candidate.get('email_verified')):
                 enriched.append(candidate)
                 continue
 
