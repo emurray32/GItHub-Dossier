@@ -1385,7 +1385,7 @@ function PersonaSearch({ workspace, onProspectsSaved, toast, actionsRef }) {
 // SECTION 4 — DRAFT REVIEW
 // ═══════════════════════════════════════════════════════════════════════════
 
-function DraftReview({ workspace, toast, actionsRef }) {
+function DraftReview({ workspace, toast, actionsRef, onAllApproved }) {
     const prospects = workspace.prospects || [];
     const [drafts, setDrafts] = useState(() => {
         // Initialize from workspace.drafts so server-loaded drafts are editable
@@ -1514,6 +1514,7 @@ function DraftReview({ workspace, toast, actionsRef }) {
             }
             setAllApproved(true);
             toast('All drafts approved');
+            if (onAllApproved) onAllApproved();
         } catch (err) {
             toast(err.message, 'error');
         } finally {
@@ -1551,14 +1552,26 @@ function DraftReview({ workspace, toast, actionsRef }) {
                 setFocusedProspectIdx(i => Math.min(i + 1, actionableProspects.length - 1));
             }
         };
+        const jumpToProspect = (num) => {
+            const idx = num - 1;
+            if (idx < actionableProspects.length) {
+                const p = actionableProspects[idx];
+                setFocusedProspectIdx(idx);
+                setInclusions(prev => ({ ...prev, [p.id]: true }));
+                // Auto-generate drafts if none exist yet
+                if (!(drafts[p.id] && drafts[p.id].length > 0) && !generating[p.id]) {
+                    handleGenerate(p.id);
+                }
+            }
+        };
         const toggleInclude = () => {
             const p = actionableProspects[focusedProspectIdx];
             if (p) setInclusions(prev => ({ ...prev, [p.id]: !prev[p.id] }));
         };
         const openEnrollModal = () => { if (includedProspects.length > 0) setShowEnrollModal(true); };
         const openNoiseModal = () => setShowNoiseModal(true);
-        actionsRef.current = { ...actionsRef.current, generateDrafts: generateFirst, approveAll: handleApproveAll, nextProspect, prevProspect, selectProspect, nextDraftStep, toggleInclude, openEnrollModal, openNoiseModal };
-        return () => { const c = { ...actionsRef.current }; delete c.generateDrafts; delete c.approveAll; delete c.nextProspect; delete c.prevProspect; delete c.selectProspect; delete c.nextDraftStep; delete c.toggleInclude; delete c.openEnrollModal; delete c.openNoiseModal; actionsRef.current = c; };
+        actionsRef.current = { ...actionsRef.current, generateDrafts: generateFirst, approveAll: handleApproveAll, nextProspect, prevProspect, setDraftStep, jumpToProspect, toggleInclude, openEnrollModal, openNoiseModal };
+        return () => { const c = { ...actionsRef.current }; delete c.generateDrafts; delete c.approveAll; delete c.nextProspect; delete c.prevProspect; delete c.setDraftStep; delete c.jumpToProspect; delete c.toggleInclude; delete c.openEnrollModal; delete c.openNoiseModal; actionsRef.current = c; };
     });
 
     return (
@@ -2373,6 +2386,7 @@ function Workspace({ signalId, signalIndex, totalSignals, onMarkNoise, onSkip, o
     const [workspace, setWorkspace] = useState(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
+    const [enrollmentReady, setEnrollmentReady] = useState(false);
 
     const loadWorkspace = useCallback(async () => {
         if (!signalId) return;
@@ -2444,11 +2458,11 @@ function Workspace({ signalId, signalIndex, totalSignals, onMarkNoise, onSkip, o
 
                 {/* Draft Review (visible if prospects exist) */}
                 {workspace.prospects && workspace.prospects.length > 0 && (
-                    <DraftReview key={workspace.signal.id} workspace={workspace} toast={toast} actionsRef={actionsRef} />
+                    <DraftReview key={workspace.signal.id} workspace={workspace} toast={toast} actionsRef={actionsRef} onAllApproved={() => setEnrollmentReady(true)} />
                 )}
 
-                {/* Enrollment (visible if prospects exist) */}
-                {workspace.prospects && workspace.prospects.length > 0 && (
+                {/* Enrollment (only visible after drafts are approved) */}
+                {enrollmentReady && workspace.prospects && workspace.prospects.length > 0 && (
                     <Enrollment key={workspace.signal.id} workspace={workspace} onNextSignal={onReloadAndAdvance || onNextSignal} toast={toast} actionsRef={actionsRef} />
                 )}
             </div>
@@ -2459,24 +2473,20 @@ function Workspace({ signalId, signalIndex, totalSignals, onMarkNoise, onSkip, o
                     <span className="text-xs text-slate-400 tabular-nums">
                         {signalIndex + 1} / {totalSignals}
                     </span>
-                    {/* Contextual hint strip */}
                     <span className="text-[0.625rem] text-slate-300 hidden sm:flex items-center gap-1.5 flex-wrap">
                         {workspace && workspace.prospects && workspace.prospects.length > 0 ? (
                             <>
                                 <Kbd>1</Kbd><Kbd>2</Kbd><Kbd>3</Kbd>
-                                <span className="text-slate-300">jump prospect</span>
+                                <span className="text-slate-300">target prospect</span>
                                 <span className="text-slate-200 mx-0.5">&bull;</span>
                                 <Kbd>j</Kbd><Kbd>k</Kbd>
                                 <span className="text-slate-300">prev/next</span>
                                 <span className="text-slate-200 mx-0.5">&bull;</span>
-                                <Kbd>↵</Kbd>
-                                <span className="text-slate-300">next step</span>
+                                <Kbd>s</Kbd>
+                                <span className="text-slate-300">skip</span>
                                 <span className="text-slate-200 mx-0.5">&bull;</span>
-                                <Kbd>⌘↵</Kbd>
-                                <span className="text-slate-300">enroll</span>
-                                <span className="text-slate-200 mx-0.5">&bull;</span>
-                                <Kbd>G</Kbd>
-                                <span className="text-slate-300">gen drafts</span>
+                                <Kbd>?</Kbd>
+                                <span className="text-slate-300">help</span>
                             </>
                         ) : (
                             <>
@@ -2750,10 +2760,10 @@ function App() {
                 const action = workspaceActionsRef.current.prevProspect;
                 if (action) action();
             } else if ((key === '1' || key === '2' || key === '3') && activeSignalId && !showIntake) {
-                // Jump to prospect 1, 2, or 3
+                // Jump to prospect 1/2/3 and auto-generate drafts
                 e.preventDefault();
-                const action = workspaceActionsRef.current.selectProspect;
-                if (action) action(Number(key) - 1);
+                const action = workspaceActionsRef.current.jumpToProspect;
+                if (action) action(Number(key));
             } else if (key === '/') {
                 // Focus search box
                 e.preventDefault();
