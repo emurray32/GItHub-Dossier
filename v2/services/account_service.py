@@ -303,8 +303,14 @@ def update_account_enrichment(account_id: int, **fields) -> bool:
     """Update account with enrichment data. Only fills in fields that are currently empty.
 
     Accepts: website, industry, company_size, annual_revenue, linkedin_url,
-             hq_location, employee_count, funding_stage.
+             hq_location, employee_count, funding_stage, company_name.
+
+    Special: company_name is always overwritten when provided (used to resolve
+    GitHub org logins like 'gf' → 'General Fasteners').
     """
+    # Fields that are allowed to overwrite existing values
+    OVERWRITE_FIELDS = {'company_name'}
+
     acct = get_account(account_id)
     if not acct:
         return False
@@ -315,8 +321,8 @@ def update_account_enrichment(account_id: int, **fields) -> bool:
         if not value:
             continue
         current = acct.get(field_name)
-        if current and str(current).strip():
-            continue  # Don't overwrite existing data
+        if current and str(current).strip() and field_name not in OVERWRITE_FIELDS:
+            continue  # Don't overwrite existing data (except for overwrite-allowed fields)
         updates.append(f"{field_name} = ?")
         params.append(str(value).strip())
 

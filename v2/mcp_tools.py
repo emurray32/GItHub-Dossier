@@ -74,7 +74,7 @@ def register_v2_tools(mcp):
             return _safe_json({"error": str(e)})
 
     @mcp.tool()
-    def create_signal(account_name: str, signal_description: str, signal_type: str = None, evidence: str = None) -> str:
+    def create_signal(account_name: str, signal_description: str, signal_type: str = None, evidence: str = None, website: str = None, github_org: str = None) -> str:
         """Create a new intent signal for an account.
 
         Finds or creates the account by name, then creates the signal.
@@ -85,12 +85,14 @@ def register_v2_tools(mcp):
             signal_description: What was observed (e.g. 'Added react-i18next to package.json').
             signal_type: Optional signal category (e.g. 'dependency_injection', 'rfc_discussion').
             evidence: Optional raw evidence text or URL.
+            website: Optional company website URL (helps match/create the right account).
+            github_org: Optional GitHub org login (stored on the account for scanning).
         """
         try:
             from v2.services.account_service import find_or_create_account
             from v2.services.signal_service import create_signal as _create
 
-            account_id = find_or_create_account(account_name)
+            account_id = find_or_create_account(account_name, website=website)
 
             # Auto-recommend campaign based on signal type
             rec_campaign_id = None

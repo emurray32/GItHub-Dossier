@@ -936,6 +936,19 @@ def _enrich_accounts_apollo(accounts):
             if org.get('funding_stage'):
                 updates['funding_stage'] = org['funding_stage']
 
+            # Resolve real company name if current name looks like a GitHub org login
+            # (short, no spaces = likely an org slug like "gf" instead of "General Fasteners")
+            current_name = acct.get('company_name', '')
+            apollo_name = (org.get('name') or '').strip()
+            if (apollo_name
+                    and current_name
+                    and ' ' not in current_name
+                    and len(current_name) <= 20
+                    and apollo_name.lower() != current_name.lower()):
+                updates['company_name'] = apollo_name
+                logger.info("[ENRICH] Resolved company name: %s → %s",
+                            current_name, apollo_name)
+
             if updates:
                 account_service.update_account_enrichment(acct['account_id'], **updates)
                 enriched_count += 1
