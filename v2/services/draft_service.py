@@ -337,7 +337,7 @@ def generate_drafts(
             draft_id = insert_returning_id(cursor, '''
                 INSERT INTO drafts (
                     prospect_id, signal_id, campaign_id, sequence_step,
-                    subject, body, generated_by, active_model,
+                    subject, body, generated_by, generation_model,
                     generation_context, status
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'generated')
             ''', (
@@ -356,7 +356,7 @@ def generate_drafts(
             'subject': subject,
             'body': body,
             'generated_by': generated_by,
-            'active_model': active_model,
+            'generation_model': active_model,
             'status': 'generated',
         }
         created_drafts.append(draft)

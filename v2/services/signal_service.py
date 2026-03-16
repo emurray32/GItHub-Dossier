@@ -311,18 +311,36 @@ def update_signal_bdr_evaluation(
 def get_signal_counts_by_status() -> dict:
     """Get signal counts grouped by workflow status (account_status).
 
-    Includes noise signals (which have s.status='archived' due to cascade)
-    so the noise tab count is accurate.
+    Excludes archived signals for non-noise statuses (matching list_signals
+    behavior) so tab counts reflect what users actually see in the list.
+    Noise signals ARE included even though they have s.status='archived'
+    (due to cascade), so the noise tab count stays accurate.
     """
     with db_connection() as conn:
         cursor = conn.cursor()
+        # Count non-archived signals grouped by account_status
         cursor.execute('''
             SELECT a.account_status AS workflow_status, COUNT(*) as cnt
             FROM intent_signals s
             JOIN monitored_accounts a ON s.account_id = a.id
+            WHERE s.status != 'archived'
             GROUP BY a.account_status
         ''')
-        return {r['workflow_status']: r['cnt'] for r in rows_to_dicts(cursor.fetchall())}
+        counts = {r['workflow_status']: r['cnt'] for r in rows_to_dicts(cursor.fetchall())}
+
+        # Noise signals have s.status='archived' (cascade), so count them separately
+        cursor.execute('''
+            SELECT COUNT(*) as cnt
+            FROM intent_signals s
+            JOIN monitored_accounts a ON s.account_id = a.id
+            WHERE a.account_status = 'noise'
+        ''')
+        row = cursor.fetchone()
+        noise_count = row['cnt'] if isinstance(row, dict) else row[0]
+        if noise_count > 0:
+            counts['noise'] = noise_count
+
+        return counts
 
 
 def get_owners() -> List[str]:
