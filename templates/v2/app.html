@@ -1565,8 +1565,8 @@ function DraftReview({ workspace, toast, actionsRef, onAllApproved }) {
         };
         const openEnrollModal = () => { if (includedProspects.length > 0) setShowEnrollModal(true); };
         const openNoiseModal = () => setShowNoiseModal(true);
-        actionsRef.current = { ...actionsRef.current, generateDrafts: generateFirst, approveAll: handleApproveAll, nextProspect, prevProspect, setDraftStep, jumpToProspect, toggleInclude, openEnrollModal, openNoiseModal };
-        return () => { const c = { ...actionsRef.current }; delete c.generateDrafts; delete c.approveAll; delete c.nextProspect; delete c.prevProspect; delete c.setDraftStep; delete c.jumpToProspect; delete c.toggleInclude; delete c.openEnrollModal; delete c.openNoiseModal; actionsRef.current = c; };
+        actionsRef.current = { ...actionsRef.current, generateDrafts: generateFirst, approveAll: handleApproveAll, nextProspect, prevProspect, jumpToProspect, nextDraftStep, toggleInclude, openEnrollModal, openNoiseModal };
+        return () => { const c = { ...actionsRef.current }; delete c.generateDrafts; delete c.approveAll; delete c.nextProspect; delete c.prevProspect; delete c.jumpToProspect; delete c.nextDraftStep; delete c.toggleInclude; delete c.openEnrollModal; delete c.openNoiseModal; actionsRef.current = c; };
     });
 
     return (
