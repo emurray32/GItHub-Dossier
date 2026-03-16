@@ -2410,6 +2410,8 @@ if __name__ == '__main__':
     # Uses pure Python via /proc (no lsof/fuser needed — neither is present in NixOS).
     try:
         import signal as _signal, time as _time
+        _own_pid = os.getpid()
+        _parent_pid = os.getppid()  # skip our parent (Flask reloader)
         def _kill_port(tcp_file, _port):
             try:
                 with open(tcp_file) as _f:
@@ -2423,6 +2425,8 @@ if __name__ == '__main__':
                             for _pid in os.listdir('/proc'):
                                 if not _pid.isdigit():
                                     continue
+                                if int(_pid) in (_own_pid, _parent_pid):
+                                    continue  # never kill ourselves or our parent
                                 try:
                                     for _fd in os.listdir(f'/proc/{_pid}/fd'):
                                         try:
@@ -2449,4 +2453,4 @@ if __name__ == '__main__':
             print("[APP] PRODUCTION=true detected, forcing debug mode OFF")
         debug_mode = False
 
-    app.run(debug=debug_mode, host='0.0.0.0', port=port, threaded=True)
+    app.run(debug=debug_mode, host='0.0.0.0', port=port, threaded=True, use_reloader=True)
