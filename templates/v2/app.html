@@ -1673,24 +1673,6 @@ function DraftReview({ workspace, toast, actionsRef, onAllApproved }) {
 
     return (
         <div className="bg-white rounded-lg border border-slate-200 p-3">
-            {/* Signal context — always visible so you know WHY */}
-            <div className="bg-slate-50 rounded-md px-3 py-2 mb-3 border border-slate-100">
-                <div className="flex items-center gap-2 mb-1">
-                    <span className="text-xs font-semibold text-slate-800">{workspace.account.company_name}</span>
-                    <SignalTypeBadge type={workspace.signal.signal_type} size="sm" />
-                    {workspace.campaign?.name && (
-                        <span className="text-[0.625rem] bg-brand-50 text-brand-600 px-1.5 py-0.5 rounded-full">{workspace.campaign.name}</span>
-                    )}
-                </div>
-                <p className="text-xs text-slate-600 leading-relaxed">{workspace.signal.signal_description}</p>
-                {workspace.signal.bdr_positioning && (
-                    <p className="text-[0.6875rem] text-brand-600 mt-1 flex items-center gap-1">
-                        <Icon name="target" size={10} className="flex-shrink-0" />
-                        {workspace.signal.bdr_positioning}
-                    </p>
-                )}
-            </div>
-
             {/* Prospect tabs — one tab per prospect */}
             <div className="flex items-center gap-1 mb-3 border-b border-slate-100">
                 {actionableProspects.map((prospect, pIdx) => {
@@ -2596,7 +2578,36 @@ function Workspace({ signalId, signalIndex, totalSignals, onMarkNoise, onSkip, o
                 <SignalHeader workspace={workspace} onCampaignUpdate={loadWorkspace} toast={toast} />
 
                 {/* Persona Search */}
-                <PersonaSearch workspace={workspace} onProspectsSaved={loadWorkspace} toast={toast} actionsRef={actionsRef} />
+                <PersonaSearch workspace={workspace} onProspectsSaved={async () => {
+                    const data = await apiFetch(`/v2/api/signals/${signalId}`);
+                    setWorkspace(data);
+                    // Auto-generate drafts for all prospects that don't have any
+                    const prospects = data?.prospects || [];
+                    const existingDrafts = data?.drafts || [];
+                    const prospectIdsWithDrafts = new Set(existingDrafts.map(d => d.prospect_id));
+                    for (const p of prospects) {
+                        if (!prospectIdsWithDrafts.has(p.id) && !p.do_not_contact) {
+                            try {
+                                await apiFetch('/v2/api/drafts/generate', {
+                                    method: 'POST',
+                                    body: JSON.stringify({
+                                        prospect_id: p.id,
+                                        signal_id: data.signal.id,
+                                        campaign_id: data.signal.recommended_campaign_id || 0,
+                                    }),
+                                });
+                            } catch (err) {
+                                toast(`Draft gen failed for ${p.first_name || 'prospect'}: ${err.message}`, 'error');
+                            }
+                        }
+                    }
+                    // Reload once more to pick up generated drafts
+                    if (prospects.some(p => !prospectIdsWithDrafts.has(p.id) && !p.do_not_contact)) {
+                        const refreshed = await apiFetch(`/v2/api/signals/${signalId}`);
+                        setWorkspace(refreshed);
+                        toast('Contacts saved and drafts generated');
+                    }
+                }} toast={toast} actionsRef={actionsRef} />
 
                 {/* Draft Review (visible if prospects exist) */}
                 {workspace.prospects && workspace.prospects.length > 0 && (
