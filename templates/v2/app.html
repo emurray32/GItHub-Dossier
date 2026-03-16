@@ -60,12 +60,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (userPref === 'true' || (narrow && userPref !== 'false')) {
         sidebar.classList.add('collapsed');
     }
-    if (toggle) toggle.addEventListener('click', () => {
-        sidebar.classList.toggle('collapsed');
-        // Save the user's explicit choice — respected on next load and resize
-        localStorage.setItem('sidebar-collapsed', sidebar.classList.contains('collapsed'));
-        if (typeof lucide !== 'undefined') lucide.createIcons();
-    });
+    // click handler is on the button's onclick attribute directly
 });
 </script>
 
