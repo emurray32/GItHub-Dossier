@@ -13,7 +13,7 @@ from typing import Optional, Tuple
 logger = logging.getLogger(__name__)
 
 # Model constants — single source of truth
-GEMINI_MODEL = 'gemini-2.5-flash'
+GEMINI_MODEL = 'gemini-3-flash-preview'
 OPENAI_MODEL = 'gpt-5-mini'
 
 # Cached client (initialized once, reused across calls)
