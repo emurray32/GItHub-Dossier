@@ -296,6 +296,19 @@ def api_apollo_search(signal_id):
                 if name_candidates:
                     logger.info("[V2 API] Company-name search added %d candidates for: %s", len(name_candidates), company_name)
                     all_candidates.extend(name_candidates)
+                else:
+                    # Retry with TLD suffix stripped (e.g. "Chata.ai" → "Chata", "Scale.io" → "Scale")
+                    import re as _re
+                    stripped_name = _re.sub(
+                        r'\.(ai|io|co|app|xyz|tech|dev|so|it|me|us|gg|fm|inc|llc|ltd|hq)$',
+                        '', company_name, flags=_re.IGNORECASE
+                    ).strip()
+                    if stripped_name and stripped_name.lower() != company_name.lower():
+                        stripped_candidates = _search_apollo(personas, {'q_organization_name': stripped_name})
+                        if stripped_candidates:
+                            logger.info("[V2 API] Stripped-name search added %d candidates for: %s (from '%s')",
+                                        len(stripped_candidates), stripped_name, company_name)
+                            all_candidates.extend(stripped_candidates)
 
             # Last resort: broaden search (drop seniority filters only — no CEO/founder padding)
             if not all_candidates:
