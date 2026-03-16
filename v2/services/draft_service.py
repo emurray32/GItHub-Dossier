@@ -122,9 +122,10 @@ def _build_generation_prompt(
     signal_desc = signal.get('signal_description', '') if signal else ''
     evidence = signal.get('evidence_value', '') if signal else ''
 
-    campaign_name = campaign.get('campaign_name', '') if campaign else ''
+    campaign_name = campaign.get('campaign_name', '') or campaign.get('name', '') if campaign else ''
+    campaign_prompt = campaign.get('prompt', '') if campaign else ''
 
-    return f"""Generate email step {step} of a 3-email sequence.
+    parts = [f"""Generate email step {step} of a 3-email sequence.
 
 STEP {step} PURPOSE: {purpose}
 
@@ -136,11 +137,16 @@ PROSPECT:
 SIGNAL:
 - Type: {signal_type}
 - Description: {signal_desc}
-- Evidence: {evidence[:300] if evidence else 'None'}
+- Evidence: {evidence[:300] if evidence else 'None'}"""]
 
-{f'CAMPAIGN: {campaign_name}' if campaign_name else ''}
+    if campaign_prompt:
+        parts.append(f"CAMPAIGN INSTRUCTIONS:\n{campaign_prompt}")
+    elif campaign_name:
+        parts.append(f"CAMPAIGN: {campaign_name}")
 
-Keep the email under 120 words. Be specific. Reference their signal. No fluff."""
+    parts.append("Keep the email under 120 words. Be specific. Reference their signal. No fluff.")
+
+    return '\n\n'.join(parts)
 
 
 _PREAMBLE_RE = re.compile(
