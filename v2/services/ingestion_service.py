@@ -840,7 +840,55 @@ def _post_process_batch(new_accounts, created_signals):
     # 2. BDR evaluation for all created signals
     result['signals_evaluated'] = _evaluate_signals_bdr(created_signals)
 
+    # 3. Consolidate signals per account (merge multiple signals into one)
+    result['signals_consolidated'] = _consolidate_batch_signals(created_signals)
+
     return result
+
+
+def _consolidate_batch_signals(created_signals):
+    """Consolidate signals per account after a batch import.
+
+    If an account ended up with multiple active signals (from this batch or
+    combined with pre-existing ones), merge them into one consolidated signal.
+
+    Returns the number of accounts consolidated.
+    """
+    if not created_signals:
+        return 0
+
+    try:
+        from v2.services.consolidation_service import consolidate_account
+        from v2.db import db_connection, rows_to_dicts
+
+        # Find unique account_ids from this batch that have 2+ active signals
+        seen_accounts = set()
+        for sig in created_signals:
+            # Get account_id from the signal record
+            with db_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT account_id FROM intent_signals WHERE id = ?",
+                    (sig.get('signal_id'),),
+                )
+                row = cursor.fetchone()
+                if row:
+                    aid = row['account_id'] if isinstance(row, dict) else row[0]
+                    seen_accounts.add(aid)
+
+        consolidated = 0
+        for account_id in seen_accounts:
+            result = consolidate_account(account_id)
+            if result:
+                consolidated += 1
+
+        if consolidated:
+            logger.info("[INGEST] Consolidated signals for %d accounts", consolidated)
+        return consolidated
+
+    except Exception as e:
+        logger.warning("[INGEST] Signal consolidation failed (non-fatal): %s", e)
+        return 0
 
 
 def _enrich_accounts_apollo(accounts):
