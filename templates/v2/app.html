@@ -1008,7 +1008,6 @@ function SignalHeader({ workspace, onCampaignUpdate, toast }) {
     const { signal, account } = workspace;
     const [campaigns, setCampaigns] = useState([]);
     const [showCampaignPicker, setShowCampaignPicker] = useState(false);
-    const [evidenceOpen, setEvidenceOpen] = useState(false);
 
     useEffect(() => {
         apiFetch('/v2/api/campaigns')
@@ -1079,50 +1078,37 @@ function SignalHeader({ workspace, onCampaignUpdate, toast }) {
                 </div>
             </div>
 
-            {/* Row 2: Signal description — one compact line */}
-            <p className="text-xs text-slate-600 mt-1.5 leading-relaxed line-clamp-2">{signal.signal_description}</p>
+            {/* Combined signal intel — description + positioning + evidence URLs */}
+            {(() => {
+                // Extract clickable URLs from evidence
+                const evidenceUrls = (() => {
+                    if (!signal.evidence_value) return [];
+                    const val = typeof signal.evidence_value === 'string' ? signal.evidence_value : JSON.stringify(signal.evidence_value);
+                    const urlRegex = /https?:\/\/[^\s"',\]})]+/g;
+                    return [...new Set(val.match(urlRegex) || [])];
+                })();
 
-            {/* Outreach Angle — prominently labeled */}
-            {signal.outreach_angle && (
-                <div className="flex items-start gap-1.5 mt-1.5 bg-brand-50 border border-brand-100 rounded-md px-2.5 py-1.5">
-                    <Icon name="arrow-right" size={11} className="text-brand-500 mt-0.5 flex-shrink-0" />
-                    <div>
-                        <span className="text-[0.625rem] font-semibold text-brand-700 uppercase tracking-wider">Outreach Angle</span>
-                        <p className="text-xs text-brand-800 leading-relaxed">{signal.outreach_angle}</p>
+                return (
+                    <div className="mt-1.5 text-xs text-slate-600 leading-relaxed space-y-1">
+                        <p>{signal.signal_description}</p>
+                        {(signal.bdr_positioning || signal.outreach_angle) && (
+                            <p className="text-brand-600 flex items-start gap-1.5">
+                                <Icon name="target" size={11} className="text-brand-500 mt-0.5 flex-shrink-0" />
+                                {signal.outreach_angle || signal.bdr_positioning}
+                            </p>
+                        )}
+                        {evidenceUrls.length > 0 && (
+                            <div className="flex flex-wrap gap-2 mt-1">
+                                {evidenceUrls.map((url, i) => (
+                                    <a key={i} href={url} target="_blank" rel="noopener noreferrer"
+                                       className="inline-flex items-center gap-1 text-[0.6875rem] text-brand-600 hover:text-brand-700 hover:underline">
+                                        <Icon name="external-link" size={10} className="flex-shrink-0" />
+                                        {url.replace(/^https?:\/\//, '').split('/').slice(0, 2).join('/')}
+                                    </a>
+                                ))}
+                            </div>
+                        )}
                     </div>
-                </div>
-            )}
-
-            {/* BDR positioning + evidence — compact */}
-            <div className="flex items-start gap-3 mt-1.5">
-                {signal.bdr_positioning && (
-                    <div className="flex items-start gap-1.5 text-[0.6875rem] text-brand-600 flex-1 min-w-0">
-                        <Icon name="target" size={11} className="text-brand-500 mt-0.5 flex-shrink-0" />
-                        <span className="line-clamp-1">{signal.bdr_positioning}</span>
-                    </div>
-                )}
-                {signal.evidence_value && (
-                    <button onClick={() => setEvidenceOpen(!evidenceOpen)}
-                        className="text-[0.625rem] text-brand-600 hover:text-brand-700 flex-shrink-0 flex items-center gap-0.5">
-                        <Icon name={evidenceOpen ? 'chevron-up' : 'chevron-down'} size={10} />
-                        evidence
-                    </button>
-                )}
-            </div>
-
-            {evidenceOpen && signal.evidence_value && (() => {
-                const val = typeof signal.evidence_value === 'string' ? signal.evidence_value : JSON.stringify(signal.evidence_value, null, 2);
-                const isUrl = /^https?:\/\/\S+$/i.test(val.trim());
-                return isUrl ? (
-                    <a href={val.trim()} target="_blank" rel="noopener noreferrer"
-                       className="mt-1.5 flex items-center gap-1.5 bg-slate-50 rounded px-2.5 py-2 text-[0.6875rem] text-brand-600 hover:text-brand-700 hover:bg-brand-50 border border-slate-100 transition-colors break-all">
-                        <Icon name="external-link" size={11} className="flex-shrink-0" />
-                        {val.trim()}
-                    </a>
-                ) : (
-                    <pre className="mt-1.5 bg-slate-50 rounded p-2 text-[0.625rem] text-slate-600 whitespace-pre-wrap break-words font-mono border border-slate-100 max-h-24 overflow-y-auto">
-                        {val}
-                    </pre>
                 );
             })()}
         </div>
