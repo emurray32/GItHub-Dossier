@@ -934,7 +934,7 @@ function TopBar({ statusFilter, onStatusFilter, counts, searchTerm, onSearchChan
             <div className="flex gap-0.5 bg-slate-100 rounded-md p-0.5">
                 {[
                     { key: 'new', label: 'New', count: counts.new || 0 },
-                    { key: 'sequenced', label: 'Seq', count: counts.sequenced || 0 },
+                    { key: 'sequenced', label: 'Enrolled', count: counts.sequenced || 0 },
                     { key: 'revisit', label: 'Revisit', count: counts.revisit || 0 },
                     { key: 'noise', label: 'Noise', count: counts.noise || 0 },
                     { key: null, label: 'All', count: Object.values(counts).reduce((a, b) => a + b, 0) },
