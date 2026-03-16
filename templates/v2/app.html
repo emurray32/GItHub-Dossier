@@ -878,8 +878,7 @@ function SignalTable({ signals, loading, activeIndex, onSelect, searchTerm }) {
                     <tr className="bg-slate-50 border-b border-slate-200 text-[0.6875rem] text-slate-500 uppercase tracking-wider">
                         <th className="text-left px-3 py-2 font-medium w-8">#</th>
                         <th className="text-left px-3 py-2 font-medium" style={{minWidth: 160}}>Company</th>
-                        <th className="text-left px-3 py-2 font-medium" style={{minWidth: 130}}>Signal</th>
-                        <th className="text-left px-3 py-2 font-medium">Description</th>
+                        <th className="text-left px-3 py-2 font-medium">Why It Matters</th>
                         <th className="text-left px-3 py-2 font-medium w-20">Owner</th>
                         <th className="text-left px-3 py-2 font-medium w-14">Age</th>
                         <th className="text-left px-3 py-2 font-medium w-10">Score</th>
@@ -900,8 +899,7 @@ function SignalTable({ signals, loading, activeIndex, onSelect, searchTerm }) {
                                     <span className="font-medium text-slate-800 truncate">{sig.company_name || 'Unknown'}</span>
                                 </div>
                             </td>
-                            <td className="px-3 py-1"><SignalTypeBadge type={sig.signal_type} size="sm" /></td>
-                            <td className="px-3 py-1 text-slate-500 truncate max-w-sm">{sig.signal_description || '--'}</td>
+                            <td className="px-3 py-1 text-slate-500 truncate" style={{maxWidth: 500}}>{sig.signal_description || '--'}</td>
                             <td className="px-3 py-1 text-xs text-slate-400 truncate">{sig.account_owner || '--'}</td>
                             <td className="px-3 py-1 text-xs text-slate-400 tabular-nums">{timeAgo(sig.created_at)}</td>
                             <td className="px-3 py-1"><QualityDots score={sig.bdr_quality_score} /></td>
