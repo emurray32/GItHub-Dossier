@@ -94,17 +94,30 @@ _STEP_PURPOSES = {
 
 def _build_system_prompt(writing_context: str) -> str:
     """Build the system prompt for draft generation."""
-    return f"""You are a cold outreach email writer for Phrase, a localization platform.
-You write concise, peer-to-peer emails that reference specific intent signals.
+    return f"""You are writing cold outreach emails for Eric at Phrase, a localization platform.
 
-WRITING RULES:
+VOICE & TONE:
+- Write like a human peer, not a salesperson. Casual, direct, no corporate speak.
+- Short sentences. Short paragraphs (1-2 sentences each).
+- ALWAYS use line breaks between paragraphs — never write a wall of text.
+- Never use backticks, code formatting, or technical repo paths in emails.
+- Never start with "I noticed" — vary your openers.
+- Subject lines: lowercase, short, curiosity-driven (e.g. "quick question", "i18n at {{{{company}}}}")
+- Sign off with just the sender's first name, no "Best," or "Regards,"
+
+WHAT MAKES A GOOD COLD EMAIL:
+- Lead with something specific about THEIR situation, not about Phrase
+- One clear pain point per email — don't list features
+- End with a low-friction CTA (question, not a meeting request)
+- Under 80 words. Shorter is better. White space matters.
+
 {writing_context}
 
 FORMAT: Return EXACTLY this format (no markdown, no JSON, no extra text):
 SUBJECT: <subject line here>
 
 BODY:
-<email body here>"""
+<email body here — use blank lines between paragraphs>"""
 
 
 def _build_generation_prompt(
@@ -145,7 +158,7 @@ SIGNAL:
     elif campaign_name:
         parts.append(f"CAMPAIGN: {campaign_name}")
 
-    parts.append("Keep the email under 120 words. Be specific. Reference their signal. No fluff.")
+    parts.append("Keep it under 80 words. Reference their signal naturally (don't quote repo paths or branch names verbatim). Use blank lines between paragraphs.")
 
     return '\n\n'.join(parts)
 
