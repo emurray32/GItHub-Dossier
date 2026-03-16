@@ -1159,18 +1159,21 @@ function PersonaSearch({ workspace, onProspectsSaved, toast, actionsRef }) {
                 allTitles: p.allTitles || [p.title],
                 seniority: p.seniority || '',
             }));
+            // Search + auto-save in one API call (backend handles enrichment + saving)
             const data = await apiFetch(`/v2/api/signals/${workspace.signal.id}/search`, {
                 method: 'POST',
                 body: JSON.stringify({ personas: searchPersonas, verified_only: true, max_results: 3 }),
             });
             const people = data.people || [];
+            const savedCount = data.saved_count || 0;
             setResults(people);
-            // Pre-select all results by default
             setSelected(new Set(people.map((_, i) => i)));
             if (people.length === 0) {
-                toast('No verified contacts found', 'info');
+                toast(`No verified contacts found (${data.candidates_found || 0} candidates checked)`, 'info');
             } else {
-                toast(`Found ${people.length} verified contact${people.length !== 1 ? 's' : ''}`);
+                toast(`Found & saved ${savedCount} contact${savedCount !== 1 ? 's' : ''} — ready for drafts`);
+                // Auto-refresh workspace to show saved prospects in draft section
+                if (onProspectsSaved) onProspectsSaved();
             }
         } catch (err) {
             toast(err.message, 'error');
@@ -1244,7 +1247,7 @@ function PersonaSearch({ workspace, onProspectsSaved, toast, actionsRef }) {
 
     return (
         <div className="bg-white rounded-lg border border-slate-200 p-3">
-            {/* Persona chips + add + search — all inline */}
+            {/* Persona pills row + search button */}
             <div className="flex flex-wrap items-center gap-1.5">
                 {personas.map((p, i) => (
                     <div key={i} className="v2-chip" title={p.allTitles ? p.allTitles.join(', ') : p.title}>
@@ -1253,29 +1256,30 @@ function PersonaSearch({ workspace, onProspectsSaved, toast, actionsRef }) {
                         <button onClick={() => removePersona(i)} title="Remove">x</button>
                     </div>
                 ))}
-                <div className="flex items-center gap-1">
-                    <input value={newTitle} onChange={e => setNewTitle(e.target.value)}
-                        onKeyDown={e => e.key === 'Enter' && addPersona()}
-                        placeholder="+ Add title"
-                        className="text-xs border border-slate-200 rounded px-2 py-1 w-28 focus:outline-none focus:border-brand-500" />
-                    <select value={newSeniority} onChange={e => setNewSeniority(e.target.value)}
-                        className="text-xs border border-slate-200 rounded px-1.5 py-1 focus:outline-none focus:border-brand-500 bg-white w-20">
-                        <option value="">Level</option>
-                        <option value="c_suite">C-Suite</option>
-                        <option value="vp">VP</option>
-                        <option value="director">Dir</option>
-                        <option value="manager">Mgr</option>
-                        <option value="senior">Sr</option>
-                    </select>
-                    <button onClick={addPersona} className="px-1.5 py-1 border border-slate-200 rounded text-slate-500 hover:bg-slate-50">
-                        <Icon name="plus" size={12} />
-                    </button>
-                </div>
                 <button onClick={handleSearch}
                     disabled={searching || personas.length === 0}
                     className="ml-auto px-3 py-1 bg-brand-600 text-white text-xs font-medium rounded hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center gap-1.5">
                     {searching ? <Icon name="loader" size={12} /> : <Icon name="search" size={12} />}
                     {searching ? 'Searching...' : 'Search Apollo'}
+                </button>
+            </div>
+            {/* Add custom persona — below pills */}
+            <div className="flex items-center gap-1 mt-1.5">
+                <input value={newTitle} onChange={e => setNewTitle(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && addPersona()}
+                    placeholder="+ Add title"
+                    className="text-xs border border-slate-200 rounded px-2 py-1 w-28 focus:outline-none focus:border-brand-500" />
+                <select value={newSeniority} onChange={e => setNewSeniority(e.target.value)}
+                    className="text-xs border border-slate-200 rounded px-1.5 py-1 focus:outline-none focus:border-brand-500 bg-white w-20">
+                    <option value="">Level</option>
+                    <option value="c_suite">C-Suite</option>
+                    <option value="vp">VP</option>
+                    <option value="director">Dir</option>
+                    <option value="manager">Mgr</option>
+                    <option value="senior">Sr</option>
+                </select>
+                <button onClick={addPersona} className="px-1.5 py-1 border border-slate-200 rounded text-slate-500 hover:bg-slate-50">
+                    <Icon name="plus" size={12} />
                 </button>
             </div>
 
@@ -1345,14 +1349,7 @@ function PersonaSearch({ workspace, onProspectsSaved, toast, actionsRef }) {
                         </table>
                     </div>
 
-                    {selected.size > 0 && (
-                        <button onClick={handleSave}
-                            disabled={savingProspects}
-                            className="mt-2 w-full px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded hover:bg-green-700 disabled:opacity-40 transition-all flex items-center justify-center gap-1.5">
-                            {savingProspects ? <Icon name="loader" size={14} /> : <Icon name="check" size={14} />}
-                            {savingProspects ? 'Saving...' : `Save ${selected.size} Contact${selected.size !== 1 ? 's' : ''}`}
-                        </button>
-                    )}
+                    {/* Contacts are auto-saved by search — no manual save needed */}
                 </div>
             )}
         </div>

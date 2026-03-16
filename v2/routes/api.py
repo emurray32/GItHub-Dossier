@@ -233,7 +233,7 @@ def api_apollo_search(signal_id):
         # Build Apollo people search request
         from apollo_client import apollo_api_call
 
-        # Step 1: Search for people (does NOT return emails)
+        # Step 1: Search for people candidates
         all_candidates = []
         for persona in personas:
             all_titles = persona.get('allTitles') or [persona.get('title', '')]
@@ -275,7 +275,7 @@ def api_apollo_search(signal_id):
             except RuntimeError as re_err:
                 return _error(str(re_err), 503)
 
-        # Dedup by apollo_person_id (email may be empty at this stage)
+        # Dedup by apollo_person_id
         seen_ids = set()
         deduped_candidates = []
         for p in all_candidates:
@@ -308,6 +308,7 @@ def api_apollo_search(signal_id):
             try:
                 enrich_resp = apollo_api_call('post', 'https://api.apollo.io/v1/people/match', json={
                     'id': apollo_id,
+                    'reveal_personal_emails': False,
                 })
                 if enrich_resp.status_code == 200:
                     person = enrich_resp.json().get('person', {})
@@ -315,7 +316,7 @@ def api_apollo_search(signal_id):
                     email_status = person.get('email_status', '')
                     is_verified = email_status == 'verified'
 
-                    if email and (not verified_only or is_verified):
+                    if email and email != 'email_not_unlocked@domain.com' and (not verified_only or is_verified):
                         enriched.append({
                             'full_name': person.get('name', '') or candidate['full_name'],
                             'first_name': person.get('first_name', '') or candidate['first_name'],
@@ -326,7 +327,7 @@ def api_apollo_search(signal_id):
                             'linkedin_url': person.get('linkedin_url', '') or candidate['linkedin_url'],
                             'apollo_person_id': person.get('id', '') or apollo_id,
                         })
-                        logger.info("[V2 API] Enriched %s → %s (status=%s)",
+                        logger.info("[V2 API] Enriched %s -> %s (status=%s)",
                                     candidate['full_name'], email, email_status)
                     else:
                         logger.info("[V2 API] Enrichment for %s: email=%s status=%s (skipped)",
@@ -349,6 +350,17 @@ def api_apollo_search(signal_id):
                 seen_emails.add(email)
             final.append(p)
 
+        # Step 3: Auto-save as prospects (merge search + save into one step)
+        saved_count = 0
+        if final:
+            try:
+                from v2.services.prospect_service import bulk_create_prospects
+                result = bulk_create_prospects(signal_id, account_id, final)
+                saved_count = result.get('count', 0) if isinstance(result, dict) else 0
+                logger.info("[V2 API] Auto-saved %d prospects for signal %d", saved_count, signal_id)
+            except Exception as save_err:
+                logger.warning("[V2 API] Auto-save prospects failed: %s", save_err)
+
         return _success(
             people=final,
             total=len(final),
@@ -356,6 +368,7 @@ def api_apollo_search(signal_id):
             signal_id=signal_id,
             account_id=account_id,
             candidates_found=len(deduped_candidates),
+            saved_count=saved_count,
         )
     except Exception as e:
         logger.exception("[V2 API] Error in Apollo search for signal %d", signal_id)
