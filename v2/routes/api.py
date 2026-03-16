@@ -280,6 +280,14 @@ def api_apollo_search(signal_id):
                 seen_emails.add(email)
             deduped.append(p)
 
+        # Filter to verified emails only, cap at max_results
+        verified_only = data.get('verified_only', True)
+        max_results = data.get('max_results', 3)
+        if verified_only:
+            deduped = [p for p in deduped if p.get('email_verified')]
+        if max_results and max_results > 0:
+            deduped = deduped[:max_results]
+
         return _success(
             people=deduped,
             total=len(deduped),

@@ -951,201 +951,109 @@ function TopBar({ statusFilter, onStatusFilter, counts, searchTerm, onSearchChan
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// SECTION 1 — SIGNAL CONTEXT
+// COMPACT SIGNAL HEADER — Company + signal + campaign in one row
 // ═══════════════════════════════════════════════════════════════════════════
 
-function SignalContext({ workspace }) {
-    const [evidenceOpen, setEvidenceOpen] = useState(false);
+function SignalHeader({ workspace, onCampaignUpdate, toast }) {
     const { signal, account } = workspace;
-
-    return (
-        <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-5">
-            <div className="flex items-start justify-between gap-4 mb-4">
-                <div className="min-w-0">
-                    <div className="flex items-center gap-3 mb-1">
-                        <h2 className="text-xl font-semibold text-slate-900 truncate">{account.company_name}</h2>
-                        {account.website && (
-                            <a href={account.website.startsWith('http') ? account.website : `https://${account.website}`}
-                               target="_blank" rel="noopener noreferrer"
-                               title={account.website}
-                               className="text-brand-600 hover:text-brand-700 flex-shrink-0 transition-colors">
-                                <Icon name="external-link" size={14} />
-                            </a>
-                        )}
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                        {account.industry && (
-                            <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded">{account.industry}</span>
-                        )}
-                        {account.company_size && (
-                            <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded">{account.company_size} employees</span>
-                        )}
-                        {account.annual_revenue && (
-                            <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded">{account.annual_revenue}</span>
-                        )}
-                        {account.hq_location && (
-                            <span className="text-slate-400">{account.hq_location}</span>
-                        )}
-                    </div>
-                </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                    <StatusBadge status={account.account_status} />
-                    {account.account_owner && (
-                        <span className="text-xs text-slate-500 bg-slate-50 px-2 py-1 rounded">{account.account_owner}</span>
-                    )}
-                </div>
-            </div>
-
-            {/* Signal info */}
-            <div className="border-t border-slate-100 pt-4">
-                <div className="flex items-center gap-2 mb-2">
-                    <SignalTypeBadge type={signal.signal_type} size="md" />
-                    <span className="text-xs text-slate-400">
-                        {signal.created_at ? new Date(signal.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ''}
-                    </span>
-                </div>
-                <p className="text-sm text-slate-700 leading-relaxed">{signal.signal_description}</p>
-
-                {/* BDR positioning angle from smart ingestion */}
-                {signal.bdr_positioning && (
-                    <div className="mt-3 flex items-start gap-2 bg-brand-50 border border-brand-100 rounded-md px-3 py-2">
-                        <Icon name="target" size={14} className="text-brand-500 mt-0.5 flex-shrink-0" />
-                        <div>
-                            <span className="text-xs font-medium text-brand-700">Outreach angle</span>
-                            <p className="text-xs text-brand-600 mt-0.5">{signal.bdr_positioning}</p>
-                        </div>
-                        {signal.bdr_quality_score && (
-                            <div className="ml-auto flex-shrink-0">
-                                <QualityDots score={signal.bdr_quality_score} />
-                            </div>
-                        )}
-                    </div>
-                )}
-            </div>
-
-            {/* Evidence collapsible */}
-            {signal.evidence_value && (
-                <div className="mt-3">
-                    <button onClick={() => setEvidenceOpen(!evidenceOpen)}
-                        className="flex items-center gap-1.5 text-xs text-brand-600 hover:text-brand-700 font-medium transition-colors">
-                        <Icon name={evidenceOpen ? 'chevron-up' : 'chevron-down'} size={14} />
-                        Evidence details
-                    </button>
-                    <div className={`v2-collapse-content ${evidenceOpen ? 'open' : ''}`}>
-                        <pre className="mt-2 bg-slate-50 rounded-md p-3 text-xs text-slate-600 whitespace-pre-wrap break-words font-mono leading-relaxed border border-slate-100">
-                            {typeof signal.evidence_value === 'string' ? signal.evidence_value : JSON.stringify(signal.evidence_value, null, 2)}
-                        </pre>
-                    </div>
-                </div>
-            )}
-        </div>
-    );
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// SECTION 2 — CAMPAIGN RECOMMENDATION
-// ═══════════════════════════════════════════════════════════════════════════
-
-function CampaignSection({ workspace, onCampaignUpdate, toast }) {
     const [campaigns, setCampaigns] = useState([]);
-    const [loadingCampaigns, setLoadingCampaigns] = useState(false);
-    const [selectedCampaignId, setSelectedCampaignId] = useState(workspace.signal.recommended_campaign_id || '');
-    const [guidelinesOpen, setGuidelinesOpen] = useState(false);
-    const [saving, setSaving] = useState(false);
+    const [showCampaignPicker, setShowCampaignPicker] = useState(false);
+    const [evidenceOpen, setEvidenceOpen] = useState(false);
 
     useEffect(() => {
-        setLoadingCampaigns(true);
         apiFetch('/v2/api/campaigns')
             .then(data => setCampaigns(data.campaigns || []))
-            .catch(() => {})
-            .finally(() => setLoadingCampaigns(false));
+            .catch(() => {});
     }, []);
 
-    useEffect(() => {
-        setSelectedCampaignId(workspace.signal.recommended_campaign_id || '');
-    }, [workspace.signal.id]);
-
-    const currentCampaign = workspace.campaign;
-    const selectedCampaign = campaigns.find(c => c.id === Number(selectedCampaignId));
-
-    const handleConfirm = async () => {
-        if (!selectedCampaignId) return;
-        setSaving(true);
+    const handleCampaignChange = async (campaignId) => {
+        const camp = campaigns.find(c => c.id === Number(campaignId));
         try {
-            const campName = selectedCampaign ? selectedCampaign.name : '';
-            await apiFetch(`/v2/api/signals/${workspace.signal.id}/campaign`, {
+            await apiFetch(`/v2/api/signals/${signal.id}/campaign`, {
                 method: 'PUT',
                 body: JSON.stringify({
-                    campaign_id: Number(selectedCampaignId),
-                    reasoning: `Campaign "${campName}" confirmed by rep`,
+                    campaign_id: Number(campaignId),
+                    reasoning: `Campaign "${camp?.name || ''}" selected by rep`,
                 }),
             });
-            toast('Campaign confirmed');
+            toast(`Campaign → ${camp?.name || 'updated'}`);
+            setShowCampaignPicker(false);
             if (onCampaignUpdate) onCampaignUpdate();
         } catch (err) {
             toast(err.message, 'error');
-        } finally {
-            setSaving(false);
         }
     };
 
     return (
-        <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-5">
-            <h3 className="text-sm font-semibold text-slate-900 mb-3 flex items-center gap-2">
-                <Icon name="mail" size={16} className="text-brand-600" />
-                Campaign Recommendation
-            </h3>
+        <div className="bg-white border border-slate-200 rounded-lg p-3">
+            {/* Row 1: Company + badges + campaign pill */}
+            <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-base font-semibold text-slate-900 truncate">{account.company_name}</h2>
+                {account.website && (
+                    <a href={account.website.startsWith('http') ? account.website : `https://${account.website}`}
+                       target="_blank" rel="noopener noreferrer" title={account.website}
+                       className="text-brand-600 hover:text-brand-700 flex-shrink-0">
+                        <Icon name="external-link" size={12} />
+                    </a>
+                )}
+                {account.industry && <span className="text-[0.625rem] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">{account.industry}</span>}
+                {account.company_size && <span className="text-[0.625rem] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">{account.company_size}</span>}
+                {account.annual_revenue && <span className="text-[0.625rem] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">{account.annual_revenue}</span>}
+                <SignalTypeBadge type={signal.signal_type} size="sm" />
+                <span className="text-[0.625rem] text-slate-400">
+                    {signal.created_at ? new Date(signal.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''}
+                </span>
+                {signal.bdr_quality_score && <QualityDots score={signal.bdr_quality_score} />}
 
-            {currentCampaign ? (
-                <div className="mb-3">
-                    <div className="flex items-center gap-2 mb-1">
-                        <span className="text-sm font-medium text-slate-800">{currentCampaign.name}</span>
-                        <span className="text-[0.6875rem] bg-green-100 text-green-700 px-2 py-0.5 rounded-full">Active</span>
-                    </div>
-                    {workspace.signal.recommended_campaign_reasoning &&
-                     !workspace.signal.recommended_campaign_reasoning.toLowerCase().includes('no campaign matched') && (
-                        <p className="text-xs text-slate-500 leading-relaxed">{workspace.signal.recommended_campaign_reasoning}</p>
-                    )}
-                    {currentCampaign.writing_guidelines && (
-                        <div className="mt-2">
-                            <button onClick={() => setGuidelinesOpen(!guidelinesOpen)}
-                                className="flex items-center gap-1 text-xs text-brand-600 hover:text-brand-700 font-medium">
-                                <Icon name={guidelinesOpen ? 'chevron-up' : 'chevron-down'} size={14} />
-                                Writing guidelines
-                            </button>
-                            <div className={`v2-collapse-content ${guidelinesOpen ? 'open' : ''}`}>
-                                <p className="mt-2 text-xs text-slate-600 bg-slate-50 rounded-md p-3 leading-relaxed border border-slate-100">
-                                    {currentCampaign.writing_guidelines}
-                                </p>
-                            </div>
+                {/* Campaign pill — right-aligned */}
+                <div className="ml-auto flex items-center gap-1.5 relative">
+                    <StatusBadge status={account.account_status} size="sm" />
+                    <button onClick={() => setShowCampaignPicker(!showCampaignPicker)}
+                        className="text-[0.6875rem] bg-brand-50 text-brand-700 px-2 py-0.5 rounded-full border border-brand-200 hover:bg-brand-100 transition-colors cursor-pointer flex items-center gap-1">
+                        <Icon name="mail" size={10} />
+                        {workspace.campaign?.name || 'No campaign'}
+                    </button>
+                    {showCampaignPicker && (
+                        <div className="absolute right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-20 min-w-[200px]">
+                            {campaigns.map(c => (
+                                <button key={c.id}
+                                    onClick={() => handleCampaignChange(c.id)}
+                                    className={`w-full text-left px-3 py-2 text-xs hover:bg-slate-50 border-b border-slate-50 last:border-0 ${
+                                        c.id === signal.recommended_campaign_id ? 'bg-brand-50 text-brand-700 font-medium' : 'text-slate-700'
+                                    }`}>
+                                    {c.name}
+                                </button>
+                            ))}
                         </div>
                     )}
                 </div>
-            ) : (
-                <p className="text-xs text-slate-400 mb-3">Select a campaign below to get started.</p>
-            )}
-
-            <div className="border-t border-slate-100 pt-3">
-                <label className="text-xs font-medium text-slate-600 mb-1 block">
-                    {currentCampaign ? 'Override Campaign' : 'Select Campaign'}
-                </label>
-                <div className="flex gap-2">
-                    <select value={selectedCampaignId}
-                        onChange={e => setSelectedCampaignId(e.target.value)}
-                        className="flex-1 text-sm border border-slate-200 rounded-md px-3 py-1.5 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500/20 bg-white">
-                        <option value="">Select a campaign...</option>
-                        {campaigns.map(c => (
-                            <option key={c.id} value={c.id}>{c.name}</option>
-                        ))}
-                    </select>
-                    <button onClick={handleConfirm}
-                        disabled={!selectedCampaignId || saving}
-                        className="px-4 py-1.5 bg-brand-600 text-white text-sm font-medium rounded-md hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-150 flex items-center gap-1.5">
-                        {saving ? <Icon name="loader" size={14} /> : <Icon name="check" size={14} />}
-                        Confirm
-                    </button>
-                </div>
             </div>
+
+            {/* Row 2: Signal description — one compact line */}
+            <p className="text-xs text-slate-600 mt-1.5 leading-relaxed line-clamp-2">{signal.signal_description}</p>
+
+            {/* BDR positioning + evidence — compact */}
+            <div className="flex items-start gap-3 mt-1.5">
+                {signal.bdr_positioning && (
+                    <div className="flex items-start gap-1.5 text-[0.6875rem] text-brand-600 flex-1 min-w-0">
+                        <Icon name="target" size={11} className="text-brand-500 mt-0.5 flex-shrink-0" />
+                        <span className="line-clamp-1">{signal.bdr_positioning}</span>
+                    </div>
+                )}
+                {signal.evidence_value && (
+                    <button onClick={() => setEvidenceOpen(!evidenceOpen)}
+                        className="text-[0.625rem] text-brand-600 hover:text-brand-700 flex-shrink-0 flex items-center gap-0.5">
+                        <Icon name={evidenceOpen ? 'chevron-up' : 'chevron-down'} size={10} />
+                        evidence
+                    </button>
+                )}
+            </div>
+
+            {evidenceOpen && signal.evidence_value && (
+                <pre className="mt-1.5 bg-slate-50 rounded p-2 text-[0.625rem] text-slate-600 whitespace-pre-wrap break-words font-mono border border-slate-100 max-h-24 overflow-y-auto">
+                    {typeof signal.evidence_value === 'string' ? signal.evidence_value : JSON.stringify(signal.evidence_value, null, 2)}
+                </pre>
+            )}
         </div>
     );
 }
@@ -1208,14 +1116,16 @@ function PersonaSearch({ workspace, onProspectsSaved, toast, actionsRef }) {
         try {
             const data = await apiFetch(`/v2/api/signals/${workspace.signal.id}/search`, {
                 method: 'POST',
-                body: JSON.stringify({ personas }),
+                body: JSON.stringify({ personas, verified_only: true, max_results: 3 }),
             });
             const people = data.people || [];
             setResults(people);
+            // Pre-select all results by default
+            setSelected(new Set(people.map((_, i) => i)));
             if (people.length === 0) {
-                toast('No contacts found for those personas', 'info');
+                toast('No verified contacts found', 'info');
             } else {
-                toast(`Found ${people.length} contacts`);
+                toast(`Found ${people.length} verified contact${people.length !== 1 ? 's' : ''}`);
             }
         } catch (err) {
             toast(err.message, 'error');
@@ -1288,14 +1198,9 @@ function PersonaSearch({ workspace, onProspectsSaved, toast, actionsRef }) {
     const existingEmails = new Set((workspace.prospects || []).map(p => (p.email || '').toLowerCase()).filter(Boolean));
 
     return (
-        <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-5">
-            <h3 className="text-sm font-semibold text-slate-900 mb-3 flex items-center gap-2">
-                <Icon name="users" size={16} className="text-brand-600" />
-                Persona Search
-            </h3>
-
-            {/* Persona chips */}
-            <div className="flex flex-wrap gap-2 mb-3">
+        <div className="bg-white rounded-lg border border-slate-200 p-3">
+            {/* Persona chips + add + search — all inline */}
+            <div className="flex flex-wrap items-center gap-1.5">
                 {personas.map((p, i) => (
                     <div key={i} className="v2-chip">
                         {p.title}
@@ -1303,41 +1208,37 @@ function PersonaSearch({ workspace, onProspectsSaved, toast, actionsRef }) {
                         <button onClick={() => removePersona(i)} title="Remove">x</button>
                     </div>
                 ))}
-            </div>
-
-            {/* Add persona */}
-            <div className="flex gap-2 mb-3">
-                <input value={newTitle} onChange={e => setNewTitle(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && addPersona()}
-                    placeholder="Job title (e.g. Head of Product)"
-                    className="flex-1 text-sm border border-slate-200 rounded-md px-3 py-1.5 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500/20" />
-                <select value={newSeniority} onChange={e => setNewSeniority(e.target.value)}
-                    className="text-sm border border-slate-200 rounded-md px-2.5 py-1.5 focus:outline-none focus:border-brand-500 bg-white w-32">
-                    <option value="">Seniority</option>
-                    <option value="c_suite">C-Suite</option>
-                    <option value="vp">VP</option>
-                    <option value="director">Director</option>
-                    <option value="manager">Manager</option>
-                    <option value="senior">Senior</option>
-                </select>
-                <button onClick={addPersona}
-                    className="px-3 py-1.5 border border-slate-200 rounded-md text-sm text-slate-600 hover:bg-slate-50 transition-all">
-                    <Icon name="plus" size={14} />
+                <div className="flex items-center gap-1">
+                    <input value={newTitle} onChange={e => setNewTitle(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && addPersona()}
+                        placeholder="+ Add title"
+                        className="text-xs border border-slate-200 rounded px-2 py-1 w-28 focus:outline-none focus:border-brand-500" />
+                    <select value={newSeniority} onChange={e => setNewSeniority(e.target.value)}
+                        className="text-xs border border-slate-200 rounded px-1.5 py-1 focus:outline-none focus:border-brand-500 bg-white w-20">
+                        <option value="">Level</option>
+                        <option value="c_suite">C-Suite</option>
+                        <option value="vp">VP</option>
+                        <option value="director">Dir</option>
+                        <option value="manager">Mgr</option>
+                        <option value="senior">Sr</option>
+                    </select>
+                    <button onClick={addPersona} className="px-1.5 py-1 border border-slate-200 rounded text-slate-500 hover:bg-slate-50">
+                        <Icon name="plus" size={12} />
+                    </button>
+                </div>
+                <button onClick={handleSearch}
+                    disabled={searching || personas.length === 0}
+                    className="ml-auto px-3 py-1 bg-brand-600 text-white text-xs font-medium rounded hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center gap-1.5">
+                    {searching ? <Icon name="loader" size={12} /> : <Icon name="search" size={12} />}
+                    {searching ? 'Searching...' : 'Search Apollo'}
                 </button>
             </div>
 
-            <button onClick={handleSearch}
-                disabled={searching || personas.length === 0}
-                className="w-full px-4 py-2 bg-brand-600 text-white text-sm font-medium rounded-md hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-150 flex items-center justify-center gap-2">
-                {searching ? <Icon name="loader" size={16} /> : <Icon name="search" size={16} />}
-                {searching ? 'Searching Apollo...' : 'Search Apollo'}
-            </button>
-
             {/* Results */}
             {results.length > 0 && (
-                <div className="mt-4">
-                    <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs font-medium text-slate-600">{results.length} results</span>
+                <div className="mt-2">
+                    <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs font-medium text-slate-600">{results.length} verified contact{results.length !== 1 ? 's' : ''}</span>
                         <div className="flex gap-2">
                             <button onClick={selectAll} className="text-xs text-brand-600 hover:text-brand-700">Select all</button>
                             <button onClick={deselectAll} className="text-xs text-slate-400 hover:text-slate-600">Deselect all</button>
@@ -1402,9 +1303,9 @@ function PersonaSearch({ workspace, onProspectsSaved, toast, actionsRef }) {
                     {selected.size > 0 && (
                         <button onClick={handleSave}
                             disabled={savingProspects}
-                            className="mt-3 w-full px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-md hover:bg-green-700 disabled:opacity-40 transition-all duration-150 flex items-center justify-center gap-2">
-                            {savingProspects ? <Icon name="loader" size={16} /> : <Icon name="check" size={16} />}
-                            {savingProspects ? 'Enrolling...' : `Enroll ${selected.size} Contact${selected.size !== 1 ? 's' : ''}`}
+                            className="mt-2 w-full px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded hover:bg-green-700 disabled:opacity-40 transition-all flex items-center justify-center gap-1.5">
+                            {savingProspects ? <Icon name="loader" size={14} /> : <Icon name="check" size={14} />}
+                            {savingProspects ? 'Saving...' : `Save ${selected.size} Contact${selected.size !== 1 ? 's' : ''}`}
                         </button>
                     )}
                 </div>
@@ -1578,38 +1479,25 @@ function DraftReview({ workspace, toast, actionsRef }) {
     });
 
     return (
-        <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-5">
-            <h3 className="text-sm font-semibold text-slate-900 mb-3 flex items-center gap-2">
-                <Icon name="mail" size={16} className="text-brand-600" />
-                Draft Review
-                {allApproved && <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full ml-auto">All Approved</span>}
-            </h3>
-
-            {workspace.campaign && workspace.campaign.writing_guidelines && (
-                <div className="mb-3 p-3 bg-indigo-50 border border-indigo-100 rounded-lg">
-                    <div className="text-[0.6875rem] font-semibold text-indigo-700 mb-1 flex items-center gap-1.5">
-                        <Icon name="edit" size={12} />
-                        {workspace.campaign.name || 'Campaign'} Guidelines
-                    </div>
-                    <p className="text-xs text-indigo-600 leading-relaxed">{workspace.campaign.writing_guidelines}</p>
+        <div className="bg-white rounded-lg border border-slate-200 p-3">
+            <div className="flex items-center justify-between mb-2">
+                <h3 className="text-xs font-semibold text-slate-900 flex items-center gap-1.5">
+                    <Icon name="mail" size={13} className="text-brand-600" />
+                    Drafts
+                    {allApproved && <span className="text-[0.625rem] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full">Approved</span>}
+                </h3>
+                <div className="flex items-center gap-2 text-[0.625rem] text-slate-400">
+                    <Kbd>j</Kbd><Kbd>k</Kbd> <Kbd>1</Kbd><Kbd>2</Kbd><Kbd>3</Kbd> <Kbd>G</Kbd> <Kbd>A</Kbd>
                 </div>
-            )}
-
-            {/* Shortcut hints */}
-            <div className="flex items-center gap-3 text-[0.6875rem] text-slate-400 mb-3">
-                <span className="flex items-center gap-1"><Kbd>j</Kbd><Kbd>k</Kbd> navigate prospects</span>
-                <span className="flex items-center gap-1"><Kbd>1</Kbd><Kbd>2</Kbd><Kbd>3</Kbd> draft steps</span>
-                <span className="flex items-center gap-1"><Kbd>G</Kbd> generate</span>
-                <span className="flex items-center gap-1"><Kbd>A</Kbd> approve all</span>
             </div>
 
-            <div className="space-y-4">
+            <div className="space-y-2">
                 {actionableProspects.map((prospect, pIdx) => (
                     <div key={prospect.id}
-                         className={`border rounded-lg p-4 transition-all ${
+                         className={`border rounded-md p-2.5 transition-all ${
                              pIdx === focusedProspectIdx ? 'ring-2 ring-blue-400 border-blue-300' : 'border-slate-100'
                          } ${!inclusions[prospect.id] ? 'opacity-50' : ''}`}>
-                        <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center justify-between mb-2">
                             <div className="flex items-center gap-3 min-w-0">
                                 <button
                                     onClick={() => setInclusions(prev => ({ ...prev, [prospect.id]: !prev[prospect.id] }))}
@@ -1877,6 +1765,9 @@ function Enrollment({ workspace, onNextSignal, toast, actionsRef }) {
     const [bulkResults, setBulkResults] = useState(null);
     const [enrollingAll, setEnrollingAll] = useState(false);
     const [allDone, setAllDone] = useState(false);
+    const [sequenceId, setSequenceId] = useState(workspace.campaign?.sequence_id || '699a30753ab26800215fa07e');
+    const [sequenceName, setSequenceName] = useState(workspace.campaign?.sequence_name || 'Template - 4 Email (Single Thread)');
+    const [showSeqPicker, setShowSeqPicker] = useState(false);
 
     if (prospects.length === 0) return null;
 
@@ -1886,7 +1777,7 @@ function Enrollment({ workspace, onNextSignal, toast, actionsRef }) {
         try {
             await apiFetch('/v2/api/enrollment/enroll', {
                 method: 'POST',
-                body: JSON.stringify({ prospect_id: prospectId }),
+                body: JSON.stringify({ prospect_id: prospectId, sequence_id: sequenceId }),
             });
             setStatuses(prev => ({ ...prev, [prospectId]: 'enrolled' }));
             toast('Prospect enrolled');
@@ -1967,9 +1858,9 @@ function Enrollment({ workspace, onNextSignal, toast, actionsRef }) {
     };
 
     return (
-        <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-5">
-            <h3 className="text-sm font-semibold text-slate-900 mb-3 flex items-center gap-2">
-                <Icon name="send" size={16} className="text-brand-600" />
+        <div className="bg-white rounded-lg border border-slate-200 p-3">
+            <h3 className="text-xs font-semibold text-slate-900 mb-2 flex items-center gap-1.5">
+                <Icon name="send" size={13} className="text-brand-600" />
                 Enrollment
                 {enrolledCount > 0 && (
                     <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full ml-2">
@@ -1977,6 +1868,31 @@ function Enrollment({ workspace, onNextSignal, toast, actionsRef }) {
                     </span>
                 )}
             </h3>
+
+            {/* Sequence selector */}
+            <div className="flex items-center gap-2 mb-2 text-xs">
+                <span className="text-slate-500">Sequence:</span>
+                <span className="font-medium text-slate-700">{sequenceName}</span>
+                <button onClick={() => setShowSeqPicker(!showSeqPicker)}
+                    className="text-brand-600 hover:text-brand-700 underline">
+                    {showSeqPicker ? 'cancel' : 'change'}
+                </button>
+            </div>
+            {showSeqPicker && (
+                <div className="mb-2">
+                    <input type="text" placeholder="Apollo Sequence ID"
+                        className="text-xs border border-slate-200 rounded px-2 py-1 w-64 focus:outline-none focus:border-brand-500"
+                        onKeyDown={e => {
+                            if (e.key === 'Enter' && e.target.value.trim()) {
+                                setSequenceId(e.target.value.trim());
+                                setSequenceName('Custom Sequence');
+                                setShowSeqPicker(false);
+                                toast('Sequence overridden for this enrollment');
+                            }
+                        }} />
+                    <span className="text-[0.625rem] text-slate-400 ml-2">Press Enter to apply</span>
+                </div>
+            )}
 
             {bulkResults && (bulkResults.failed > 0 || bulkResults.skipped > 0) && (
                 <div className="mb-3 p-3 rounded-md bg-slate-50 border border-slate-200">
@@ -2430,37 +2346,22 @@ function Workspace({ signalId, signalIndex, totalSignals, onMarkNoise, onSkip, o
 
     return (
         <div className="flex-1 flex flex-col bg-slate-50 min-h-0">
-            {/* Main scrollable content */}
-            <div className="flex-1 overflow-y-auto v2-scrollbar p-6 pb-20 space-y-4">
-                {/* Section 1: Signal Context */}
-                <SignalContext workspace={workspace} />
+            {/* Main scrollable content — compact spacing */}
+            <div className="flex-1 overflow-y-auto v2-scrollbar px-4 py-3 pb-16 space-y-2">
+                {/* Signal + Campaign header */}
+                <SignalHeader workspace={workspace} onCampaignUpdate={loadWorkspace} toast={toast} />
 
-                {/* Divider */}
-                <div className="v2-section-divider"><span>Campaign</span></div>
-
-                {/* Section 2: Campaign Recommendation */}
-                <CampaignSection workspace={workspace} onCampaignUpdate={loadWorkspace} toast={toast} />
-
-                {/* Divider */}
-                <div className="v2-section-divider"><span>Find Contacts</span></div>
-
-                {/* Section 3: Persona Search */}
+                {/* Persona Search */}
                 <PersonaSearch workspace={workspace} onProspectsSaved={loadWorkspace} toast={toast} actionsRef={actionsRef} />
 
-                {/* Section 4: Draft Review (visible if prospects exist) */}
+                {/* Draft Review (visible if prospects exist) */}
                 {workspace.prospects && workspace.prospects.length > 0 && (
-                    <>
-                        <div className="v2-section-divider"><span>Draft Emails</span></div>
-                        <DraftReview key={workspace.signal.id} workspace={workspace} toast={toast} actionsRef={actionsRef} />
-                    </>
+                    <DraftReview key={workspace.signal.id} workspace={workspace} toast={toast} actionsRef={actionsRef} />
                 )}
 
-                {/* Section 5: Enrollment (visible if prospects exist) */}
+                {/* Enrollment (visible if prospects exist) */}
                 {workspace.prospects && workspace.prospects.length > 0 && (
-                    <>
-                        <div className="v2-section-divider"><span>Enroll</span></div>
-                        <Enrollment key={workspace.signal.id} workspace={workspace} onNextSignal={onReloadAndAdvance || onNextSignal} toast={toast} actionsRef={actionsRef} />
-                    </>
+                    <Enrollment key={workspace.signal.id} workspace={workspace} onNextSignal={onReloadAndAdvance || onNextSignal} toast={toast} actionsRef={actionsRef} />
                 )}
             </div>
 
