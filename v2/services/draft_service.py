@@ -3,14 +3,14 @@ Draft Service — generate, regenerate, edit, and approve email drafts.
 
 Each prospect gets a multi-step email sequence stored in the drafts table.
 Drafts flow through: generated -> edited -> approved -> enrolled.
-LLM generation uses the Replit AI proxy (GPT-5-mini via OpenAI client).
+LLM generation uses Gemini Flash (primary) or Replit AI proxy (fallback).
 """
 import json
 import logging
 import os
 import re
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Tuple
 
 from v2.db import (
     db_connection, insert_returning_id, row_to_dict, rows_to_dicts,
@@ -19,10 +19,20 @@ from v2.db import (
 
 logger = logging.getLogger(__name__)
 
+# Active LLM provider name (set by _get_llm_client, read by generate_drafts)
+_active_provider = 'template'
+_active_model = 'template'
 
 # ---------------------------------------------------------------------------
-# LLM Client (Replit AI proxy — OpenAI-compatible)
+# LLM Clients — Gemini Flash (primary), Replit AI proxy (fallback)
 # ---------------------------------------------------------------------------
+
+try:
+    from google import genai
+    GEMINI_AVAILABLE = True
+except ImportError:
+    genai = None
+    GEMINI_AVAILABLE = False
 
 try:
     from openai import OpenAI
@@ -32,35 +42,58 @@ except ImportError:
     OPENAI_AVAILABLE = False
 
 
-def _get_llm_client():
-    """Return an OpenAI client configured for the Replit AI proxy, or None."""
+def _get_llm_client() -> Optional[Tuple[str, object]]:
+    """Return (provider_name, client). Tries Gemini first, then Replit proxy."""
+    global _active_provider, _active_model
+
+    # 1. Gemini Flash
+    gemini_key = os.environ.get('GEMINI_API_KEY') or os.environ.get('GOOGLE_API_KEY')
+    if gemini_key and GEMINI_AVAILABLE:
+        client = genai.Client(api_key=gemini_key)
+        _active_provider = 'gemini'
+        _active_model = 'gemini-3-flash-preview'
+        return ('gemini', client)
+
+    # 2. Replit AI proxy (OpenAI-compatible)
     base_url = os.environ.get('AI_INTEGRATIONS_OPENAI_BASE_URL')
     api_key = os.environ.get('AI_INTEGRATIONS_OPENAI_API_KEY')
-    if not base_url or not api_key or not OPENAI_AVAILABLE:
-        return None
-    return OpenAI(base_url=base_url, api_key=api_key)
+    if base_url and api_key and OPENAI_AVAILABLE:
+        _active_provider = 'openai'
+        _active_model = 'gpt-5-mini'
+        return ('openai', OpenAI(base_url=base_url, api_key=api_key))
+
+    _active_provider = 'template'
+    _active_model = 'template'
+    return None
 
 
 def _llm_generate(system_prompt: str, user_prompt: str) -> Optional[str]:
-    """Call the LLM and return the raw text response, or None on failure.
-
-    CRITICAL: Do NOT pass temperature -- Replit AI proxy does not support it.
-    """
-    client = _get_llm_client()
-    if not client:
+    """Call the LLM and return the raw text response, or None on failure."""
+    result = _get_llm_client()
+    if not result:
         return None
+
+    provider, client = result
+
     try:
-        response = client.chat.completions.create(
-            model="gpt-5-mini",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ]
-            # No temperature parameter -- Replit AI proxy will error
-        )
-        return response.choices[0].message.content
+        if provider == 'gemini':
+            response = client.models.generate_content(
+                model='gemini-3-flash-preview',
+                contents=f"{system_prompt}\n\n---\n\n{user_prompt}",
+            )
+            return response.text
+        else:
+            # OpenAI / Replit proxy
+            response = client.chat.completions.create(
+                model='gpt-5-mini',
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ]
+            )
+            return response.choices[0].message.content
     except Exception as e:
-        logger.error("[DRAFT] LLM generation failed: %s", e)
+        logger.error("[DRAFT] LLM generation failed (%s): %s", provider, e)
         return None
 
 
@@ -328,7 +361,7 @@ def generate_drafts(
         conn.commit()
 
     created_drafts = []
-    generation_model = 'gpt-5-mini'
+    generation_model = _active_model
 
     for step in range(1, num_steps + 1):
         # Try LLM generation first
@@ -339,7 +372,7 @@ def generate_drafts(
             parsed = _parse_llm_output(llm_text)
             subject = parsed['subject']
             body = parsed['body']
-            generated_by = 'llm'
+            generated_by = _active_provider
         else:
             # Fallback to template-based generation
             template_result = _generate_template_draft(step, prospect, signal)
