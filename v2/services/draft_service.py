@@ -29,7 +29,11 @@ _STEP_TEMPLATES = {
         'body': (
             'Hey {{first_name}},\n\n'
             '{hook}\n\n'
-            '{pain}\n\n'
+            'Phrase connects directly to your repos via GitHub Sync -- '
+            'locale files stay in lockstep with your branches, and your '
+            'devs never have to manually manage translation files.\n\n'
+            'Here is a quick overview of how it works: '
+            'https://phrase.com/blog/posts/i18n-guide\n\n'
             'Worth a quick look?\n\n'
             '{{sender_first_name}}'
         ),
@@ -39,15 +43,31 @@ _STEP_TEMPLATES = {
         'body': (
             'Hey {{first_name}},\n\n'
             'Circling back on my last note. Teams at your stage typically spend '
-            '40% of their i18n time on manual file handoffs.\n\n'
-            'Phrase eliminates that with GitHub Sync -- locale files stay in '
-            'lockstep with your branches.\n\n'
-            'Open to a quick look?\n\n'
+            '40% of their i18n time on manual file handoffs between devs and translators.\n\n'
+            'Phrase eliminates that with GitHub Sync and an API-first architecture. '
+            'Your CI/CD pipeline triggers translations automatically -- no Slack messages, '
+            'no spreadsheets, no waiting.\n\n'
+            'Companies like Shopify, Decathlon, and Phorest use Phrase to ship '
+            'localized products faster.\n\n'
+            'Open to seeing how it would fit your workflow?\n\n'
             '{{sender_first_name}}'
         ),
     },
     3: {
-        'subject': 'Closing the loop -- {{company}}',
+        'subject': 're: i18n at {{company}}',
+        'body': (
+            'Hey {{first_name}},\n\n'
+            'One more thought -- Phrase also supports machine translation '
+            'built into the workflow, so your team can get first-pass translations '
+            'instantly and focus human reviewers on what matters.\n\n'
+            'Here is what pricing looks like if helpful: '
+            'https://phrase.com/pricing\n\n'
+            'Happy to walk through a quick demo if the timing works.\n\n'
+            '{{sender_first_name}}'
+        ),
+    },
+    4: {
+        'subject': 're: i18n at {{company}}',
         'body': (
             'Hey {{first_name}},\n\n'
             'Just want to make sure I am not cluttering your inbox. If localization '
@@ -65,18 +85,17 @@ def _generate_template_draft(step: int, prospect: dict, signal: dict) -> dict:
     Apollo dynamic variables ({{first_name}}, {{company}}, {{sender_first_name}})
     are LEFT as-is — Apollo resolves them at send time.
     """
-    tmpl = _STEP_TEMPLATES.get(step, _STEP_TEMPLATES[3])
-    hook = "I noticed localization-related activity at {{company}}."
+    tmpl = _STEP_TEMPLATES.get(step, _STEP_TEMPLATES[4])
+    hook = "Your team seems to be building out localization infrastructure."
     if signal:
         desc = signal.get('signal_description', '')
-        if desc:
-            hook = f"I noticed something interesting: {desc[:120]}"
-    pain = (
-        "Phrase automates localization via GitHub Sync -- "
-        "your devs never touch translation files."
-    )
+        sig_type = (signal.get('signal_type') or '').replace('_', ' ')
+        if desc and sig_type:
+            hook = f"I came across some {sig_type} activity at {{{{company}}}} -- {desc[:100]}"
+        elif desc:
+            hook = f"I came across some interesting activity at {{{{company}}}} -- {desc[:120]}"
     subject = tmpl['subject']
-    body = tmpl['body'].replace('{hook}', hook).replace('{pain}', pain)
+    body = tmpl['body'].replace('{hook}', hook)
     return {'subject': subject, 'body': body}
 
 
@@ -94,22 +113,34 @@ _STEP_PURPOSES = {
 
 def _build_system_prompt(writing_context: str) -> str:
     """Build the system prompt for draft generation."""
-    return f"""You are writing cold outreach emails for Eric at Phrase, a localization platform.
+    return f"""You are writing cold outreach emails on behalf of a BDR at Phrase, a localization and translation management platform.
+
+ABOUT PHRASE (use naturally, don't dump all at once):
+- Phrase connects to dev workflows via GitHub Sync — locale files stay in lockstep with branches
+- API-first architecture, plugs into CI/CD pipelines
+- Supports 50+ file formats (JSON, XLIFF, YAML, etc.)
+- Built-in machine translation + translation memory
+- Used by Shopify, Decathlon, Phorest, and thousands of engineering teams
+- Key links to include where relevant:
+  * Overview: https://phrase.com/suite/
+  * GitHub Sync: https://phrase.com/blog/posts/i18n-guide
+  * Pricing: https://phrase.com/pricing
 
 VOICE & TONE:
 - Write like a human peer, not a salesperson. Casual, direct, no corporate speak.
 - Short sentences. Short paragraphs (1-2 sentences each).
 - ALWAYS use line breaks between paragraphs — never write a wall of text.
 - Never use backticks, code formatting, or technical repo paths in emails.
-- Never start with "I noticed" — vary your openers.
+- Vary your openers — never start with "I noticed."
 - Subject lines: lowercase, short, curiosity-driven (e.g. "quick question", "i18n at {{{{company}}}}")
-- Sign off with just the sender's first name, no "Best," or "Regards,"
+- Sign off with just {{{{sender_first_name}}}} — no "Best," or "Regards,"
 
 WHAT MAKES A GOOD COLD EMAIL:
-- Lead with something specific about THEIR situation, not about Phrase
-- One clear pain point per email — don't list features
+- Lead with something specific about THEIR situation
+- Connect their situation to a concrete Phrase capability (not a feature list)
+- Include ONE relevant hyperlink per email (blog post, pricing, or product page)
 - End with a low-friction CTA (question, not a meeting request)
-- Under 80 words. Shorter is better. White space matters.
+- 80-120 words. Concise but substantive. White space matters.
 
 {writing_context}
 
@@ -139,7 +170,7 @@ def _build_generation_prompt(
     campaign_name = campaign.get('campaign_name', '') or campaign.get('name', '') if campaign else ''
     campaign_prompt = campaign.get('prompt', '') if campaign else ''
 
-    parts = [f"""Generate email step {step} of a 3-email sequence.
+    parts = [f"""Generate email step {step} of a 4-email sequence.
 
 STEP {step} PURPOSE: {purpose}
 
@@ -158,7 +189,7 @@ SIGNAL:
     elif campaign_name:
         parts.append(f"CAMPAIGN: {campaign_name}")
 
-    parts.append("Keep it under 80 words. Reference their signal naturally (don't quote repo paths or branch names verbatim). Use blank lines between paragraphs.")
+    parts.append("80-120 words. Reference their signal naturally (don't quote repo paths or branch names verbatim). Include one relevant Phrase link. Use blank lines between paragraphs.")
 
     return '\n\n'.join(parts)
 
