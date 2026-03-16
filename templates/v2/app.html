@@ -1125,9 +1125,9 @@ function PersonaSearch({ workspace, onProspectsSaved, toast, actionsRef }) {
             if (tiers.length > 0) return tiers;
         }
         return [
-            { title: 'VP Engineering', allTitles: ['VP Engineering', 'VP of Engineering', 'Head of Engineering', 'CTO', 'Director of Engineering'], seniority: 'vp', tierName: 'Engineering Leader' },
-            { title: 'Localization Manager', allTitles: ['Localization Manager', 'Head of Localization', 'Director of Localization'], seniority: 'manager', tierName: 'Localization Leader' },
-            { title: 'Head of Product', allTitles: ['Head of Product', 'VP Product', 'Director of Product'], seniority: 'vp', tierName: 'Product Leader' },
+            { title: 'VP Engineering', allTitles: ['VP Engineering', 'VP of Engineering', 'Head of Engineering', 'CTO', 'Director of Engineering'], seniority: 'vp', allSeniorities: ['vp', 'director', 'c_suite'], tierName: 'Engineering Leader' },
+            { title: 'Localization Manager', allTitles: ['Localization Manager', 'Head of Localization', 'Director of Localization', 'Globalization Manager'], seniority: 'manager', allSeniorities: ['manager', 'director', 'vp'], tierName: 'Localization Leader' },
+            { title: 'Head of Product', allTitles: ['Head of Product', 'VP Product', 'Director of Product', 'Director of Product Management'], seniority: 'vp', allSeniorities: ['vp', 'director'], tierName: 'Product Leader' },
         ];
     }, [workspace.signal.id]);
 
