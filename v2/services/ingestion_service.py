@@ -831,19 +831,25 @@ def _llm_extract_signals(text):
 def _clear_all_signals():
     """Delete all intent_signals and monitored_accounts rows.
 
+    Temporarily disables FK checks to handle cross-table references
+    from legacy tables (reports, webhook_events, etc.).
+
     Returns the number of signals deleted.
     """
     with db_connection() as conn:
         cursor = conn.cursor()
-        # Delete signals first (FK dependency)
         cursor.execute("SELECT COUNT(*) as cnt FROM intent_signals")
         row = cursor.fetchone()
         count = row['cnt'] if isinstance(row, dict) else row[0]
 
+        # Disable FK checks so we can clear accounts with legacy references
+        cursor.execute("PRAGMA foreign_keys = OFF")
+        cursor.execute("DELETE FROM feedback_log")
         cursor.execute("DELETE FROM drafts")
         cursor.execute("DELETE FROM prospects")
         cursor.execute("DELETE FROM intent_signals")
         cursor.execute("DELETE FROM monitored_accounts")
+        cursor.execute("PRAGMA foreign_keys = ON")
         conn.commit()
 
         logger.info("[INGEST] Cleared all signals and accounts (%d signals deleted)", count)
