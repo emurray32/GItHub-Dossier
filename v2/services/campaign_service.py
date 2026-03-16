@@ -22,59 +22,134 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 _SIGNAL_CAMPAIGN_KEYWORDS = {
-    'dependency_injection': ['implementation', 'smoking gun'],
-    'rfc_discussion':       ['greenfield', 'educator'],
-    'ghost_branch':         ['implementation', 'active'],
-    'documentation_intent': ['greenfield', 'preparing'],
-    'job_posting_intent':   ['scale', 'expansion'],
-    'tms_config_file':      ['migration'],
-    'smoking_gun_fork':     ['implementation', 'smoking gun'],
-    'already_launched':     ['expansion', 'scale'],
+    # RepoRadar (GitHub-detected engineering signals)
+    'dependency_injection': ['reporadar'],
+    'rfc_discussion':       ['reporadar'],
+    'rfc_discussion_high':  ['reporadar'],
+    'ghost_branch':         ['reporadar'],
+    'ghost_branch_active':  ['reporadar'],
+    'smoking_gun_fork':     ['reporadar'],
+    'documentation_intent': ['reporadar'],
+
+    # Hiring Signal
+    'hiring_localization':              ['hiring'],
+    'hiring_international':             ['hiring'],
+    'hiring_hidden_role_i18n':          ['hiring'],
+    'hiring_hidden_role_platform_i18n': ['hiring'],
+    'hidden_localization_role':         ['hiring'],
+    'job_posting_intent':               ['hiring'],
+
+    # Scale & Expansion
+    'market_expansion':       ['scale', 'expansion'],
+    'expansion_signal_apac':  ['scale', 'expansion'],
+    'already_launched':       ['scale', 'expansion'],
+    'funding_round':          ['scale', 'expansion'],
+    'product_multilingual':   ['scale', 'expansion'],
+
+    # Translation Quality
+    'broken_translation_site':  ['translation quality'],
+    'broken_translation_path':  ['translation quality'],
+    'missing_translations':     ['translation quality'],
+    'missing_translation_404':  ['translation quality'],
+    'website_audit':            ['translation quality'],
+    'website_translation_audit': ['translation quality'],
+
+    # Competitive Displacement
+    'tms_config_file':    ['competitive', 'displacement'],
+    'competitor_usage':   ['competitive', 'displacement'],
+
+    # Phrase Studio
+    'academy_university':    ['phrase studio'],
+    'youtube_channel':       ['phrase studio'],
+    'youtube_channel_academy': ['phrase studio'],
+    'website_demo_videos':   ['phrase studio'],
 }
 
-# Human-readable reasoning fragments per signal type
+# Human-readable reasoning per signal type
 _SIGNAL_REASONING = {
     'dependency_injection': (
-        "This account has a dependency_injection signal, indicating active "
-        "i18n library adoption. The '{campaign}' campaign targets teams "
-        "mid-build with integration-focused messaging that emphasizes "
-        "CI/CD automation and GitHub Sync."
+        "Active i18n library adoption detected. The '{campaign}' campaign targets "
+        "engineering teams mid-build with GitHub Sync and CI/CD automation messaging."
     ),
     'rfc_discussion': (
-        "This account has an rfc_discussion signal, meaning the team is "
-        "evaluating i18n approaches. The '{campaign}' campaign educates "
-        "early-stage teams on modern localization workflows before they "
-        "commit to a DIY path."
+        "Team is evaluating i18n approaches. The '{campaign}' campaign educates "
+        "early-stage teams before they commit to a DIY path."
     ),
     'ghost_branch': (
-        "This account has a ghost_branch signal — active i18n branch work "
-        "is in progress. The '{campaign}' campaign helps teams already "
-        "building with hands-on implementation support."
+        "Active i18n branch work in progress. The '{campaign}' campaign helps "
+        "teams already building with implementation support."
     ),
     'documentation_intent': (
-        "This account has a documentation_intent signal — i18n is on the "
-        "roadmap but hasn't started. The '{campaign}' campaign positions "
-        "Phrase as the tool that lets them skip the DIY phase."
+        "i18n is on the roadmap but hasn't started. The '{campaign}' campaign "
+        "positions Phrase before they go DIY."
+    ),
+    'hiring_localization': (
+        "Hiring for localization roles. The '{campaign}' campaign positions Phrase "
+        "as the force multiplier — making the new hire 10x more productive."
+    ),
+    'hiring_international': (
+        "Hiring for international roles, signaling global ambitions. The '{campaign}' "
+        "campaign connects hiring intent to localization infrastructure."
+    ),
+    'hiring_hidden_role_i18n': (
+        "Hidden i18n role detected in job posting. The '{campaign}' campaign "
+        "highlights how Phrase reduces the tooling burden for this hire."
     ),
     'job_posting_intent': (
-        "This account has a job_posting_intent signal — they're hiring for "
-        "localization roles, signaling scale. The '{campaign}' campaign "
-        "speaks to teams outgrowing manual processes."
+        "Job posting signals localization investment. The '{campaign}' campaign "
+        "speaks to teams building out their loc function."
     ),
-    'tms_config_file': (
-        "This account has a tms_config_file signal — they already use a "
-        "TMS and may be ready to migrate. The '{campaign}' campaign offers "
-        "a clear migration path from legacy tools."
+    'market_expansion': (
+        "International expansion signal detected. The '{campaign}' campaign "
+        "positions Phrase as growth infrastructure for new markets."
     ),
-    'smoking_gun_fork': (
-        "This account forked a key i18n project, showing hands-on "
-        "evaluation. The '{campaign}' campaign targets teams actively "
-        "comparing tools with implementation-ready messaging."
+    'expansion_signal_apac': (
+        "APAC expansion signal. The '{campaign}' campaign addresses regional "
+        "launch needs with Phrase's 50+ language support."
     ),
     'already_launched': (
-        "This account already ships in multiple languages. The '{campaign}' "
-        "campaign focuses on scale optimization and expansion into new "
-        "markets."
+        "Already shipping in multiple languages. The '{campaign}' campaign "
+        "focuses on scale optimization and expanding to more markets."
+    ),
+    'funding_round': (
+        "Recent funding signals growth ambitions. The '{campaign}' campaign "
+        "connects investment to international expansion infrastructure."
+    ),
+    'broken_translation_site': (
+        "Broken translations found on their website. The '{campaign}' campaign "
+        "leads with the specific quality issue as a pain point."
+    ),
+    'missing_translations': (
+        "Missing translations detected. The '{campaign}' campaign highlights "
+        "the gap and positions Phrase Quality Evaluation as the fix."
+    ),
+    'website_audit': (
+        "Website translation audit revealed issues. The '{campaign}' campaign "
+        "offers Quality Evaluation and Language AI to fix quality gaps."
+    ),
+    'tms_config_file': (
+        "Existing TMS config detected — they already use a translation tool. "
+        "The '{campaign}' campaign positions Phrase as the modern upgrade."
+    ),
+    'competitor_usage': (
+        "Using a competitor TMS. The '{campaign}' campaign offers a unified "
+        "platform migration path without naming the competitor."
+    ),
+    'academy_university': (
+        "Company has academy/education content. The '{campaign}' campaign "
+        "introduces Phrase Studio for transcription, subtitles, and voiceovers."
+    ),
+    'youtube_channel': (
+        "Active YouTube channel detected. The '{campaign}' campaign shows how "
+        "Phrase Studio can reach global audiences with multilingual subtitles and voiceovers."
+    ),
+    'youtube_channel_academy': (
+        "YouTube + academy content. The '{campaign}' campaign positions Phrase Studio "
+        "as the intelligence layer for their multimedia content."
+    ),
+    'website_demo_videos': (
+        "Product demo videos on their website. The '{campaign}' campaign shows how "
+        "Phrase Studio turns demos into multilingual assets in 100+ languages."
     ),
 }
 
