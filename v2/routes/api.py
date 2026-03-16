@@ -358,8 +358,12 @@ def api_apollo_search(signal_id):
         if final:
             try:
                 from v2.services.prospect_service import bulk_create_prospects
-                result = bulk_create_prospects(signal_id, account_id, final)
-                saved_count = result.get('count', 0) if isinstance(result, dict) else 0
+                # Inject signal_id and account_id into each prospect dict
+                for p in final:
+                    p['signal_id'] = signal_id
+                    p['account_id'] = account_id
+                saved_ids = bulk_create_prospects(final)
+                saved_count = len(saved_ids) if isinstance(saved_ids, list) else 0
                 logger.info("[V2 API] Auto-saved %d prospects for signal %d", saved_count, signal_id)
             except Exception as save_err:
                 logger.warning("[V2 API] Auto-save prospects failed: %s", save_err)
