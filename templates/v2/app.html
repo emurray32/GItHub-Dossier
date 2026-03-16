@@ -1572,8 +1572,12 @@ function DraftReview({ workspace, toast, actionsRef }) {
                             <button onClick={() => handleGenerate(prospect.id)}
                                 disabled={generating[prospect.id]}
                                 className="px-3 py-1 text-xs font-medium text-brand-600 border border-brand-200 rounded-md hover:bg-brand-50 disabled:opacity-40 transition-all flex items-center gap-1.5">
-                                {generating[prospect.id] ? <Icon name="loader" size={12} /> : <Icon name="zap" size={12} />}
-                                Generate Drafts
+                                {generating[prospect.id]
+                                    ? <><Icon name="loader" size={12} /> Generating...</>
+                                    : (drafts[prospect.id] || workspace.drafts.filter(d => d.prospect_id === prospect.id)).length > 0
+                                        ? <><Icon name="refresh-cw" size={12} /> Regenerate All</>
+                                        : <><Icon name="zap" size={12} /> Generate Drafts</>
+                                }
                             </button>
                         </div>
 

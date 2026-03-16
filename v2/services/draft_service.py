@@ -87,7 +87,8 @@ def _generate_template_draft(step: int, prospect: dict, signal: dict) -> dict:
 _STEP_PURPOSES = {
     1: 'Initial outreach. Lead with the specific signal/evidence. Present core value proposition. One clear, low-commitment CTA.',
     2: 'Follow-up. Take a different angle from email 1. Add new value -- a different pain point, social proof, or industry insight. Do NOT repeat the same hook.',
-    3: 'Breakup / final touch. Very short (under 50 words). Respectful close. Give them an easy out while keeping the door open.',
+    3: 'Second follow-up. Bring a fresh angle -- a mini case study, specific metric, or different feature benefit. Keep it brief. Do NOT repeat hooks from emails 1 or 2.',
+    4: 'Breakup / final touch. Very short (under 50 words). Respectful close. Give them an easy out while keeping the door open.',
 }
 
 
@@ -259,15 +260,19 @@ def generate_drafts(
     # Build writing context (org-wide → BDR overrides → campaign guidelines)
     writing_context = build_writing_context(campaign_guidelines, user_email=user_email)
 
-    # Determine number of sequence steps (default 3)
+    # Determine number of sequence steps and threading from sequence_config
     num_steps = 3
+    single_thread = False
     if campaign and campaign.get('sequence_config'):
         try:
             seq_config = json.loads(campaign['sequence_config']) if isinstance(
                 campaign['sequence_config'], str
             ) else campaign['sequence_config']
-            if isinstance(seq_config, dict) and seq_config.get('num_steps'):
-                num_steps = int(seq_config['num_steps'])
+            if isinstance(seq_config, dict):
+                if seq_config.get('num_steps'):
+                    num_steps = int(seq_config['num_steps'])
+                if seq_config.get('single_thread'):
+                    single_thread = True
         except (json.JSONDecodeError, TypeError, ValueError):
             pass
 
@@ -291,6 +296,7 @@ def generate_drafts(
     created_drafts = []
     active_provider = get_active_provider()
     active_model = get_active_model()
+    thread_subject = None  # For single-thread sequences, reuse step 1's subject
 
     for step in range(1, num_steps + 1):
         # Try LLM generation first
@@ -309,6 +315,13 @@ def generate_drafts(
             body = template_result['body']
             generated_by = 'template'
             active_model = 'template'
+
+        # Single-thread: reuse step 1's subject for all subsequent steps
+        if single_thread:
+            if step == 1:
+                thread_subject = subject
+            elif thread_subject:
+                subject = thread_subject
 
         # Save draft to DB
         generation_context = safe_json_dumps({
@@ -398,22 +411,29 @@ def regenerate_draft(draft_id: int, critique: str) -> Optional[dict]:
     prospect = get_prospect(draft['prospect_id'])
     signal = get_signal(draft['signal_id']) if draft.get('signal_id') else None
 
-    # Load campaign guidelines
+    # Load campaign (prompt + writing guidelines)
     campaign_guidelines = None
+    campaign_prompt = ''
     if draft.get('campaign_id'):
         with db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT writing_guidelines FROM campaigns WHERE id = ?",
+                "SELECT writing_guidelines, prompt FROM campaigns WHERE id = ?",
                 (draft['campaign_id'],),
             )
             row = cursor.fetchone()
             if row:
-                campaign_guidelines = (row['writing_guidelines'] if isinstance(row, dict)
-                                       else row[0])
+                if isinstance(row, dict):
+                    campaign_guidelines = row.get('writing_guidelines')
+                    campaign_prompt = row.get('prompt', '')
+                else:
+                    campaign_guidelines = row[0]
+                    campaign_prompt = row[1] if len(row) > 1 else ''
 
     writing_context = build_writing_context(campaign_guidelines)
     system_prompt = _build_system_prompt(writing_context)
+
+    campaign_section = f"\nCAMPAIGN INSTRUCTIONS:\n{campaign_prompt}\n" if campaign_prompt else ''
 
     user_prompt = f"""Rewrite this email draft incorporating the feedback below.
 
@@ -427,7 +447,7 @@ FEEDBACK / CRITIQUE:
 
 PROSPECT: {prospect.get('full_name', '')} ({prospect.get('title', '')}) at {prospect.get('company_name', '')}
 SIGNAL: {signal.get('signal_description', '') if signal else 'N/A'}
-
+{campaign_section}
 Keep the email concise (under 120 words). Apply the feedback precisely."""
 
     llm_text = _llm_generate(system_prompt, user_prompt)
