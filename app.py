@@ -69,6 +69,7 @@ _APP_START_TIME = time.time()
 app = Flask(__name__)
 app.config.from_object(Config)
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
+app.config['TEMPLATES_AUTO_RELOAD'] = True
 
 # Register Auth blueprint
 app.register_blueprint(auth_bp)

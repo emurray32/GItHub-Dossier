@@ -256,6 +256,15 @@ a:hover {
     display: none;
 }
 
+.sidebar.collapsed .sidebar-header {
+    padding: 14px 0;
+    justify-content: center;
+}
+
+.sidebar.collapsed .sidebar-brand {
+    display: none;
+}
+
 .sidebar-toggle {
     display: flex;
     align-items: center;
