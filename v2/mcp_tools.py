@@ -265,7 +265,7 @@ def register_v2_tools(mcp):
 
             for tier in search_tiers:
                 search_body = {
-                    'q_organization_domains': domain,
+                    'q_organization_domains_list': [domain],
                     'person_titles': tier['titles'],
                     'page': 1,
                     'per_page': 10,  # smaller per tier to stay within rate limits
@@ -276,7 +276,7 @@ def register_v2_tools(mcp):
                 try:
                     resp = apollo_api_call(
                         'post',
-                        'https://api.apollo.io/v1/mixed_people/search',
+                        'https://api.apollo.io/api/v1/mixed_people/api_search',
                         json=search_body,
                     )
 

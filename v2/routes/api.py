@@ -6,6 +6,7 @@ Uses validators.py for all user input validation.
 """
 import logging
 import json
+import uuid
 
 from flask import Blueprint, request, jsonify
 
@@ -101,8 +102,9 @@ def api_list_signals():
 
         return _success(signals=result['signals'], total=result['total'])
     except Exception as e:
-        logger.exception("[V2 API] Error listing signals")
-        return _error('Internal server error', 500)
+        error_id = str(uuid.uuid4())[:8]
+        logger.exception("[V2 API] Error listing signals (ref: %s)", error_id)
+        return _error(f'Internal server error (ref: {error_id})', 500)
 
 
 @api_bp.route('/signals/<int:signal_id>', methods=['GET'])
@@ -118,8 +120,9 @@ def api_get_signal(signal_id):
 
         return _success(**workspace)
     except Exception as e:
-        logger.exception("[V2 API] Error getting signal %d", signal_id)
-        return _error('Internal server error', 500)
+        error_id = str(uuid.uuid4())[:8]
+        logger.exception("[V2 API] Error getting signal %d (ref: %s)", signal_id, error_id)
+        return _error(f'Internal server error (ref: {error_id})', 500)
 
 
 @api_bp.route('/signals/counts', methods=['GET'])
@@ -129,8 +132,9 @@ def api_signal_counts():
         counts = get_signal_counts_by_status()
         return _success(counts=counts)
     except Exception as e:
-        logger.exception("[V2 API] Error getting signal counts")
-        return _error('Internal server error', 500)
+        error_id = str(uuid.uuid4())[:8]
+        logger.exception("[V2 API] Error getting signal counts (ref: %s)", error_id)
+        return _error(f'Internal server error (ref: {error_id})', 500)
 
 
 @api_bp.route('/signals/owners', methods=['GET'])
@@ -140,8 +144,9 @@ def api_signal_owners():
         owners = get_owners()
         return _success(owners=owners)
     except Exception as e:
-        logger.exception("[V2 API] Error getting owners")
-        return _error('Internal server error', 500)
+        error_id = str(uuid.uuid4())[:8]
+        logger.exception("[V2 API] Error getting owners (ref: %s)", error_id)
+        return _error(f'Internal server error (ref: {error_id})', 500)
 
 
 @api_bp.route('/signals/<int:signal_id>/status', methods=['PUT'])
@@ -170,8 +175,9 @@ def api_update_signal_status(signal_id):
 
         return _success(signal_id=signal_id, status=status)
     except Exception as e:
-        logger.exception("[V2 API] Error updating signal status")
-        return _error('Internal server error', 500)
+        error_id = str(uuid.uuid4())[:8]
+        logger.exception("[V2 API] Error updating signal status (ref: %s)", error_id)
+        return _error(f'Internal server error (ref: {error_id})', 500)
 
 
 @api_bp.route('/signals/<int:signal_id>/campaign', methods=['PUT'])
@@ -198,8 +204,9 @@ def api_update_signal_campaign(signal_id):
 
         return _success(signal_id=signal_id, campaign_id=campaign_id)
     except Exception as e:
-        logger.exception("[V2 API] Error updating signal campaign")
-        return _error('Internal server error', 500)
+        error_id = str(uuid.uuid4())[:8]
+        logger.exception("[V2 API] Error updating signal campaign (ref: %s)", error_id)
+        return _error(f'Internal server error (ref: {error_id})', 500)
 
 
 # ---------------------------------------------------------------------------
@@ -259,7 +266,7 @@ def api_apollo_search(signal_id):
                     search_body['person_seniorities'] = all_seniorities
 
                 try:
-                    resp = apollo_api_call('post', 'https://api.apollo.io/v1/mixed_people/search', json=search_body)
+                    resp = apollo_api_call('post', 'https://api.apollo.io/api/v1/mixed_people/api_search', json=search_body)
                     if resp.status_code == 200:
                         result = resp.json()
                         people = result.get('people', [])
@@ -355,7 +362,7 @@ def api_apollo_search(signal_id):
                     continue
 
                 try:
-                    enrich_resp = apollo_api_call('post', 'https://api.apollo.io/v1/people/match', json={
+                    enrich_resp = apollo_api_call('post', 'https://api.apollo.io/api/v1/people/match', json={
                         'id': apollo_id,
                         'reveal_personal_emails': False,
                     })
@@ -427,7 +434,7 @@ def api_apollo_search(signal_id):
             except Exception as save_err:
                 logger.warning("[V2 API] Auto-save prospects failed: %s", save_err)
 
-        return _success(
+        response = dict(
             people=final,
             total=len(final),
             domain=domain,
@@ -437,9 +444,14 @@ def api_apollo_search(signal_id):
             unverified_count=unverified_count,
             saved_count=saved_count,
         )
+        if final and saved_count == 0:
+            response['warning'] = 'Prospects found but could not be saved to database'
+
+        return _success(**response)
     except Exception as e:
-        logger.exception("[V2 API] Error in Apollo search for signal %d", signal_id)
-        return _error('Internal server error', 500)
+        error_id = str(uuid.uuid4())[:8]
+        logger.exception("[V2 API] Error in Apollo search for signal %d (ref: %s)", signal_id, error_id)
+        return _error(f'Internal server error (ref: {error_id})', 500)
 
 
 # ---------------------------------------------------------------------------
@@ -542,8 +554,9 @@ def api_save_prospects():
             skipped_dnc=skipped_dnc,
         )
     except Exception as e:
-        logger.exception("[V2 API] Error saving prospects")
-        return _error('Internal server error', 500)
+        error_id = str(uuid.uuid4())[:8]
+        logger.exception("[V2 API] Error saving prospects (ref: %s)", error_id)
+        return _error(f'Internal server error (ref: {error_id})', 500)
 
 
 @api_bp.route('/prospects', methods=['GET'])
@@ -568,8 +581,9 @@ def api_get_prospects():
 
         return _success(prospects=prospects)
     except Exception as e:
-        logger.exception("[V2 API] Error getting prospects")
-        return _error('Internal server error', 500)
+        error_id = str(uuid.uuid4())[:8]
+        logger.exception("[V2 API] Error getting prospects (ref: %s)", error_id)
+        return _error(f'Internal server error (ref: {error_id})', 500)
 
 
 # ---------------------------------------------------------------------------
@@ -590,6 +604,25 @@ def export_signals_csv():
         status = request.args.get('status')
         owner = request.args.get('owner')
         signal_type = request.args.get('signal_type')
+
+        # Validate status if provided
+        if status:
+            valid, result_val = validate_scope(status, ('new', 'sequenced', 'revisit', 'noise'))
+            if not valid:
+                return _error(result_val)
+            status = result_val
+
+        # Validate owner if provided
+        if owner:
+            valid, owner = validate_search_query(owner)
+            if not valid:
+                return _error(owner)
+
+        # Validate signal_type if provided (free text, sanitize like notes)
+        if signal_type:
+            valid, signal_type = validate_notes(signal_type)
+            if not valid:
+                return _error(signal_type)
 
         result = list_signals(
             status=status, owner=owner, signal_type=signal_type,
@@ -627,8 +660,9 @@ def export_signals_csv():
             headers={'Content-Disposition': 'attachment; filename=signals_export.csv'},
         )
     except Exception:
-        logger.exception("[V2 API] Error exporting signals CSV")
-        return _error('Internal server error', 500)
+        error_id = str(uuid.uuid4())[:8]
+        logger.exception("[V2 API] Error exporting signals CSV (ref: %s)", error_id)
+        return _error(f'Internal server error (ref: {error_id})', 500)
 
 
 # ---------------------------------------------------------------------------
@@ -658,8 +692,9 @@ def api_list_campaigns():
 
         return _success(campaigns=campaigns)
     except Exception as e:
-        logger.exception("[V2 API] Error listing campaigns")
-        return _error('Internal server error', 500)
+        error_id = str(uuid.uuid4())[:8]
+        logger.exception("[V2 API] Error listing campaigns (ref: %s)", error_id)
+        return _error(f'Internal server error (ref: {error_id})', 500)
 
 
 # ---------------------------------------------------------------------------
@@ -673,8 +708,9 @@ def api_get_writing_preferences():
         prefs = get_writing_preferences()
         return _success(preferences=prefs)
     except Exception as e:
-        logger.exception("[V2 API] Error getting writing preferences")
-        return _error('Internal server error', 500)
+        error_id = str(uuid.uuid4())[:8]
+        logger.exception("[V2 API] Error getting writing preferences (ref: %s)", error_id)
+        return _error(f'Internal server error (ref: {error_id})', 500)
 
 
 @api_bp.route('/writing-preferences', methods=['PUT'])
@@ -703,8 +739,9 @@ def api_update_writing_preferences():
 
         return _success(updated=list(cleaned.keys()))
     except Exception as e:
-        logger.exception("[V2 API] Error updating writing preferences")
-        return _error('Internal server error', 500)
+        error_id = str(uuid.uuid4())[:8]
+        logger.exception("[V2 API] Error updating writing preferences (ref: %s)", error_id)
+        return _error(f'Internal server error (ref: {error_id})', 500)
 
 
 # ---------------------------------------------------------------------------
@@ -733,8 +770,9 @@ def api_get_bdr_preferences(email):
             merged=merged,
         )
     except Exception as e:
-        logger.exception("[V2 API] Error getting BDR preferences for %s", email)
-        return _error('Internal server error', 500)
+        error_id = str(uuid.uuid4())[:8]
+        logger.exception("[V2 API] Error getting BDR preferences for %s (ref: %s)", email, error_id)
+        return _error(f'Internal server error (ref: {error_id})', 500)
 
 
 @api_bp.route('/bdr-writing-preferences/<email>', methods=['PUT'])
@@ -780,8 +818,9 @@ def api_update_bdr_preference(email):
             merged=merged,
         )
     except Exception as e:
-        logger.exception("[V2 API] Error updating BDR preference for %s", email)
-        return _error('Internal server error', 500)
+        error_id = str(uuid.uuid4())[:8]
+        logger.exception("[V2 API] Error updating BDR preference for %s (ref: %s)", email, error_id)
+        return _error(f'Internal server error (ref: {error_id})', 500)
 
 
 @api_bp.route('/bdr-writing-preferences/<email>/<key>', methods=['DELETE'])
@@ -805,8 +844,9 @@ def api_delete_bdr_preference(email, key):
         delete_bdr_preference(email, key, override_mode)
         return _success(user_email=email, key=key, deleted=True)
     except Exception as e:
-        logger.exception("[V2 API] Error deleting BDR preference for %s", email)
-        return _error('Internal server error', 500)
+        error_id = str(uuid.uuid4())[:8]
+        logger.exception("[V2 API] Error deleting BDR preference for %s (ref: %s)", email, error_id)
+        return _error(f'Internal server error (ref: {error_id})', 500)
 
 
 @api_bp.route('/bdr-writing-preferences', methods=['GET'])
@@ -825,8 +865,9 @@ def api_list_all_bdr_preferences():
 
         return _success(bdr_emails=emails, count=len(emails))
     except Exception as e:
-        logger.exception("[V2 API] Error listing BDR preferences")
-        return _error('Internal server error', 500)
+        error_id = str(uuid.uuid4())[:8]
+        logger.exception("[V2 API] Error listing BDR preferences (ref: %s)", error_id)
+        return _error(f'Internal server error (ref: {error_id})', 500)
 
 
 # ---------------------------------------------------------------------------
@@ -871,8 +912,9 @@ def api_update_account_status(account_id):
 
         return _success(account_id=account_id, status=new_status)
     except Exception as e:
-        logger.exception("[V2 API] Error updating account status")
-        return _error('Internal server error', 500)
+        error_id = str(uuid.uuid4())[:8]
+        logger.exception("[V2 API] Error updating account status (ref: %s)", error_id)
+        return _error(f'Internal server error (ref: {error_id})', 500)
 
 
 # ---------------------------------------------------------------------------

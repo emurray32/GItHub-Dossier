@@ -323,6 +323,9 @@ def _smart_match_columns(headers):
 
     Returns a dict of {canonical_key: original_header_name}.
     Unmatched headers are ignored (their data lands in raw_payload).
+
+    Uses word-boundary matching to prevent false positives like
+    "enrollment_status" matching the "status" phrase.
     """
     mapping = {}
     used_headers = set()
@@ -333,8 +336,14 @@ def _smart_match_columns(headers):
             for idx, low in enumerate(headers_lower):
                 if low in _SKIP_EXACT or idx in used_headers:
                     continue
-                # "source url" should not match "website" (avoid the generic 'url' grabbing it)
-                if low == phrase or phrase in low:
+                # Word-boundary matching: exact match, or phrase appears as a
+                # complete word segment (delimited by underscores, spaces, or
+                # string boundaries). This prevents "status" from matching
+                # "enrollment_status" while still matching "account status".
+                if (low == phrase
+                        or low.startswith(phrase + '_') or low.startswith(phrase + ' ')
+                        or low.endswith('_' + phrase) or low.endswith(' ' + phrase)
+                        or ('_' + phrase + '_') in low or (' ' + phrase + ' ') in low):
                     mapping[canonical] = headers[idx]
                     used_headers.add(idx)
                     break

@@ -361,6 +361,7 @@ def generate_drafts(
             subject = parsed['subject']
             body = parsed['body']
             generated_by = active_provider
+            generation_notes = None
         else:
             # Fallback to template-based generation
             template_result = _generate_template_draft(step, prospect, signal)
@@ -368,6 +369,7 @@ def generate_drafts(
             body = template_result['body']
             generated_by = 'template'
             active_model = 'template'
+            generation_notes = 'LLM unavailable — generated from template. Review before approving.'
 
         # Single-thread: reuse step 1's subject for all subsequent steps
         if single_thread:
@@ -383,6 +385,7 @@ def generate_drafts(
             'campaign_id': campaign_id,
             'step': step,
             'generated_by': generated_by,
+            'generation_notes': generation_notes,
         })
 
         with db_connection() as conn:
@@ -411,6 +414,7 @@ def generate_drafts(
             'generated_by': generated_by,
             'generation_model': active_model,
             'status': 'generated',
+            'generation_notes': generation_notes,
         }
         created_drafts.append(draft)
         logger.info("[DRAFT] Generated draft %d (step %d) for prospect %d",
@@ -510,11 +514,42 @@ Keep the email concise (under 120 words). Apply the feedback precisely."""
         new_subject = parsed['subject']
         new_body = parsed['body']
     else:
-        # If LLM unavailable, just append critique note but keep original
-        new_subject = draft.get('subject', '')
-        new_body = draft.get('body', '') + f"\n\n[Critique noted but LLM unavailable: {critique[:100]}]"
+        # LLM unavailable — keep the original body unchanged (never append
+        # internal notes to text that could be sent to a prospect).
+        logger.warning("[DRAFT] LLM unavailable for regeneration of draft %d; keeping original body", draft_id)
 
-    # Update draft in DB
+        # Store the feedback so the user can retry later, but don't touch the body
+        with db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE drafts
+                SET last_feedback = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            ''', (critique, draft_id))
+            conn.commit()
+
+        # Log feedback even though regeneration failed
+        try:
+            from v2.services.feedback_service import log_feedback
+            log_feedback(
+                draft_id=draft_id,
+                critique=critique,
+                sequence_step=draft.get('sequence_step'),
+                prospect_id=draft.get('prospect_id'),
+                signal_id=draft.get('signal_id'),
+                created_by='draft_service',
+            )
+        except ImportError:
+            logger.debug("[DRAFT] feedback_service not available, skipping feedback log")
+        except Exception:
+            logger.debug("[DRAFT] Could not log feedback for draft %d", draft_id)
+
+        result = get_draft(draft_id)
+        if result:
+            result['_warning'] = 'LLM unavailable — critique saved but draft body was not changed. Please retry.'
+        return result
+
+    # Update draft in DB with the regenerated content
     with db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute('''
@@ -565,9 +600,14 @@ def update_draft(
     if not draft:
         return None
 
+    # Do not allow editing drafts that have already been enrolled (pushed to Apollo)
+    if draft.get('status') == 'enrolled':
+        logger.warning("[DRAFT] Cannot edit enrolled draft %d", draft_id)
+        return None
+
     new_subject = subject if subject is not None else draft.get('subject')
     new_body = body if body is not None else draft.get('body')
-    new_status = 'edited' if draft.get('status') == 'generated' else draft.get('status')
+    new_status = 'edited' if draft.get('status') in ('generated', 'approved') else draft.get('status')
 
     with db_connection() as conn:
         cursor = conn.cursor()
@@ -584,11 +624,19 @@ def update_draft(
 def approve_draft(draft_id: int) -> Optional[dict]:
     """Mark a single draft as approved.
 
+    Only drafts in 'generated' or 'edited' status can be approved.
+    Enrolled drafts (already pushed to Apollo) cannot be re-approved.
+
     Returns:
-        The updated draft dict, or None if not found
+        The updated draft dict, or None if not found or not approvable
     """
     draft = get_draft(draft_id)
     if not draft:
+        return None
+
+    # Guard: only allow approval from generated or edited status
+    if draft.get('status') not in ('generated', 'edited'):
+        logger.warning("[DRAFT] Cannot approve draft %d with status '%s'", draft_id, draft.get('status'))
         return None
 
     with db_connection() as conn:

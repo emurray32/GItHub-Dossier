@@ -79,49 +79,49 @@ try:
     from v2.routes.web import web_bp
     app.register_blueprint(web_bp)
 except ImportError:
-    logging.warning("[APP] v2.routes.web not found — skipping web blueprint")
+    logging.error("[APP] v2.routes.web not found — skipping web blueprint", exc_info=True)
 
 try:
     from v2.routes.api import api_bp
     app.register_blueprint(api_bp)
 except ImportError:
-    logging.warning("[APP] v2.routes.api not found — skipping API blueprint")
+    logging.error("[APP] v2.routes.api not found — skipping API blueprint", exc_info=True)
 
 try:
     from v2.routes.ingestion import ingestion_bp
     app.register_blueprint(ingestion_bp)
 except ImportError:
-    logging.warning("[APP] v2.routes.ingestion not found — skipping ingestion blueprint")
+    logging.error("[APP] v2.routes.ingestion not found — skipping ingestion blueprint", exc_info=True)
 
 try:
     from v2.routes.draft import draft_bp
     app.register_blueprint(draft_bp)
 except ImportError:
-    logging.warning("[APP] v2.routes.draft not found — skipping draft blueprint")
+    logging.error("[APP] v2.routes.draft not found — skipping draft blueprint", exc_info=True)
 
 try:
     from v2.routes.enrollment import enrollment_bp
     app.register_blueprint(enrollment_bp)
 except ImportError:
-    logging.warning("[APP] v2.routes.enrollment not found — skipping enrollment blueprint")
+    logging.error("[APP] v2.routes.enrollment not found — skipping enrollment blueprint", exc_info=True)
 
 try:
     from v2.routes.webhooks import webhooks_bp
     app.register_blueprint(webhooks_bp)
 except ImportError:
-    logging.warning("[APP] v2.routes.webhooks not found — skipping webhooks blueprint")
+    logging.error("[APP] v2.routes.webhooks not found — skipping webhooks blueprint", exc_info=True)
 
 try:
     from v2.routes.analytics import analytics_bp
     app.register_blueprint(analytics_bp)
 except ImportError:
-    logging.warning("[APP] v2.routes.analytics not found — skipping analytics blueprint")
+    logging.error("[APP] v2.routes.analytics not found — skipping analytics blueprint", exc_info=True)
 
 try:
     from v2.routes.dedup import dedup_bp
     app.register_blueprint(dedup_bp)
 except ImportError:
-    logging.warning("[APP] v2.routes.dedup not found — skipping dedup blueprint")
+    logging.error("[APP] v2.routes.dedup not found — skipping dedup blueprint", exc_info=True)
 
 
 # =============================================================================
@@ -187,6 +187,8 @@ def enforce_csrf_protection():
     referer = request.headers.get('Referer')
 
     if not origin and not referer:
+        if request.method in ('POST', 'PUT', 'DELETE', 'PATCH'):
+            return jsonify({'status': 'error', 'message': 'CSRF validation failed: missing Origin and Referer headers'}), 403
         return
 
     trusted_host = request.host
@@ -371,6 +373,7 @@ _oauth_pending_codes = {}
 _oauth_registered_clients = {}
 _oauth_access_tokens = {}
 _oauth_csrf_tokens = {}
+_oauth_lock = threading.Lock()
 
 _OAUTH_CODE_TTL = 300
 _OAUTH_TOKEN_TTL = 86400
@@ -418,10 +421,11 @@ def oauth_register():
         data = {}
 
     now = time.time()
-    expired = [k for k, v in _oauth_registered_clients.items()
-               if v.get('_expires_at', float('inf')) < now]
-    for k in expired:
-        del _oauth_registered_clients[k]
+    with _oauth_lock:
+        expired = [k for k, v in _oauth_registered_clients.items()
+                   if v.get('_expires_at', float('inf')) < now]
+        for k in expired:
+            del _oauth_registered_clients[k]
     if len(_oauth_registered_clients) >= _MAX_REGISTERED_CLIENTS:
         return jsonify({'error': 'server_error',
                         'error_description': 'Too many registered clients'}), 503
@@ -487,10 +491,11 @@ def oauth_authorize():
 
     csrf_token = _secrets.token_urlsafe(24)
     now = time.time()
-    _oauth_csrf_tokens[csrf_token] = now + _OAUTH_CSRF_TTL
-    expired = [k for k, v in _oauth_csrf_tokens.items() if v < now]
-    for k in expired:
-        del _oauth_csrf_tokens[k]
+    with _oauth_lock:
+        _oauth_csrf_tokens[csrf_token] = now + _OAUTH_CSRF_TTL
+        expired = [k for k, v in _oauth_csrf_tokens.items() if v < now]
+        for k in expired:
+            del _oauth_csrf_tokens[k]
 
     e_redirect = _html.escape(redirect_uri, quote=True)
     e_state = _html.escape(state, quote=True)
@@ -561,9 +566,10 @@ def oauth_authorize_post():
                         'error_description': 'redirect_uri not registered for this client'}), 400
 
     now = time.time()
-    expired = [k for k, v in _oauth_pending_codes.items() if v['expires'] < now]
-    for k in expired:
-        del _oauth_pending_codes[k]
+    with _oauth_lock:
+        expired = [k for k, v in _oauth_pending_codes.items() if v['expires'] < now]
+        for k in expired:
+            del _oauth_pending_codes[k]
     if len(_oauth_pending_codes) >= _MAX_PENDING_CODES:
         return jsonify({'error': 'server_error', 'error_description': 'too many pending codes'}), 503
 
@@ -631,9 +637,10 @@ def oauth_token():
         return jsonify({'error': 'server_error', 'error_description': 'MCP_API_KEY not configured'}), 500
 
     now = time.time()
-    expired = [k for k, v in _oauth_access_tokens.items() if v['expires'] < now]
-    for k in expired:
-        del _oauth_access_tokens[k]
+    with _oauth_lock:
+        expired = [k for k, v in _oauth_access_tokens.items() if v['expires'] < now]
+        for k in expired:
+            del _oauth_access_tokens[k]
     if len(_oauth_access_tokens) >= _MAX_ACCESS_TOKENS:
         return jsonify({'error': 'server_error', 'error_description': 'token limit reached'}), 503
 
@@ -861,7 +868,7 @@ def _sync_sequences_from_apollo():
         return synced, None
     except Exception as e:
         logging.error(f"[SEQUENCE MAPPINGS SYNC ERROR] {e}")
-        return 0, 'Failed to sync sequences from Apollo'
+        return 0, f'Failed to sync sequences from Apollo: {type(e).__name__}: {str(e)[:200]}'
 
 
 @app.route('/api/sequence-mappings/sync', methods=['POST'])
@@ -1132,7 +1139,7 @@ def api_campaign_suggest_personas(campaign_id):
         return jsonify({'status': 'success', 'suggestions': suggestions})
     except Exception as e:
         logging.error(f"[CAMPAIGN PERSONAS] AI suggestion failed: {e}")
-        return jsonify({'status': 'error', 'message': 'AI suggestion failed. Please try again.'}), 500
+        return jsonify({'status': 'error', 'message': sanitize_ai_error(e)}), 500
 
 
 # =============================================================================
@@ -1140,6 +1147,8 @@ def api_campaign_suggest_personas(campaign_id):
 # =============================================================================
 
 import threading as _threading
+
+_enrollment_counter_lock = threading.Lock()
 
 
 class _RateLimiter:
@@ -1167,8 +1176,11 @@ def _derive_domain(website: str, company_name: str = '') -> str:
     """Derive a domain from a website URL or company name."""
     if website:
         d = website.strip().lower()
-        for prefix in ['https://', 'http://', 'www.']:
-            d = d.replace(prefix, '')
+        for prefix in ['https://', 'http://']:
+            if d.startswith(prefix):
+                d = d[len(prefix):]
+        if d.startswith('www.'):
+            d = d[4:]
         return d.split('/')[0].strip()
     name = company_name.strip().lower()
     for suffix in [' inc', ' inc.', ' llc', ' corp', ' ltd', ' co']:
@@ -1251,7 +1263,7 @@ def _discovery_worker(batch_id: int):
                         search_payload['email_status'] = ['verified']
 
                     resp = req.post(
-                        'https://api.apollo.io/v1/mixed_people/search',
+                        'https://api.apollo.io/api/v1/mixed_people/api_search',
                         json=search_payload,
                         headers=apollo_headers,
                         timeout=15
@@ -1427,8 +1439,11 @@ Return ONLY valid JSON: {{"subject_1": "...", "subject_2": "...", "email_1": "..
                     update_enrollment_contact(contact['id'],
                         status='failed',
                         error_message=f'Email generation failed: {str(e)[:300]}')
-                    batch = get_enrollment_batch(batch_id)
-                    update_enrollment_batch(batch_id, failed=(batch or {}).get('failed', 0) + 1)
+                    # NOTE: Race condition — concurrent workers could read stale 'failed' count.
+                    # Using a lock to protect the read-modify-write sequence.
+                    with _enrollment_counter_lock:
+                        batch = get_enrollment_batch(batch_id)
+                        update_enrollment_batch(batch_id, failed=(batch or {}).get('failed', 0) + 1)
 
                 batch = get_enrollment_batch(batch_id)
                 total = (batch or {}).get('total_contacts', 0)
@@ -1443,7 +1458,7 @@ Return ONLY valid JSON: {{"subject_1": "...", "subject_2": "...", "email_1": "..
         try:
             _apollo_limiter.wait()
             fields_resp = req.get(
-                'https://api.apollo.io/v1/typed_custom_fields',
+                'https://api.apollo.io/api/v1/typed_custom_fields',
                 headers=apollo_headers, timeout=15
             )
             if fields_resp.status_code == 200:
@@ -1451,7 +1466,9 @@ Return ONLY valid JSON: {{"subject_1": "...", "subject_2": "...", "email_1": "..
                     norm = f.get('name', '').lower().replace(' ', '_')
                     custom_field_map[norm] = f.get('id', '')
         except Exception as e:
-            app.logger.warning(f'Custom field discovery failed: {e}')
+            app.logger.error(f'Custom field discovery failed: {type(e).__name__}: {e}', exc_info=True)
+            update_enrollment_batch(batch_id,
+                error_message=f'Custom field discovery failed: {type(e).__name__}: {str(e)[:200]}')
 
         field_env = {
             'personalized_subject_1': os.environ.get('APOLLO_FIELD_PERSONALIZED_SUBJECT_1', ''),
@@ -1490,7 +1507,9 @@ Return ONLY valid JSON: {{"subject_1": "...", "subject_2": "...", "email_1": "..
             return
 
         enrolled_count = 0
-        failed_count = (get_enrollment_batch(batch_id) or {}).get('failed', 0)
+        # NOTE: Race condition — protect initial read of 'failed' counter.
+        with _enrollment_counter_lock:
+            failed_count = (get_enrollment_batch(batch_id) or {}).get('failed', 0)
 
         while True:
             contacts = get_next_contacts_for_phase(batch_id, 'email_generated', limit=10)
@@ -1540,7 +1559,7 @@ Return ONLY valid JSON: {{"subject_1": "...", "subject_2": "...", "email_1": "..
                     if existing_contact:
                         apollo_contact_id = existing_contact['id']
                         req.put(
-                            f'https://api.apollo.io/v1/contacts/{apollo_contact_id}',
+                            f'https://api.apollo.io/api/v1/contacts/{apollo_contact_id}',
                             json={'typed_custom_fields': typed_fields},
                             headers=apollo_headers, timeout=15
                         )
@@ -1550,10 +1569,11 @@ Return ONLY valid JSON: {{"subject_1": "...", "subject_2": "...", "email_1": "..
                             'last_name': contact.get('last_name', ''),
                             'email': contact['email'],
                             'organization_name': contact['company_name'],
-                            'typed_custom_fields': typed_fields
+                            'typed_custom_fields': typed_fields,
+                            'run_dedupe': True
                         }
                         create_resp = req.post(
-                            'https://api.apollo.io/v1/contacts',
+                            'https://api.apollo.io/api/v1/contacts',
                             json=create_payload,
                             headers=apollo_headers, timeout=15
                         )
@@ -1692,7 +1712,7 @@ def api_campaign_upload_accounts(campaign_id):
                 saved += 1
             except Exception as e:
                 logging.warning(f'[CSV-UPLOAD] Failed to import row {company_name}: {e}')
-                row_failures.append({'company_name': company_name, 'reason': 'Import failed for this row'})
+                row_failures.append({'company_name': company_name, 'reason': f'Import failed: {str(e)[:200]}'})
 
     return jsonify({
         'status': 'success',
@@ -2092,7 +2112,7 @@ def api_apollo_enroll_sequence():
         if field_values:
             try:
                 cf_resp = req.get(
-                    'https://api.apollo.io/v1/typed_custom_fields',
+                    'https://api.apollo.io/api/v1/typed_custom_fields',
                     headers=apollo_headers,
                     timeout=15
                 )
@@ -2144,7 +2164,7 @@ def api_apollo_enroll_sequence():
             if typed_custom_fields:
                 create_payload['typed_custom_fields'] = typed_custom_fields
 
-            create_resp = req.post('https://api.apollo.io/v1/contacts',
+            create_resp = req.post('https://api.apollo.io/api/v1/contacts',
                                    json=create_payload,
                                    headers=apollo_headers,
                                    timeout=15)
@@ -2159,7 +2179,7 @@ def api_apollo_enroll_sequence():
         # Step 2b: Inject custom fields into existing contact
         elif typed_custom_fields and contact_id:
             update_resp = req.put(
-                f'https://api.apollo.io/v1/contacts/{contact_id}',
+                f'https://api.apollo.io/api/v1/contacts/{contact_id}',
                 json={'typed_custom_fields': typed_custom_fields},
                 headers=apollo_headers,
                 timeout=15

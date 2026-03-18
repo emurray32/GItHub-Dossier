@@ -63,8 +63,13 @@ if _USE_POSTGRES:
         import psycopg2.extras
         import psycopg2.pool
     except ImportError:
+        if os.environ.get('DATABASE_URL'):
+            raise ImportError(
+                "DATABASE_URL is set but psycopg2 is not installed. "
+                "Cannot fall back to SQLite in production."
+            )
         logging.warning(
-            "DATABASE_URL is set but psycopg2 is not installed. "
+            "psycopg2 is not installed. "
             "Falling back to SQLite. Run: pip install psycopg2-binary"
         )
         _USE_POSTGRES = False
@@ -188,7 +193,7 @@ class _CursorProxy:
                 sql
             )
             sql = re.sub(r"datetime\('now'\)", "NOW()", sql)
-        if params:
+        if params is not None:
             return self._cursor.execute(sql, params)
         return self._cursor.execute(sql)
 
@@ -272,6 +277,9 @@ def db_connection():
     conn = get_db_connection()
     try:
         yield conn
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         conn.close()
 
@@ -1121,7 +1129,7 @@ def cleanup_duplicate_accounts() -> dict:
                 
             conn.commit()
         except Exception as e:
-            print(f"[CLEANUP] Error removing duplicates: {e}")
+            logging.error("[CLEANUP] Error removing duplicates: %s", e)
             conn.rollback()
         
     return {
@@ -1160,11 +1168,11 @@ def cleanup_quote_characters() -> int:
                         UPDATE monitored_accounts SET company_name = ? WHERE id = ?
                     ''', (new_name, row['id']))
                     updated_count += 1
-                    print(f"[CLEANUP] Fixed company name: '{old_name}' -> '{new_name}'")
+                    logging.warning("[CLEANUP] Fixed company name: '%s' -> '%s'", old_name, new_name)
 
             conn.commit()
         except Exception as e:
-            print(f"[CLEANUP] Error cleaning quote characters: {e}")
+            logging.error("[CLEANUP] Error cleaning quote characters: %s", e)
             conn.rollback()
 
     return updated_count
@@ -1302,7 +1310,7 @@ def save_signals(report_id: int, company_name: str, signals: list) -> int:
                 saved_count += 1
             except Exception as e:
                 # Log error but continue processing other signals
-                print(f"Error saving signal: {str(e)}")
+                logging.error("Error saving signal: %s", e)
                 continue
 
         conn.commit()
@@ -2238,7 +2246,7 @@ def update_account_notes(account_id: int, notes: str) -> bool:
             conn.commit()
             return updated
         except Exception as e:
-            print(f"[DB] Error updating notes for account {account_id}: {e}")
+            logging.error("[DB] Error updating notes for account %s: %s", account_id, e)
             conn.rollback()
             return False
 
@@ -2310,7 +2318,7 @@ def enrich_existing_account(company_name: str, annual_revenue=None, website=None
             conn.commit()
             return True
         except Exception as e:
-            print(f"[DB] Error enriching account {company_name}: {e}")
+            logging.error("[DB] Error enriching account %s: %s", company_name, e)
             conn.rollback()
             return False
 
@@ -2591,7 +2599,7 @@ def get_account_by_company(company_name: str) -> Optional[dict]:
     with db_connection() as conn:
         cursor = conn.cursor()
 
-        cursor.execute('SELECT * FROM monitored_accounts WHERE company_name = ?', (company_name,))
+        cursor.execute('SELECT * FROM monitored_accounts WHERE LOWER(company_name) = LOWER(?)', (company_name,))
         row = cursor.fetchone()
 
     if row:
@@ -3169,21 +3177,6 @@ def auto_archive_tier4_accounts() -> int:
     # DISABLED: accounts should remain on main table
     return 0
 
-    with db_connection() as conn:
-        cursor = conn.cursor()
-
-        now = datetime.now().isoformat()
-        cursor.execute('''
-            UPDATE monitored_accounts
-            SET archived_at = ?
-            WHERE current_tier = ? AND archived_at IS NULL
-        ''', (now, TIER_INVALID))
-
-        archived_count = cursor.rowcount
-        conn.commit()
-
-    return archived_count
-
 
 def get_archived_accounts(page: int = 1, limit: int = 50, search_query: Optional[str] = None) -> dict:
     """
@@ -3712,7 +3705,7 @@ def set_scan_status(company_name: str, status: str, progress: str = None, error:
                 WHERE company_name = ? AND scan_status IN (?, ?)
             ''', (status, progress, now, company_name, SCAN_STATUS_QUEUED, SCAN_STATUS_PROCESSING))
             if cursor.rowcount == 0:
-                print(f"[SCAN_STATUS] Could not set {company_name} to processing (already claimed or not queued)")
+                logging.warning("[SCAN_STATUS] Could not set %s to processing (already claimed or not queued)", company_name)
                 return False
         elif status == SCAN_STATUS_IDLE:
             # Always allow reset to idle (cleanup path)
@@ -3736,7 +3729,7 @@ def set_scan_status(company_name: str, status: str, progress: str = None, error:
                 WHERE company_name = ? AND scan_status = ?
             ''', (status, progress, now, company_name, SCAN_STATUS_IDLE))
             if cursor.rowcount == 0:
-                print(f"[SCAN_STATUS] Could not queue {company_name} (already queued or processing)")
+                logging.warning("[SCAN_STATUS] Could not queue %s (already queued or processing)", company_name)
                 return False
         else:
             cursor.execute('''
@@ -4020,8 +4013,8 @@ def batch_set_scan_status_queued(company_names: list) -> int:
         # Use parameterized query with placeholders for all company names
         placeholders = ','.join(['?' for _ in company_names])
         cursor.execute(
-            'UPDATE monitored_accounts SET scan_status = ?, scan_progress = NULL, scan_start_time = ? WHERE company_name IN (' + placeholders + ')',
-            [SCAN_STATUS_QUEUED, now] + list(company_names))
+            'UPDATE monitored_accounts SET scan_status = ?, scan_progress = NULL, scan_start_time = ? WHERE company_name IN (' + placeholders + ') AND scan_status = ?',
+            [SCAN_STATUS_QUEUED, now] + list(company_names) + [SCAN_STATUS_IDLE])
 
         updated_count = cursor.rowcount
         conn.commit()
@@ -4833,14 +4826,14 @@ def populate_webscraper_from_reporadar() -> dict:
                     created_count += 1
 
                 except Exception as e:
-                    print(f"[WEBSCRAPER] Error creating account for {account['company_name']}: {e}")
+                    logging.error("[WEBSCRAPER] Error creating account for %s: %s", account['company_name'], e)
                     error_count += 1
                     continue
 
             conn.commit()
 
         except Exception as e:
-            print(f"[WEBSCRAPER] Migration error: {e}")
+            logging.error("[WEBSCRAPER] Migration error: %s", e)
             conn.rollback()
 
     return {
@@ -5298,7 +5291,7 @@ def save_contributor(contributor_data: dict) -> Optional[int]:
             conn.commit()
             return contributor_id
         except Exception as e:
-            print(f"[CONTRIBUTORS] Error saving contributor: {e}")
+            logging.error("[CONTRIBUTORS] Error saving contributor: %s", e)
             conn.rollback()
             return None
 
@@ -5360,7 +5353,7 @@ def save_contributors_batch(contributors: list) -> int:
 
             conn.commit()
         except Exception as e:
-            print(f"[CONTRIBUTORS] Batch save error: {e}")
+            logging.error("[CONTRIBUTORS] Batch save error: %s", e)
             conn.rollback()
 
     return saved
@@ -5537,7 +5530,7 @@ def update_contributor_email(contributor_id: int, email: str) -> bool:
             conn.commit()
             return updated
         except Exception as e:
-            print(f"[DB] Error updating email for contributor {contributor_id}: {e}")
+            logging.error("[DB] Error updating email for contributor %s: %s", contributor_id, e)
             conn.rollback()
             return False
 
@@ -6192,8 +6185,8 @@ def update_enrollment_batch(batch_id: int, **kwargs) -> bool:
     with db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(f'UPDATE enrollment_batches SET {set_clause} WHERE id = ?', values)
-        conn.commit()
         changed = cursor.rowcount > 0
+        conn.commit()
     return changed
 
 
@@ -6270,8 +6263,8 @@ def update_enrollment_contact(contact_id: int, **kwargs) -> bool:
     with db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(f'UPDATE enrollment_contacts SET {set_clause} WHERE id = ?', values)
-        conn.commit()
         changed = cursor.rowcount > 0
+        conn.commit()
     return changed
 
 

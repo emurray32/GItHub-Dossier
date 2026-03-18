@@ -198,10 +198,18 @@ function timeAgo(dateStr) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 async function apiFetch(url, options = {}) {
+    const headers = options.body instanceof FormData
+        ? { ...options.headers }
+        : { 'Content-Type': 'application/json', ...options.headers };
     const resp = await fetch(url, {
-        headers: { 'Content-Type': 'application/json', ...options.headers },
+        headers,
         ...options,
     });
+    const contentType = resp.headers.get('content-type');
+    if (!contentType || !contentType.includes('application/json')) {
+        const text = await resp.text();
+        throw new Error(resp.ok ? text : `Server error (${resp.status}): ${text.substring(0, 200)}`);
+    }
     const data = await resp.json();
     if (!resp.ok || data.status === 'error') {
         throw new Error(data.message || `API error ${resp.status}`);
@@ -241,6 +249,11 @@ function Icon({ name, size = 16, className = '' }) {
         'edit': <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/></svg>,
         'arrow-right': <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>,
         'keyboard': <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="16" x="2" y="4" rx="2" ry="2"/><path d="M6 8h.001"/><path d="M10 8h.001"/><path d="M14 8h.001"/><path d="M18 8h.001"/><path d="M8 12h.001"/><path d="M12 12h.001"/><path d="M16 12h.001"/><path d="M7 16h10"/></svg>,
+        'pen-tool': <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg>,
+        'save': <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>,
+        'trash-2': <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>,
+        'message-square': <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>,
+        'check-circle': <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>,
     };
     return <span className={`inline-flex items-center ${className}`}>{svgMap[name] || null}</span>;
 }
@@ -341,7 +354,7 @@ function WorkspaceSkeleton() {
 // AUTO-SIZING TEXTAREA
 // ═══════════════════════════════════════════════════════════════════════════
 
-function AutoTextarea({ value, onChange, onBlur, className = '', placeholder = '' }) {
+function AutoTextarea({ value, onChange, onBlur, className = '', placeholder = '', readOnly }) {
     const ref = useRef(null);
     useEffect(() => {
         if (ref.current) {
@@ -351,7 +364,7 @@ function AutoTextarea({ value, onChange, onBlur, className = '', placeholder = '
     }, [value]);
     return (
         <textarea ref={ref} value={value} onChange={onChange} onBlur={onBlur}
-            placeholder={placeholder}
+            placeholder={placeholder} readOnly={readOnly}
             className={`v2-textarea w-full border border-slate-200 rounded-md px-3 py-2 text-sm ${className}`}
             style={{ overflow: 'hidden', resize: 'none' }} />
     );
@@ -1058,24 +1071,27 @@ function SignalHeader({ workspace, onCampaignUpdate, toast }) {
                         {workspace.campaign?.name || 'No campaign'}
                     </button>
                     {showCampaignPicker && (
-                        <div className="absolute right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-20 min-w-[200px]">
-                            {campaigns.map(c => (
-                                <button key={c.id}
-                                    onClick={() => handleCampaignChange(c.id)}
-                                    className={`w-full text-left px-3 py-2 text-xs hover:bg-slate-50 border-b border-slate-50 last:border-0 ${
-                                        c.id === signal.recommended_campaign_id ? 'bg-brand-50 text-brand-700 font-medium' : 'text-slate-700'
-                                    }`}>
-                                    {c.name}
-                                </button>
-                            ))}
-                        </div>
+                        <>
+                            <div className="fixed inset-0 z-10" onClick={() => setShowCampaignPicker(false)} />
+                            <div className="absolute right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-20 min-w-[200px]">
+                                {campaigns.map(c => (
+                                    <button key={c.id}
+                                        onClick={() => handleCampaignChange(c.id)}
+                                        className={`w-full text-left px-3 py-2 text-xs hover:bg-slate-50 border-b border-slate-50 last:border-0 ${
+                                            c.id === signal.recommended_campaign_id ? 'bg-brand-50 text-brand-700 font-medium' : 'text-slate-700'
+                                        }`}>
+                                        {c.name}
+                                    </button>
+                                ))}
+                            </div>
+                        </>
                     )}
                 </div>
             </div>
 
-            {/* Combined signal intel — description + positioning + evidence URLs */}
+            {/* Signal intel — single natural-language summary + evidence URLs */}
             {(() => {
-                // Extract clickable URLs from evidence
+                const summary = signal.outreach_angle || signal.bdr_positioning || signal.signal_description;
                 const evidenceUrls = (() => {
                     if (!signal.evidence_value) return [];
                     const val = typeof signal.evidence_value === 'string' ? signal.evidence_value : JSON.stringify(signal.evidence_value);
@@ -1083,15 +1099,9 @@ function SignalHeader({ workspace, onCampaignUpdate, toast }) {
                     return [...new Set(val.match(urlRegex) || [])];
                 })();
 
-                return (
+                return summary ? (
                     <div className="mt-1.5 text-xs text-slate-600 leading-relaxed space-y-1">
-                        <p>{signal.signal_description}</p>
-                        {(signal.bdr_positioning || signal.outreach_angle) && (
-                            <p className="text-brand-600 flex items-start gap-1.5">
-                                <Icon name="target" size={11} className="text-brand-500 mt-0.5 flex-shrink-0" />
-                                {signal.outreach_angle || signal.bdr_positioning}
-                            </p>
-                        )}
+                        <p>{summary}</p>
                         {evidenceUrls.length > 0 && (
                             <div className="flex flex-wrap gap-2 mt-1">
                                 {evidenceUrls.map((url, i) => (
@@ -1104,7 +1114,7 @@ function SignalHeader({ workspace, onCampaignUpdate, toast }) {
                             </div>
                         )}
                     </div>
-                );
+                ) : null;
             })()}
         </div>
     );
@@ -1148,13 +1158,10 @@ function PersonaSearch({ workspace, onProspectsSaved, toast, actionsRef }) {
     const [newSeniority, setNewSeniority] = useState('');
     const [searching, setSearching] = useState(false);
     const [results, setResults] = useState([]);
-    const [selected, setSelected] = useState(new Set());
-    const [savingProspects, setSavingProspects] = useState(false);
 
     useEffect(() => {
         setPersonas(defaultPersonas);
         setResults([]);
-        setSelected(new Set());
     }, [workspace.signal.id]);
 
     const addPersona = () => {
@@ -1191,7 +1198,6 @@ function PersonaSearch({ workspace, onProspectsSaved, toast, actionsRef }) {
             const people = data.people || [];
             const savedCount = data.saved_count || 0;
             setResults(people);
-            setSelected(new Set(people.map((_, i) => i)));
             if (people.length === 0) {
                 const candidates = data.candidates_found || 0;
                 const unverified = data.unverified_count || 0;
@@ -1224,91 +1230,6 @@ function PersonaSearch({ workspace, onProspectsSaved, toast, actionsRef }) {
         actionsRef.current = { ...actionsRef.current, search: handleSearch };
         return () => { const c = { ...actionsRef.current }; delete c.search; actionsRef.current = c; };
     });
-
-    const toggleSelect = (idx) => {
-        setSelected(prev => {
-            const next = new Set(prev);
-            if (next.has(idx)) next.delete(idx);
-            else next.add(idx);
-            return next;
-        });
-    };
-
-    const selectAll = () => {
-        const actionable = results
-            .map((r, i) => ({ r, i }))
-            .filter(({ r }) => !r.do_not_contact && r.enrollment_status !== 'enrolled');
-        setSelected(new Set(actionable.map(({ i }) => i)));
-    };
-
-    const deselectAll = () => setSelected(new Set());
-
-    const handleSave = async () => {
-        const prospects = Array.from(selected).map(i => results[i]).filter(Boolean);
-        if (prospects.length === 0) return;
-        setSavingProspects(true);
-        try {
-            const result = await apiFetch('/v2/api/prospects', {
-                method: 'POST',
-                body: JSON.stringify({
-                    signal_id: workspace.signal.id,
-                    account_id: workspace.account.id,
-                    prospects,
-                }),
-            });
-            const saved = result.count || 0;
-            const skipped = (result.skipped_enrolled || 0) + (result.skipped_personal || 0) +
-                            (result.skipped_no_email || 0) + (result.skipped_unverified || 0) + (result.skipped_dnc || 0);
-            let msg = `Saved ${saved} prospect${saved !== 1 ? 's' : ''}`;
-            if (skipped > 0) {
-                const reasons = [];
-                if (result.skipped_unverified) reasons.push(`${result.skipped_unverified} unverified`);
-                if (result.skipped_personal) reasons.push(`${result.skipped_personal} personal email`);
-                if (result.skipped_enrolled) reasons.push(`${result.skipped_enrolled} already enrolled`);
-                if (result.skipped_no_email) reasons.push(`${result.skipped_no_email} no email`);
-                if (result.skipped_dnc) reasons.push(`${result.skipped_dnc} DNC`);
-                msg += ` (filtered: ${reasons.join(', ')})`;
-            }
-            toast(msg, skipped > 0 ? 'info' : 'success');
-            setSelected(new Set());
-            // Auto-generate drafts for each saved prospect
-            if (result.prospect_ids && result.prospect_ids.length > 0) {
-                toast('Generating drafts...', 'info');
-                let draftSuccesses = 0;
-                let draftErrors = 0;
-                for (const pid of result.prospect_ids) {
-                    try {
-                        await apiFetch('/v2/api/drafts/generate', {
-                            method: 'POST',
-                            body: JSON.stringify({
-                                prospect_id: pid,
-                                signal_id: workspace.signal.id,
-                                campaign_id: workspace.signal.recommended_campaign_id || 0,
-                            }),
-                        });
-                        draftSuccesses++;
-                    } catch (e) {
-                        draftErrors++;
-                        console.error('Draft generation failed for prospect', pid, e);
-                    }
-                }
-                if (draftErrors > 0 && draftSuccesses === 0) {
-                    toast('Draft generation failed — check console for details', 'error');
-                } else if (draftErrors > 0) {
-                    toast(`${draftSuccesses} draft(s) generated, ${draftErrors} failed`, 'info');
-                } else {
-                    toast(`${draftSuccesses} draft(s) generated`);
-                }
-            }
-            if (onProspectsSaved) onProspectsSaved();
-        } catch (err) {
-            toast(err.message, 'error');
-        } finally {
-            setSavingProspects(false);
-        }
-    };
-
-    const existingEmails = new Set((workspace.prospects || []).map(p => (p.email || '').toLowerCase()).filter(Boolean));
 
     return (
         <div className="bg-white rounded-lg border border-slate-200 p-3">
@@ -1349,75 +1270,7 @@ function PersonaSearch({ workspace, onProspectsSaved, toast, actionsRef }) {
                 </button>
             </div>
 
-            {/* Results */}
-            {results.length > 0 && (
-                <div className="mt-2">
-                    <div className="flex items-center justify-between mb-1">
-                        <span className="text-xs font-medium text-slate-600">{results.length} verified contact{results.length !== 1 ? 's' : ''}</span>
-                        <div className="flex gap-2">
-                            <button onClick={selectAll} className="text-xs text-brand-600 hover:text-brand-700">Select all</button>
-                            <button onClick={deselectAll} className="text-xs text-slate-400 hover:text-slate-600">Deselect all</button>
-                        </div>
-                    </div>
-                    <div className="border border-slate-200 rounded-lg overflow-hidden">
-                        <table className="w-full text-sm">
-                            <thead>
-                                <tr className="bg-slate-50 text-xs text-slate-500 uppercase tracking-wider">
-                                    <th className="w-8 px-3 py-2"></th>
-                                    <th className="text-left px-3 py-2">Name</th>
-                                    <th className="text-left px-3 py-2">Title</th>
-                                    <th className="text-left px-3 py-2">Email</th>
-                                    <th className="w-10 px-3 py-2"></th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {results.map((person, idx) => {
-                                    const alreadyEnrolled = existingEmails.has((person.email || '').toLowerCase());
-                                    const isDnc = person.do_not_contact;
-                                    const disabled = alreadyEnrolled || isDnc;
-                                    return (
-                                        <tr key={idx}
-                                            className={`border-t border-slate-100 transition-colors ${disabled ? 'opacity-50' : 'hover:bg-slate-50'}`}>
-                                            <td className="px-3 py-2 text-center">
-                                                <input type="checkbox"
-                                                    checked={selected.has(idx)}
-                                                    onChange={() => !disabled && toggleSelect(idx)}
-                                                    disabled={disabled}
-                                                    className="rounded border-slate-300 text-brand-600 focus:ring-brand-500" />
-                                            </td>
-                                            <td className="px-3 py-2 font-medium text-slate-800">
-                                                {person.full_name || `${person.first_name || ''} ${person.last_name || ''}`.trim() || '--'}
-                                            </td>
-                                            <td className="px-3 py-2 text-slate-600">{person.title || '--'}</td>
-                                            <td className="px-3 py-2">
-                                                <div className="flex items-center gap-1">
-                                                    <span className="text-slate-600">{person.email || '--'}</span>
-                                                    {person.email_verified && (
-                                                        <span className="text-green-500" title="Verified"><Icon name="check" size={12} /></span>
-                                                    )}
-                                                    {alreadyEnrolled && (
-                                                        <span className="text-[0.625rem] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded ml-1">Already enrolled</span>
-                                                    )}
-                                                </div>
-                                            </td>
-                                            <td className="px-3 py-2">
-                                                {person.linkedin_url && (
-                                                    <a href={person.linkedin_url} target="_blank" rel="noopener noreferrer"
-                                                       className="text-blue-600 hover:text-blue-700">
-                                                        <Icon name="linkedin" size={14} />
-                                                    </a>
-                                                )}
-                                            </td>
-                                        </tr>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
-                    </div>
-
-                    {/* Contacts are auto-saved by search — no manual save needed */}
-                </div>
-            )}
+            {/* Contacts are auto-saved by search — table removed, prospects shown as rows in DraftReview */}
         </div>
     );
 }
@@ -1438,6 +1291,20 @@ function DraftReview({ workspace, toast, actionsRef, onAllApproved }) {
         }
         return init;
     });
+    useEffect(() => {
+        if (!workspace.drafts || workspace.drafts.length === 0) return;
+        const grouped = {};
+        workspace.drafts.forEach(d => {
+            const pid = d.prospect_id;
+            if (!grouped[pid]) grouped[pid] = [];
+            grouped[pid].push(d);
+        });
+        setDrafts(prev => {
+            // Only update if server has drafts we don't have locally
+            const hasNew = Object.keys(grouped).some(pid => !prev[pid] || prev[pid].length === 0);
+            return hasNew ? { ...prev, ...grouped } : prev;
+        });
+    }, [workspace.drafts]);
     const [generating, setGenerating] = useState({});
     const [regeneratingDraft, setRegeneratingDraft] = useState(null);
     const [critique, setCritique] = useState('');
@@ -1664,30 +1531,55 @@ function DraftReview({ workspace, toast, actionsRef, onAllApproved }) {
 
     return (
         <div className="bg-white rounded-lg border border-slate-200 p-3">
-            {/* Prospect tabs — one tab per prospect */}
-            <div className="flex items-center gap-1 mb-3 border-b border-slate-100">
+            {/* Prospect rows — one row per prospect, keyboard 1/2/3 to jump */}
+            <div className="space-y-1 mb-3">
                 {actionableProspects.map((prospect, pIdx) => {
                     const isApproved = approvedProspects.has(prospect.id);
+                    const isFocused = pIdx === focusedProspectIdx;
+                    const fullName = prospect.full_name || `${prospect.first_name || ''} ${prospect.last_name || ''}`.trim();
                     return (
                         <button key={prospect.id}
                             onClick={() => setFocusedProspectIdx(pIdx)}
-                            className={`px-3 py-1.5 text-xs font-medium border-b-2 transition flex items-center gap-1.5 ${
-                                pIdx === focusedProspectIdx
-                                    ? 'border-brand-500 text-brand-600'
+                            className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left transition ${
+                                isFocused
+                                    ? 'bg-brand-50 border border-brand-200'
                                     : isApproved
-                                        ? 'border-green-400 text-green-600'
-                                        : 'border-transparent text-slate-400 hover:text-slate-600'
+                                        ? 'bg-green-50 border border-green-200'
+                                        : 'bg-white border border-slate-200 hover:border-slate-300 hover:bg-slate-50'
                             }`}>
-                            <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[0.5625rem] font-bold ${
+                            <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[0.625rem] font-bold flex-shrink-0 ${
                                 isApproved ? 'bg-green-500 text-white' :
-                                pIdx === focusedProspectIdx ? 'bg-brand-600 text-white' : 'bg-slate-100 text-slate-400'
+                                isFocused ? 'bg-brand-600 text-white' : 'bg-slate-100 text-slate-400'
                             }`}>{isApproved ? '✓' : pIdx + 1}</span>
-                            {(prospect.first_name || prospect.full_name || '').split(' ')[0]}
+                            <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2">
+                                    <span className={`text-sm font-medium truncate ${isFocused ? 'text-brand-700' : 'text-slate-800'}`}>
+                                        {fullName || '--'}
+                                    </span>
+                                    {prospect.title && (
+                                        <span className="text-xs text-slate-400 truncate hidden sm:inline">{prospect.title}</span>
+                                    )}
+                                </div>
+                                <div className="flex items-center gap-2 mt-0.5">
+                                    <span className="text-xs text-slate-500 font-mono truncate">{prospect.email || '--'}</span>
+                                    {prospect.email_verified && (
+                                        <span className="text-green-500 flex-shrink-0" title="Verified"><Icon name="check" size={10} /></span>
+                                    )}
+                                </div>
+                            </div>
+                            {prospect.linkedin_url && (
+                                <a href={prospect.linkedin_url} target="_blank" rel="noopener noreferrer"
+                                   onClick={(e) => e.stopPropagation()}
+                                   className="text-blue-600 hover:text-blue-700 flex-shrink-0"
+                                   title="View LinkedIn profile">
+                                    <Icon name="linkedin" size={16} />
+                                </a>
+                            )}
                         </button>
                     );
                 })}
-                <div className="ml-auto flex items-center gap-2 text-[0.625rem] text-slate-400">
-                    <Kbd>j</Kbd><Kbd>k</Kbd> <Kbd>a</Kbd> approve
+                <div className="flex items-center gap-2 text-[0.625rem] text-slate-400 mt-1 px-1">
+                    <Kbd>1</Kbd><Kbd>2</Kbd><Kbd>3</Kbd> jump &nbsp; <Kbd>j</Kbd><Kbd>k</Kbd> navigate &nbsp; <Kbd>a</Kbd> approve
                 </div>
             </div>
 
@@ -1702,21 +1594,12 @@ function DraftReview({ workspace, toast, actionsRef, onAllApproved }) {
 
                 return (
                     <div>
-                        {/* Prospect header */}
-                        <div className="flex items-start justify-between mb-3">
-                            <div className="min-w-0">
-                                <div className="text-sm font-semibold text-slate-900">
-                                    {prospect.full_name || `${prospect.first_name || ''} ${prospect.last_name || ''}`.trim()}
-                                </div>
-                                <div className="text-xs text-slate-500 mt-0.5">{prospect.title}</div>
-                                <div className="text-xs text-brand-600 font-mono mt-0.5">{prospect.email}</div>
+                        {/* Generating indicator */}
+                        {generating[prospect.id] && (
+                            <div className="flex items-center gap-1.5 text-xs text-slate-400 mb-2">
+                                <Icon name="loader" size={12} /> Generating draft...
                             </div>
-                            {generating[prospect.id] && (
-                                <div className="flex items-center gap-1.5 text-xs text-slate-400">
-                                    <Icon name="loader" size={12} /> Generating...
-                                </div>
-                            )}
-                        </div>
+                        )}
 
                         {/* No draft yet — big generate prompt */}
                         {prospectDrafts.length === 0 && (
@@ -1912,7 +1795,7 @@ function EnrollConfirmModal({ prospects, campaignName, onCancel, onConfirm }) {
     }, [onCancel]);
 
     return (
-        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50" onKeyDown={(e) => { if (e.key === 'Enter') e.stopPropagation(); }}>
             <div className="bg-white rounded-xl shadow-xl p-6 max-w-md w-full mx-4">
                 <h3 className="text-lg font-bold text-slate-900 mb-3">Confirm Enrollment</h3>
                 <p className="text-sm text-slate-600 mb-2">
@@ -1924,7 +1807,7 @@ function EnrollConfirmModal({ prospects, campaignName, onCancel, onConfirm }) {
                     ))}
                 </ul>
                 <div className="flex items-center gap-3">
-                    <button ref={confirmRef} onClick={onConfirm}
+                    <button ref={confirmRef} onClick={(e) => { e.stopPropagation(); onConfirm(); }}
                         className="flex-1 px-4 py-2.5 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 transition focus:ring-2 focus:ring-emerald-400 focus:outline-none flex items-center justify-center gap-2">
                         Enroll {prospects.length} <Kbd>Enter</Kbd>
                     </button>
@@ -2553,6 +2436,19 @@ function App() {
     // Ref for workspace child components to register their keyboard-triggered actions
     const workspaceActionsRef = useRef({});
 
+    // Filtered signals for keyboard navigation when search is active
+    const filteredSignals = useMemo(() => {
+        if (!searchTerm) return signals;
+        const q = searchTerm.toLowerCase();
+        return signals.filter(s =>
+            (s.company_name || '').toLowerCase().includes(q) ||
+            (s.signal_description || '').toLowerCase().includes(q) ||
+            (s.signal_type || '').toLowerCase().includes(q) ||
+            (s.account_owner || '').toLowerCase().includes(q) ||
+            (s.outreach_angle || '').toLowerCase().includes(q)
+        );
+    }, [signals, searchTerm]);
+
     // Load signals (also refreshes counts so they stay in sync after any action)
     const loadSignals = useCallback(async () => {
         setLoading(true);
@@ -2692,18 +2588,23 @@ function App() {
 
             const key = e.key;
 
-            // --- Queue navigation ---
+            // --- Queue navigation (use filteredSignals when search is active) ---
+            const navSignals = searchTerm ? filteredSignals : signals;
+            const navIndex = activeIndex >= 0 && navSignals.length > 0
+                ? navSignals.findIndex(s => s.id === (signals[activeIndex] || {}).id)
+                : activeIndex;
             if (key === 'ArrowDown') {
                 e.preventDefault();
-                const nextIdx = Math.min(activeIndex + 1, signals.length - 1);
-                if (signals[nextIdx]) selectSignal(signals[nextIdx].id);
+                const nextIdx = Math.min((navIndex >= 0 ? navIndex : -1) + 1, navSignals.length - 1);
+                if (navSignals[nextIdx]) selectSignal(navSignals[nextIdx].id);
             } else if (key === 'ArrowUp') {
                 e.preventDefault();
-                const prevIdx = Math.max(activeIndex - 1, 0);
-                if (signals[prevIdx]) selectSignal(signals[prevIdx].id);
+                const prevIdx = Math.max((navIndex >= 0 ? navIndex : 1) - 1, 0);
+                if (navSignals[prevIdx]) selectSignal(navSignals[prevIdx].id);
             } else if (key === 'Enter' && activeIndex >= 0) {
                 e.preventDefault();
-                selectSignal(signals[activeIndex].id);
+                const currentNavSignal = navIndex >= 0 && navSignals[navIndex] ? navSignals[navIndex] : signals[activeIndex];
+                if (currentNavSignal) selectSignal(currentNavSignal.id);
             } else if (key === 'Escape') {
                 if (showIntake) {
                     setShowIntake(false);
@@ -2722,9 +2623,7 @@ function App() {
                 else markNoise();
             } else if (key === 's' && activeSignalId && !showIntake) {
                 e.preventDefault();
-                const action = workspaceActionsRef.current.toggleInclude;
-                if (action) action();
-                else skipSignal();
+                skipSignal();
             } else if (key === 'Enter' && e.metaKey && activeSignalId && !showIntake) {
                 // Cmd+Enter → enroll all
                 e.preventDefault();
@@ -2785,7 +2684,7 @@ function App() {
         };
         window.addEventListener('keydown', handler);
         return () => window.removeEventListener('keydown', handler);
-    }, [activeIndex, signals, selectSignal, activeSignalId, showIntake, showHelp, markNoise, skipSignal]);
+    }, [activeIndex, signals, filteredSignals, searchTerm, selectSignal, activeSignalId, showIntake, showHelp, markNoise, skipSignal]);
 
     const goBackToTable = useCallback(() => {
         setActiveSignalId(null);

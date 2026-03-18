@@ -128,29 +128,23 @@ def consolidate_account(account_id: int) -> Optional[int]:
         ''', (account_id,))
         signals = rows_to_dicts(cursor.fetchall())
 
-    if len(signals) <= 1:
-        return None  # Nothing to consolidate
+        if len(signals) <= 1:
+            return None  # Nothing to consolidate
 
-    # Find the strongest signal type
-    best = max(signals, key=lambda s: _signal_strength(s.get('signal_type', '')))
-    best_type = best.get('signal_type')
+        # Find the strongest signal type
+        best = max(signals, key=lambda s: _signal_strength(s.get('signal_type', '')))
+        best_type = best.get('signal_type')
 
-    # Build consolidated description and evidence
-    consolidated_desc = _build_consolidated_description(signals)
-    consolidated_evidence = _build_consolidated_evidence(signals)
+        # Build consolidated description and evidence
+        consolidated_desc = _build_consolidated_description(signals)
+        consolidated_evidence = _build_consolidated_evidence(signals)
 
-    # Pick the best BDR quality score and positioning from originals
-    best_score = max((s.get('bdr_quality_score') or 0) for s in signals)
-    best_positioning = best.get('bdr_positioning', '')
+        # Pick the best BDR quality score and positioning from originals
+        best_score = max((s.get('bdr_quality_score') or 0) for s in signals)
+        best_positioning = best.get('bdr_positioning', '')
 
-    # Recommend campaign for the strongest signal type
-    rec = recommend_campaign(signal_type=best_type)
-
-    # Use the earliest created_at to preserve timeline
-    earliest_created = min(s.get('created_at', '') for s in signals if s.get('created_at'))
-
-    with db_connection() as conn:
-        cursor = conn.cursor()
+        # Recommend campaign for the strongest signal type
+        rec = recommend_campaign(signal_type=best_type)
 
         # Create the consolidated signal
         signal_id = insert_returning_id(cursor, '''

@@ -85,6 +85,10 @@ def ingest_file():
                 '.txt': ingestion_service.ingest_text,
                 '.pdf': ingestion_service.ingest_pdf,
             }
+            # TODO: ingest_csv, ingest_docx, ingest_text, and ingest_pdf do not yet
+            # accept clear_existing — their signatures in ingestion_service.py need
+            # updating to match ingest_excel. Pass it once the service functions
+            # support it; for now, only ingest_excel receives clear_existing.
             result = handlers[ext](
                 file_content=file_content,
                 source_label=source_label,

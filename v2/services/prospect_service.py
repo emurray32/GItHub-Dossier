@@ -43,24 +43,54 @@ def create_prospect(
 
 
 def bulk_create_prospects(prospects: List[dict]) -> List[int]:
-    """Create multiple prospects in one transaction. Returns list of ids."""
+    """Create multiple prospects in one transaction. Returns list of ids.
+
+    Skips prospects whose email already exists for the same signal_id
+    to prevent duplicates on repeated imports.
+    """
     ids = []
     with db_connection() as conn:
         cursor = conn.cursor()
+
+        # Pre-load existing emails per signal_id to skip duplicates
+        signal_ids = list({p.get('signal_id') for p in prospects if p.get('signal_id')})
+        existing_emails = set()
+        if signal_ids:
+            placeholders = ', '.join(['?'] * len(signal_ids))
+            cursor.execute(f'''
+                SELECT signal_id, LOWER(email) as email_lower
+                FROM prospects
+                WHERE signal_id IN ({placeholders}) AND email IS NOT NULL
+            ''', tuple(signal_ids))
+            for row in cursor.fetchall():
+                sid = row['signal_id'] if isinstance(row, dict) else row[0]
+                em = row['email_lower'] if isinstance(row, dict) else row[1]
+                existing_emails.add((sid, em))
+
         for p in prospects:
+            email = p.get('email')
+            sig_id = p.get('signal_id')
+            # Skip if this email already exists for the same signal
+            if email and sig_id and (sig_id, email.strip().lower()) in existing_emails:
+                logger.debug("[PROSPECT] Skipping duplicate email %s for signal %d", email, sig_id)
+                continue
+
             pid = insert_returning_id(cursor, '''
                 INSERT INTO prospects (
                     account_id, signal_id, full_name, first_name, last_name,
                     title, email, email_verified, linkedin_url, apollo_person_id
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
-                p['account_id'], p.get('signal_id'),
+                p['account_id'], sig_id,
                 p.get('full_name'), p.get('first_name'), p.get('last_name'),
-                p.get('title'), p.get('email'),
+                p.get('title'), email,
                 1 if p.get('email_verified') else 0,
                 p.get('linkedin_url'), p.get('apollo_person_id'),
             ))
             ids.append(pid)
+            # Track newly inserted emails so later rows in the same batch are deduped too
+            if email and sig_id:
+                existing_emails.add((sig_id, email.strip().lower()))
         conn.commit()
     logger.info("[PROSPECT] Bulk created %d prospects", len(ids))
     return ids
@@ -118,7 +148,7 @@ def update_prospect_status(prospect_id: int, enrollment_status: str) -> bool:
             WHERE id = ?
         ''', (enrollment_status, prospect_id))
         conn.commit()
-        return True
+        return cursor.rowcount > 0 if hasattr(cursor, 'rowcount') else True
 
 
 def update_prospect_enrollment(
@@ -137,7 +167,7 @@ def update_prospect_enrollment(
             WHERE id = ?
         ''', (enrollment_status, sequence_id, sequence_name, prospect_id))
         conn.commit()
-        return True
+        return cursor.rowcount > 0 if hasattr(cursor, 'rowcount') else True
 
 
 def update_apollo_contact_id(prospect_id: int, apollo_contact_id: str) -> bool:
@@ -149,7 +179,7 @@ def update_apollo_contact_id(prospect_id: int, apollo_contact_id: str) -> bool:
             WHERE id = ?
         ''', (apollo_contact_id, prospect_id))
         conn.commit()
-        return True
+        return cursor.rowcount > 0 if hasattr(cursor, 'rowcount') else True
 
 
 def mark_do_not_contact(prospect_id: int) -> bool:
@@ -161,7 +191,7 @@ def mark_do_not_contact(prospect_id: int) -> bool:
             WHERE id = ?
         ''', (prospect_id,))
         conn.commit()
-        return True
+        return cursor.rowcount > 0 if hasattr(cursor, 'rowcount') else True
 
 
 def is_already_enrolled(email: str) -> bool:
@@ -172,7 +202,7 @@ def is_already_enrolled(email: str) -> bool:
         cursor = conn.cursor()
         cursor.execute('''
             SELECT 1 FROM prospects
-            WHERE email = ? AND enrollment_status IN ('enrolled', 'sequence_complete')
+            WHERE LOWER(email) = LOWER(?) AND enrollment_status IN ('enrolled', 'sequence_complete')
             LIMIT 1
         ''', (email,))
         return cursor.fetchone() is not None
@@ -186,7 +216,7 @@ def is_do_not_contact(email: str) -> bool:
         cursor = conn.cursor()
         cursor.execute('''
             SELECT 1 FROM prospects
-            WHERE email = ? AND do_not_contact = 1
+            WHERE LOWER(email) = LOWER(?) AND do_not_contact = 1
             LIMIT 1
         ''', (email,))
         return cursor.fetchone() is not None

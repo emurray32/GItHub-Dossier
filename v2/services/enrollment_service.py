@@ -127,12 +127,13 @@ def enroll_prospect(prospect_id: int, sequence_id: Optional[str] = None) -> dict
                 'last_name': prospect.get('last_name', ''),
                 'email': email,
                 'organization_name': prospect.get('company_name', ''),
+                'run_dedupe': True,
             }
             if typed_custom_fields:
                 create_payload['typed_custom_fields'] = typed_custom_fields
 
             create_resp = apollo_api_call(
-                'post', 'https://api.apollo.io/v1/contacts',
+                'post', 'https://api.apollo.io/api/v1/contacts',
                 json=create_payload,
             )
             if create_resp.status_code in (200, 201):
@@ -148,10 +149,8 @@ def enroll_prospect(prospect_id: int, sequence_id: Optional[str] = None) -> dict
                 }
         elif typed_custom_fields:
             # Update existing contact with draft content.
-            # Must use PUT /v1/ (not POST or PATCH /api/v1/) — see Apollo API docs
-            # and proven pattern in app.py.
             update_resp = apollo_api_call(
-                'put', f'https://api.apollo.io/v1/contacts/{apollo_contact_id}',
+                'patch', f'https://api.apollo.io/api/v1/contacts/{apollo_contact_id}',
                 json={'typed_custom_fields': typed_custom_fields},
             )
             if update_resp.status_code not in (200, 201):
@@ -180,14 +179,18 @@ def enroll_prospect(prospect_id: int, sequence_id: Optional[str] = None) -> dict
 
         # --- Step E: Resolve sender email account ---
         email_account_id = _resolve_sender_email_account(sequence_id)
+        if not email_account_id:
+            raise RuntimeError(
+                'send_email_from_email_account_id is required but could not be resolved. '
+                'Configure an email account in sequence_mappings or apollo_client.'
+            )
 
         # --- Step F: Enroll contact in sequence ---
         enroll_payload = {
             'emailer_campaign_id': sequence_id,
             'contact_ids': [apollo_contact_id],
+            'send_email_from_email_account_id': email_account_id,
         }
-        if email_account_id:
-            enroll_payload['send_email_from_email_account_id'] = email_account_id
 
         enroll_resp = apollo_api_call(
             'post',
@@ -208,6 +211,26 @@ def enroll_prospect(prospect_id: int, sequence_id: Optional[str] = None) -> dict
                 'prospect_id': prospect_id,
                 'sequence_id': sequence_id,
                 'apollo_response_ok': False,
+            }
+
+        # Check if Apollo skipped this contact (e.g. already in campaign, no email)
+        enroll_data = enroll_resp.json() if enroll_resp.text else {}
+        skipped_ids = enroll_data.get('skipped_contact_ids') or []
+        if apollo_contact_id in skipped_ids:
+            skip_reason = enroll_data.get('skip_reason', 'unknown (check already_in_campaign or no_email)')
+            logger.warning(
+                "[ENROLL] Apollo skipped contact %s for prospect %d: %s",
+                apollo_contact_id, prospect_id, skip_reason,
+            )
+            return {
+                'status': 'error',
+                'message': f'Apollo accepted request but skipped contact: {skip_reason}',
+                'prospect_id': prospect_id,
+                'sequence_id': sequence_id,
+                'apollo_contact_id': apollo_contact_id,
+                'apollo_response_ok': True,
+                'skipped': True,
+                'skip_reason': skip_reason,
             }
 
     except RuntimeError as e:
@@ -251,8 +274,8 @@ def enroll_prospect(prospect_id: int, sequence_id: Optional[str] = None) -> dict
         try:
             from v2.services.account_service import mark_account_sequenced
             mark_account_sequenced(account_id)
-        except Exception:
-            logger.debug("[ENROLL] Could not update account status for account %d", account_id)
+        except Exception as e:
+            logger.warning("[ENROLL] Could not update account status for account %d: %s", account_id, e)
 
     # 7. Log activity
     try:
@@ -270,8 +293,8 @@ def enroll_prospect(prospect_id: int, sequence_id: Optional[str] = None) -> dict
             },
             created_by='enrollment_service',
         )
-    except Exception:
-        logger.debug("[ENROLL] Could not log activity for enrollment")
+    except Exception as e:
+        logger.warning("[ENROLL] Could not log activity for enrollment: %s", e)
 
     return {
         'status': 'success',
@@ -382,8 +405,8 @@ def mark_sequence_complete(prospect_id: int) -> Optional[dict]:
             if check_all_sequences_complete(account_id):
                 mark_account_revisit(account_id)
                 account_complete = True
-        except Exception:
-            logger.debug("[ENROLL] Could not check account completion for %d", account_id)
+        except Exception as e:
+            logger.warning("[ENROLL] Could not check account completion for %d: %s", account_id, e)
 
     # Log activity
     try:
@@ -398,8 +421,8 @@ def mark_sequence_complete(prospect_id: int) -> Optional[dict]:
             },
             created_by='enrollment_service',
         )
-    except Exception:
-        logger.debug("[ENROLL] Could not log sequence completion activity")
+    except Exception as e:
+        logger.warning("[ENROLL] Could not log sequence completion activity: %s", e)
 
     return {
         'status': 'success',
@@ -414,26 +437,28 @@ def mark_sequence_complete(prospect_id: int) -> Optional[dict]:
 # Apollo helpers — reuse proven patterns from apollo_pipeline.py
 # ---------------------------------------------------------------------------
 
-_CACHED_FIELD_IDS = None
+_NOT_RESOLVED = object()
+_CACHED_FIELD_IDS = _NOT_RESOLVED
 
 
 def _resolve_custom_field_ids_cached() -> dict:
     """Fetch Apollo custom field ID mapping, cached for the process lifetime.
 
     Reuses the same API endpoint as apollo_pipeline._resolve_custom_field_ids().
+    Only caches on success; failures leave the sentinel so the next call retries.
     """
     global _CACHED_FIELD_IDS
-    if _CACHED_FIELD_IDS is not None:
+    if _CACHED_FIELD_IDS is not _NOT_RESOLVED:
         return _CACHED_FIELD_IDS
 
     try:
         from apollo_client import resolve_custom_field_ids
-        _CACHED_FIELD_IDS = resolve_custom_field_ids()
+        result = resolve_custom_field_ids()
+        _CACHED_FIELD_IDS = result
+        return _CACHED_FIELD_IDS
     except (ImportError, Exception) as e:
         logger.warning("[ENROLL] Could not resolve custom field IDs: %s", e)
-        _CACHED_FIELD_IDS = {}
-
-    return _CACHED_FIELD_IDS
+        return {}
 
 
 def _build_typed_custom_fields(
@@ -443,7 +468,8 @@ def _build_typed_custom_fields(
     """Build typed_custom_fields dict from approved drafts.
 
     Maps draft content (subject/body per step) to Apollo custom field IDs.
-    Falls back to field names if IDs aren't resolved.
+    Skips any field whose ID cannot be resolved (human-readable names are
+    silently ignored by Apollo, so we warn and omit them).
     """
     typed_custom_fields = {}
 
@@ -453,16 +479,21 @@ def _build_typed_custom_fields(
         subject = draft.get('subject', '')
         body = draft.get('body', '')
 
-        # Map to custom field IDs if available, otherwise use readable names
         subject_key = f'subject_step_{step}'
         body_key = f'body_step_{step}'
 
         if subject:
             fid = field_id_map.get(subject_key)
-            typed_custom_fields[fid or subject_key] = subject
+            if fid:
+                typed_custom_fields[fid] = subject
+            else:
+                logger.warning("[ENROLL] No custom field ID found for '%s' — skipping field", subject_key)
         if body:
             fid = field_id_map.get(body_key)
-            typed_custom_fields[fid or body_key] = body
+            if fid:
+                typed_custom_fields[fid] = body
+            else:
+                logger.warning("[ENROLL] No custom field ID found for '%s' — skipping field", body_key)
 
     # Also set top-level email_subject / email_body for step 1
     step1 = next((d for d in approved_drafts if d.get('sequence_step') == 1), None)
@@ -471,10 +502,16 @@ def _build_typed_custom_fields(
         bod = step1.get('body', '')
         if subj:
             fid = field_id_map.get('email_subject')
-            typed_custom_fields[fid or 'email_subject'] = subj
+            if fid:
+                typed_custom_fields[fid] = subj
+            else:
+                logger.warning("[ENROLL] No custom field ID found for 'email_subject' — skipping field")
         if bod:
             fid = field_id_map.get('email_body')
-            typed_custom_fields[fid or 'email_body'] = bod
+            if fid:
+                typed_custom_fields[fid] = bod
+            else:
+                logger.warning("[ENROLL] No custom field ID found for 'email_body' — skipping field")
 
     return typed_custom_fields
 
@@ -521,8 +558,8 @@ def _resolve_sender_email_account(sequence_id: str) -> Optional[str]:
                     val = row['owner_email_account_id'] if isinstance(row, dict) else row[0]
                     if val:
                         return val
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("[ENROLL] Failed to look up per-sequence email account for %s: %s", sequence_id, e)
 
     # 2. Global default
     try:
@@ -602,9 +639,9 @@ def _get_default_sequence_id(campaign_id: Optional[int] = None) -> Optional[str]
                 val = row['sequence_id'] if isinstance(row, dict) else row[0]
                 if val:
                     return val
-        except Exception:
+        except Exception as e:
             # sequence_mappings table may not exist
-            pass
+            logger.warning("[ENROLL] Failed to query sequence_mappings for default sequence: %s", e)
 
     return None
 
@@ -621,6 +658,6 @@ def _lookup_sequence_name(sequence_id: str) -> Optional[str]:
             row = cursor.fetchone()
             if row:
                 return row['sequence_name'] if isinstance(row, dict) else row[0]
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("[ENROLL] Failed to look up sequence name for %s: %s", sequence_id, e)
     return None

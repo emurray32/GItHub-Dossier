@@ -40,34 +40,51 @@ def get_account(account_id: int) -> Optional[dict]:
         return row_to_dict(cursor.fetchone())
 
 
-def update_account_status(account_id: int, new_status: str) -> bool:
-    """Update account status. Valid values: new, sequenced, revisit, noise."""
+def update_account_status(account_id: int, new_status: str, conn=None) -> bool:
+    """Update account status. Valid values: new, sequenced, revisit, noise.
+
+    Accepts an optional existing connection for use in single-transaction
+    cascade operations. When conn is provided, the caller is responsible
+    for committing.
+    """
     valid = ('new', 'sequenced', 'revisit', 'noise')
     if new_status not in valid:
         logger.warning("[ACCOUNT] Invalid status '%s' for account %d", new_status, account_id)
         return False
 
-    with db_connection() as conn:
-        cursor = conn.cursor()
+    def _do_update(connection):
+        cursor = connection.cursor()
         cursor.execute('''
             UPDATE monitored_accounts
             SET account_status = ?, status_changed_at = CURRENT_TIMESTAMP
             WHERE id = ?
         ''', (new_status, account_id))
-        conn.commit()
-        logger.info("[ACCOUNT] Account %d status → %s", account_id, new_status)
+        if not (cursor.rowcount > 0 if hasattr(cursor, 'rowcount') else True):
+            return False
+        logger.info("[ACCOUNT] Account %d status -> %s", account_id, new_status)
         return True
+
+    if conn is not None:
+        return _do_update(conn)
+
+    with db_connection() as conn:
+        result = _do_update(conn)
+        conn.commit()
+        return result
 
 
 def mark_account_sequenced(account_id: int) -> bool:
     """Mark account as sequenced (at least one prospect enrolled).
 
     Cascades: all 'new' signals for this account move to 'actioned'.
+    Both operations happen in a single transaction so they succeed or fail together.
     """
-    ok = update_account_status(account_id, 'sequenced')
-    if ok:
-        _cascade_signal_status(account_id, new_signal_status='actioned',
-                               only_from_statuses=('new',))
+    with db_connection() as conn:
+        ok = update_account_status(account_id, 'sequenced', conn=conn)
+        if ok:
+            _cascade_signal_status(account_id, new_signal_status='actioned',
+                                   only_from_statuses=('new',), conn=conn)
+        conn.commit()
     return ok
 
 
@@ -75,11 +92,14 @@ def mark_account_revisit(account_id: int) -> bool:
     """Mark account for revisit (all sequences complete, no reply).
 
     Cascades: all 'new' signals for this account move to 'actioned'.
+    Both operations happen in a single transaction so they succeed or fail together.
     """
-    ok = update_account_status(account_id, 'revisit')
-    if ok:
-        _cascade_signal_status(account_id, new_signal_status='actioned',
-                               only_from_statuses=('new',))
+    with db_connection() as conn:
+        ok = update_account_status(account_id, 'revisit', conn=conn)
+        if ok:
+            _cascade_signal_status(account_id, new_signal_status='actioned',
+                                   only_from_statuses=('new',), conn=conn)
+        conn.commit()
     return ok
 
 
@@ -87,11 +107,14 @@ def mark_account_noise(account_id: int) -> bool:
     """Mark account as noise (false positive / not worth pursuing).
 
     Cascades: all non-archived signals for this account move to 'archived'.
+    Both operations happen in a single transaction so they succeed or fail together.
     """
-    ok = update_account_status(account_id, 'noise')
-    if ok:
-        _cascade_signal_status(account_id, new_signal_status='archived',
-                               only_from_statuses=('new', 'actioned'))
+    with db_connection() as conn:
+        ok = update_account_status(account_id, 'noise', conn=conn)
+        if ok:
+            _cascade_signal_status(account_id, new_signal_status='archived',
+                                   only_from_statuses=('new', 'actioned'), conn=conn)
+        conn.commit()
     return ok
 
 
@@ -270,6 +293,7 @@ def _cascade_signal_status(
     account_id: int,
     new_signal_status: str,
     only_from_statuses: tuple = ('new',),
+    conn=None,
 ) -> int:
     """Update signal statuses when account status changes.
 
@@ -277,26 +301,35 @@ def _cascade_signal_status(
         account_id: the account whose signals to update
         new_signal_status: the status to set on matching signals
         only_from_statuses: only update signals currently in one of these statuses
+        conn: optional existing connection (caller manages commit)
 
     Returns:
         Number of signals updated
     """
     placeholders = ', '.join(['?'] * len(only_from_statuses))
-    with db_connection() as conn:
-        cursor = conn.cursor()
+
+    def _do_cascade(connection):
+        cursor = connection.cursor()
         cursor.execute(f'''
             UPDATE intent_signals
             SET status = ?, updated_at = CURRENT_TIMESTAMP
             WHERE account_id = ? AND status IN ({placeholders})
         ''', (new_signal_status, account_id) + only_from_statuses)
-        conn.commit()
         updated = cursor.rowcount if hasattr(cursor, 'rowcount') else 0
         if updated:
             logger.info(
-                "[ACCOUNT] Cascaded %d signals for account %d → %s",
+                "[ACCOUNT] Cascaded %d signals for account %d -> %s",
                 updated, account_id, new_signal_status,
             )
         return updated
+
+    if conn is not None:
+        return _do_cascade(conn)
+
+    with db_connection() as conn:
+        result = _do_cascade(conn)
+        conn.commit()
+        return result
 
 
 def update_account_enrichment(account_id: int, **fields) -> bool:

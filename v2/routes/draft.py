@@ -4,6 +4,7 @@ V2 Draft Routes — REST endpoints for email draft generation, editing, and appr
 Blueprint: draft_bp, prefix /v2/api/drafts
 """
 import logging
+from datetime import datetime
 
 from flask import Blueprint, request, jsonify
 
@@ -27,11 +28,15 @@ def _success(**kwargs):
 
 
 def _serialize_dates(obj):
-    """Convert datetime objects to ISO strings in a dict."""
+    """Recursively convert datetime objects to ISO strings in dicts and lists."""
     if isinstance(obj, dict):
-        for key, value in obj.items():
-            if hasattr(value, 'isoformat'):
-                obj[key] = value.isoformat()
+        return {k: _serialize_dates(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [_serialize_dates(item) for item in obj]
+    elif isinstance(obj, datetime):
+        return obj.isoformat()
+    elif hasattr(obj, 'isoformat'):
+        return obj.isoformat()
     return obj
 
 

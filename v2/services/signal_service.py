@@ -78,7 +78,7 @@ def list_signals(
     with db_connection() as conn:
         cursor = conn.cursor()
 
-        where_clauses = []
+        where_clauses = ['1=1']
         params = []
 
         if status:
@@ -155,7 +155,7 @@ def update_signal_campaign(
             WHERE id = ?
         ''', (campaign_id, reasoning, signal_id))
         conn.commit()
-        return True
+        return cursor.rowcount > 0 if hasattr(cursor, 'rowcount') else True
 
 
 def archive_signal(signal_id: int) -> bool:
@@ -306,7 +306,7 @@ def update_signal_bdr_evaluation(
             WHERE id = ?
         ''', (quality_score, positioning, signal_id))
         conn.commit()
-        return True
+        return cursor.rowcount > 0 if hasattr(cursor, 'rowcount') else True
 
 
 def get_signal_counts_by_status() -> dict:

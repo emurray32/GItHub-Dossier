@@ -165,6 +165,7 @@ def apollo_sequence_complete():
 def _find_prospect(apollo_contact_id=None, email=None):
     """Find a prospect by apollo_contact_id (preferred) or email.
 
+    JOINs monitored_accounts to include company_name in the result.
     When looking up by email, prefers prospects with enrollment_status='enrolled'
     since those are most likely the ones whose sequence just completed.
     """
@@ -175,10 +176,13 @@ def _find_prospect(apollo_contact_id=None, email=None):
 
         # Try apollo_contact_id first (exact match)
         if apollo_contact_id:
-            cursor.execute(
-                'SELECT * FROM prospects WHERE apollo_contact_id = ? LIMIT 1',
-                (apollo_contact_id,),
-            )
+            cursor.execute('''
+                SELECT p.*, a.company_name
+                FROM prospects p
+                LEFT JOIN monitored_accounts a ON p.account_id = a.id
+                WHERE p.apollo_contact_id = ?
+                LIMIT 1
+            ''', (apollo_contact_id,))
             row = cursor.fetchone()
             if row:
                 return row_to_dict(row)
@@ -186,9 +190,12 @@ def _find_prospect(apollo_contact_id=None, email=None):
         # Fall back to email — prefer enrolled prospects
         if email:
             cursor.execute('''
-                SELECT * FROM prospects WHERE LOWER(email) = LOWER(?)
-                ORDER BY CASE WHEN enrollment_status = 'enrolled' THEN 0 ELSE 1 END,
-                         created_at DESC
+                SELECT p.*, a.company_name
+                FROM prospects p
+                LEFT JOIN monitored_accounts a ON p.account_id = a.id
+                WHERE LOWER(p.email) = LOWER(?)
+                ORDER BY CASE WHEN p.enrollment_status = 'enrolled' THEN 0 ELSE 1 END,
+                         p.created_at DESC
                 LIMIT 1
             ''', (email,))
             row = cursor.fetchone()
