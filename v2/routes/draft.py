@@ -83,8 +83,10 @@ def generate():
         else:
             campaign_id = None
 
+        sequence_config = data.get('sequence_config')  # Optional dict: {num_steps, single_thread}
+
         from v2.services.draft_service import generate_drafts
-        drafts = generate_drafts(prospect_id, signal_id, campaign_id)
+        drafts = generate_drafts(prospect_id, signal_id, campaign_id, sequence_config_override=sequence_config)
         return _success(drafts=_serialize_list(drafts), count=len(drafts))
 
     except ValueError as e:

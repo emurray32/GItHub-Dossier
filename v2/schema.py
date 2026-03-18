@@ -272,6 +272,9 @@ def init_v2_schema(cursor, adapt_ddl, safe_add_column):
     safe_add_column(cursor, 'intent_signals', "bdr_positioning TEXT")
     safe_add_column(cursor, 'intent_signals', "outreach_angle TEXT")
 
+    # Per-prospect sequence override (JSON: {num_steps, single_thread, sequence_id, sequence_name})
+    safe_add_column(cursor, 'prospects', 'sequence_config_override TEXT')
+
     logger.info("[V2] Schema initialization complete.")
 
 

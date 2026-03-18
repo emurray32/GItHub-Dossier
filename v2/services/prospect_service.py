@@ -194,6 +194,21 @@ def mark_do_not_contact(prospect_id: int) -> bool:
         return cursor.rowcount > 0 if hasattr(cursor, 'rowcount') else True
 
 
+def update_prospect_sequence(prospect_id: int, sequence_config: dict) -> bool:
+    """Update a prospect's sequence config override."""
+    import json
+    config_json = json.dumps(sequence_config) if sequence_config else None
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE prospects SET sequence_config_override = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (config_json, prospect_id)
+        )
+        changed = cursor.rowcount > 0
+        conn.commit()
+        return changed
+
+
 def is_already_enrolled(email: str) -> bool:
     """Check if this email is already enrolled in any sequence."""
     if not email:

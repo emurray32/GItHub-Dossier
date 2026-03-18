@@ -214,6 +214,15 @@ def get_signal_workspace(signal_id: int) -> Optional[dict]:
         cursor.execute("SELECT preference_key, preference_value FROM writing_preferences")
         prefs = {r['preference_key']: r['preference_value'] for r in rows_to_dicts(cursor.fetchall())}
 
+        # Available sequences for per-prospect override
+        cursor.execute("""
+            SELECT sequence_id, sequence_name, sequence_config, num_steps, active, enabled
+            FROM sequence_mappings
+            WHERE active = 1 AND enabled = 1
+            ORDER BY num_steps ASC, sequence_name ASC
+        """)
+        sequences = rows_to_dicts(cursor.fetchall())
+
         # Scorecard from latest scan report
         scorecard = None
         cursor.execute('''
@@ -267,6 +276,7 @@ def get_signal_workspace(signal_id: int) -> Optional[dict]:
         'prospects': prospects,
         'drafts': drafts,
         'writing_preferences': prefs,
+        'sequences': sequences,
     }
 
 

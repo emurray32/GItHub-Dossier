@@ -260,6 +260,7 @@ def generate_drafts(
     campaign_id: int,
     writing_preferences: Optional[dict] = None,
     user_email: Optional[str] = None,
+    sequence_config_override: Optional[dict] = None,
 ) -> List[dict]:
     """Generate a multi-step email sequence for a prospect.
 
@@ -316,18 +317,24 @@ def generate_drafts(
     # Determine number of sequence steps and threading from sequence_config
     num_steps = 3
     single_thread = False
-    if campaign and campaign.get('sequence_config'):
+
+    # Priority: prospect override > campaign default
+    effective_config = None
+    if sequence_config_override:
+        effective_config = sequence_config_override
+    elif campaign and campaign.get('sequence_config'):
         try:
-            seq_config = json.loads(campaign['sequence_config']) if isinstance(
+            effective_config = json.loads(campaign['sequence_config']) if isinstance(
                 campaign['sequence_config'], str
             ) else campaign['sequence_config']
-            if isinstance(seq_config, dict):
-                if seq_config.get('num_steps'):
-                    num_steps = int(seq_config['num_steps'])
-                if seq_config.get('single_thread'):
-                    single_thread = True
         except (json.JSONDecodeError, TypeError, ValueError):
             pass
+
+    if isinstance(effective_config, dict):
+        if effective_config.get('num_steps'):
+            num_steps = int(effective_config['num_steps'])
+        if effective_config.get('single_thread'):
+            single_thread = True
 
     # Build system prompt
     system_prompt = _build_system_prompt(writing_context)

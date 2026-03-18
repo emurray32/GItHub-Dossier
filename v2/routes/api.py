@@ -21,6 +21,7 @@ from v2.services.account_service import (
 )
 from v2.services.prospect_service import (
     get_prospects_for_signal, bulk_create_prospects, filter_actionable_prospects,
+    update_prospect_sequence,
 )
 from v2.services.writing_prefs_service import (
     get_writing_preferences, update_writing_preferences,
@@ -586,6 +587,40 @@ def api_get_prospects():
         return _error(f'Internal server error (ref: {error_id})', 500)
 
 
+@api_bp.route('/prospects/<int:prospect_id>/sequence', methods=['PUT'])
+def api_update_prospect_sequence(prospect_id):
+    """Update a prospect's sequence override and optionally regenerate drafts."""
+    try:
+        data = request.get_json()
+        if not data:
+            return _error('Request body required')
+
+        sequence_config = data.get('sequence_config')
+        if not sequence_config or not isinstance(sequence_config, dict):
+            return _error('sequence_config dict is required')
+
+        ok = update_prospect_sequence(prospect_id, sequence_config)
+        if not ok:
+            return _error('Prospect not found', 404)
+
+        # Optionally regenerate drafts if requested
+        if data.get('regenerate') and data.get('signal_id') and data.get('campaign_id'):
+            from v2.services.draft_service import generate_drafts
+            drafts = generate_drafts(
+                prospect_id,
+                data['signal_id'],
+                data['campaign_id'],
+                sequence_config_override=sequence_config
+            )
+            return _success(updated=True, drafts=[_serialize_workspace_dates_single(d) for d in drafts])
+
+        return _success(updated=True)
+    except Exception as e:
+        error_id = str(uuid.uuid4())[:8]
+        logger.exception("[V2 API] Error updating prospect sequence (ref: %s)", error_id)
+        return _error(f'Internal server error (ref: {error_id})', 500)
+
+
 # ---------------------------------------------------------------------------
 # Export
 # ---------------------------------------------------------------------------
@@ -937,3 +972,10 @@ def _serialize_workspace_dates(workspace):
         for item in workspace:
             if isinstance(item, dict):
                 _serialize_workspace_dates(item)
+
+
+def _serialize_workspace_dates_single(obj):
+    """Serialize dates in a single dict."""
+    if isinstance(obj, dict):
+        return {k: (v.isoformat() if hasattr(v, 'isoformat') else v) for k, v in obj.items()}
+    return obj
