@@ -1,7 +1,6 @@
-modules = ["web", "nodejs-20", "python-3.11", "postgresql-16"]
 [agent]
 expertMode = true
-integrations = ["agentmail:1.0.0", "python_openai_ai_integrations:1.0.0"]
+integrations = ["agentmail:1.0.0", "python_openai_integrations:1.0.0"]
 
 [agent.mcpServers.dossier_mcp]
 transport = "sse"
@@ -9,7 +8,7 @@ url = "http://localhost:5001/sse"
 
 [nix]
 channel = "stable-25_05"
-packages = ["freetype", "gumbo", "harfbuzz", "jbig2dec", "libjpeg_turbo", "libxcrypt", "mupdf", "openjpeg", "sqlite", "swig", "xcbuild", "xcodebuild", "zlib"]
+packages = ["python311", "freetype", "gumbo", "harfbuzz", "jbig2dec", "libjpeg_turbo", "libxcrypt", "mupdf", "openjpeg", "sqlite", "swig", "xcbuild", "xcodebuild", "zlib"]
 
 [workflows]
 runButton = "Project"
@@ -28,15 +27,6 @@ task = "workflow.run"
 args = "MCP Server"
 
 [[workflows.workflow]]
-name = "MCP Server"
-author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "DASHBOARD_ONLY_MODE=1 MCP_TRANSPORT=sse MCP_PORT=5001 python3 mcp_server.py"
-waitForPort = 5001
-
-[[workflows.workflow]]
 name = "Flask Server"
 author = "agent"
 
@@ -45,8 +35,17 @@ outputType = "webview"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "DASHBOARD_ONLY_MODE=1 python3 app.py"
+args = "PYTHONPATH=/home/runner/workspace/.pythonlibs/lib/python3.11/site-packages DASHBOARD_ONLY_MODE=1 python3 app.py"
 waitForPort = 5000
+
+[[workflows.workflow]]
+name = "MCP Server"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "PYTHONPATH=/home/runner/workspace/.pythonlibs/lib/python3.11/site-packages DASHBOARD_ONLY_MODE=1 MCP_TRANSPORT=sse MCP_PORT=5001 python3 mcp_server.py"
+waitForPort = 5001
 
 [[ports]]
 localPort = 5000
