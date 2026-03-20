@@ -603,13 +603,16 @@ def api_update_prospect_sequence(prospect_id):
         if not ok:
             return _error('Prospect not found', 404)
 
-        # Optionally regenerate drafts if requested
-        if data.get('regenerate') and data.get('signal_id') and data.get('campaign_id'):
+        # Optionally regenerate drafts. campaign_id=0 is a valid "no campaign"
+        # path and should still trigger regeneration.
+        if data.get('regenerate') and data.get('signal_id') is not None:
             from v2.services.draft_service import generate_drafts
+            signal_id = data['signal_id']
+            campaign_id = data.get('campaign_id') or 0
             drafts = generate_drafts(
                 prospect_id,
-                data['signal_id'],
-                data['campaign_id'],
+                signal_id,
+                campaign_id,
                 sequence_config_override=sequence_config
             )
             return _success(updated=True, drafts=[_serialize_workspace_dates_single(d) for d in drafts])

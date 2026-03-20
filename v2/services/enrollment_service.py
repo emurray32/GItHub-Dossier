@@ -17,7 +17,6 @@ Flow:
     drafts approved -> enroll_prospect -> Apollo API -> prospect.enrollment_status = 'enrolled'
     sequence finishes -> mark_sequence_complete -> check account rollup
 """
-import json
 import logging
 from typing import Optional, List
 
@@ -92,9 +91,14 @@ def enroll_prospect(prospect_id: int, sequence_id: Optional[str] = None) -> dict
             best_by_step[step] = d
     approved_drafts = sorted(best_by_step.values(), key=lambda x: x.get('sequence_step', 0))
 
-    # 3. Determine sequence_id
-    if not sequence_id:
-        sequence_id = _resolve_sequence_id(prospect, approved_drafts)
+    # 3. Determine sequence_id.
+    # Prospect-level overrides should win even when the UI supplies a shared
+    # fallback sequence for a bulk enrollment run.
+    sequence_id = _resolve_sequence_id(
+        prospect,
+        approved_drafts,
+        fallback_sequence_id=sequence_id,
+    )
 
     if not sequence_id:
         return {
@@ -577,19 +581,55 @@ def _resolve_sender_email_account(sequence_id: str) -> Optional[str]:
 # Sequence resolution helpers
 # ---------------------------------------------------------------------------
 
-def _resolve_sequence_id(prospect: dict, drafts: list) -> Optional[str]:
+def _extract_sequence_override_id(prospect: dict) -> Optional[str]:
+    """Extract a prospect-level Apollo sequence override, if present."""
+    raw_override = prospect.get('sequence_config_override')
+    if not raw_override:
+        return None
+
+    try:
+        override = raw_override
+        if isinstance(raw_override, str):
+            import json
+            override = json.loads(raw_override)
+        if isinstance(override, dict):
+            sequence_id = override.get('sequence_id')
+            if isinstance(sequence_id, str) and sequence_id.strip():
+                return sequence_id.strip()
+    except Exception:
+        logger.warning("[ENROLL] Failed to parse sequence_config_override for prospect %s", prospect.get('id'))
+
+    return None
+
+
+def _resolve_sequence_id(
+    prospect: dict,
+    drafts: list,
+    fallback_sequence_id: Optional[str] = None,
+) -> Optional[str]:
     """Try to determine the right Apollo sequence ID.
 
     Resolution order:
-        1. Prospect already has a sequence_id assigned
-        2. Campaign linked to the drafts has a sequence_id
-        3. Default sequence from sequence_mappings table
+        1. Prospect-specific sequence override stored in sequence_config_override
+        2. Explicit fallback_sequence_id passed from the caller/UI
+        3. Prospect already has a sequence_id assigned
+        4. Campaign linked to the drafts has a sequence_id
+        5. Default sequence from sequence_mappings table
     """
-    # 1. Prospect already assigned
+    # 1. Prospect override from review
+    override_sequence_id = _extract_sequence_override_id(prospect)
+    if override_sequence_id:
+        return override_sequence_id
+
+    # 2. Caller-provided fallback (for global enrollment override)
+    if fallback_sequence_id:
+        return fallback_sequence_id
+
+    # 3. Prospect already assigned
     if prospect.get('sequence_id'):
         return prospect['sequence_id']
 
-    # 2. From campaign
+    # 4. From campaign
     campaign_id = None
     for d in drafts:
         if d.get('campaign_id'):
@@ -601,7 +641,7 @@ def _resolve_sequence_id(prospect: dict, drafts: list) -> Optional[str]:
         if seq:
             return seq
 
-    # 3. Global default
+    # 5. Global default
     return _get_default_sequence_id()
 
 
