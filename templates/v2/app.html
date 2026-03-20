@@ -2660,12 +2660,40 @@ function App() {
     const [counts, setCounts] = useState({});
     const [activeSignalId, setActiveSignalId] = useState(null);
     const [activeIndex, setActiveIndex] = useState(-1);
-    const [showIntake, setShowIntake] = useState(false);
+    const [showIntake, setShowIntake] = useState(() => {
+        try {
+            const searchParams = new URLSearchParams(window.location.search);
+            return searchParams.get('intake') === '1';
+        } catch {
+            return false;
+        }
+    });
     const [showHelp, setShowHelp] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
 
     // Ref for workspace child components to register their keyboard-triggered actions
     const workspaceActionsRef = useRef({});
+
+    const syncIntakeQueryParam = useCallback((enabled) => {
+        try {
+            const url = new URL(window.location.href);
+            if (enabled) url.searchParams.set('intake', '1');
+            else url.searchParams.delete('intake');
+            window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+        } catch {}
+    }, []);
+
+    const openIntake = useCallback(() => {
+        setActiveSignalId(null);
+        setActiveIndex(-1);
+        setShowIntake(true);
+        syncIntakeQueryParam(true);
+    }, [syncIntakeQueryParam]);
+
+    const closeIntake = useCallback(() => {
+        setShowIntake(false);
+        syncIntakeQueryParam(false);
+    }, [syncIntakeQueryParam]);
 
     // Filtered signals for keyboard navigation when search is active
     const filteredSignals = useMemo(() => {
@@ -2838,7 +2866,7 @@ function App() {
                 if (currentNavSignal) selectSignal(currentNavSignal.id);
             } else if (key === 'Escape') {
                 if (showIntake) {
-                    setShowIntake(false);
+                    closeIntake();
                 } else if (activeSignalId) {
                     // Back to table
                     setActiveSignalId(null);
@@ -2870,7 +2898,8 @@ function App() {
             // --- Panels ---
             else if (key === 'i') {
                 e.preventDefault();
-                setShowIntake(prev => !prev);
+                if (showIntake) closeIntake();
+                else openIntake();
             }
 
             // --- Workflow shortcuts (delegated to workspace child components) ---
@@ -2915,13 +2944,13 @@ function App() {
         };
         window.addEventListener('keydown', handler);
         return () => window.removeEventListener('keydown', handler);
-    }, [activeIndex, signals, filteredSignals, searchTerm, selectSignal, activeSignalId, showIntake, showHelp, markNoise, skipSignal]);
+    }, [activeIndex, signals, filteredSignals, searchTerm, selectSignal, activeSignalId, showIntake, showHelp, markNoise, skipSignal, openIntake, closeIntake]);
 
     const goBackToTable = useCallback(() => {
         setActiveSignalId(null);
         setActiveIndex(-1);
-        setShowIntake(false);
-    }, []);
+        closeIntake();
+    }, [closeIntake]);
 
     return (
         <div className="flex flex-col h-screen overflow-hidden">
@@ -2935,13 +2964,20 @@ function App() {
                 onOwnerFilter={setOwnerFilter}
                 owners={owners}
                 total={total}
-                onAddSignals={() => { setActiveSignalId(null); setActiveIndex(-1); setShowIntake(true); }}
+                onAddSignals={openIntake}
                 onShowHelp={() => setShowHelp(true)}
                 onBack={goBackToTable}
                 showBack={!!activeSignalId}
             />
             {showIntake ? (
-                <IntakePanel signalCount={signals.length} onSignalsAdded={async () => { setShowIntake(false); const fresh = await loadSignals(); if (fresh && fresh.length > 0) { setActiveSignalId(fresh[0].id); setActiveIndex(0); } }} />
+                <IntakePanel signalCount={signals.length} onSignalsAdded={async () => {
+                    closeIntake();
+                    const fresh = await loadSignals();
+                    if (fresh && fresh.length > 0) {
+                        setActiveSignalId(fresh[0].id);
+                        setActiveIndex(0);
+                    }
+                }} />
             ) : activeSignalId ? (
                 <Workspace
                     signalId={activeSignalId}
@@ -2959,7 +2995,7 @@ function App() {
                     signals={signals}
                     loading={loading}
                     activeIndex={activeIndex}
-                    onSelect={(id) => { setShowIntake(false); selectSignal(id); }}
+                    onSelect={(id) => { closeIntake(); selectSignal(id); }}
                     searchTerm={searchTerm}
                 />
             )}

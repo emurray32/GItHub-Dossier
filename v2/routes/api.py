@@ -31,7 +31,7 @@ from v2.services.writing_prefs_service import (
 from v2.db import db_connection, rows_to_dicts, row_to_dict
 from validators import (
     validate_positive_int, validate_scope, validate_notes,
-    validate_search_query, validate_company_name,
+    validate_search_query, validate_company_name, validate_email,
 )
 
 logger = logging.getLogger(__name__)
@@ -796,7 +796,7 @@ def api_get_bdr_preferences(email):
         merged: org prefs with BDR overrides applied
     """
     try:
-        valid, email = validate_search_query(email)
+        valid, email = validate_email(email)
         if not valid:
             return _error(email)
 
@@ -821,7 +821,7 @@ def api_update_bdr_preference(email):
     Body: { "key": "banned_phrases", "value": "circle back, ping", "override_mode": "add" }
     """
     try:
-        valid, email = validate_search_query(email)
+        valid, email = validate_email(email)
         if not valid:
             return _error(email)
 
@@ -869,7 +869,7 @@ def api_delete_bdr_preference(email, key):
     Optional query param: override_mode (if omitted, deletes all modes for this key)
     """
     try:
-        valid, email = validate_search_query(email)
+        valid, email = validate_email(email)
         if not valid:
             return _error(email)
 

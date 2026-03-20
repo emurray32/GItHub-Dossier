@@ -163,6 +163,8 @@
                 <div style="display:flex;gap:0.5rem;align-items:center;">
                     <input type="text" class="p-name" placeholder="Persona name" value="${escHtml((data && data.persona_name) || '')}">
                     <input type="text" class="p-titles" placeholder="Titles (comma-separated)" value="${escHtml((data && data.titles || []).join(', '))}">
+                    <input type="hidden" class="p-sequence-id" value="${escHtml((data && data.sequence_id) || '')}">
+                    <input type="hidden" class="p-sequence-name" value="${escHtml((data && data.sequence_name) || '')}">
                     <button type="button" class="p-remove" title="Remove" onclick="this.closest('.cf-persona-row').remove()">&times;</button>
                 </div>
                 <div class="cf-seniority-checks">${buildSeniorityChecks(data && data.seniorities)}</div>
@@ -212,6 +214,7 @@
                 titles: typeof p.titles_json === 'string' ? JSON.parse(p.titles_json || '[]') : (p.titles || []),
                 seniorities: typeof p.seniorities_json === 'string' ? JSON.parse(p.seniorities_json || '[]') : (p.seniorities || []),
                 sequence_id: p.sequence_id,
+                sequence_name: p.sequence_name,
             });
         }
     }
@@ -226,10 +229,16 @@
             const titles = titlesRaw ? titlesRaw.split(',').map(t => t.trim()).filter(Boolean) : [];
             const seniorities = [];
             row.querySelectorAll('.cf-seniority-checks input:checked').forEach(cb => seniorities.push(cb.value));
+            const sequenceId = row.querySelector('.p-sequence-id')?.value.trim() || '';
+            const sequenceName = row.querySelector('.p-sequence-name')?.value.trim() || '';
             personas.push({
                 persona_name: name,
+                titles: titles,
                 titles_json: JSON.stringify(titles),
+                seniorities: seniorities,
                 seniorities_json: JSON.stringify(seniorities),
+                sequence_id: sequenceId,
+                sequence_name: sequenceName,
                 priority: idx,
             });
         });

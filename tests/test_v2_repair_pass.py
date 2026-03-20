@@ -19,8 +19,11 @@ Tests:
 15. Personal email filter direction (business emails kept, personal rejected)
 16. Draft generation works without campaign_id
 17. Enrollment panel preserves skipped terminal state and completion CTA
+18. Campaign form preserves persona targeting fields
+19. Accounts page links into the v2 intake flow
 """
 import json
+import io
 import sqlite3
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -29,6 +32,7 @@ import pytest
 
 
 APP_HTML = Path(__file__).resolve().parents[1] / 'templates/v2/app.html'
+CAMPAIGN_FORM_HTML = Path(__file__).resolve().parents[1] / 'templates/campaign_form.html'
 
 
 # ---------------------------------------------------------------------------
@@ -318,6 +322,47 @@ class TestWorkflowStatus:
 
         assert sig.get('workflow_status') == 'revisit'
         assert sig.get('account_status') == 'revisit'
+
+
+# =========================================================================
+# 4b. Campaign form persona serialization
+# =========================================================================
+
+class TestCampaignPersonaSerialization:
+    """Campaign saves should preserve persona targeting fields from the form."""
+
+    def test_campaign_api_accepts_legacy_form_persona_shape(self, flask_app, test_db):
+        """Form-style titles_json/seniorities_json payloads should persist correctly."""
+        resp = flask_app.post('/api/campaigns', json={
+            'name': 'Persona Shape Campaign',
+            'prompt': 'Short prompt',
+            'personas': [{
+                'persona_name': 'Engineering Lead',
+                'titles_json': '["Director Engineering", "VP Engineering"]',
+                'seniorities_json': '["director", "vp"]',
+                'sequence_id': 'seq_persona',
+                'sequence_name': 'Persona Sequence',
+                'priority': 0,
+            }],
+        })
+        data = resp.get_json()
+        assert resp.status_code == 200, data
+
+        campaign_id = data['campaign']['id']
+        personas_resp = flask_app.get(f'/api/campaigns/{campaign_id}/personas')
+        personas_data = personas_resp.get_json()
+        assert personas_resp.status_code == 200, personas_data
+        assert personas_data['personas'][0]['titles'] == ['Director Engineering', 'VP Engineering']
+        assert personas_data['personas'][0]['seniorities'] == ['director', 'vp']
+        assert personas_data['personas'][0]['sequence_id'] == 'seq_persona'
+
+    def test_campaign_form_round_trips_hidden_sequence_fields(self):
+        """Editing a campaign should preserve existing persona sequence metadata."""
+        source = CAMPAIGN_FORM_HTML.read_text()
+        assert 'class="p-sequence-id"' in source
+        assert 'class="p-sequence-name"' in source
+        assert 'sequence_id: sequenceId' in source
+        assert 'sequence_name: sequenceName' in source
 
     def test_api_accepts_workflow_statuses(self, flask_app, test_db):
         """GET /v2/api/signals?status=sequenced should return 200."""
@@ -780,6 +825,60 @@ class TestEnrollmentPanelUiState:
         assert "const completedCount = prospects.length - actionableCount;" in source
         assert "toast('All selected prospects are already processed', 'info');" in source
         assert "Enrollment complete ({completedCount}/{prospects.length} processed)" in source
+
+
+class TestAdminIntakeLinks:
+    """Less-used admin surfaces should still link into a live intake flow."""
+
+    def test_accounts_page_links_to_v2_intake(self, flask_app, test_db):
+        """Accounts CTAs should not send users to the removed /settings page."""
+        _seed_account(test_db, company_name='LinkCo', website='linkco.com')
+        resp = flask_app.get('/accounts')
+        assert resp.status_code == 200
+        html = resp.get_data(as_text=True)
+        assert '/app?intake=1' in html
+        assert '/settings#admin-intake' not in html
+        assert 'https://linkco.com' in html
+
+    def test_v2_app_supports_intake_deeplink(self):
+        """The queue app should honor the intake query param used by admin links."""
+        source = APP_HTML.read_text()
+        assert "searchParams.get('intake') === '1'" in source
+        assert "syncIntakeQueryParam(true);" in source
+        assert "syncIntakeQueryParam(false);" in source
+
+
+class TestBdrPreferenceValidation:
+    """BDR overrides should only be created for real email identities."""
+
+    def test_bdr_preference_rejects_invalid_email_identity(self, flask_app):
+        """Arbitrary strings should not be accepted as BDR emails."""
+        resp = flask_app.put('/v2/api/bdr-writing-preferences/not-an-email', json={
+            'key': 'tone',
+            'value': 'Keep it concise',
+            'override_mode': 'replace',
+        })
+        data = resp.get_json()
+        assert resp.status_code == 400, data
+        assert 'email' in data['message'].lower()
+
+
+class TestIngestionRouteFailures:
+    """Bulk import routes should not report failed uploads as success."""
+
+    def test_file_route_rejects_csv_schema_failure(self, flask_app):
+        """Missing required signal columns should return an error response."""
+        csv_bytes = io.BytesIO(b"company_name,website,industry\nAcme,acme.com,SaaS\n")
+        resp = flask_app.post(
+            '/v2/api/ingest/file',
+            data={'file': (csv_bytes, 'bad-signals.csv')},
+            content_type='multipart/form-data',
+        )
+        data = resp.get_json()
+        assert resp.status_code == 400, data
+        assert data['status'] == 'error'
+        assert 'signal_description' in data['message']
+        assert data['result']['signals_created'] == 0
 
 
 # =========================================================================

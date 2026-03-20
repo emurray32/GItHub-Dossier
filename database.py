@@ -6183,18 +6183,43 @@ def get_campaign_personas(campaign_id: int) -> list:
 
 def replace_campaign_personas(campaign_id: int, personas: list) -> int:
     """Replace all personas for a campaign. Each persona dict should have:
-    persona_name, titles, seniorities, sequence_id, sequence_name, priority."""
+    persona_name, titles, seniorities, sequence_id, sequence_name, priority.
+
+    For compatibility with the legacy campaign form, also accept
+    titles_json/seniorities_json payloads.
+    """
+    def _coerce_list(persona: dict, list_key: str, json_key: str) -> list:
+        value = persona.get(list_key)
+        if isinstance(value, list):
+            return value
+        if isinstance(value, str):
+            return [v.strip() for v in value.split(',') if v.strip()]
+
+        raw_json = persona.get(json_key)
+        if isinstance(raw_json, list):
+            return raw_json
+        if isinstance(raw_json, str):
+            try:
+                parsed = json.loads(raw_json)
+                if isinstance(parsed, list):
+                    return parsed
+            except (json.JSONDecodeError, TypeError, ValueError):
+                return []
+        return []
+
     with db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute('DELETE FROM campaign_personas WHERE campaign_id = ?', (campaign_id,))
         count = 0
         for i, p in enumerate(personas):
+            titles = _coerce_list(p, 'titles', 'titles_json')
+            seniorities = _coerce_list(p, 'seniorities', 'seniorities_json')
             cursor.execute('''
                 INSERT INTO campaign_personas (campaign_id, persona_name, titles_json,
                                                seniorities_json, sequence_id, sequence_name, priority)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             ''', (campaign_id, p.get('persona_name', f'Persona {i+1}'),
-                  json.dumps(p.get('titles', [])), json.dumps(p.get('seniorities', [])),
+                  json.dumps(titles), json.dumps(seniorities),
                   p.get('sequence_id', ''), p.get('sequence_name', ''),
                   p.get('priority', i)))
             count += 1

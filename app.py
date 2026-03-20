@@ -71,6 +71,21 @@ app.config.from_object(Config)
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 app.config['TEMPLATES_AUTO_RELOAD'] = True
 
+
+@app.template_filter('normalize_url')
+def normalize_url(value):
+    """Ensure bare hostnames render as clickable absolute URLs in templates."""
+    if not value:
+        return ''
+
+    url = str(value).strip()
+    if not url:
+        return ''
+
+    if re.match(r'^[a-zA-Z][a-zA-Z0-9+.-]*://', url):
+        return url
+    return f'https://{url.lstrip("/")}'
+
 # Register Auth blueprint
 app.register_blueprint(auth_bp)
 

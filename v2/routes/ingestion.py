@@ -19,6 +19,40 @@ ingestion_bp = Blueprint('v2_ingestion', __name__, url_prefix='/v2/api/ingest')
 _ALLOWED_EXTENSIONS = {'.csv', '.xlsx', '.docx', '.txt', '.pdf'}
 
 
+def _extract_ingestion_errors(result):
+    """Collect human-readable ingestion errors from flat or nested result payloads."""
+    if not isinstance(result, dict):
+        return []
+
+    errors = []
+    raw_errors = result.get('errors')
+    if isinstance(raw_errors, list):
+        errors.extend(str(err) for err in raw_errors if err)
+
+    totals = result.get('totals')
+    if isinstance(totals, dict):
+        nested_errors = totals.get('errors')
+        if isinstance(nested_errors, list):
+            errors.extend(str(err) for err in nested_errors if err)
+
+    return errors
+
+
+def _signals_created_count(result):
+    """Read created-signal counts from flat or nested ingestion responses."""
+    if not isinstance(result, dict):
+        return 0
+
+    if isinstance(result.get('signals_created'), int):
+        return result['signals_created']
+
+    totals = result.get('totals')
+    if isinstance(totals, dict) and isinstance(totals.get('signals_created'), int):
+        return totals['signals_created']
+
+    return 0
+
+
 # ---------------------------------------------------------------------------
 # POST /v2/api/ingest/file  — unified upload (CSV + Excel + DOCX)
 # ---------------------------------------------------------------------------
@@ -94,6 +128,13 @@ def ingest_file():
                 source_label=source_label,
                 created_by=created_by,
             )
+        errors = _extract_ingestion_errors(result)
+        if _signals_created_count(result) == 0 and errors:
+            return jsonify({
+                'status': 'error',
+                'message': errors[0],
+                'result': result,
+            }), 400
         return jsonify({'status': 'success', 'result': result}), 200
     except Exception as exc:
         logger.exception("[INGEST ROUTE] File ingestion failed")
@@ -144,6 +185,13 @@ def ingest_csv():
             source_label=source_label,
             created_by=created_by,
         )
+        errors = _extract_ingestion_errors(result)
+        if _signals_created_count(result) == 0 and errors:
+            return jsonify({
+                'status': 'error',
+                'message': errors[0],
+                'result': result,
+            }), 400
         return jsonify({'status': 'success', 'result': result}), 200
     except Exception as exc:
         logger.exception("[INGEST ROUTE] CSV ingestion failed")
