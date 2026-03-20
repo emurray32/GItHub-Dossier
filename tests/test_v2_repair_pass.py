@@ -640,7 +640,86 @@ class TestWorkspaceEnrollmentReadiness:
 
 
 # =========================================================================
-# 10. Enrollment uses deterministic draft per step
+# 10. Bulk enrollment preserves sequence overrides
+# =========================================================================
+
+class TestBulkEnrollmentSequenceOverride:
+    """Bulk enrollment should respect the selected Apollo sequence."""
+
+    def test_bulk_route_forwards_sequence_override(self, flask_app, monkeypatch):
+        """POST /v2/api/enrollment/bulk should pass sequence_id through."""
+        captured = {}
+
+        def fake_bulk_enroll(prospect_ids, sequence_id=None):
+            captured['prospect_ids'] = prospect_ids
+            captured['sequence_id'] = sequence_id
+            return {
+                'enrolled': 0,
+                'failed': 0,
+                'skipped': 0,
+                'total': len(prospect_ids),
+                'details': [],
+            }
+
+        monkeypatch.setattr('v2.services.enrollment_service.bulk_enroll', fake_bulk_enroll)
+
+        resp = flask_app.post('/v2/api/enrollment/bulk', json={
+            'prospect_ids': [11, 22],
+            'sequence_id': 'seq_override',
+        })
+        assert resp.status_code == 200
+        assert captured == {
+            'prospect_ids': [11, 22],
+            'sequence_id': 'seq_override',
+        }
+
+    def test_bulk_service_passes_override_to_each_prospect(self, monkeypatch):
+        """bulk_enroll() should call enroll_prospect(..., sequence_id=override)."""
+        calls = []
+
+        monkeypatch.setattr(
+            'v2.services.prospect_service.get_prospect',
+            lambda pid: {'full_name': f'Prospect {pid}', 'email': f'p{pid}@corp.com'},
+        )
+
+        def fake_enroll(prospect_id, sequence_id=None):
+            calls.append((prospect_id, sequence_id))
+            return {'status': 'success'}
+
+        monkeypatch.setattr('v2.services.enrollment_service.enroll_prospect', fake_enroll)
+
+        from v2.services.enrollment_service import bulk_enroll
+        result = bulk_enroll([11, 22], sequence_id='seq_override')
+
+        assert result['enrolled'] == 2
+        assert calls == [(11, 'seq_override'), (22, 'seq_override')]
+
+    def test_bulk_service_counts_apollo_skips_as_skipped(self, monkeypatch):
+        """Apollo-level skips should not be counted as hard failures in bulk mode."""
+        monkeypatch.setattr(
+            'v2.services.prospect_service.get_prospect',
+            lambda pid: {'full_name': f'Prospect {pid}', 'email': f'p{pid}@corp.com'},
+        )
+
+        def fake_enroll(prospect_id, sequence_id=None):
+            return {
+                'status': 'error',
+                'message': 'Apollo accepted request but skipped contact: already_in_campaign',
+                'skipped': True,
+            }
+
+        monkeypatch.setattr('v2.services.enrollment_service.enroll_prospect', fake_enroll)
+
+        from v2.services.enrollment_service import bulk_enroll
+        result = bulk_enroll([11], sequence_id='seq_override')
+
+        assert result['enrolled'] == 0
+        assert result['failed'] == 0
+        assert result['skipped'] == 1
+
+
+# =========================================================================
+# 11. Enrollment uses deterministic draft per step
 # =========================================================================
 
 class TestEnrollmentDraftDedup:
@@ -701,7 +780,7 @@ class TestEnrollmentDraftDedup:
 
 
 # =========================================================================
-# 10. Fallback draft generation is visible and readable
+# 12. Fallback draft generation is visible and readable
 # =========================================================================
 
 class TestDraftFallbackVisibility:

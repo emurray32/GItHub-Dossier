@@ -1361,9 +1361,18 @@ function DraftReview({ workspace, toast, actionsRef, onAllApproved }) {
     const actionableProspects = prospects.filter(p => !p.do_not_contact);
     const actionableProspectIds = actionableProspects.map(p => p.id);
     const actionableProspectKey = actionableProspectIds.join(',');
+    const prospectDraftsAreApproved = (prospectDrafts) =>
+        Boolean(prospectDrafts && prospectDrafts.length)
+        && prospectDrafts.every(d => ['approved', 'enrolled'].includes(d.status));
+    const derivedApprovedProspectIds = new Set(serverApprovedProspectIds);
+    actionableProspects.forEach(p => {
+        const prospectDrafts = drafts[p.id] || workspace.drafts.filter(d => d.prospect_id === p.id);
+        if (prospectDraftsAreApproved(prospectDrafts)) derivedApprovedProspectIds.add(p.id);
+    });
+    const derivedApprovedKey = [...derivedApprovedProspectIds].sort((a, b) => a - b).join(',');
 
     useEffect(() => {
-        const nextApproved = new Set(serverApprovedProspectIds);
+        const nextApproved = new Set(derivedApprovedProspectIds);
         setApprovedProspects(prev => {
             if (prev.size === nextApproved.size && [...prev].every(id => nextApproved.has(id))) {
                 return prev;
@@ -1385,7 +1394,7 @@ function DraftReview({ workspace, toast, actionsRef, onAllApproved }) {
             return firstPendingIdx >= 0 ? firstPendingIdx : 0;
         });
         if (everyoneApproved && onAllApproved) onAllApproved();
-    }, [serverApprovedKey, actionableProspectKey, onAllApproved]);
+    }, [derivedApprovedKey, serverApprovedKey, actionableProspectKey, onAllApproved]);
 
     // Track per-prospect sequence overrides
     const [prospectSequences, setProspectSequences] = useState(() => {
@@ -1556,6 +1565,13 @@ function DraftReview({ workspace, toast, actionsRef, onAllApproved }) {
             for (const id of allDraftIds) {
                 await apiFetch(`/v2/api/drafts/${id}/approve`, { method: 'POST' });
             }
+            setDrafts(prev => {
+                const updated = {};
+                for (const [pid, pidDrafts] of Object.entries(prev)) {
+                    updated[pid] = pidDrafts.map(d => ({ ...d, status: 'approved' }));
+                }
+                return updated;
+            });
             setAllApproved(true);
             toast('All drafts approved');
             if (onAllApproved) onAllApproved();
@@ -1616,8 +1632,9 @@ function DraftReview({ workspace, toast, actionsRef, onAllApproved }) {
         const openNoiseModal = () => setShowNoiseModal(true);
         const approveCurrent = () => {
             const p = actionableProspects[focusedProspectIdx];
-            if (!p || approvedProspects.has(p.id)) return;
+            if (!p) return;
             const pDrafts = drafts[p.id] || workspace.drafts.filter(d => d.prospect_id === p.id);
+            if (approvedProspects.has(p.id) || prospectDraftsAreApproved(pDrafts)) return;
             if (!pDrafts.some(d => d.id && d.body)) {
                 toast('Generate a draft first before approving', 'error');
                 return;
@@ -1644,6 +1661,10 @@ function DraftReview({ workspace, toast, actionsRef, onAllApproved }) {
                 });
                 await apiFetch(`/v2/api/drafts/${d.id}/approve`, { method: 'POST' });
             }
+            setDrafts(prev => ({
+                ...prev,
+                [prospectId]: approveableDrafts.map(d => ({ ...d, status: 'approved' })),
+            }));
             const nextApproved = new Set([...approvedProspects, prospectId]);
             setApprovedProspects(nextApproved);
             toast(`Approved ${(actionableProspects.find(p => p.id === prospectId)?.first_name) || 'prospect'}'s drafts`);
@@ -1742,7 +1763,7 @@ function DraftReview({ workspace, toast, actionsRef, onAllApproved }) {
                 const prospectDrafts = drafts[prospect.id] || workspace.drafts.filter(d => d.prospect_id === prospect.id);
                 const currentStep = activeSteps[prospect.id] || 1;
                 const activeDraft = prospectDrafts.find(d => (d.sequence_step || d.step_number) === currentStep) || prospectDrafts[0];
-                const isApproved = approvedProspects.has(prospect.id);
+                const isApproved = approvedProspects.has(prospect.id) || prospectDraftsAreApproved(prospectDrafts);
 
                 return (
                     <div>
@@ -1916,9 +1937,8 @@ function DraftReview({ workspace, toast, actionsRef, onAllApproved }) {
                     onCancel={() => setShowEnrollModal(false)}
                     onConfirm={() => {
                         setShowEnrollModal(false);
-                        setPostAction('enrolled');
                         // Trigger actual enrollment via the Enrollment component
-                        if (actionsRef?.current?.enrollAll) actionsRef.current.enrollAll();
+                        if (actionsRef?.current?.enrollAll) actionsRef.current.enrollAll(includedProspects.map(p => p.id));
                     }}
                 />
             )}
@@ -2017,7 +2037,15 @@ function NoiseConfirmModal({ companyName, onCancel, onConfirm }) {
 
 function Enrollment({ workspace, onNextSignal, toast, actionsRef }) {
     const prospects = (workspace.prospects || []).filter(p => !p.do_not_contact);
-    const [statuses, setStatuses] = useState({});
+    const [statuses, setStatuses] = useState(() => {
+        const initial = {};
+        prospects.forEach(p => {
+            if (['enrolled', 'sequence_complete'].includes(p.enrollment_status)) {
+                initial[p.id] = 'enrolled';
+            }
+        });
+        return initial;
+    });
     const [errors, setErrors] = useState({});
     const [bulkResults, setBulkResults] = useState(null);
     const [enrollingAll, setEnrollingAll] = useState(false);
@@ -2047,11 +2075,21 @@ function Enrollment({ workspace, onNextSignal, toast, actionsRef }) {
         }
     };
 
-    const handleEnrollAll = async () => {
+    const handleEnrollAll = async (selectedProspectIds = null) => {
         setEnrollingAll(true);
         setBulkResults(null);
-        const remaining = prospects.filter(p => statuses[p.id] !== 'enrolled');
+        const selectedIdSet = new Set(Array.isArray(selectedProspectIds) ? selectedProspectIds : []);
+        const targetProspects = selectedIdSet.size > 0
+            ? prospects.filter(p => selectedIdSet.has(p.id))
+            : prospects;
+        const remaining = targetProspects.filter(p => statuses[p.id] !== 'enrolled');
         const ids = remaining.map(p => p.id);
+
+        if (ids.length === 0) {
+            setEnrollingAll(false);
+            toast('All selected prospects are already enrolled', 'info');
+            return;
+        }
 
         // Mark all as enrolling
         const enrollingMap = {};
@@ -2061,7 +2099,7 @@ function Enrollment({ workspace, onNextSignal, toast, actionsRef }) {
         try {
             const resp = await apiFetch('/v2/api/enrollment/bulk', {
                 method: 'POST',
-                body: JSON.stringify({ prospect_ids: ids }),
+                body: JSON.stringify({ prospect_ids: ids, sequence_id: sequenceId }),
             });
 
             // Apply per-prospect results
@@ -2075,7 +2113,8 @@ function Enrollment({ workspace, onNextSignal, toast, actionsRef }) {
             setErrors(prev => ({ ...prev, ...newErrors }));
             setBulkResults(resp);
 
-            if ((resp.failed || 0) === 0 && (resp.skipped || 0) === 0) {
+            const selectedAllProspects = targetProspects.length === prospects.length;
+            if (selectedAllProspects && (resp.failed || 0) === 0 && (resp.skipped || 0) === 0) {
                 setAllDone(true);
             }
         } catch (err) {

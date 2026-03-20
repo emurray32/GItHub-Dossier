@@ -72,7 +72,7 @@ def enroll():
 def bulk():
     """Enroll multiple prospects.
 
-    Body: { prospect_ids: [int, ...] }
+    Body: { prospect_ids: [int, ...], sequence_id?: str }
     """
     try:
         data = request.get_json()
@@ -94,8 +94,14 @@ def bulk():
                 return _error(f'Invalid prospect_id in list: {cleaned}')
             cleaned_ids.append(cleaned)
 
+        sequence_id = data.get('sequence_id')
+        if sequence_id is not None:
+            if not isinstance(sequence_id, str) or not sequence_id.strip():
+                return _error('sequence_id must be a non-empty string')
+            sequence_id = sequence_id.strip()
+
         from v2.services.enrollment_service import bulk_enroll
-        result = bulk_enroll(cleaned_ids)
+        result = bulk_enroll(cleaned_ids, sequence_id=sequence_id)
         return _success(**result)
 
     except Exception as e:

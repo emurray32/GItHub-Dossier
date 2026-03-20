@@ -308,11 +308,12 @@ def enroll_prospect(prospect_id: int, sequence_id: Optional[str] = None) -> dict
     }
 
 
-def bulk_enroll(prospect_ids: List[int]) -> dict:
+def bulk_enroll(prospect_ids: List[int], sequence_id: Optional[str] = None) -> dict:
     """Enroll multiple prospects, collecting per-prospect results.
 
     Args:
         prospect_ids: list of prospect ids to enroll
+        sequence_id: optional Apollo sequence/emailer_campaign id override
 
     Returns:
         Dict with enrolled/failed/skipped counts and a details list with
@@ -332,7 +333,7 @@ def bulk_enroll(prospect_ids: List[int]) -> dict:
         email = (meta or {}).get('email', '')
 
         try:
-            result = enroll_prospect(pid)
+            result = enroll_prospect(pid, sequence_id=sequence_id)
             if result.get('status') == 'success':
                 enrolled += 1
                 details.append({
@@ -345,7 +346,7 @@ def bulk_enroll(prospect_ids: List[int]) -> dict:
             else:
                 error_msg = result.get('message', 'Enrollment failed')
                 # Distinguish skipped (already enrolled / DNC) from real failures
-                if 'already has status' in error_msg or 'do-not-contact' in error_msg:
+                if result.get('skipped') or 'already has status' in error_msg or 'do-not-contact' in error_msg:
                     skipped += 1
                 else:
                     failed += 1
