@@ -7,12 +7,13 @@ LLM generation uses the shared llm_client module (Gemini Flash primary, OpenAI f
 """
 import json
 import logging
+import os
 import re
 from typing import Optional, List
 
 from v2.db import (
     db_connection, insert_returning_id, row_to_dict, rows_to_dicts,
-    safe_json_dumps,
+    safe_json_dumps, safe_json_loads,
 )
 from v2.services.llm_client import llm_generate as _llm_generate, get_active_provider, get_active_model
 
@@ -79,11 +80,27 @@ _STEP_TEMPLATES = {
 }
 
 
-def _generate_template_draft(step: int, prospect: dict, signal: dict) -> dict:
+def _resolve_fallback_sender_name(user_email: Optional[str] = None) -> str:
+    """Derive a readable sender name for fallback drafts."""
+    email = (user_email or os.environ.get('APOLLO_SENDER_EMAIL') or '').strip()
+    if not email or '@' not in email:
+        return 'Phrase'
+
+    local_part = email.split('@', 1)[0]
+    first_token = re.split(r'[._+-]+', local_part)[0].strip()
+    return first_token.title() if first_token else 'Phrase'
+
+
+def _generate_template_draft(
+    step: int,
+    prospect: dict,
+    signal: dict,
+    sender_name: Optional[str] = None,
+) -> dict:
     """Generate a template-based draft for one sequence step.
 
-    Apollo dynamic variables ({{first_name}}, {{company}}, {{sender_first_name}})
-    are LEFT as-is — Apollo resolves them at send time.
+    Fallback drafts are shown directly in the UI, so resolve the obvious
+    placeholders to readable copy instead of leaking template variables.
     """
     tmpl = _STEP_TEMPLATES.get(step, _STEP_TEMPLATES[4])
     hook = "Your team seems to be building out localization infrastructure."
@@ -97,8 +114,19 @@ def _generate_template_draft(step: int, prospect: dict, signal: dict) -> dict:
             hook = f"I came across some {sig_type} activity at {{{{company}}}} -- {desc[:100]}"
         elif desc:
             hook = f"I came across some interesting activity at {{{{company}}}} -- {desc[:120]}"
-    subject = tmpl['subject']
+    company = (
+        prospect.get('company_name')
+        or (signal or {}).get('company_name')
+        or 'your team'
+    )
+    first_name = prospect.get('first_name') or prospect.get('full_name') or 'there'
+    sender_name = sender_name or 'Phrase'
+
+    subject = tmpl['subject'].replace('{{company}}', company)
     body = tmpl['body'].replace('{hook}', hook)
+    body = body.replace('{{company}}', company)
+    body = body.replace('{{first_name}}', first_name)
+    body = body.replace('{{sender_first_name}}', sender_name)
     return {'subject': subject, 'body': body}
 
 
@@ -339,24 +367,12 @@ def generate_drafts(
     # Build system prompt
     system_prompt = _build_system_prompt(writing_context)
 
-    # Clean up ALL prior non-enrolled drafts for this prospect.
-    # This includes previously approved drafts — regeneration supersedes them.
-    # Only enrolled drafts (already pushed to Apollo) are preserved.
-    with db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            DELETE FROM drafts
-            WHERE prospect_id = ? AND status != 'enrolled'
-        ''', (prospect_id,))
-        deleted = cursor.rowcount if hasattr(cursor, 'rowcount') else 0
-        if deleted:
-            logger.info("[DRAFT] Cleaned up %d old drafts for prospect %d", deleted, prospect_id)
-        conn.commit()
-
     created_drafts = []
     active_provider = get_active_provider()
     active_model = get_active_model()
     thread_subject = None  # For single-thread sequences, reuse step 1's subject
+    sender_name = _resolve_fallback_sender_name(user_email)
+    pending_drafts = []
 
     for step in range(1, num_steps + 1):
         # Try LLM generation first
@@ -368,14 +384,17 @@ def generate_drafts(
             subject = parsed['subject']
             body = parsed['body']
             generated_by = active_provider
+            generation_model = active_model
             generation_notes = None
         else:
             # Fallback to template-based generation
-            template_result = _generate_template_draft(step, prospect, signal)
+            template_result = _generate_template_draft(
+                step, prospect, signal, sender_name=sender_name
+            )
             subject = template_result['subject']
             body = template_result['body']
             generated_by = 'template'
-            active_model = 'template'
+            generation_model = 'template'
             generation_notes = 'LLM unavailable — generated from template. Review before approving.'
 
         # Single-thread: reuse step 1's subject for all subsequent steps
@@ -385,7 +404,6 @@ def generate_drafts(
             elif thread_subject:
                 subject = thread_subject
 
-        # Save draft to DB
         generation_context = safe_json_dumps({
             'prospect_id': prospect_id,
             'signal_id': signal_id,
@@ -395,23 +413,7 @@ def generate_drafts(
             'generation_notes': generation_notes,
         })
 
-        with db_connection() as conn:
-            cursor = conn.cursor()
-            draft_id = insert_returning_id(cursor, '''
-                INSERT INTO drafts (
-                    prospect_id, signal_id, campaign_id, sequence_step,
-                    subject, body, generated_by, generation_model,
-                    generation_context, status
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'generated')
-            ''', (
-                prospect_id, signal_id, campaign_id, step,
-                subject, body, generated_by, active_model,
-                generation_context,
-            ))
-            conn.commit()
-
-        draft = {
-            'id': draft_id,
+        pending_drafts.append({
             'prospect_id': prospect_id,
             'signal_id': signal_id,
             'campaign_id': campaign_id,
@@ -419,13 +421,46 @@ def generate_drafts(
             'subject': subject,
             'body': body,
             'generated_by': generated_by,
-            'generation_model': active_model,
+            'generation_model': generation_model,
             'status': 'generated',
             'generation_notes': generation_notes,
-        }
-        created_drafts.append(draft)
-        logger.info("[DRAFT] Generated draft %d (step %d) for prospect %d",
-                     draft_id, step, prospect_id)
+            'generation_context': generation_context,
+        })
+
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            DELETE FROM drafts
+            WHERE prospect_id = ? AND status != 'enrolled'
+        ''', (prospect_id,))
+        deleted = cursor.rowcount if hasattr(cursor, 'rowcount') else 0
+        if deleted:
+            logger.info("[DRAFT] Cleaned up %d old drafts for prospect %d", deleted, prospect_id)
+
+        for draft in pending_drafts:
+            draft_id = insert_returning_id(cursor, '''
+                INSERT INTO drafts (
+                    prospect_id, signal_id, campaign_id, sequence_step,
+                    subject, body, generated_by, generation_model,
+                    generation_context, status
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'generated')
+            ''', (
+                draft['prospect_id'],
+                draft['signal_id'],
+                draft['campaign_id'],
+                draft['sequence_step'],
+                draft['subject'],
+                draft['body'],
+                draft['generated_by'],
+                draft['generation_model'],
+                draft['generation_context'],
+            ))
+            draft['id'] = draft_id
+            created_drafts.append(draft)
+            logger.info("[DRAFT] Generated draft %d (step %d) for prospect %d",
+                         draft_id, draft['sequence_step'], prospect_id)
+
+        conn.commit()
 
     # Update prospect enrollment status to 'drafting'
     from v2.services.prospect_service import update_prospect_status
@@ -715,9 +750,44 @@ def get_drafts_for_prospect(prospect_id: int) -> List[dict]:
         cursor.execute('''
             SELECT * FROM drafts
             WHERE prospect_id = ?
-            ORDER BY sequence_step ASC
+            ORDER BY sequence_step ASC, updated_at DESC, created_at DESC, id DESC
         ''', (prospect_id,))
-        return rows_to_dicts(cursor.fetchall())
+        return collapse_draft_versions(rows_to_dicts(cursor.fetchall()))
+
+
+def collapse_draft_versions(
+    drafts: List[dict],
+    key_fields: tuple = ('sequence_step',),
+) -> List[dict]:
+    """Keep only the newest draft for each logical step/key."""
+    normalized = []
+    for draft in drafts or []:
+        hydrated = dict(draft)
+        if not hydrated.get('generation_notes'):
+            context = safe_json_loads(hydrated.get('generation_context'), default={}) or {}
+            if isinstance(context, dict) and context.get('generation_notes'):
+                hydrated['generation_notes'] = context['generation_notes']
+        normalized.append(hydrated)
+
+    latest_by_key = {}
+    ranked = sorted(
+        normalized,
+        key=lambda d: (
+            d.get('updated_at') or d.get('created_at') or '',
+            d.get('id') or 0,
+        ),
+        reverse=True,
+    )
+
+    for draft in ranked:
+        key = tuple(draft.get(field) for field in key_fields)
+        if key not in latest_by_key:
+            latest_by_key[key] = draft
+
+    return sorted(
+        latest_by_key.values(),
+        key=lambda d: tuple(d.get(field) or 0 for field in key_fields),
+    )
 
 
 def get_draft(draft_id: int) -> Optional[dict]:

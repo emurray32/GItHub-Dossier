@@ -552,7 +552,52 @@ class TestDuplicateDraftPrevention:
 
 
 # =========================================================================
-# 8. Enrollment uses deterministic draft per step
+# 8. Draft read-paths surface only the latest version per step
+# =========================================================================
+
+class TestDraftReadDedup:
+    """Duplicate drafts should be collapsed before the UI consumes them."""
+
+    def test_get_signal_workspace_dedupes_duplicate_steps(self, test_db):
+        """Workspace payload should only expose the newest draft per step."""
+        account_id = _seed_account(test_db, company_name='Figma')
+        signal_id = _seed_signal(test_db, account_id)
+        prospect_id = _seed_prospect(test_db, account_id, signal_id, full_name='Dave Capra')
+
+        conn = sqlite3.connect(test_db)
+        conn.row_factory = sqlite3.Row
+        conn.execute(
+            """INSERT INTO drafts (prospect_id, signal_id, sequence_step, status,
+               subject, body, updated_at) VALUES (?, ?, 1, 'generated', 'Old Subject',
+               'Old Body', '2025-01-01 00:00:00')""",
+            (prospect_id, signal_id),
+        )
+        conn.execute(
+            """INSERT INTO drafts (prospect_id, signal_id, sequence_step, status,
+               subject, body, updated_at) VALUES (?, ?, 1, 'generated', 'New Subject',
+               'New Body', '2025-06-01 00:00:00')""",
+            (prospect_id, signal_id),
+        )
+        conn.execute(
+            """INSERT INTO drafts (prospect_id, signal_id, sequence_step, status,
+               subject, body, updated_at) VALUES (?, ?, 2, 'generated', 'Step 2',
+               'Step 2 Body', '2025-06-01 00:00:00')""",
+            (prospect_id, signal_id),
+        )
+        conn.commit()
+        conn.close()
+
+        from v2.services.signal_service import get_signal_workspace
+        workspace = get_signal_workspace(signal_id)
+
+        assert [(d['sequence_step'], d['subject']) for d in workspace['drafts']] == [
+            (1, 'New Subject'),
+            (2, 'Step 2'),
+        ]
+
+
+# =========================================================================
+# 9. Enrollment uses deterministic draft per step
 # =========================================================================
 
 class TestEnrollmentDraftDedup:
@@ -613,7 +658,55 @@ class TestEnrollmentDraftDedup:
 
 
 # =========================================================================
-# 9. Raw exception strings not leaked in 500 responses
+# 10. Fallback draft generation is visible and readable
+# =========================================================================
+
+class TestDraftFallbackVisibility:
+    """Fallback draft generation should not look like a silent success."""
+
+    def test_generate_route_surfaces_fallback_warning(self, flask_app, test_db, monkeypatch):
+        """Template fallback should be readable and explicitly disclosed."""
+        account_id = _seed_account(test_db, company_name='Figma')
+        signal_id = _seed_signal(test_db, account_id, description='translation key naming')
+        prospect_id = _seed_prospect(
+            test_db,
+            account_id,
+            signal_id,
+            email='dave@figma.com',
+            full_name='Dave Capra',
+        )
+
+        import v2.services.draft_service as draft_service
+
+        monkeypatch.setattr(draft_service, '_llm_generate', lambda *args, **kwargs: None)
+        monkeypatch.setenv('APOLLO_SENDER_EMAIL', 'alex.rep@phrase.com')
+
+        resp = flask_app.post('/v2/api/drafts/generate', json={
+            'prospect_id': prospect_id,
+            'signal_id': signal_id,
+        })
+        assert resp.status_code == 200
+
+        data = resp.get_json()
+        assert 'fallback drafts' in data['message']
+        assert len(data['drafts']) == 3
+
+        step_one = data['drafts'][0]
+        assert step_one['generation_notes']
+        assert '{{company}}' not in step_one['subject']
+        assert '{{first_name}}' not in step_one['body']
+        assert '{{sender_first_name}}' not in step_one['body']
+        assert 'Figma' in step_one['subject']
+        assert 'Dave Capra' in step_one['body']
+        assert 'Alex' in step_one['body']
+
+        from v2.services.signal_service import get_signal_workspace
+        workspace = get_signal_workspace(signal_id)
+        assert workspace['drafts'][0]['generation_notes']
+
+
+# =========================================================================
+# 11. Raw exception strings not leaked in 500 responses
 # =========================================================================
 
 class TestExceptionHardening:

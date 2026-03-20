@@ -87,7 +87,10 @@ def generate():
 
         from v2.services.draft_service import generate_drafts
         drafts = generate_drafts(prospect_id, signal_id, campaign_id, sequence_config_override=sequence_config)
-        return _success(drafts=_serialize_list(drafts), count=len(drafts))
+        message = None
+        if any(d.get('generation_notes') for d in drafts):
+            message = 'LLM unavailable — generated fallback drafts. Review carefully before approving.'
+        return _success(drafts=_serialize_list(drafts), count=len(drafts), message=message)
 
     except ValueError as e:
         return _error(str(e), 404)

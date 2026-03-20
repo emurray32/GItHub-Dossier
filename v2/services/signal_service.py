@@ -206,9 +206,13 @@ def get_signal_workspace(signal_id: int) -> Optional[dict]:
             placeholders = ', '.join(['?'] * len(prospect_ids))
             cursor.execute(f'''
                 SELECT * FROM drafts WHERE prospect_id IN ({placeholders})
-                ORDER BY prospect_id, sequence_step
+                ORDER BY prospect_id, sequence_step, updated_at DESC, created_at DESC, id DESC
             ''', tuple(prospect_ids))
-            drafts = rows_to_dicts(cursor.fetchall())
+            from v2.services.draft_service import collapse_draft_versions
+            drafts = collapse_draft_versions(
+                rows_to_dicts(cursor.fetchall()),
+                key_fields=('prospect_id', 'sequence_step'),
+            )
 
         # Writing preferences
         cursor.execute("SELECT preference_key, preference_value FROM writing_preferences")

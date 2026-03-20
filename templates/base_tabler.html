@@ -41,7 +41,7 @@
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link {% if request.endpoint == 'contributors' %}active{% endif %}" href="{{ url_for('contributors') }}">
+                            <a class="nav-link {% if request.endpoint == 'contributors' %}active{% endif %}" href="/contributors">
                                 <span class="nav-link-icon"><i class="ti ti-users"></i></span>
                                 <span class="nav-link-title">Contacts</span>
                             </a>
@@ -53,7 +53,7 @@
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link {% if request.endpoint == 'settings' %}active{% endif %}" href="{{ url_for('settings') }}">
+                            <a class="nav-link {% if request.endpoint == 'settings' %}active{% endif %}" href="/settings">
                                 <span class="nav-link-icon"><i class="ti ti-settings"></i></span>
                                 <span class="nav-link-title">Settings</span>
                             </a>

@@ -1235,13 +1235,21 @@ function PersonaSearch({ workspace, onProspectsSaved, toast, actionsRef }) {
                     toast(`No contacts found (${candidates} candidates checked)`, 'info');
                 }
             } else {
+                const foundCount = people.length;
                 const unverifiedCount = people.filter(p => !p.email_verified).length;
-                const msg = `Found & saved ${savedCount} contact${savedCount !== 1 ? 's' : ''}` +
-                    (unverifiedCount > 0 ? ` (${unverifiedCount} unverified)` : '') +
-                    ' — ready for drafts'
+                let msg = '';
+                if (savedCount === 0) {
+                    msg = `Found ${foundCount} contact${foundCount !== 1 ? 's' : ''} already in the workspace`;
+                } else if (savedCount === foundCount) {
+                    msg = `Found & saved ${savedCount} contact${savedCount !== 1 ? 's' : ''}`;
+                } else {
+                    msg = `Found ${foundCount} contact${foundCount !== 1 ? 's' : ''} and saved ${savedCount} new`;
+                }
+                msg += (unverifiedCount > 0 ? ` (${unverifiedCount} unverified)` : '');
+                msg += ' — ready for drafts';
                 toast(msg);
                 // Auto-refresh workspace to show saved prospects in draft section
-                if (onProspectsSaved) onProspectsSaved();
+                if (onProspectsSaved) await onProspectsSaved();
             }
         } catch (err) {
             toast(err.message, 'error');
@@ -1786,6 +1794,11 @@ function DraftReview({ workspace, toast, actionsRef, onAllApproved }) {
                                                 readOnly={isApproved}
                                                 onBlur={e => { if (activeDraft.id && !isApproved && e.target.value !== activeDraft.subject) handleDraftEdit(activeDraft.id, 'subject', e.target.value); }}
                                                 className={`w-full text-sm font-medium border border-slate-200 rounded-md px-3 py-1.5 mb-1.5 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500/20 ${isApproved ? 'bg-green-50 border-green-200' : ''}`} />
+                                        )}
+                                        {activeDraft.generation_notes && (
+                                            <div className="mb-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                                                {activeDraft.generation_notes}
+                                            </div>
                                         )}
                                         <AutoTextarea
                                             value={activeDraft.body || ''}
@@ -2438,15 +2451,16 @@ function Workspace({ signalId, signalIndex, totalSignals, onMarkNoise, onSkip, o
                 {/* Persona Search */}
                 <PersonaSearch workspace={workspace} onProspectsSaved={async () => {
                     const data = await apiFetch(`/v2/api/signals/${signalId}`);
-                    setWorkspace(data);
                     // Auto-generate drafts for all prospects that don't have any
                     const prospects = data?.prospects || [];
                     const existingDrafts = data?.drafts || [];
                     const prospectIdsWithDrafts = new Set(existingDrafts.map(d => d.prospect_id));
+                    let generatedAny = false;
+                    let fallbackGenerated = false;
                     for (const p of prospects) {
                         if (!prospectIdsWithDrafts.has(p.id) && !p.do_not_contact) {
                             try {
-                                await apiFetch('/v2/api/drafts/generate', {
+                                const generated = await apiFetch('/v2/api/drafts/generate', {
                                     method: 'POST',
                                     body: JSON.stringify({
                                         prospect_id: p.id,
@@ -2459,16 +2473,26 @@ function Workspace({ signalId, signalIndex, totalSignals, onMarkNoise, onSkip, o
                                             : { num_steps: 4, single_thread: true },
                                     }),
                                 });
+                                generatedAny = true;
+                                if ((generated.drafts || []).some(d => d.generation_notes)) {
+                                    fallbackGenerated = true;
+                                }
                             } catch (err) {
                                 toast(`Draft gen failed for ${p.first_name || 'prospect'}: ${err.message}`, 'error');
                             }
                         }
                     }
-                    // Reload once more to pick up generated drafts
-                    if (prospects.some(p => !prospectIdsWithDrafts.has(p.id) && !p.do_not_contact)) {
+                    if (generatedAny) {
                         const refreshed = await apiFetch(`/v2/api/signals/${signalId}`);
                         setWorkspace(refreshed);
-                        toast('Contacts saved and drafts generated');
+                        toast(
+                            fallbackGenerated
+                                ? 'Contacts saved and fallback drafts generated — review carefully before approving'
+                                : 'Contacts saved and drafts generated',
+                            fallbackGenerated ? 'info' : undefined
+                        );
+                    } else {
+                        setWorkspace(data);
                     }
                 }} toast={toast} actionsRef={actionsRef} />
 
