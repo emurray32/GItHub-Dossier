@@ -18,12 +18,17 @@ Tests:
 14. Account status route uses cascade-aware helpers (noise/sequenced/revisit)
 15. Personal email filter direction (business emails kept, personal rejected)
 16. Draft generation works without campaign_id
+17. Enrollment panel preserves skipped terminal state and completion CTA
 """
 import json
 import sqlite3
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+
+
+APP_HTML = Path(__file__).resolve().parents[1] / 'templates/v2/app.html'
 
 
 # ---------------------------------------------------------------------------
@@ -718,8 +723,67 @@ class TestBulkEnrollmentSequenceOverride:
         assert result['skipped'] == 1
 
 
+class TestEnrollmentSequenceResolution:
+    """Enrollment should respect stored per-prospect sequence choices."""
+
+    def test_resolve_sequence_prefers_prospect_override_over_shared_fallback(self):
+        """A review-selected sequence override should beat the shared enroll fallback."""
+        from v2.services.enrollment_service import _resolve_sequence_id
+
+        sequence_id = _resolve_sequence_id(
+            {
+                'id': 99,
+                'sequence_config_override': json.dumps({
+                    'sequence_id': 'seq_override',
+                    'sequence_name': 'Custom Override',
+                }),
+            },
+            [],
+            fallback_sequence_id='seq_shared',
+        )
+
+        assert sequence_id == 'seq_override'
+
+    def test_resolve_sequence_uses_shared_fallback_without_override(self):
+        """The shared enrollment override should still work when no per-prospect override exists."""
+        from v2.services.enrollment_service import _resolve_sequence_id
+
+        sequence_id = _resolve_sequence_id(
+            {'id': 100},
+            [],
+            fallback_sequence_id='seq_shared',
+        )
+
+        assert sequence_id == 'seq_shared'
+
+
 # =========================================================================
-# 11. Enrollment uses deterministic draft per step
+# 11. Enrollment panel UI/state guards
+# =========================================================================
+
+class TestEnrollmentPanelUiState:
+    """The v2 enrollment panel should treat skipped prospects as terminal."""
+
+    def test_skipped_enrollments_render_as_distinct_terminal_state(self):
+        """Skipped contacts should not be styled or tracked like failures."""
+        source = APP_HTML.read_text()
+        assert "includes('skipped contact')" in source
+        assert "newStatuses[d.prospect_id] = 'skipped';" in source
+        assert "if (s === 'skipped') return <Icon name=\"skip-forward\"" in source
+        assert "if (s === 'skipped') return 'Skipped';" in source
+        assert "!['enrolled', 'enrolling', 'skipped'].includes(statuses[p.id])" in source
+
+    def test_completion_panel_uses_actionable_count(self):
+        """The completion CTA should appear once no actionable prospects remain."""
+        source = APP_HTML.read_text()
+        assert "const actionableCount = prospects.filter(p => !terminalStatuses.includes(statuses[p.id]) && statuses[p.id] !== 'enrolling').length;" in source
+        assert "const completedCount = prospects.length - actionableCount;" in source
+        assert "toast('All selected prospects are already processed', 'info');" in source
+        assert "Enrollment complete ({completedCount}/{prospects.length} processed)" in source
+
+
+# =========================================================================
+# 12. Enrollment uses deterministic draft per step
 # =========================================================================
 
 class TestEnrollmentDraftDedup:
@@ -1165,6 +1229,55 @@ class TestDraftGenerationNoCampaign:
         data = resp.get_json()
         assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {data}"
         assert len(data.get('drafts', [])) == 3
+
+    def test_sequence_override_route_regenerates_with_campaign_zero(self, flask_app, test_db, monkeypatch):
+        """Changing a prospect sequence should still regenerate drafts when campaign_id=0."""
+        aid = _seed_account(test_db, 'RouteZeroCo')
+        sid = _seed_signal(test_db, aid, 'test signal')
+        pid = _seed_prospect(test_db, aid, sid, email='dev@routezeroco.com')
+        captured = {}
+
+        def fake_generate_drafts(prospect_id, signal_id, campaign_id, **kwargs):
+            captured['prospect_id'] = prospect_id
+            captured['signal_id'] = signal_id
+            captured['campaign_id'] = campaign_id
+            captured['sequence_config_override'] = kwargs.get('sequence_config_override')
+            return [{
+                'id': 1,
+                'prospect_id': prospect_id,
+                'signal_id': signal_id,
+                'sequence_step': 1,
+                'status': 'generated',
+                'subject': 'Hi',
+                'body': 'Body',
+            }]
+
+        monkeypatch.setattr('v2.services.draft_service.generate_drafts', fake_generate_drafts)
+
+        resp = flask_app.put(f'/v2/api/prospects/{pid}/sequence', json={
+            'sequence_config': {
+                'sequence_id': 'seq_override',
+                'sequence_name': 'Custom Sequence',
+                'num_steps': 4,
+            },
+            'regenerate': True,
+            'signal_id': sid,
+            'campaign_id': 0,
+        })
+
+        data = resp.get_json()
+        assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {data}"
+        assert captured == {
+            'prospect_id': pid,
+            'signal_id': sid,
+            'campaign_id': 0,
+            'sequence_config_override': {
+                'sequence_id': 'seq_override',
+                'sequence_name': 'Custom Sequence',
+                'num_steps': 4,
+            },
+        }
+        assert len(data.get('drafts', [])) == 1
 
     def test_generate_with_campaign_id_zero(self, flask_app, test_db):
         """POST /v2/api/drafts/generate with campaign_id=0 should treat as no campaign."""

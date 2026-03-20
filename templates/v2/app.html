@@ -2037,11 +2037,14 @@ function NoiseConfirmModal({ companyName, onCancel, onConfirm }) {
 
 function Enrollment({ workspace, onNextSignal, toast, actionsRef }) {
     const prospects = (workspace.prospects || []).filter(p => !p.do_not_contact);
+    const terminalStatuses = ['enrolled', 'skipped'];
     const [statuses, setStatuses] = useState(() => {
         const initial = {};
         prospects.forEach(p => {
             if (['enrolled', 'sequence_complete'].includes(p.enrollment_status)) {
                 initial[p.id] = 'enrolled';
+            } else if (p.enrollment_status === 'skipped') {
+                initial[p.id] = 'skipped';
             }
         });
         return initial;
@@ -2049,7 +2052,6 @@ function Enrollment({ workspace, onNextSignal, toast, actionsRef }) {
     const [errors, setErrors] = useState({});
     const [bulkResults, setBulkResults] = useState(null);
     const [enrollingAll, setEnrollingAll] = useState(false);
-    const [allDone, setAllDone] = useState(false);
     const [sequenceId, setSequenceId] = useState(workspace.campaign?.sequence_id || '699a30753ab26800215fa07e');
     const [sequenceName, setSequenceName] = useState(workspace.campaign?.sequence_name || 'Template - 4 Email (Single Thread)');
     const [showSeqPicker, setShowSeqPicker] = useState(false);
@@ -2068,6 +2070,13 @@ function Enrollment({ workspace, onNextSignal, toast, actionsRef }) {
             toast('Prospect enrolled');
             return 'enrolled';
         } catch (err) {
+            const skipped = String(err.message || '').toLowerCase().includes('skipped contact');
+            if (skipped) {
+                setStatuses(prev => ({ ...prev, [prospectId]: 'skipped' }));
+                setErrors(prev => { const n = { ...prev }; delete n[prospectId]; return n; });
+                toast(err.message, 'info');
+                return 'skipped';
+            }
             setStatuses(prev => ({ ...prev, [prospectId]: 'failed' }));
             setErrors(prev => ({ ...prev, [prospectId]: err.message }));
             toast(err.message, 'error');
@@ -2082,12 +2091,12 @@ function Enrollment({ workspace, onNextSignal, toast, actionsRef }) {
         const targetProspects = selectedIdSet.size > 0
             ? prospects.filter(p => selectedIdSet.has(p.id))
             : prospects;
-        const remaining = targetProspects.filter(p => statuses[p.id] !== 'enrolled');
+        const remaining = targetProspects.filter(p => !terminalStatuses.includes(statuses[p.id]));
         const ids = remaining.map(p => p.id);
 
         if (ids.length === 0) {
             setEnrollingAll(false);
-            toast('All selected prospects are already enrolled', 'info');
+            toast('All selected prospects are already processed', 'info');
             return;
         }
 
@@ -2106,17 +2115,18 @@ function Enrollment({ workspace, onNextSignal, toast, actionsRef }) {
             const newStatuses = {};
             const newErrors = {};
             (resp.details || []).forEach(d => {
-                newStatuses[d.prospect_id] = d.success ? 'enrolled' : 'failed';
-                if (!d.success && d.error) newErrors[d.prospect_id] = d.error;
+                if (d.skipped) {
+                    newStatuses[d.prospect_id] = 'skipped';
+                } else if (d.success) {
+                    newStatuses[d.prospect_id] = 'enrolled';
+                } else {
+                    newStatuses[d.prospect_id] = 'failed';
+                    if (d.error) newErrors[d.prospect_id] = d.error;
+                }
             });
             setStatuses(prev => ({ ...prev, ...newStatuses }));
             setErrors(prev => ({ ...prev, ...newErrors }));
             setBulkResults(resp);
-
-            const selectedAllProspects = targetProspects.length === prospects.length;
-            if (selectedAllProspects && (resp.failed || 0) === 0 && (resp.skipped || 0) === 0) {
-                setAllDone(true);
-            }
         } catch (err) {
             // Network-level failure — mark all as failed
             const failMap = {};
@@ -2128,7 +2138,9 @@ function Enrollment({ workspace, onNextSignal, toast, actionsRef }) {
         }
     };
 
-    const enrolledCount = Object.values(statuses).filter(s => s === 'enrolled').length;
+    const actionableCount = prospects.filter(p => !terminalStatuses.includes(statuses[p.id]) && statuses[p.id] !== 'enrolling').length;
+    const completedCount = prospects.length - actionableCount;
+    const allDone = actionableCount === 0;
 
     // Register enroll action on actionsRef for keyboard shortcut (E)
     useEffect(() => {
@@ -2141,6 +2153,7 @@ function Enrollment({ workspace, onNextSignal, toast, actionsRef }) {
         const s = statuses[pid];
         if (s === 'enrolling') return <Icon name="loader" size={14} className="text-brand-600" />;
         if (s === 'enrolled') return <Icon name="check" size={14} className="text-green-600" />;
+        if (s === 'skipped') return <Icon name="skip-forward" size={14} className="text-amber-500" />;
         if (s === 'failed') return <Icon name="x" size={14} className="text-red-500" />;
         return null;
     };
@@ -2149,6 +2162,7 @@ function Enrollment({ workspace, onNextSignal, toast, actionsRef }) {
         const s = statuses[pid];
         if (s === 'enrolling') return 'Enrolling...';
         if (s === 'enrolled') return 'Enrolled';
+        if (s === 'skipped') return 'Skipped';
         if (s === 'failed') return errors[pid] || 'Failed';
         return 'Pending';
     };
@@ -2158,9 +2172,9 @@ function Enrollment({ workspace, onNextSignal, toast, actionsRef }) {
             <h3 className="text-xs font-semibold text-slate-900 mb-2 flex items-center gap-1.5">
                 <Icon name="send" size={13} className="text-brand-600" />
                 Enrollment
-                {enrolledCount > 0 && (
+                {completedCount > 0 && (
                     <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full ml-2">
-                        {enrolledCount}/{prospects.length}
+                        {completedCount}/{prospects.length}
                     </span>
                 )}
             </h3>
@@ -2212,6 +2226,7 @@ function Enrollment({ workspace, onNextSignal, toast, actionsRef }) {
                     <div key={p.id}
                          className={`flex items-center justify-between py-2 px-3 rounded-md border transition-colors ${
                              statuses[p.id] === 'failed' ? 'border-red-200 bg-red-50/50' :
+                             statuses[p.id] === 'skipped' ? 'border-amber-200 bg-amber-50/60' :
                              statuses[p.id] === 'enrolled' ? 'border-green-200 bg-green-50/50' :
                              'border-slate-100 hover:bg-slate-50'
                          }`}>
@@ -2228,10 +2243,10 @@ function Enrollment({ workspace, onNextSignal, toast, actionsRef }) {
                             </div>
                         </div>
                         <div className="flex items-center gap-2 flex-shrink-0">
-                            <span className={`text-xs ${statuses[p.id] === 'enrolled' ? 'text-green-600' : statuses[p.id] === 'failed' ? 'text-red-500' : 'text-slate-400'}`}>
-                                {statuses[p.id] === 'failed' ? 'Failed' : statusLabel(p.id)}
+                            <span className={`text-xs ${statuses[p.id] === 'enrolled' ? 'text-green-600' : statuses[p.id] === 'skipped' ? 'text-amber-600' : statuses[p.id] === 'failed' ? 'text-red-500' : 'text-slate-400'}`}>
+                                {statusLabel(p.id)}
                             </span>
-                            {statuses[p.id] !== 'enrolled' && statuses[p.id] !== 'enrolling' && (
+                            {!['enrolled', 'enrolling', 'skipped'].includes(statuses[p.id]) && (
                                 <button onClick={() => handleEnroll(p.id)}
                                     className="px-3 py-1 text-xs font-medium text-brand-600 border border-brand-200 rounded-md hover:bg-brand-50 transition-all">
                                     {statuses[p.id] === 'failed' ? 'Retry' : 'Enroll'}
@@ -2242,13 +2257,13 @@ function Enrollment({ workspace, onNextSignal, toast, actionsRef }) {
                 ))}
             </div>
 
-            {!allDone && enrolledCount < prospects.length && (
+            {!allDone && actionableCount > 0 && (
                 <button onClick={handleEnrollAll} disabled={enrollingAll}
                     className="mt-3 w-full px-4 py-2 bg-brand-600 text-white text-sm font-medium rounded-md hover:bg-brand-700 transition-all duration-150 flex items-center justify-center gap-2 disabled:opacity-50">
                     {enrollingAll ? (
                         <><Icon name="loader" size={16} /> Enrolling...</>
                     ) : (
-                        <><Icon name="send" size={16} /> Enroll {prospects.length - enrolledCount} <Kbd>E</Kbd></>
+                        <><Icon name="send" size={16} /> Enroll {actionableCount} <Kbd>E</Kbd></>
                     )}
                 </button>
             )}
@@ -2257,7 +2272,7 @@ function Enrollment({ workspace, onNextSignal, toast, actionsRef }) {
                 <div className="mt-4 text-center">
                     <div className="text-green-600 text-sm font-medium mb-2 flex items-center justify-center gap-1.5">
                         <Icon name="check" size={16} />
-                        Enrollment complete ({enrolledCount}/{prospects.length} enrolled)
+                        Enrollment complete ({completedCount}/{prospects.length} processed)
                     </div>
                     <button onClick={onNextSignal}
                         className="px-6 py-2 bg-brand-600 text-white text-sm font-medium rounded-md hover:bg-brand-700 transition-all inline-flex items-center gap-2">
