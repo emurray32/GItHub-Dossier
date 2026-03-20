@@ -12,6 +12,11 @@ from v2.db import db_connection, insert_returning_id, row_to_dict, rows_to_dicts
 logger = logging.getLogger(__name__)
 
 
+def _is_enrollment_approved_status(status: Optional[str]) -> bool:
+    """Statuses that mean a draft is ready for enrollment."""
+    return status in ('approved', 'enrolled')
+
+
 def create_signal(
     account_id: int,
     signal_description: str,
@@ -214,6 +219,26 @@ def get_signal_workspace(signal_id: int) -> Optional[dict]:
                 key_fields=('prospect_id', 'sequence_step'),
             )
 
+        drafts_by_prospect = {}
+        for draft in drafts:
+            drafts_by_prospect.setdefault(draft.get('prospect_id'), []).append(draft)
+
+        approved_prospect_ids = []
+        for prospect in prospects:
+            prospect_drafts = drafts_by_prospect.get(prospect.get('id'), [])
+            all_drafts_approved = bool(prospect_drafts) and all(
+                _is_enrollment_approved_status(d.get('status'))
+                for d in prospect_drafts
+            )
+            prospect['all_drafts_approved'] = all_drafts_approved
+            if all_drafts_approved and not prospect.get('do_not_contact'):
+                approved_prospect_ids.append(prospect['id'])
+
+        actionable_prospects = [p for p in prospects if not p.get('do_not_contact')]
+        enrollment_ready = bool(actionable_prospects) and all(
+            p.get('all_drafts_approved') for p in actionable_prospects
+        )
+
         # Writing preferences
         cursor.execute("SELECT preference_key, preference_value FROM writing_preferences")
         prefs = {r['preference_key']: r['preference_value'] for r in rows_to_dicts(cursor.fetchall())}
@@ -279,6 +304,8 @@ def get_signal_workspace(signal_id: int) -> Optional[dict]:
         'personas': personas,
         'prospects': prospects,
         'drafts': drafts,
+        'approved_prospect_ids': approved_prospect_ids,
+        'enrollment_ready': enrollment_ready,
         'writing_preferences': prefs,
         'sequences': sequences,
     }

@@ -1315,6 +1315,8 @@ function PersonaSearch({ workspace, onProspectsSaved, toast, actionsRef }) {
 
 function DraftReview({ workspace, toast, actionsRef, onAllApproved }) {
     const prospects = workspace.prospects || [];
+    const serverApprovedProspectIds = workspace.approved_prospect_ids || [];
+    const serverApprovedKey = serverApprovedProspectIds.join(',');
     const [drafts, setDrafts] = useState(() => {
         // Initialize from workspace.drafts so server-loaded drafts are editable
         const init = {};
@@ -1344,6 +1346,7 @@ function DraftReview({ workspace, toast, actionsRef, onAllApproved }) {
     const [critique, setCritique] = useState('');
     const [approving, setApproving] = useState(false);
     const [allApproved, setAllApproved] = useState(false);
+    const [approvedProspects, setApprovedProspects] = useState(() => new Set(serverApprovedProspectIds));
     const [focusedProspectIdx, setFocusedProspectIdx] = useState(0);
     const [activeSteps, setActiveSteps] = useState({});
     const [inclusions, setInclusions] = useState(() => {
@@ -1356,6 +1359,33 @@ function DraftReview({ workspace, toast, actionsRef, onAllApproved }) {
     const [postAction, setPostAction] = useState(null); // 'enrolled' | 'noise' | null
 
     const actionableProspects = prospects.filter(p => !p.do_not_contact);
+    const actionableProspectIds = actionableProspects.map(p => p.id);
+    const actionableProspectKey = actionableProspectIds.join(',');
+
+    useEffect(() => {
+        const nextApproved = new Set(serverApprovedProspectIds);
+        setApprovedProspects(prev => {
+            if (prev.size === nextApproved.size && [...prev].every(id => nextApproved.has(id))) {
+                return prev;
+            }
+            return nextApproved;
+        });
+
+        const everyoneApproved = actionableProspects.length > 0
+            && actionableProspects.every(p => nextApproved.has(p.id));
+        setAllApproved(everyoneApproved);
+        setFocusedProspectIdx(prev => {
+            if (actionableProspects.length === 0) return 0;
+            if (everyoneApproved) return Math.min(prev, actionableProspects.length - 1);
+
+            const current = actionableProspects[prev];
+            if (current && !nextApproved.has(current.id)) return prev;
+
+            const firstPendingIdx = actionableProspects.findIndex(p => !nextApproved.has(p.id));
+            return firstPendingIdx >= 0 ? firstPendingIdx : 0;
+        });
+        if (everyoneApproved && onAllApproved) onAllApproved();
+    }, [serverApprovedKey, actionableProspectKey, onAllApproved]);
 
     // Track per-prospect sequence overrides
     const [prospectSequences, setProspectSequences] = useState(() => {
@@ -1598,9 +1628,6 @@ function DraftReview({ workspace, toast, actionsRef, onAllApproved }) {
         return () => { const c = { ...actionsRef.current }; delete c.generateDrafts; delete c.approveAll; delete c.approveCurrent; delete c.nextProspect; delete c.prevProspect; delete c.jumpToProspect; delete c.nextDraftStep; delete c.toggleInclude; delete c.openEnrollModal; delete c.openNoiseModal; actionsRef.current = c; };
     });
 
-    // Per-prospect approve: approve this prospect's drafts, then advance to next
-    const [approvedProspects, setApprovedProspects] = useState(new Set());
-
     const handleApproveProspect = async (prospectId) => {
         const prospectDrafts = drafts[prospectId] || workspace.drafts.filter(d => d.prospect_id === prospectId);
         const approveableDrafts = prospectDrafts.filter(d => d.id && d.body);
@@ -1617,10 +1644,11 @@ function DraftReview({ workspace, toast, actionsRef, onAllApproved }) {
                 });
                 await apiFetch(`/v2/api/drafts/${d.id}/approve`, { method: 'POST' });
             }
-            setApprovedProspects(prev => new Set([...prev, prospectId]));
+            const nextApproved = new Set([...approvedProspects, prospectId]);
+            setApprovedProspects(nextApproved);
             toast(`Approved ${(actionableProspects.find(p => p.id === prospectId)?.first_name) || 'prospect'}'s drafts`);
             // Auto-advance to next unapproved prospect
-            const nextUnapproved = actionableProspects.findIndex((p, i) => i > focusedProspectIdx && !approvedProspects.has(p.id) && p.id !== prospectId);
+            const nextUnapproved = actionableProspects.findIndex((p, i) => i > focusedProspectIdx && !nextApproved.has(p.id));
             if (nextUnapproved >= 0) {
                 setFocusedProspectIdx(nextUnapproved);
             } else {
@@ -2387,9 +2415,11 @@ function Workspace({ signalId, signalIndex, totalSignals, onMarkNoise, onSkip, o
         if (!signalId) return;
         setLoading(true);
         setError(null);
+        setEnrollmentReady(false);
         try {
             const data = await apiFetch(`/v2/api/signals/${signalId}`);
             setWorkspace(data);
+            setEnrollmentReady(Boolean(data.enrollment_ready));
         } catch (err) {
             setError(err.message);
         } finally {
@@ -2485,6 +2515,7 @@ function Workspace({ signalId, signalIndex, totalSignals, onMarkNoise, onSkip, o
                     if (generatedAny) {
                         const refreshed = await apiFetch(`/v2/api/signals/${signalId}`);
                         setWorkspace(refreshed);
+                        setEnrollmentReady(Boolean(refreshed.enrollment_ready));
                         toast(
                             fallbackGenerated
                                 ? 'Contacts saved and fallback drafts generated — review carefully before approving'
@@ -2493,6 +2524,7 @@ function Workspace({ signalId, signalIndex, totalSignals, onMarkNoise, onSkip, o
                         );
                     } else {
                         setWorkspace(data);
+                        setEnrollmentReady(Boolean(data.enrollment_ready));
                     }
                 }} toast={toast} actionsRef={actionsRef} />
 

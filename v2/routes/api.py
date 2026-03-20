@@ -718,9 +718,10 @@ def api_list_campaigns():
         with db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute('''
-                SELECT id, name, sequence_config, campaign_type,
+                SELECT id, name, status, sequence_config, campaign_type,
                        writing_guidelines
                 FROM campaigns
+                WHERE status = 'active'
                 ORDER BY name
             ''')
             campaigns = rows_to_dicts(cursor.fetchall())

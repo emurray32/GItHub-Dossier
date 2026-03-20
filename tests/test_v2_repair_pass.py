@@ -9,12 +9,15 @@ Tests:
 5. Unverified prospects cannot be enrolled
 6. MCP-created signals use 'cowork' source (not 'manual_entry')
 7. Duplicate draft prevention — generate_drafts replaces approved drafts
-8. Enrollment uses deterministic draft per step
-9. Raw exception strings not leaked in 500 responses
-10. Flask smoke tests
-11. Account status route uses cascade-aware helpers (noise/sequenced/revisit)
-12. Personal email filter direction (business emails kept, personal rejected)
-13. Draft generation works without campaign_id
+8. Draft read-path deduplicates duplicate steps
+9. Workspace exposes reload-safe enrollment readiness
+10. Enrollment uses deterministic draft per step
+11. Fallback draft generation is explicit and readable
+12. Raw exception strings not leaked in 500 responses
+13. Flask smoke tests
+14. Account status route uses cascade-aware helpers (noise/sequenced/revisit)
+15. Personal email filter direction (business emails kept, personal rejected)
+16. Draft generation works without campaign_id
 """
 import json
 import sqlite3
@@ -597,7 +600,47 @@ class TestDraftReadDedup:
 
 
 # =========================================================================
-# 9. Enrollment uses deterministic draft per step
+# 9. Workspace exposes enrollment readiness for approved prospects
+# =========================================================================
+
+class TestWorkspaceEnrollmentReadiness:
+    """Workspace payload should expose reload-safe approval state."""
+
+    def test_workspace_marks_approved_prospects_and_enrollment_ready(self, test_db):
+        """Approved drafts should survive reload as explicit workspace state."""
+        account_id = _seed_account(test_db, company_name='Figma')
+        signal_id = _seed_signal(test_db, account_id)
+        first = _seed_prospect(test_db, account_id, signal_id, email='one@figma.com', full_name='One')
+        second = _seed_prospect(test_db, account_id, signal_id, email='two@figma.com', full_name='Two')
+
+        _seed_draft(test_db, first, signal_id, step=1, status='approved', subject='Approved')
+        _seed_draft(test_db, second, signal_id, step=1, status='generated', subject='Pending')
+
+        from v2.services.signal_service import get_signal_workspace
+
+        workspace = get_signal_workspace(signal_id)
+        by_id = {p['id']: p for p in workspace['prospects']}
+
+        assert workspace['enrollment_ready'] is False
+        assert workspace['approved_prospect_ids'] == [first]
+        assert by_id[first]['all_drafts_approved'] is True
+        assert by_id[second]['all_drafts_approved'] is False
+
+        conn = sqlite3.connect(test_db)
+        conn.execute("UPDATE drafts SET status = 'approved' WHERE prospect_id = ?", (second,))
+        conn.commit()
+        conn.close()
+
+        workspace = get_signal_workspace(signal_id)
+        by_id = {p['id']: p for p in workspace['prospects']}
+
+        assert workspace['enrollment_ready'] is True
+        assert workspace['approved_prospect_ids'] == [first, second]
+        assert by_id[second]['all_drafts_approved'] is True
+
+
+# =========================================================================
+# 10. Enrollment uses deterministic draft per step
 # =========================================================================
 
 class TestEnrollmentDraftDedup:
@@ -706,7 +749,89 @@ class TestDraftFallbackVisibility:
 
 
 # =========================================================================
-# 11. Raw exception strings not leaked in 500 responses
+# 11. Campaign surfaces stay aligned with v2 expectations
+# =========================================================================
+
+class TestCampaignSurfaceAlignment:
+    """Campaign UI/API should not leak legacy or incomplete state."""
+
+    def test_v2_campaigns_api_returns_active_campaigns_with_status(self, flask_app, test_db):
+        """The v2 campaign picker should only receive active campaigns, with status present."""
+        conn = sqlite3.connect(test_db)
+        conn.row_factory = sqlite3.Row
+        conn.execute(
+            "INSERT INTO campaigns (name, prompt, status) VALUES (?, ?, ?)",
+            ('Active Campaign', 'Prompt A', 'active'),
+        )
+        conn.execute(
+            "INSERT INTO campaigns (name, prompt, status) VALUES (?, ?, ?)",
+            ('Draft Campaign', 'Prompt B', 'draft'),
+        )
+        conn.commit()
+        conn.close()
+
+        resp = flask_app.get('/v2/api/campaigns')
+        assert resp.status_code == 200
+
+        data = resp.get_json()
+        campaigns = data['campaigns']
+        assert [c['name'] for c in campaigns] == ['Active Campaign']
+        assert campaigns[0]['status'] == 'active'
+
+    def test_campaign_edit_form_hides_null_tone(self, flask_app, test_db):
+        """A null tone should render as blank, not the literal string 'None'."""
+        conn = sqlite3.connect(test_db)
+        conn.row_factory = sqlite3.Row
+        conn.execute(
+            "INSERT INTO campaigns (name, prompt, status, tone) VALUES (?, ?, ?, ?)",
+            ('Tone Check', 'Prompt', 'active', None),
+        )
+        conn.commit()
+        campaign_id = conn.execute("SELECT last_insert_rowid() AS id").fetchone()['id']
+        conn.close()
+
+        resp = flask_app.get(f'/campaigns/{campaign_id}/edit')
+        assert resp.status_code == 200
+
+        html = resp.data.decode('utf-8')
+        assert 'id="campaign-tone"' in html
+        assert 'value="None"' not in html
+
+
+# =========================================================================
+# 12. Workspace approval state survives reloads
+# =========================================================================
+
+class TestWorkspaceApprovalState:
+    """Workspace payload should expose enough state for the v2 UI to resume cleanly."""
+
+    def test_signal_workspace_marks_enrollment_ready_when_all_actionable_prospects_are_approved(self, test_db):
+        """Approved drafts should round-trip into workspace-level enrollment readiness."""
+        account_id = _seed_account(test_db)
+        signal_id = _seed_signal(test_db, account_id)
+        approved_id = _seed_prospect(test_db, account_id, signal_id, email='approved@testcorp.com')
+        dnc_id = _seed_prospect(
+            test_db, account_id, signal_id,
+            email='dnc@testcorp.com', do_not_contact=True,
+        )
+
+        _seed_draft(test_db, approved_id, signal_id, step=1, status='approved')
+        _seed_draft(test_db, approved_id, signal_id, step=2, status='approved')
+        _seed_draft(test_db, dnc_id, signal_id, step=1, status='generated')
+
+        from v2.services.signal_service import get_signal_workspace
+        workspace = get_signal_workspace(signal_id)
+
+        assert workspace['approved_prospect_ids'] == [approved_id]
+        assert workspace['enrollment_ready'] is True
+        approved_row = next(p for p in workspace['prospects'] if p['id'] == approved_id)
+        dnc_row = next(p for p in workspace['prospects'] if p['id'] == dnc_id)
+        assert approved_row['all_drafts_approved'] is True
+        assert dnc_row['all_drafts_approved'] is False
+
+
+# =========================================================================
+# 13. Raw exception strings not leaked in 500 responses
 # =========================================================================
 
 class TestExceptionHardening:

@@ -35,7 +35,7 @@
         <div class="cf-group">
             <label for="campaign-tone">Tone</label>
             <input type="text" id="campaign-tone" class="cf-input" placeholder="e.g. Professional but warm, concise"
-                   value="{{ campaign.tone if campaign else '' }}">
+                   value="{{ '' if not campaign or not campaign.tone or campaign.tone == 'None' else campaign.tone }}">
             <p class="cf-help">Formality/tone guidance for AI-generated emails.</p>
         </div>
     </div>
@@ -263,7 +263,8 @@
         const assetsRaw = document.getElementById('campaign-assets').value.trim();
         const assets = assetsRaw ? assetsRaw.split('\n').map(a => a.trim()).filter(Boolean) : [];
         const personas = getPersonasFromForm();
-        const tone = document.getElementById('campaign-tone').value.trim();
+        const toneRaw = document.getElementById('campaign-tone').value.trim();
+        const tone = toneRaw === 'None' ? '' : toneRaw;
         const contactCap = parseInt(document.getElementById('campaign-contact-cap').value) || 20;
         const verifiedOnly = document.getElementById('campaign-verified-only').checked ? 1 : 0;
         const reviewInTool = document.getElementById('campaign-review-in-tool').checked ? 1 : 0;
