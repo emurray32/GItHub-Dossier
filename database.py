@@ -14,6 +14,16 @@ from config import Config
 # signal_verifier removed — signals are now generated externally
 
 
+def verify_signals(scan_data: dict, **_kwargs) -> dict:
+    """Legacy compatibility shim for callers that still patch signal verification.
+
+    Signal verification used to happen inside the database layer. The current
+    pipeline generates verified signals upstream, so the safest fallback is to
+    return the scan payload unchanged.
+    """
+    return scan_data
+
+
 class _ConnectionProxy:
     """Thin wrapper around a psycopg2 connection that overrides cursor() and close()."""
 
@@ -1615,7 +1625,12 @@ def calculate_tier_from_scan(scan_data: dict, skip_verification: bool = False, w
             'ENTERPRISE_SCALE': 1,
         }
 
-        maturity = scoring_v2.get('org_maturity_level', '')
+        maturity = (
+            scoring_v2.get('org_maturity_level')
+            or scoring_v2.get('org_maturity_label')
+            or ''
+        )
+        maturity = str(maturity).strip().upper().replace(' ', '_')
         maturity_label = scoring_v2.get('org_maturity_label', '')
         confidence = scoring_v2.get('confidence_percent', 0)
         readiness = scoring_v2.get('readiness_index', 0)
@@ -3458,8 +3473,55 @@ def set_setting(key: str, value: str) -> None:
 
 
 def auto_retier_if_version_changed() -> int:
-    """Legacy — scoring pipeline removed. No-op."""
-    return 0
+    """Retier accounts when the scoring fingerprint changes."""
+    from scoring import get_scoring_fingerprint
+
+    new_fingerprint = get_scoring_fingerprint()
+    old_fingerprint = get_setting('scoring_fingerprint')
+    if new_fingerprint == old_fingerprint:
+        return 0
+
+    updated = 0
+    now = datetime.now().isoformat()
+
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT ma.id, ma.current_tier, r.scan_data
+            FROM monitored_accounts ma
+            LEFT JOIN reports r ON r.id = ma.latest_report_id
+            WHERE ma.latest_report_id IS NOT NULL
+        ''')
+
+        for row in cursor.fetchall():
+            scan_raw = row['scan_data'] if isinstance(row, dict) else row[2]
+            if not scan_raw:
+                continue
+            try:
+                scan_data = json.loads(scan_raw) if isinstance(scan_raw, str) else scan_raw
+            except (TypeError, json.JSONDecodeError):
+                continue
+            if not isinstance(scan_data, dict) or not isinstance(scan_data.get('scoring_v2'), dict):
+                continue
+
+            new_tier, evidence = calculate_tier_from_scan(scan_data, skip_verification=True)
+            current_tier = row['current_tier'] if isinstance(row, dict) else row[1]
+            current_tier = current_tier if current_tier is not None else 0
+
+            if new_tier != current_tier:
+                cursor.execute('''
+                    UPDATE monitored_accounts
+                    SET current_tier = ?,
+                        status_changed_at = ?,
+                        evidence_summary = ?
+                    WHERE id = ?
+                ''', (new_tier, now, evidence, row['id'] if isinstance(row, dict) else row[0]))
+                updated += 1
+
+        conn.commit()
+
+    set_setting('scoring_fingerprint', new_fingerprint)
+    return updated
 
 
 def get_tier_audit_log(limit: int = 20) -> list:

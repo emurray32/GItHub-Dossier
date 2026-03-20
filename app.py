@@ -128,7 +128,8 @@ except ImportError:
 # SECURITY MIDDLEWARE
 # =============================================================================
 
-_PUBLIC_PREFIXES = ('/static/', '/login', '/logout',
+_PUBLIC_PREFIXES = ('/static/', '/login', '/logout', '/slack/',
+                    '/v2/api/webhooks/',
                     '/.well-known/', '/authorize', '/token', '/register',
                     '/sse', '/messages')
 _PUBLIC_ENDPOINTS = {
@@ -180,7 +181,14 @@ def enforce_csrf_protection():
     if request.method in ('GET', 'HEAD', 'OPTIONS'):
         return
 
-    if request.path in ('/authorize', '/token', '/register') or request.path.startswith(('/messages', '/.well-known')):
+    if request.path in ('/login', '/authorize', '/token', '/register') or request.path.startswith(('/messages', '/.well-known', '/v2/api/webhooks/')):
+        return
+
+    # Stateless API-key clients are not CSRF-vulnerable, and API routes should
+    # continue to work when the browser UI password is disabled.
+    if request.headers.get('X-API-Key') or request.args.get('api_key'):
+        return
+    if request.path.startswith(('/api/', '/v2/api/')) and not os.getenv('DOSSIER_UI_PASSWORD', ''):
         return
 
     origin = request.headers.get('Origin')

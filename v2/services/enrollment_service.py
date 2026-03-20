@@ -94,7 +94,7 @@ def enroll_prospect(prospect_id: int, sequence_id: Optional[str] = None) -> dict
 
     # 3. Determine sequence_id
     if not sequence_id:
-        sequence_id = _resolve_sequence_id(prospect, drafts)
+        sequence_id = _resolve_sequence_id(prospect, approved_drafts)
 
     if not sequence_id:
         return {
@@ -104,7 +104,9 @@ def enroll_prospect(prospect_id: int, sequence_id: Optional[str] = None) -> dict
 
     # 4. Apollo enrollment — follows proven v1 pattern
     try:
-        from apollo_client import apollo_api_call
+        # Import through the legacy compatibility seam so existing tests and
+        # patch points still intercept Apollo calls.
+        from apollo_pipeline import apollo_api_call
 
         # --- Step A: Resolve custom field IDs (name → Apollo field ID) ---
         field_id_map = _resolve_custom_field_ids_cached()
@@ -150,7 +152,7 @@ def enroll_prospect(prospect_id: int, sequence_id: Optional[str] = None) -> dict
         elif typed_custom_fields:
             # Update existing contact with draft content.
             update_resp = apollo_api_call(
-                'patch', f'https://api.apollo.io/api/v1/contacts/{apollo_contact_id}',
+                'put', f'https://api.apollo.io/api/v1/contacts/{apollo_contact_id}',
                 json={'typed_custom_fields': typed_custom_fields},
             )
             if update_resp.status_code not in (200, 201):
@@ -452,7 +454,7 @@ def _resolve_custom_field_ids_cached() -> dict:
         return _CACHED_FIELD_IDS
 
     try:
-        from apollo_client import resolve_custom_field_ids
+        from apollo_pipeline import resolve_custom_field_ids
         result = resolve_custom_field_ids()
         _CACHED_FIELD_IDS = result
         return _CACHED_FIELD_IDS
@@ -523,7 +525,7 @@ def _find_apollo_contact(email: str) -> Optional[str]:
     Returns the Apollo contact ID if found, else None.
     """
     try:
-        from apollo_client import apollo_api_call
+        from apollo_pipeline import apollo_api_call
         search_resp = apollo_api_call(
             'post', 'https://api.apollo.io/api/v1/contacts/search',
             json={'q_keywords': email, 'per_page': 1},
@@ -563,7 +565,7 @@ def _resolve_sender_email_account(sequence_id: str) -> Optional[str]:
 
     # 2. Global default
     try:
-        from apollo_client import resolve_email_account
+        from apollo_pipeline import resolve_email_account
         return resolve_email_account()
     except (ImportError, Exception) as e:
         logger.warning("[ENROLL] Could not resolve email account: %s", e)
