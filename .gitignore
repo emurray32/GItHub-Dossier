@@ -72,7 +72,13 @@ attached_assets/exported-zap*.json
 # Tooling artifacts
 .claude/
 .agents/
+.playwright-cli/
 dogfood-output/
+output/
 skills-lock.json
 QA_REMAINING_ITEMS.csv
 QA_REMAINING_ITEMS.xlsx
+
+# Local desktop / filesystem temp files
+data/.fuse_hidden*
+.~lock*
