@@ -5,14 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Writing Preferences - GitHub Dossier</title>
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='45' fill='%234F46E5'/><path d='M35 30h30v12H47v8h14v12H47v18H35V30z' fill='white'/></svg>">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/geist@1/dist/fonts/geist-sans/style.css">
     <link rel="stylesheet" href="/static/css/style.css">
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
             theme: {
                 extend: {
-                    fontFamily: { sans: ['Geist', 'system-ui', 'sans-serif'] },
+                    fontFamily: { sans: ['Avenir Next', 'Segoe UI', 'Helvetica Neue', 'Arial', 'sans-serif'] },
                     colors: {
                         brand: { 50:'#eef2ff', 100:'#e0e7ff', 200:'#c7d2fe', 300:'#a5b4fc', 400:'#818cf8', 500:'#6366f1', 600:'#4f46e5', 700:'#4338ca', 800:'#3730a3', 900:'#312e81' }
                     }
@@ -90,9 +89,9 @@ function App() {
 
     // Org state
     const [orgPrefs, setOrgPrefs] = useState({});
+    const [orgInitialPrefs, setOrgInitialPrefs] = useState({});
     const [orgLoading, setOrgLoading] = useState(true);
     const [orgSaving, setOrgSaving] = useState(false);
-    const [orgDirty, setOrgDirty] = useState(false);
 
     // BDR state
     const [bdrEmails, setBdrEmails] = useState([]);
@@ -103,14 +102,34 @@ function App() {
     const [newOverride, setNewOverride] = useState({ key: 'banned_phrases', value: '', override_mode: 'add' });
     const [addingSaving, setAddingSaving] = useState(false);
 
+    const normalizePrefs = (prefs) => {
+        const normalized = {};
+        const source = prefs || {};
+        const keys = new Set([...ORG_PREF_ORDER, ...Object.keys(source)]);
+        [...keys].sort().forEach(key => {
+            normalized[key] = (source[key] || '').trim();
+        });
+        return normalized;
+    };
+    const normalizeEmail = (email) => (email || '').trim().toLowerCase();
+    const uniqueSortedEmails = (emails) => Array.from(
+        new Set((emails || []).map(normalizeEmail).filter(Boolean))
+    ).sort();
+    const prefsFingerprint = (prefs) => JSON.stringify(normalizePrefs(prefs));
+    const orgDirty = prefsFingerprint(orgPrefs) !== prefsFingerprint(orgInitialPrefs);
+
     useEffect(() => {
         setOrgLoading(true);
         apiFetch('/v2/api/writing-preferences')
-            .then(data => setOrgPrefs(data.preferences || {}))
+            .then(data => {
+                const prefs = data.preferences || {};
+                setOrgPrefs(prefs);
+                setOrgInitialPrefs(prefs);
+            })
             .catch(e => showToast(e.message, 'error'))
             .finally(() => setOrgLoading(false));
         apiFetch('/v2/api/bdr-writing-preferences')
-            .then(data => setBdrEmails(data.bdr_emails || []))
+            .then(data => setBdrEmails(uniqueSortedEmails(data.bdr_emails || [])))
             .catch(() => {});
     }, []);
 
@@ -127,8 +146,11 @@ function App() {
         setOrgSaving(true);
         try {
             await apiFetch('/v2/api/writing-preferences', { method: 'PUT', body: JSON.stringify(orgPrefs) });
+            const refreshed = await apiFetch('/v2/api/writing-preferences');
+            const savedPrefs = refreshed.preferences || {};
+            setOrgPrefs(savedPrefs);
+            setOrgInitialPrefs(savedPrefs);
             showToast('Writing preferences saved');
-            setOrgDirty(false);
         } catch (e) { showToast(e.message, 'error'); }
         finally { setOrgSaving(false); }
     };
@@ -137,6 +159,7 @@ function App() {
         if (!selectedBdr || !newOverride.value.trim()) { showToast('Value is required', 'error'); return; }
         setAddingSaving(true);
         try {
+            const selectedEmail = normalizeEmail(selectedBdr);
             const data = await apiFetch(`/v2/api/bdr-writing-preferences/${encodeURIComponent(selectedBdr)}`, {
                 method: 'PUT', body: JSON.stringify(newOverride),
             });
@@ -145,7 +168,9 @@ function App() {
             showToast('Override saved');
             const reloaded = await apiFetch(`/v2/api/bdr-writing-preferences/${encodeURIComponent(selectedBdr)}`);
             setBdrPersonal(reloaded.personal || []);
-            if (!bdrEmails.includes(selectedBdr)) setBdrEmails(prev => [...prev, selectedBdr].sort());
+            const refreshedList = await apiFetch('/v2/api/bdr-writing-preferences');
+            setBdrEmails(uniqueSortedEmails(refreshedList.bdr_emails || []));
+            setSelectedBdr(selectedEmail);
         } catch (e) { showToast(e.message, 'error'); }
         finally { setAddingSaving(false); }
     };
@@ -155,8 +180,12 @@ function App() {
             await apiFetch(`/v2/api/bdr-writing-preferences/${encodeURIComponent(selectedBdr)}/${encodeURIComponent(key)}?override_mode=${mode}`, { method: 'DELETE' });
             showToast('Override removed');
             const reloaded = await apiFetch(`/v2/api/bdr-writing-preferences/${encodeURIComponent(selectedBdr)}`);
-            setBdrPersonal(reloaded.personal || []);
+            const remaining = reloaded.personal || [];
+            setBdrPersonal(remaining);
             setBdrMerged(reloaded.merged || {});
+            const refreshedList = await apiFetch('/v2/api/bdr-writing-preferences');
+            setBdrEmails(uniqueSortedEmails(refreshedList.bdr_emails || []));
+            if (remaining.length === 0) setSelectedBdr('');
         } catch (e) { showToast(e.message, 'error'); }
     };
 
@@ -214,8 +243,8 @@ function App() {
                                         })}
                                     </div>
                                     <div className="p-3 border-t border-slate-200">
-                                        <button onClick={saveOrgPrefs} disabled={orgSaving || !orgDirty}
-                                            className="w-full px-4 py-2 bg-brand-600 text-white text-sm font-medium rounded-lg hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all">
+                                    <button onClick={saveOrgPrefs} disabled={orgSaving || !orgDirty}
+                                        className="w-full px-4 py-2 bg-brand-600 text-white text-sm font-medium rounded-lg hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all">
                                             {orgSaving ? 'Saving...' : 'Save'}
                                         </button>
                                         {orgDirty && <p className="text-[10px] text-amber-600 text-center mt-1">Unsaved changes</p>}
@@ -231,7 +260,7 @@ function App() {
                                     </div>
                                     <textarea
                                         value={orgPrefs[activePrefKey] || ''}
-                                        onChange={e => { setOrgPrefs(prev => ({ ...prev, [activePrefKey]: e.target.value })); setOrgDirty(true); }}
+                                        onChange={e => setOrgPrefs(prev => ({ ...prev, [activePrefKey]: e.target.value }))}
                                         className="flex-1 w-full border border-slate-200 rounded-md px-4 py-3 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent resize-none font-sans leading-relaxed"
                                         style={{ minHeight: '200px' }}
                                         placeholder={`Enter ${(ORG_PREF_LABELS[activePrefKey] || {}).label || activePrefKey} guidelines...`}
@@ -249,16 +278,37 @@ function App() {
                             <label className="block text-sm font-semibold text-slate-800 mb-2">Select BDR</label>
                             <div className="flex gap-2">
                                 {bdrEmails.length > 0 ? (
-                                    <select value={selectedBdr} onChange={e => setSelectedBdr(e.target.value)}
+                                    <select value={selectedBdr} onChange={e => setSelectedBdr(normalizeEmail(e.target.value))}
                                         className="flex-1 border border-slate-200 rounded-md px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-500">
                                         <option value="">Choose a BDR...</option>
                                         {bdrEmails.map(em => <option key={em} value={em}>{em}</option>)}
                                     </select>
-                                ) : null}
+                                ) : (
+                                    <div className="flex-1 rounded-md border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-500">
+                                        No saved BDRs yet
+                                    </div>
+                                )}
                                 <input type="email" placeholder={bdrEmails.length > 0 ? "Or type new email..." : "Enter BDR email..."}
-                                    onKeyDown={e => { if (e.key === 'Enter' && e.target.value.trim()) { setSelectedBdr(e.target.value.trim()); e.target.value = ''; } }}
+                                    onKeyDown={e => { if (e.key === 'Enter' && e.target.value.trim()) { setSelectedBdr(normalizeEmail(e.target.value)); e.target.value = ''; } }}
                                     className="flex-1 border border-slate-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
                             </div>
+                            {selectedBdr && (
+                                <div className="mt-3 rounded-lg border border-brand-200 bg-brand-50/70 px-3 py-3 shadow-sm">
+                                    <div className="flex flex-wrap items-start justify-between gap-3">
+                                        <div>
+                                            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-brand-700">Selected BDR</p>
+                                            <p className="text-xs text-slate-600 mt-0.5">All overrides below apply to this email before you save.</p>
+                                        </div>
+                                        <span className="inline-flex items-center gap-1.5 rounded-full border border-brand-200 bg-white px-2.5 py-1 text-xs font-semibold text-brand-700 shadow-sm">
+                                            {selectedBdr}
+                                        </span>
+                                    </div>
+                                    <button type="button" onClick={() => setSelectedBdr('')}
+                                        className="mt-2 text-xs font-medium text-slate-500 hover:text-slate-700">
+                                        Clear selection
+                                    </button>
+                                </div>
+                            )}
                         </div>
 
                         {selectedBdr && bdrLoading && <div className="text-center py-8 text-slate-400">Loading...</div>}

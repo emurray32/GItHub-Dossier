@@ -23,6 +23,8 @@ from config import Config
 from database import (
     db_connection, get_setting, set_setting, log_audit_event,
     get_all_accounts, get_tier_counts, get_archived_count,
+    get_all_accounts_datatable, get_status_counts,
+    get_current_hour_api_calls, get_queue_account_details,
     get_archived_accounts, archive_account, unarchive_account,
     update_account_notes, add_account_to_tier_0,
     get_account_by_company, get_account,
@@ -1884,9 +1886,8 @@ def api_enrollment_accounts():
 
 @app.route('/enrollment')
 def enrollment_page():
-    campaigns_list = get_all_campaigns()
-    active_campaigns = [c for c in campaigns_list if c.get('status') == 'active']
-    return render_template('enrollment.html', campaigns=active_campaigns)
+    # Legacy route: enrollment now lives inside the v2 signal queue workspace.
+    return redirect(url_for('v2_web.v2_app'))
 
 
 # =============================================================================
@@ -2324,6 +2325,168 @@ def api_accounts():
         'current_page': result['current_page'],
         'limit': result['limit']
     })
+
+
+def _serialize_queue_accounts(accounts: list[dict]) -> list[dict]:
+    serialized = []
+    for account in accounts or []:
+        item = dict(account)
+        item['scan_status'] = item.get('scan_status') or SCAN_STATUS_IDLE
+        item['scan_started_at'] = item.get('scan_start_time')
+        serialized.append(item)
+    return serialized
+
+
+@app.route('/api/accounts/datatable')
+def api_accounts_datatable():
+    draw = max(request.args.get('draw', 1, type=int) or 1, 0)
+    start = max(request.args.get('start', 0, type=int) or 0, 0)
+    length = request.args.get('length', 50, type=int) or 50
+    length = min(max(length, 1), 500)
+    search_value = (request.args.get('search[value]', '') or '').strip()
+    order_column = max(request.args.get('order[0][column]', 0, type=int) or 0, 0)
+    order_dir = request.args.get('order[0][dir]', 'asc') or 'asc'
+    valid_sort, normalized_sort_dir = validate_sort_direction(order_dir)
+    if not valid_sort:
+        normalized_sort_dir = 'asc'
+
+    tiers = [tier for tier in request.args.getlist('tier', type=int) if tier is not None]
+    tier_filter = tiers or None
+
+    last_scanned_filter = (request.args.get('last_scanned', '') or '').strip() or None
+    revenue_min = request.args.get('revenue_min', type=int)
+    revenue_max = request.args.get('revenue_max', type=int)
+
+    payload = get_all_accounts_datatable(
+        draw=draw,
+        start=start,
+        length=length,
+        search_value=search_value,
+        tier_filter=tier_filter,
+        order_column=order_column,
+        order_dir=normalized_sort_dir,
+        last_scanned_filter=last_scanned_filter,
+        revenue_min=revenue_min,
+        revenue_max=revenue_max,
+    )
+    for account in payload.get('data', []):
+        account['scan_status'] = account.get('scan_status') or SCAN_STATUS_IDLE
+    return jsonify(payload)
+
+
+@app.route('/api/status-counts')
+def api_status_counts():
+    counts = get_status_counts()
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            'SELECT COUNT(*) AS total FROM monitored_accounts WHERE archived_at IS NULL'
+        )
+        row = cursor.fetchone()
+    counts['total'] = row['total'] if row else 0
+    return jsonify(counts)
+
+
+@app.route('/api/queue-status')
+def api_queue_status():
+    queue_details = get_queue_account_details()
+    queued = queue_details.get('queued', [])
+    processing = queue_details.get('processing', [])
+    return jsonify({
+        'queued_count': len(queued),
+        'processing_count': len(processing),
+    })
+
+
+@app.route('/api/queue-details')
+def api_queue_details():
+    queue_details = get_queue_account_details()
+    queued = _serialize_queue_accounts(queue_details.get('queued', []))
+    processing = _serialize_queue_accounts(queue_details.get('processing', []))
+    return jsonify({
+        'queued': queued,
+        'processing': processing,
+        'queued_count': len(queued),
+        'processing_count': len(processing),
+    })
+
+
+@app.route('/api/hourly-api-stats')
+def api_hourly_api_stats():
+    hourly_limit = 10000
+    for env_var in ('APOLLO_HOURLY_LIMIT', 'APOLLO_RATE_LIMIT_PER_HOUR'):
+        raw_value = os.environ.get(env_var)
+        if not raw_value:
+            continue
+        try:
+            hourly_limit = max(int(raw_value), 1)
+            break
+        except ValueError:
+            logging.warning('[ACCOUNTS API] Invalid %s=%r; falling back to %s',
+                            env_var, raw_value, hourly_limit)
+
+    return jsonify({
+        'api_calls_this_hour': get_current_hour_api_calls(),
+        'hourly_limit': hourly_limit,
+    })
+
+
+@app.route('/api/accounts/scan-statuses')
+def api_account_scan_statuses():
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT
+                id,
+                company_name,
+                COALESCE(scan_status, ?) AS scan_status,
+                scan_progress,
+                scan_start_time AS scan_started_at,
+                last_scan_error,
+                last_scanned_at,
+                next_scan_due
+            FROM monitored_accounts
+            WHERE archived_at IS NULL
+            ORDER BY
+                CASE
+                    WHEN scan_status = 'processing' THEN 0
+                    WHEN scan_status = 'queued' THEN 1
+                    ELSE 2
+                END,
+                company_name ASC
+        ''', (SCAN_STATUS_IDLE,))
+        accounts = [dict(row) for row in cursor.fetchall()]
+    return jsonify({'accounts': accounts})
+
+
+@app.route('/api/batch-rescan', methods=['POST'])
+def api_batch_rescan():
+    return jsonify({
+        'status': 'error',
+        'message': 'Batch rescan is not available in this build yet. Use per-account rescan for now.',
+    }), 501
+
+
+@app.route('/api/batch-rescan/status')
+def api_batch_rescan_status():
+    state = getattr(app, '_batch_rescan_state', None) or {}
+    return jsonify({
+        'active': bool(state.get('active', False)),
+        'cancelled': bool(state.get('cancelled', False)),
+        'completed': int(state.get('completed', 0) or 0),
+        'total': int(state.get('total', 0) or 0),
+        'current_batch': int(state.get('current_batch', 0) or 0),
+        'total_batches': int(state.get('total_batches', 0) or 0),
+        'scope': state.get('scope', 'all'),
+    })
+
+
+@app.route('/api/batch-rescan/cancel', methods=['POST'])
+def api_batch_rescan_cancel():
+    return jsonify({
+        'status': 'error',
+        'message': 'No batch rescan is currently running.',
+    }), 409
 
 
 @app.route('/api/accounts/<int:account_id>/notes', methods=['PUT'])

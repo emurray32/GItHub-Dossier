@@ -21,6 +21,9 @@ Tests:
 17. Enrollment panel preserves skipped terminal state and completion CTA
 18. Campaign form preserves persona targeting fields
 19. Accounts page links into the v2 intake flow
+20. Legacy enrollment route redirects into the v2 queue
+21. Writing preferences UI clears dirty state and ghost BDRs
+22. Accounts compatibility APIs serve the legacy dashboard again
 """
 import json
 import io
@@ -33,6 +36,7 @@ import pytest
 
 APP_HTML = Path(__file__).resolve().parents[1] / 'templates/v2/app.html'
 CAMPAIGN_FORM_HTML = Path(__file__).resolve().parents[1] / 'templates/campaign_form.html'
+WRITING_PREFERENCES_HTML = Path(__file__).resolve().parents[1] / 'templates/v2/writing_preferences.html'
 
 
 # ---------------------------------------------------------------------------
@@ -863,6 +867,33 @@ class TestBdrPreferenceValidation:
         assert 'email' in data['message'].lower()
 
 
+class TestWritingPreferencesUi:
+    """Writing-preferences UI should stay honest about selection and dirty state."""
+
+    def test_org_dirty_is_derived_from_saved_snapshot(self):
+        """Reverting a textarea back to its saved value should clear dirty state."""
+        source = WRITING_PREFERENCES_HTML.read_text()
+        assert "const prefsFingerprint = (prefs) => JSON.stringify(normalizePrefs(prefs));" in source
+        assert "const orgDirty = prefsFingerprint(orgPrefs) !== prefsFingerprint(orgInitialPrefs);" in source
+        assert "setOrgDirty(true)" not in source
+        assert "setOrgInitialPrefs(savedPrefs);" in source
+
+    def test_bdr_selector_shows_selection_and_prunes_deleted_emails(self):
+        """The BDR panel should visibly confirm selection and remove ghost entries."""
+        source = WRITING_PREFERENCES_HTML.read_text()
+        assert "No saved BDRs yet" in source
+        assert "Selected BDR" in source
+        assert "All overrides below apply to this email before you save." in source
+        assert "setBdrEmails(uniqueSortedEmails(refreshedList.bdr_emails || []));" in source
+        assert "if (remaining.length === 0) setSelectedBdr('');" in source
+
+    def test_writing_preferences_uses_local_font_stack(self):
+        """The page should not depend on the blocked Geist CDN font stylesheet."""
+        source = WRITING_PREFERENCES_HTML.read_text()
+        assert "https://cdn.jsdelivr.net/npm/geist@1/dist/fonts/geist-sans/style.css" not in source
+        assert "fontFamily: { sans: ['Avenir Next', 'Segoe UI', 'Helvetica Neue', 'Arial', 'sans-serif'] }" in source
+
+
 class TestIngestionRouteFailures:
     """Bulk import routes should not report failed uploads as success."""
 
@@ -879,6 +910,107 @@ class TestIngestionRouteFailures:
         assert data['status'] == 'error'
         assert 'signal_description' in data['message']
         assert data['result']['signals_created'] == 0
+
+
+class TestLegacyEnrollmentRoute:
+    """Old enrollment entry points should not hard-crash."""
+
+    def test_enrollment_route_redirects_to_v2_app(self, flask_app):
+        """The legacy /enrollment page should hand users to the v2 queue."""
+        resp = flask_app.get('/enrollment', follow_redirects=False)
+        assert resp.status_code == 302
+        assert resp.headers['Location'].endswith('/app')
+
+
+class TestAccountsCompatibilityApis:
+    """Legacy accounts dashboard APIs should keep returning usable JSON."""
+
+    def test_accounts_dashboard_endpoints_restore_queue_and_datatable(self, flask_app, test_db):
+        """The legacy accounts page should have its expected data contracts back."""
+        from datetime import datetime
+
+        queued_id = _seed_account(test_db, company_name='QueuedCo')
+        processing_id = _seed_account(test_db, company_name='ProcessingCo')
+        _seed_account(test_db, company_name='IdleCo')
+        queued_started_at = datetime.now().replace(microsecond=0).isoformat()
+        processing_started_at = datetime.now().replace(microsecond=0).isoformat()
+
+        conn = sqlite3.connect(test_db)
+        conn.execute(
+            """UPDATE monitored_accounts
+               SET scan_status = 'queued', scan_start_time = ?
+               WHERE id = ?""",
+            (queued_started_at, queued_id),
+        )
+        conn.execute(
+            """UPDATE monitored_accounts
+               SET scan_status = 'processing', scan_start_time = ?
+               WHERE id = ?""",
+            (processing_started_at, processing_id),
+        )
+        conn.commit()
+        conn.close()
+
+        datatable = flask_app.get('/api/accounts/datatable?draw=2&start=0&length=25')
+        assert datatable.status_code == 200
+        datatable_json = datatable.get_json()
+        assert datatable_json['draw'] == 2
+        assert any(row['company_name'] == 'QueuedCo' for row in datatable_json['data'])
+
+        counts = flask_app.get('/api/status-counts')
+        assert counts.status_code == 200
+        counts_json = counts.get_json()
+        assert counts_json['total'] >= 3
+        assert counts_json['queued'] == 1
+        assert counts_json['processing'] == 1
+
+        queue = flask_app.get('/api/queue-status')
+        assert queue.status_code == 200
+        assert queue.get_json() == {'queued_count': 1, 'processing_count': 1}
+
+        details = flask_app.get('/api/queue-details')
+        assert details.status_code == 200
+        details_json = details.get_json()
+        assert details_json['queued_count'] == 1
+        assert details_json['processing_count'] == 1
+        assert details_json['queued'][0]['company_name'] == 'QueuedCo'
+        assert details_json['processing'][0]['company_name'] == 'ProcessingCo'
+        assert 'scan_started_at' in details_json['processing'][0]
+
+        statuses = flask_app.get('/api/accounts/scan-statuses')
+        assert statuses.status_code == 200
+        statuses_json = statuses.get_json()
+        by_id = {row['id']: row for row in statuses_json['accounts']}
+        assert by_id[queued_id]['scan_status'] == 'queued'
+        assert by_id[processing_id]['scan_status'] == 'processing'
+        assert by_id[processing_id]['scan_started_at'] == processing_started_at
+
+    def test_hourly_stats_and_batch_rescan_fallbacks_are_json(self, flask_app):
+        """Missing legacy services should fail cleanly instead of 404ing as HTML."""
+        hourly = flask_app.get('/api/hourly-api-stats')
+        assert hourly.status_code == 200
+        hourly_json = hourly.get_json()
+        assert set(hourly_json.keys()) == {'api_calls_this_hour', 'hourly_limit'}
+        assert isinstance(hourly_json['api_calls_this_hour'], int)
+        assert hourly_json['hourly_limit'] >= 1
+
+        batch_status = flask_app.get('/api/batch-rescan/status')
+        assert batch_status.status_code == 200
+        assert batch_status.get_json() == {
+            'active': False,
+            'cancelled': False,
+            'completed': 0,
+            'total': 0,
+            'current_batch': 0,
+            'total_batches': 0,
+            'scope': 'all',
+        }
+
+        batch_start = flask_app.post('/api/batch-rescan', json={'scope': 'all'})
+        assert batch_start.status_code == 501
+        batch_start_json = batch_start.get_json()
+        assert batch_start_json['status'] == 'error'
+        assert 'not available' in batch_start_json['message'].lower()
 
 
 # =========================================================================
